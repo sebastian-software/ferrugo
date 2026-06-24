@@ -69,6 +69,7 @@ The initial seed set covers:
 - Encoding Differences array mapping
 - text spacing, `TJ` fragmentation, and invisible text rendering mode
 - office-style ruled table layout with header fill and text cells
+- two-page report layout with repeated headers, table lines, and text
 
 ## Local Corpora
 

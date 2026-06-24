@@ -1427,6 +1427,64 @@ def office_table_pdf() -> bytes:
     )
 
 
+def report_page_content(title: str, rows: list[tuple[str, str, str]]) -> str:
+    ops = [
+        "q 0.12 0.34 0.58 rg 18 126 18 18 re f Q",
+        "q 0.94 0.96 1 rg 42 118 196 28 re f Q",
+        "q 0.15 0.22 0.36 RG 0.8 w",
+        "18 36 m 238 36 l 238 146 l 18 146 l h S",
+        "18 118 m 238 118 l S",
+        "18 94 m 238 94 l S",
+        "18 70 m 238 70 l S",
+        "92 36 m 92 146 l S",
+        "164 36 m 164 146 l S Q",
+        f"BT /F1 12 Tf 48 132 Td ({title}) Tj",
+        "0 -28 Td (Account) Tj 74 0 Td (Debit) Tj 72 0 Td (Credit) Tj",
+    ]
+    for name, debit, credit in rows:
+        ops.append(f"-146 -24 Td ({name}) Tj 74 0 Td ({debit}) Tj 72 0 Td ({credit}) Tj")
+    ops.append("ET")
+    return " ".join(ops)
+
+
+def multi_page_report_pdf() -> bytes:
+    pdf = Pdf()
+    content_1 = report_page_content(
+        "Report p1",
+        [("Services", "120", "0"), ("Tax", "24", "0"), ("Paid", "0", "144")],
+    ).encode("ascii")
+    content_2 = report_page_content(
+        "Report p2",
+        [("Hosting", "80", "0"), ("Support", "64", "0"), ("Balance", "0", "144")],
+    ).encode("ascii")
+    contents_1 = pdf.add(
+        f"<< /Length {len(content_1)} >>\nstream\n".encode("ascii")
+        + content_1
+        + b"\nendstream"
+    )
+    contents_2 = pdf.add(
+        f"<< /Length {len(content_2)} >>\nstream\n".encode("ascii")
+        + content_2
+        + b"\nendstream"
+    )
+    page_1 = pdf.add(
+        "<< /Type /Page /Parent 5 0 R /MediaBox [0 0 260 160] "
+        "/Resources << /Font << /F1 6 0 R >> >> "
+        f"/Contents {contents_1} 0 R >>"
+    )
+    page_2 = pdf.add(
+        "<< /Type /Page /Parent 5 0 R /MediaBox [0 0 240 180] "
+        "/Resources << /Font << /F1 6 0 R >> >> "
+        f"/Contents {contents_2} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page_1} 0 R {page_2} 0 R] /Count 2 >>")
+    font = pdf.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert pages == 5
+    assert font == 6
+    return pdf.render(catalog)
+
+
 def write(name: str, data: bytes) -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     (OUT / name).write_bytes(data)
@@ -1503,6 +1561,7 @@ def main() -> None:
     write("encoding-differences.pdf", encoding_differences_pdf())
     write("text-spacing.pdf", text_spacing_pdf())
     write("office-table.pdf", office_table_pdf())
+    write("multi-page-report.pdf", multi_page_report_pdf())
 
 
 if __name__ == "__main__":

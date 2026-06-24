@@ -2408,6 +2408,53 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_render_generated_multi_page_report_first_page() {
+        let bytes = include_bytes!("../../../fixtures/generated/multi-page-report.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 260,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated multi-page report fixture should render through native backend");
+
+        assert_eq!(thumbnail.width, 260);
+        assert_eq!(thumbnail.height, 160);
+        assert!(thumbnail
+            .bytes
+            .chunks_exact(4)
+            .any(|pixel| pixel != [255, 255, 255, 255]));
+    }
+
+    #[test]
+    fn native_backend_should_inspect_generated_multi_page_report_order() {
+        let bytes = include_bytes!("../../../fixtures/generated/multi-page-report.pdf");
+        let metadata =
+            DocumentMetadataBackend::inspect(&NativeBackend::new(), PdfSource::from_bytes(bytes))
+                .expect("generated multi-page report should inspect");
+
+        assert_eq!(metadata.page_count(), 2);
+        assert_eq!(metadata.pages[0].index, 0);
+        assert_eq!(
+            metadata.pages[0].size,
+            PageSize {
+                width: 260.0,
+                height: 160.0,
+            }
+        );
+        assert_eq!(metadata.pages[1].index, 1);
+        assert_eq!(
+            metadata.pages[1].size,
+            PageSize {
+                width: 240.0,
+                height: 180.0,
+            }
+        );
+    }
+
+    #[test]
     fn native_backend_should_render_generated_mixed_text_image_fixture() {
         let bytes = include_bytes!("../../../fixtures/generated/mixed-text-image.pdf");
         let thumbnail = ThumbnailBackend::render(
