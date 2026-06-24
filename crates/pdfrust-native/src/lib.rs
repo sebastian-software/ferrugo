@@ -18,7 +18,7 @@ use pdfrust_render::{
     GraphicsErrorKind, ImageResources, PageGeometry, PageRotation, PageTransform, PathBounds,
     PathRasterOptions, RasterError, ShadingResources, TilingPatternResources,
 };
-use pdfrust_syntax::{PdfBytes, PdfName, PdfPrimitive};
+use pdfrust_syntax::{PdfBytes, PdfName, PdfNumber, PdfPrimitive, PdfReference};
 use pdfrust_thumbnail::{
     DocumentMetadata, DocumentMetadataBackend, PageMetadata as ThumbnailPageMetadata, PageSize,
     PdfSource, Thumbnail, ThumbnailBackend, ThumbnailError, ThumbnailOptions,
@@ -159,6 +159,26 @@ fn render_bytes(bytes: &[u8], options: &ThumbnailOptions) -> Result<Thumbnail, T
     )
     .map_err(map_graphics_error)?;
     rasterize_text(&text_list, &mut raster, transform).map_err(map_raster_error)?;
+    let (annotation_forms, annotation_content) =
+        page_annotation_appearance_resources(&document, page)?;
+    if !annotation_content.is_empty() {
+        let annotation_list = build_form_display_list_with_graphics_resources(
+            tokenize_content(PdfBytes::new(&annotation_content)),
+            &annotation_forms,
+            &ext_graphics_states,
+            &shadings,
+            &patterns,
+            DisplayListOptions::default(),
+        )
+        .map_err(map_graphics_error)?;
+        rasterize_paths_into(
+            &annotation_list,
+            &mut raster,
+            transform,
+            PathRasterOptions::default(),
+        )
+        .map_err(map_raster_error)?;
+    }
     let dimensions = raster.dimensions();
     Thumbnail::rgba(dimensions.width, dimensions.height, raster.into_pixels())
 }
@@ -392,6 +412,61 @@ fn page_form_resources(
     FormResources::from_xobject_dictionary(xobjects, document).map_err(map_graphics_error)
 }
 
+fn page_annotation_appearance_resources(
+    document: &ClassicDocument<'_>,
+    page: &ObjectPageMetadata,
+) -> Result<(FormResources, Vec<u8>), ThumbnailError> {
+    let object = document
+        .objects
+        .get(page.id)
+        .ok_or(ThumbnailError::Malformed)?;
+    let dictionary = object_dictionary(&object.value)?;
+    let Some(annots) = dictionary_value(dictionary, b"Annots") else {
+        return Ok((FormResources::empty(), Vec::new()));
+    };
+    let annotations = annotation_array(document, annots)?;
+    let mut names = Vec::new();
+    let mut references = Vec::new();
+    let mut content = Vec::new();
+
+    for annotation in annotations {
+        let Some(dictionary) = annotation_dictionary(document, annotation)? else {
+            continue;
+        };
+        let Some(reference) = normal_appearance_reference(dictionary) else {
+            continue;
+        };
+        let Some(rect) = annotation_rect(dictionary) else {
+            continue;
+        };
+        if !document_object_exists(document, reference)? {
+            continue;
+        }
+        let name = format!("Ann{}", names.len()).into_bytes();
+        append_annotation_form_invocation(&mut content, &name, rect);
+        names.push(name);
+        references.push(reference);
+    }
+
+    if names.is_empty() {
+        return Ok((FormResources::empty(), Vec::new()));
+    }
+
+    let xobjects = names
+        .iter()
+        .zip(references)
+        .map(|(name, reference)| {
+            (
+                PdfName::new(name.as_slice()),
+                PdfPrimitive::Reference(reference),
+            )
+        })
+        .collect::<Vec<_>>();
+    FormResources::from_xobject_dictionary(&xobjects, document)
+        .map(|resources| (resources, content))
+        .map_err(map_graphics_error)
+}
+
 fn page_font_resources(
     document: &ClassicDocument<'_>,
     page: &ObjectPageMetadata,
@@ -427,6 +502,120 @@ fn page_font_resources(
     };
     FontResources::from_font_dictionary(fonts, document, DisplayListOptions::default())
         .map_err(map_graphics_error)
+}
+
+fn annotation_array<'a>(
+    document: &'a ClassicDocument<'a>,
+    annots: &'a PdfPrimitive<'a>,
+) -> Result<&'a [PdfPrimitive<'a>], ThumbnailError> {
+    match annots {
+        PdfPrimitive::Array(items) => Ok(items),
+        PdfPrimitive::Reference(reference) => {
+            let reference = object_reference(*reference)?;
+            let object = document
+                .objects
+                .get(reference.id)
+                .ok_or(ThumbnailError::Malformed)?;
+            let ObjectValue::Primitive(PdfPrimitive::Array(items)) = &object.value else {
+                return Err(ThumbnailError::Malformed);
+            };
+            Ok(items)
+        }
+        _ => Err(ThumbnailError::Malformed),
+    }
+}
+
+fn annotation_dictionary<'a>(
+    document: &'a ClassicDocument<'a>,
+    annotation: &'a PdfPrimitive<'a>,
+) -> Result<Option<&'a [(PdfName<'a>, PdfPrimitive<'a>)]>, ThumbnailError> {
+    match annotation {
+        PdfPrimitive::Dictionary(dictionary) => Ok(Some(dictionary)),
+        PdfPrimitive::Reference(reference) => {
+            let reference = object_reference(*reference)?;
+            let Some(object) = document.objects.get(reference.id) else {
+                return Ok(None);
+            };
+            Ok(Some(object_dictionary(&object.value)?))
+        }
+        _ => Ok(None),
+    }
+}
+
+fn normal_appearance_reference(
+    annotation: &[(PdfName<'_>, PdfPrimitive<'_>)],
+) -> Option<PdfReference> {
+    let PdfPrimitive::Dictionary(appearance) = dictionary_value(annotation, b"AP")? else {
+        return None;
+    };
+    let PdfPrimitive::Reference(reference) = dictionary_value(appearance, b"N")? else {
+        return None;
+    };
+    Some(*reference)
+}
+
+fn annotation_rect(annotation: &[(PdfName<'_>, PdfPrimitive<'_>)]) -> Option<PathBounds> {
+    let PdfPrimitive::Array(values) = dictionary_value(annotation, b"Rect")? else {
+        return None;
+    };
+    if values.len() != 4 {
+        return None;
+    }
+    let left = primitive_number(&values[0])?;
+    let bottom = primitive_number(&values[1])?;
+    let right = primitive_number(&values[2])?;
+    let top = primitive_number(&values[3])?;
+    Some(PathBounds {
+        min_x: left.min(right),
+        min_y: bottom.min(top),
+        max_x: left.max(right),
+        max_y: bottom.max(top),
+    })
+}
+
+fn document_object_exists(
+    document: &ClassicDocument<'_>,
+    reference: PdfReference,
+) -> Result<bool, ThumbnailError> {
+    let reference = object_reference(reference)?;
+    Ok(document.objects.get(reference.id).is_some())
+}
+
+fn object_reference(reference: PdfReference) -> Result<Reference, ThumbnailError> {
+    let object_number =
+        ObjectNumber::new(reference.object).map_err(|_| ThumbnailError::Malformed)?;
+    Ok(Reference::new(ObjectId::new(
+        object_number,
+        GenerationNumber::new(reference.generation),
+    )))
+}
+
+fn primitive_number(value: &PdfPrimitive<'_>) -> Option<f64> {
+    match value {
+        PdfPrimitive::Number(PdfNumber::Integer(value)) => Some(*value as f64),
+        PdfPrimitive::Number(PdfNumber::Real(value)) => Some(*value),
+        _ => None,
+    }
+}
+
+fn append_annotation_form_invocation(content: &mut Vec<u8>, name: &[u8], rect: PathBounds) {
+    content.extend_from_slice(
+        format!(
+            "q 1 0 0 1 {} {} cm /{} Do Q\n",
+            format_pdf_number(rect.min_x),
+            format_pdf_number(rect.min_y),
+            String::from_utf8_lossy(name)
+        )
+        .as_bytes(),
+    );
+}
+
+fn format_pdf_number(value: f64) -> String {
+    if value.fract().abs() <= f64::EPSILON {
+        format!("{value:.0}")
+    } else {
+        format!("{value:.6}")
+    }
 }
 
 fn decode_contents(
@@ -943,6 +1132,26 @@ mod tests {
         assert_eq!(rgba_at(&thumbnail, 20, 20), [0, 0, 0, 255]);
         assert_eq!(rgba_at(&thumbnail, 60, 60), [255, 255, 255, 255]);
         assert_eq!(rgba_at(&thumbnail, 2, 60), [255, 255, 255, 255]);
+    }
+
+    #[test]
+    fn native_backend_should_render_generated_annotation_appearance_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/annotation-appearance.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 120,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated annotation-appearance fixture should render through native backend");
+
+        assert_eq!(thumbnail.width, 120);
+        assert_eq!(thumbnail.height, 120);
+        assert_eq!(rgba_at(&thumbnail, 30, 30), [0, 0, 0, 255]);
+        assert_eq!(rgba_at(&thumbnail, 55, 35), [0, 0, 0, 255]);
+        assert_eq!(rgba_at(&thumbnail, 30, 50), [255, 255, 255, 255]);
     }
 
     #[test]

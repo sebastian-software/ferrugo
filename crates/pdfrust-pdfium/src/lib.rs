@@ -224,7 +224,7 @@ mod sys {
 
     const RTLD_NOW: c_int = 2;
     const NO_PASSWORD: *const c_char = std::ptr::null();
-    const NO_RENDER_FLAGS: c_int = 0;
+    const RENDER_ANNOTATIONS: c_int = 0x01;
 
     #[cfg_attr(target_os = "linux", link(name = "dl"))]
     extern "C" {
@@ -382,7 +382,7 @@ mod sys {
                     width as c_int,
                     height as c_int,
                     0,
-                    NO_RENDER_FLAGS,
+                    RENDER_ANNOTATIONS,
                 );
             }
             let stride = unsafe { (self.bitmap_get_stride)(bitmap.bitmap.as_ptr()) };

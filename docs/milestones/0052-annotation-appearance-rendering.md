@@ -46,4 +46,23 @@ commented PDFs.
 
 ## Completion Notes
 
-Empty until done.
+In progress:
+
+- First implementation slice resolves page `/Annots` entries, extracts normal
+  `/AP /N` Form XObject appearance streams, and renders their path content after
+  the base page content. Missing annotation dictionaries, missing `/AP`, missing
+  `/N`, and missing `/Rect` are skipped without aborting page rendering.
+- The PDFium bridge now renders with `FPDF_ANNOT` so differential annotation
+  fixtures can use PDFium as an oracle.
+- First fixture slice adds generated
+  `fixtures/generated/annotation-appearance.pdf` through
+  `scripts/generate_fixtures.py`, covering a `/Subtype /Stamp` annotation with
+  a normal appearance stream.
+- PDFium/native comparison for `annotation-appearance.pdf` at `max-edge 120`:
+  `120x120`, changed RGB pixels `0`, RGB MAE `0.0000`, p95 RGB delta `0`,
+  max channel delta `0`, native non-white pixels `800`. Filled and outside
+  sample pixels match PDFium exactly.
+- Current validation:
+  - `cargo test -p pdfrust-native annotation_appearance -- --nocapture`
+  - `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render fixtures/generated/annotation-appearance.pdf --max-edge 120 --output target/pdfrust-thumbnails/annotation-appearance-pdfium-0052.png`
+  - `cargo run -p pdfrust-cli -- render-native fixtures/generated/annotation-appearance.pdf --max-edge 120 --output target/pdfrust-thumbnails/annotation-appearance-native-0052.png`
