@@ -41,6 +41,7 @@ fn run(args: Vec<OsString>) -> Result<(), CliError> {
         Some("summarize-fallbacks") => summarize_fallbacks_command(&args[1..]),
         Some("extract-corpus-metadata") => extract_corpus_metadata_command(&args[1..]),
         Some("benchmark-native") => benchmark_native_command(&args[1..]),
+        Some("benchmark-pdfium") => benchmark_pdfium_command(&args[1..]),
         Some("--version" | "-V") => {
             println!("pdfrust-cli {}", env!("CARGO_PKG_VERSION"));
             Ok(())
@@ -342,7 +343,50 @@ fn benchmark_native_command(args: &[OsString]) -> Result<(), CliError> {
         Some(path) => Some(read_corpus_manifest(path)?),
         None => None,
     };
-    let report = benchmark_native(&fixtures, &options, manifest.as_ref(), &config);
+    let native = NativeBackend::new();
+    let report = benchmark_backend(
+        &native,
+        "rust-native",
+        &fixtures,
+        &options,
+        manifest.as_ref(),
+        &config,
+        true,
+    );
+    write_benchmark_report(config, report)
+}
+
+fn benchmark_pdfium_command(args: &[OsString]) -> Result<(), CliError> {
+    let config = BenchmarkConfig::parse(args)?;
+    let options = ThumbnailOptions {
+        page_index: config.page_index,
+        max_edge: config.max_edge,
+        background: config.background,
+        output_format: pdfrust_thumbnail::OutputFormat::Rgba,
+        timeout: config.timeout,
+    };
+    let fixtures = pdf_inputs(&config.input)?;
+    let manifest = match &config.manifest {
+        Some(path) => Some(read_corpus_manifest(path)?),
+        None => None,
+    };
+    let pdfium = PdfiumBackend::from_env().map_err(|err| CliError::Backend(err.to_string()))?;
+    let report = benchmark_backend(
+        &pdfium,
+        "pdfium",
+        &fixtures,
+        &options,
+        manifest.as_ref(),
+        &config,
+        false,
+    );
+    write_benchmark_report(config, report)
+}
+
+fn write_benchmark_report(
+    config: BenchmarkConfig,
+    report: BenchmarkReport,
+) -> Result<(), CliError> {
     let json = benchmark_report_json(&report);
 
     if let Some(output) = config.output {
@@ -1002,6 +1046,7 @@ struct CorpusMetadataRecord {
 
 #[derive(Debug, Clone, PartialEq)]
 struct BenchmarkReport {
+    backend: &'static str,
     total: usize,
     native_rendered: usize,
     fallback_required: usize,
@@ -1233,13 +1278,15 @@ fn extract_native_corpus_metadata(
         .collect()
 }
 
-fn benchmark_native(
+fn benchmark_backend<B: ThumbnailBackend>(
+    backend: &B,
+    backend_name: &'static str,
     paths: &[PathBuf],
     options: &ThumbnailOptions,
     manifest: Option<&CorpusManifest>,
     config: &BenchmarkConfig,
+    unsupported_is_fallback: bool,
 ) -> BenchmarkReport {
-    let native = NativeBackend::new();
     let mut families = BTreeMap::new();
     let mut fixtures = Vec::with_capacity(paths.len());
     let mut native_rendered = 0;
@@ -1253,7 +1300,15 @@ fn benchmark_native(
             .and_then(|manifest| manifest.family_for_path(path))
             .unwrap_or("unclassified")
             .to_string();
-        let record = benchmark_native_fixture(&native, path, options, config, path_key, family);
+        let record = benchmark_fixture(
+            backend,
+            path,
+            options,
+            config,
+            path_key,
+            family,
+            unsupported_is_fallback,
+        );
         match record.outcome {
             BenchmarkOutcome::NativeRendered { .. } => native_rendered += 1,
             BenchmarkOutcome::FallbackRequired { .. } => fallback_required += 1,
@@ -1268,6 +1323,7 @@ fn benchmark_native(
     }
 
     BenchmarkReport {
+        backend: backend_name,
         total: paths.len(),
         native_rendered,
         fallback_required,
@@ -1281,22 +1337,24 @@ fn benchmark_native(
     }
 }
 
-fn benchmark_native_fixture(
-    native: &NativeBackend,
+fn benchmark_fixture<B: ThumbnailBackend>(
+    backend: &B,
     path: &Path,
     options: &ThumbnailOptions,
     config: &BenchmarkConfig,
     path_key: String,
     family: String,
+    unsupported_is_fallback: bool,
 ) -> BenchmarkRecord {
     let started = Instant::now();
     let mut last_success = None;
     for _ in 0..config.iterations {
-        match native.render(PdfSource::from_path(path), options) {
+        match backend.render(PdfSource::from_path(path), options) {
             Ok(thumbnail) => last_success = Some(thumbnail),
             Err(error) => {
                 let mean_ms = elapsed_mean_ms(started.elapsed(), config.iterations);
-                let (outcome, mut budget_violations) = benchmark_error_outcome(error, mean_ms);
+                let (outcome, mut budget_violations) =
+                    benchmark_error_outcome(error, mean_ms, unsupported_is_fallback);
                 if matches!(outcome, BenchmarkOutcome::FallbackRequired { .. }) {
                     budget_violations.push("native_fallback");
                 } else {
@@ -1339,8 +1397,11 @@ fn benchmark_native_fixture(
 fn benchmark_error_outcome(
     error: ThumbnailError,
     mean_ms: f64,
+    unsupported_is_fallback: bool,
 ) -> (BenchmarkOutcome, Vec<&'static str>) {
-    if error.class() == pdfrust_thumbnail::ThumbnailErrorClass::Unsupported {
+    if unsupported_is_fallback
+        && error.class() == pdfrust_thumbnail::ThumbnailErrorClass::Unsupported
+    {
         (
             BenchmarkOutcome::FallbackRequired {
                 reason: FallbackReason::from_native_error(&error),
@@ -1688,13 +1749,14 @@ fn benchmark_report_json(report: &BenchmarkReport) -> String {
         concat!(
             "{{\n",
             "  \"schema_version\": 1,\n",
-            "  \"backend\": \"rust-native\",\n",
+            "  \"backend\": {},\n",
             "  \"config\": {{\"iterations\":{},\"max_ms\":{},\"max_output_bytes\":{}}},\n",
             "  \"summary\": {{\"total\":{},\"native_rendered\":{},\"fallback_required\":{},\"errors\":{},\"budget_failures\":{}}},\n",
             "  \"families\": {},\n",
             "  \"fixtures\": [{}]\n",
             "}}\n"
         ),
+        json_string(report.backend),
         report.iterations,
         report.max_ms,
         report.max_output_bytes,
@@ -2023,7 +2085,7 @@ fn crc32(bytes: impl IntoIterator<Item = u8>) -> u32 {
 
 fn print_usage() {
     println!(
-        "Usage: pdfrust-cli <render|render-auto|render-native|render-pdfium|render-isolated|compare-metadata|summarize-fallbacks|extract-corpus-metadata|benchmark-native> <input.pdf> \
+        "Usage: pdfrust-cli <render|render-auto|render-native|render-pdfium|render-isolated|compare-metadata|summarize-fallbacks|extract-corpus-metadata|benchmark-native|benchmark-pdfium> <input.pdf> \
          [--output PATH] [--page-index N] [--max-edge N] [--background #RRGGBB] \
          [--timeout SECONDS] [--iterations N] [--max-ms N] [--max-output-bytes N] \
          [--native-only] [--deny-fallback-reason BUCKET] [--manifest PATH]"
@@ -2334,7 +2396,16 @@ mod tests {
             fail_on_budget: false,
         };
 
-        let report = benchmark_native(&paths, &options, Some(&manifest), &config);
+        let native = NativeBackend::new();
+        let report = benchmark_backend(
+            &native,
+            "rust-native",
+            &paths,
+            &options,
+            Some(&manifest),
+            &config,
+            true,
+        );
         let json = benchmark_report_json(&report);
 
         assert_eq!(report.total, 2);
