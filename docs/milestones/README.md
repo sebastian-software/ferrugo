@@ -21,7 +21,6 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
-| 0076 | [Streaming Parse And Incremental Rendering](0076-streaming-parse-and-incremental-rendering.md) | 12 | medium | 0075 |
 | 0077 | [Parallel Page Rendering Scheduler](0077-parallel-page-rendering-scheduler.md) | 12 | medium | 0076 |
 | 0078 | [Renderer Benchmark Suite And Budgets](0078-renderer-benchmark-suite-and-budgets.md) | 13 | medium | 0077 |
 | 0079 | [Optional PDFium Build Feature Split](0079-optional-pdfium-build-feature-split.md) | 13 | medium | 0078 |
@@ -56,6 +55,7 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Completed |
 | --- | --- | --- | --- | --- |
+| 0076 | [Streaming Parse And Incremental Rendering](0076-streaming-parse-and-incremental-rendering.md) | 12 | medium | 2026-06-24 |
 | 0075 | [Color Management And Output Intent Policy](0075-color-management-and-output-intent-policy.md) | 12 | medium | 2026-06-24 |
 | 0074 | [Annotation And Form Interaction Coverage](0074-annotation-and-form-interaction-coverage.md) | 12 | medium | 2026-06-24 |
 | 0073 | [Table And Report Layout Fidelity](0073-table-and-report-layout-fidelity.md) | 12 | medium | 2026-06-24 |

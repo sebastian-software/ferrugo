@@ -1,6 +1,6 @@
 # 0076: Streaming Parse And Incremental Rendering
 
-Status: todo
+Status: done
 Phase: 12
 Size: medium
 Depends on: 0075
@@ -45,4 +45,17 @@ pages where the file structure allows it.
 
 ## Completion Notes
 
-Empty until done.
+Completed with the `test: add page-targeted stream coverage` and
+`feat: filter unused page xobjects` implementation commits plus the
+`docs: complete streaming parse coverage` report update.
+
+- Added `fixtures/generated/page-targeted-stream.pdf`, a two-page fixture that
+  combines a valid page 0, an unused malformed page-0 Image XObject, and a
+  malformed page-1 content stream.
+- Added native-backend tests proving page 0 renders without decoding unrelated
+  page streams or unused page XObjects, while page 1 fails when explicitly
+  requested.
+- Filtered page-level Image/Form XObject resource decoding to names actually
+  invoked by `Do` operators in optional-content-filtered page content.
+- Recorded corpus summary and page-0 memory measurements in
+  `docs/reports/streaming-parse-coverage-2026-06-24.md`.
