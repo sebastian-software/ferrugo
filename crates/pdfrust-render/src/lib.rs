@@ -49,6 +49,9 @@ pub const DEFAULT_GLYPH_OUTLINE_SEGMENT_LIMIT: usize = 2_048;
 /// Default maximum cached glyph outlines per outline cache.
 pub const DEFAULT_GLYPH_OUTLINE_CACHE_LIMIT: usize = 4_096;
 
+/// Default maximum cached fallback glyph bitmaps per rasterization pass.
+pub const DEFAULT_GLYPH_BITMAP_CACHE_LIMIT: usize = 256;
+
 /// Default maximum decoded bytes for one embedded font program.
 pub const DEFAULT_FONT_PROGRAM_BYTES_LIMIT: usize = 16 * 1024 * 1024;
 
@@ -1592,6 +1595,140 @@ pub struct GlyphOutline {
     pub left_side_bearing: f64,
     /// Outline path segments in font units.
     pub segments: Vec<PathSegment>,
+}
+
+/// Text subpixel positioning policy used by the native fallback text rasterizer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TextSubpixelPolicy {
+    /// Preserve user-space glyph origins until final device-pixel coverage.
+    PreserveUserSpace,
+}
+
+/// Current native text positioning policy.
+pub const TEXT_SUBPIXEL_POLICY: TextSubpixelPolicy = TextSubpixelPolicy::PreserveUserSpace;
+
+/// Small fallback glyph bitmap cache keyed by glyph and quantized size.
+#[derive(Debug, Clone, PartialEq)]
+pub struct GlyphBitmapCache {
+    entries: Vec<CachedGlyphBitmap>,
+    max_entries: usize,
+}
+
+impl GlyphBitmapCache {
+    /// Creates a fallback glyph bitmap cache with a bounded entry count.
+    #[must_use]
+    pub fn new(max_entries: usize) -> Self {
+        Self {
+            entries: Vec::new(),
+            max_entries,
+        }
+    }
+
+    fn bitmap_for(&mut self, character: char, cell: f64) -> &GlyphBitmap {
+        let key = GlyphBitmapKey::new(character, cell);
+        if let Some(index) = self.entries.iter().position(|entry| entry.key == key) {
+            return &self.entries[index].bitmap;
+        }
+        let bitmap = GlyphBitmap::from_ascii(character, cell);
+        if self.max_entries == 0 {
+            self.entries.clear();
+            self.entries.push(CachedGlyphBitmap { key, bitmap });
+            return &self.entries[0].bitmap;
+        }
+        if self.entries.len() >= self.max_entries {
+            self.entries.remove(0);
+        }
+        self.entries.push(CachedGlyphBitmap { key, bitmap });
+        &self.entries.last().expect("entry was just inserted").bitmap
+    }
+
+    /// Returns the number of cached fallback glyph bitmaps.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    /// Returns true when no fallback glyph bitmaps are cached.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+}
+
+impl Default for GlyphBitmapCache {
+    fn default() -> Self {
+        Self::new(DEFAULT_GLYPH_BITMAP_CACHE_LIMIT)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct CachedGlyphBitmap {
+    key: GlyphBitmapKey,
+    bitmap: GlyphBitmap,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct GlyphBitmapKey {
+    character: char,
+    cell_microunits: i64,
+    paint_policy: GlyphBitmapPaintPolicy,
+}
+
+impl GlyphBitmapKey {
+    fn new(character: char, cell: f64) -> Self {
+        Self {
+            character: character.to_ascii_lowercase(),
+            cell_microunits: quantize_glyph_cell(cell),
+            paint_policy: GlyphBitmapPaintPolicy::MaskOnly,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GlyphBitmapPaintPolicy {
+    MaskOnly,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct GlyphBitmap {
+    rects: Vec<GlyphBitmapRect>,
+}
+
+impl GlyphBitmap {
+    fn from_ascii(character: char, cell: f64) -> Self {
+        let glyph = ascii_glyph(character);
+        let mut rects = Vec::new();
+        for (row, pattern) in glyph.iter().enumerate() {
+            for (col, byte) in pattern.as_bytes().iter().enumerate() {
+                if *byte != b'#' {
+                    continue;
+                }
+                let left = col as f64 * cell;
+                let right = left + cell;
+                let top = (7 - row) as f64 * cell;
+                let bottom = top - cell;
+                rects.push(GlyphBitmapRect {
+                    left,
+                    right,
+                    top,
+                    bottom,
+                });
+            }
+        }
+        Self { rects }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct GlyphBitmapRect {
+    left: f64,
+    right: f64,
+    top: f64,
+    bottom: f64,
+}
+
+fn quantize_glyph_cell(cell: f64) -> i64 {
+    (cell * 1_000_000.0).round() as i64
 }
 
 /// Small glyph outline cache keyed by font program identity and glyph code.
@@ -3165,6 +3302,7 @@ pub fn rasterize_display_list_into(
         return Err(RasterError::new(RasterErrorKind::InvalidSupersampling));
     }
     let mut active_clips = Vec::new();
+    let mut glyph_cache = GlyphBitmapCache::default();
     for item in display_list.items() {
         match item {
             DisplayItem::Path(path) => {
@@ -3193,7 +3331,9 @@ pub fn rasterize_display_list_into(
                 rasterize_transparency_group(group, device, transform, options)?;
             }
             DisplayItem::Image(image) => draw_image(device, image, transform)?,
-            DisplayItem::Text(text) => draw_text_run(device, text, transform, options)?,
+            DisplayItem::Text(text) => {
+                draw_text_run(device, text, transform, options, &mut glyph_cache)?;
+            }
         }
     }
     Ok(())
@@ -3528,11 +3668,18 @@ pub fn rasterize_text(
     device: &mut RasterDevice,
     transform: PageTransform,
 ) -> RasterResult<()> {
+    let mut glyph_cache = GlyphBitmapCache::default();
     for item in display_list.items() {
         let DisplayItem::Text(text) = item else {
             continue;
         };
-        draw_text_run(device, text, transform, PathRasterOptions::default())?;
+        draw_text_run(
+            device,
+            text,
+            transform,
+            PathRasterOptions::default(),
+            &mut glyph_cache,
+        )?;
     }
     Ok(())
 }
@@ -7438,6 +7585,7 @@ fn draw_text_run(
     text: &TextDisplayItem,
     page_transform: PageTransform,
     options: PathRasterOptions,
+    glyph_cache: &mut GlyphBitmapCache,
 ) -> RasterResult<()> {
     let Some(color) = text
         .rendering_mode
@@ -7457,15 +7605,8 @@ fn draw_text_run(
         if character == ' ' {
             continue;
         }
-        draw_ascii_glyph(
-            device,
-            page_transform,
-            character,
-            origin.x,
-            origin.y,
-            cell,
-            color,
-        )?;
+        let bitmap = glyph_cache.bitmap_for(character, cell);
+        draw_ascii_glyph(device, page_transform, bitmap, origin.x, origin.y, color)?;
     }
     Ok(())
 }
@@ -7527,29 +7668,22 @@ fn raster_type3_error(error: GraphicsError) -> RasterError {
 fn draw_ascii_glyph(
     device: &mut RasterDevice,
     page_transform: PageTransform,
-    character: char,
+    bitmap: &GlyphBitmap,
     x: f64,
     baseline_y: f64,
-    cell: f64,
     color: Rgba,
 ) -> RasterResult<()> {
-    let glyph = ascii_glyph(character);
-    for (row, pattern) in glyph.iter().enumerate() {
-        for (col, byte) in pattern.as_bytes().iter().enumerate() {
-            if *byte != b'#' {
-                continue;
-            }
-            let left = x + col as f64 * cell;
-            let right = left + cell;
-            let top = baseline_y + (7 - row) as f64 * cell;
-            let bottom = top - cell;
-            fill_device_rect(
-                device,
-                page_transform.matrix.transform_point(left, top),
-                page_transform.matrix.transform_point(right, bottom),
-                color,
-            )?;
-        }
+    for rect in &bitmap.rects {
+        fill_device_rect(
+            device,
+            page_transform
+                .matrix
+                .transform_point(x + rect.left, baseline_y + rect.top),
+            page_transform
+                .matrix
+                .transform_point(x + rect.right, baseline_y + rect.bottom),
+            color,
+        )?;
     }
     Ok(())
 }
@@ -11486,6 +11620,55 @@ mod tests {
         assert_eq!(
             error.kind(),
             &GraphicsErrorKind::FontProgramBytesOverflow { limit: 3 }
+        );
+    }
+
+    #[test]
+    fn glyph_bitmap_cache_should_reuse_same_character_and_size() {
+        let mut cache = GlyphBitmapCache::new(8);
+        let first = cache.bitmap_for('A', 2.0).clone();
+        let second = cache.bitmap_for('A', 2.0).clone();
+
+        assert_eq!(first, second);
+        assert_eq!(cache.len(), 1);
+    }
+
+    #[test]
+    fn glyph_bitmap_cache_should_include_size_in_key() {
+        let mut cache = GlyphBitmapCache::new(8);
+        let small = cache.bitmap_for('A', 1.0).clone();
+        let large = cache.bitmap_for('A', 2.0).clone();
+
+        assert_ne!(small, large);
+        assert_eq!(cache.len(), 2);
+    }
+
+    #[test]
+    fn glyph_bitmap_cache_should_evict_oldest_entry_at_limit() {
+        let mut cache = GlyphBitmapCache::new(1);
+        cache.bitmap_for('A', 1.0);
+        cache.bitmap_for('B', 1.0);
+
+        assert_eq!(cache.len(), 1);
+        assert_eq!(cache.entries[0].key.character, 'b');
+    }
+
+    #[test]
+    fn text_display_list_should_preserve_subpixel_glyph_origins() {
+        assert_eq!(TEXT_SUBPIXEL_POLICY, TextSubpixelPolicy::PreserveUserSpace);
+        let list = build_text_display_list(
+            tokenize_content(PdfBytes::new(b"BT /F1 10 Tf 10.25 20.75 Td (AA) Tj ET")),
+            &test_font_resources(),
+            DisplayListOptions::default(),
+        )
+        .expect("fractional text should decode");
+
+        let DisplayItem::Text(text) = &list.items()[0] else {
+            panic!("expected text display item");
+        };
+        assert_eq!(
+            text.glyph_origins,
+            vec![Point { x: 10.25, y: 20.75 }, Point { x: 15.25, y: 20.75 },]
         );
     }
 
