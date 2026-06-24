@@ -134,6 +134,321 @@ impl<'a> ByteCursor<'a> {
     }
 }
 
+/// Parsed core PDF primitive value.
+#[derive(Debug, Clone, PartialEq)]
+pub enum PdfPrimitive<'a> {
+    /// `null`.
+    Null,
+    /// Boolean value.
+    Boolean(bool),
+    /// Integer or real number.
+    Number(PdfNumber),
+    /// Name object without the leading slash.
+    Name(PdfName<'a>),
+    /// Literal or hexadecimal string.
+    String(PdfString<'a>),
+    /// Array object.
+    Array(Vec<PdfPrimitive<'a>>),
+    /// Dictionary object.
+    Dictionary(Vec<(PdfName<'a>, PdfPrimitive<'a>)>),
+}
+
+/// Parsed PDF number.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum PdfNumber {
+    /// Integer number.
+    Integer(i64),
+    /// Real number.
+    Real(f64),
+}
+
+/// Parsed PDF name bytes without the leading slash.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PdfName<'a> {
+    bytes: &'a [u8],
+}
+
+impl<'a> PdfName<'a> {
+    /// Creates a borrowed PDF name.
+    #[must_use]
+    pub const fn new(bytes: &'a [u8]) -> Self {
+        Self { bytes }
+    }
+
+    /// Returns the borrowed raw name bytes.
+    #[must_use]
+    pub const fn as_bytes(self) -> &'a [u8] {
+        self.bytes
+    }
+}
+
+/// Parsed PDF string bytes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PdfString<'a> {
+    /// Literal string content between `(` and `)`, with escapes still raw.
+    Literal(&'a [u8]),
+    /// Hexadecimal string content between `<` and `>`, still undecoded.
+    Hex(&'a [u8]),
+}
+
+/// Parses one complete core PDF primitive.
+///
+/// # Errors
+///
+/// Returns [`SyntaxError`] when the input is empty, malformed, or has trailing
+/// non-whitespace bytes after the primitive.
+pub fn parse_primitive(input: PdfBytes<'_>) -> SyntaxResult<PdfPrimitive<'_>> {
+    let mut parser = PrimitiveParser::new(input);
+    let value = parser.parse_value()?;
+    parser.skip_whitespace_and_comments()?;
+    if parser.cursor.peek().is_some() {
+        return Err(SyntaxError::new(
+            parser.cursor.offset(),
+            SyntaxErrorKind::InvalidToken,
+        ));
+    }
+    Ok(value)
+}
+
+struct PrimitiveParser<'a> {
+    cursor: ByteCursor<'a>,
+}
+
+impl<'a> PrimitiveParser<'a> {
+    const fn new(input: PdfBytes<'a>) -> Self {
+        Self {
+            cursor: input.cursor(),
+        }
+    }
+
+    fn parse_value(&mut self) -> SyntaxResult<PdfPrimitive<'a>> {
+        self.skip_whitespace_and_comments()?;
+        let offset = self.cursor.offset();
+        let byte = self
+            .cursor
+            .peek()
+            .ok_or_else(|| SyntaxError::new(offset, SyntaxErrorKind::UnexpectedEof))?;
+
+        match byte {
+            b'n' => {
+                self.consume_keyword(b"null")?;
+                Ok(PdfPrimitive::Null)
+            }
+            b't' => {
+                self.consume_keyword(b"true")?;
+                Ok(PdfPrimitive::Boolean(true))
+            }
+            b'f' => {
+                self.consume_keyword(b"false")?;
+                Ok(PdfPrimitive::Boolean(false))
+            }
+            b'/' => self.parse_name().map(PdfPrimitive::Name),
+            b'(' => self.parse_literal_string().map(PdfPrimitive::String),
+            b'[' => self.parse_array(),
+            b'<' if self.starts_with(b"<<") => self.parse_dictionary(),
+            b'<' => self.parse_hex_string().map(PdfPrimitive::String),
+            b'+' | b'-' | b'.' | b'0'..=b'9' => self.parse_number().map(PdfPrimitive::Number),
+            _ => Err(SyntaxError::new(offset, SyntaxErrorKind::InvalidToken)),
+        }
+    }
+
+    fn skip_whitespace_and_comments(&mut self) -> SyntaxResult<()> {
+        loop {
+            match self.cursor.peek() {
+                Some(byte) if is_whitespace(byte) => {
+                    self.cursor.advance(1)?;
+                }
+                Some(b'%') => {
+                    self.skip_comment()?;
+                }
+                _ => return Ok(()),
+            }
+        }
+    }
+
+    fn skip_comment(&mut self) -> SyntaxResult<()> {
+        while let Some(byte) = self.cursor.peek() {
+            self.cursor.advance(1)?;
+            if byte == b'\n' || byte == b'\r' {
+                break;
+            }
+        }
+        Ok(())
+    }
+
+    fn consume_keyword(&mut self, keyword: &[u8]) -> SyntaxResult<()> {
+        let offset = self.cursor.offset();
+        if !self.starts_with(keyword) {
+            return Err(SyntaxError::new(offset, SyntaxErrorKind::InvalidToken));
+        }
+        self.cursor.advance(keyword.len())?;
+        match self.cursor.peek() {
+            Some(byte) if !is_whitespace(byte) && !is_delimiter(byte) => Err(SyntaxError::new(
+                self.cursor.offset(),
+                SyntaxErrorKind::InvalidToken,
+            )),
+            _ => Ok(()),
+        }
+    }
+
+    fn parse_name(&mut self) -> SyntaxResult<PdfName<'a>> {
+        let offset = self.cursor.offset();
+        self.expect_byte(b'/')?;
+        let start = self.cursor.offset().get();
+        while let Some(byte) = self.cursor.peek() {
+            if is_whitespace(byte) || is_delimiter(byte) {
+                break;
+            }
+            self.cursor.advance(1)?;
+        }
+        let end = self.cursor.offset().get();
+        if start == end {
+            return Err(SyntaxError::new(offset, SyntaxErrorKind::InvalidToken));
+        }
+        Ok(PdfName::new(&self.cursor.bytes[start..end]))
+    }
+
+    fn parse_literal_string(&mut self) -> SyntaxResult<PdfString<'a>> {
+        let offset = self.cursor.offset();
+        self.expect_byte(b'(')?;
+        let start = self.cursor.offset().get();
+        let mut depth = 1_u32;
+        let mut escaped = false;
+
+        while self.cursor.peek().is_some() {
+            let byte_offset = self.cursor.offset().get();
+            let byte = self.cursor.read_byte()?;
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            match byte {
+                b'\\' => escaped = true,
+                b'(' => depth += 1,
+                b')' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return Ok(PdfString::Literal(&self.cursor.bytes[start..byte_offset]));
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        Err(SyntaxError::new(offset, SyntaxErrorKind::UnexpectedEof))
+    }
+
+    fn parse_hex_string(&mut self) -> SyntaxResult<PdfString<'a>> {
+        let offset = self.cursor.offset();
+        self.expect_byte(b'<')?;
+        let start = self.cursor.offset().get();
+        while let Some(byte) = self.cursor.peek() {
+            let byte_offset = self.cursor.offset().get();
+            self.cursor.advance(1)?;
+            if byte == b'>' {
+                return Ok(PdfString::Hex(&self.cursor.bytes[start..byte_offset]));
+            }
+        }
+        Err(SyntaxError::new(offset, SyntaxErrorKind::UnexpectedEof))
+    }
+
+    fn parse_number(&mut self) -> SyntaxResult<PdfNumber> {
+        let offset = self.cursor.offset();
+        let start = offset.get();
+        while let Some(byte) = self.cursor.peek() {
+            if is_whitespace(byte) || is_delimiter(byte) {
+                break;
+            }
+            self.cursor.advance(1)?;
+        }
+        let raw = std::str::from_utf8(&self.cursor.bytes[start..self.cursor.offset().get()])
+            .map_err(|_| SyntaxError::new(offset, SyntaxErrorKind::InvalidToken))?;
+        if raw.contains('.') {
+            raw.parse::<f64>()
+                .map(PdfNumber::Real)
+                .map_err(|_| SyntaxError::new(offset, SyntaxErrorKind::InvalidToken))
+        } else {
+            raw.parse::<i64>()
+                .map(PdfNumber::Integer)
+                .map_err(|_| SyntaxError::new(offset, SyntaxErrorKind::InvalidToken))
+        }
+    }
+
+    fn parse_array(&mut self) -> SyntaxResult<PdfPrimitive<'a>> {
+        self.expect_byte(b'[')?;
+        let mut values = Vec::new();
+        loop {
+            self.skip_whitespace_and_comments()?;
+            match self.cursor.peek() {
+                Some(b']') => {
+                    self.cursor.advance(1)?;
+                    return Ok(PdfPrimitive::Array(values));
+                }
+                Some(_) => values.push(self.parse_value()?),
+                None => {
+                    return Err(SyntaxError::new(
+                        self.cursor.offset(),
+                        SyntaxErrorKind::UnexpectedEof,
+                    ));
+                }
+            }
+        }
+    }
+
+    fn parse_dictionary(&mut self) -> SyntaxResult<PdfPrimitive<'a>> {
+        self.expect_bytes(b"<<")?;
+        let mut entries = Vec::new();
+        loop {
+            self.skip_whitespace_and_comments()?;
+            if self.starts_with(b">>") {
+                self.cursor.advance(2)?;
+                return Ok(PdfPrimitive::Dictionary(entries));
+            }
+            if self.cursor.peek().is_none() {
+                return Err(SyntaxError::new(
+                    self.cursor.offset(),
+                    SyntaxErrorKind::UnexpectedEof,
+                ));
+            }
+            let key = self.parse_name()?;
+            let value = self.parse_value()?;
+            entries.push((key, value));
+        }
+    }
+
+    fn expect_byte(&mut self, expected: u8) -> SyntaxResult<()> {
+        let offset = self.cursor.offset();
+        match self.cursor.read_byte() {
+            Ok(byte) if byte == expected => Ok(()),
+            Ok(_) => Err(SyntaxError::new(offset, SyntaxErrorKind::InvalidToken)),
+            Err(error) => Err(error),
+        }
+    }
+
+    fn expect_bytes(&mut self, expected: &[u8]) -> SyntaxResult<()> {
+        let offset = self.cursor.offset();
+        if !self.starts_with(expected) {
+            return Err(SyntaxError::new(offset, SyntaxErrorKind::InvalidToken));
+        }
+        self.cursor.advance(expected.len())
+    }
+
+    fn starts_with(&self, prefix: &[u8]) -> bool {
+        self.cursor.remaining().starts_with(prefix)
+    }
+}
+
+const fn is_whitespace(byte: u8) -> bool {
+    matches!(byte, b'\0' | b'\t' | b'\n' | b'\x0c' | b'\r' | b' ')
+}
+
+const fn is_delimiter(byte: u8) -> bool {
+    matches!(
+        byte,
+        b'(' | b')' | b'<' | b'>' | b'[' | b']' | b'{' | b'}' | b'/' | b'%'
+    )
+}
+
 /// Syntax parser error with the source byte offset that triggered the failure.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SyntaxError {
@@ -248,5 +563,98 @@ mod tests {
         let error = SyntaxError::new(ByteOffset::new(42), SyntaxErrorKind::InvalidToken);
 
         assert_eq!(error.to_string(), "invalid PDF token at byte 42");
+    }
+
+    #[test]
+    fn parse_primitive_should_parse_scalar_values() {
+        assert_eq!(
+            parse_primitive(PdfBytes::new(b" null ")).expect("null"),
+            PdfPrimitive::Null
+        );
+        assert_eq!(
+            parse_primitive(PdfBytes::new(b"true")).expect("boolean"),
+            PdfPrimitive::Boolean(true)
+        );
+        assert_eq!(
+            parse_primitive(PdfBytes::new(b"-42")).expect("integer"),
+            PdfPrimitive::Number(PdfNumber::Integer(-42))
+        );
+        assert_eq!(
+            parse_primitive(PdfBytes::new(b"3.5")).expect("real"),
+            PdfPrimitive::Number(PdfNumber::Real(3.5))
+        );
+    }
+
+    #[test]
+    fn parse_primitive_should_parse_names_and_strings_as_borrowed_slices() {
+        let name = parse_primitive(PdfBytes::new(b"/Type")).expect("name");
+        let literal = parse_primitive(PdfBytes::new(b"(hello\\) world)")).expect("literal");
+        let hex = parse_primitive(PdfBytes::new(b"<48656c6c6f>")).expect("hex");
+
+        assert_eq!(name, PdfPrimitive::Name(PdfName::new(b"Type")));
+        assert_eq!(
+            literal,
+            PdfPrimitive::String(PdfString::Literal(b"hello\\) world"))
+        );
+        assert_eq!(hex, PdfPrimitive::String(PdfString::Hex(b"48656c6c6f")));
+    }
+
+    #[test]
+    fn parse_primitive_should_parse_arrays_and_dictionaries() {
+        let value = parse_primitive(PdfBytes::new(
+            b"<< /Type /Page /MediaBox [0 0 300 160] /Visible true >>",
+        ))
+        .expect("dictionary");
+
+        assert_eq!(
+            value,
+            PdfPrimitive::Dictionary(vec![
+                (
+                    PdfName::new(b"Type"),
+                    PdfPrimitive::Name(PdfName::new(b"Page")),
+                ),
+                (
+                    PdfName::new(b"MediaBox"),
+                    PdfPrimitive::Array(vec![
+                        PdfPrimitive::Number(PdfNumber::Integer(0)),
+                        PdfPrimitive::Number(PdfNumber::Integer(0)),
+                        PdfPrimitive::Number(PdfNumber::Integer(300)),
+                        PdfPrimitive::Number(PdfNumber::Integer(160)),
+                    ]),
+                ),
+                (PdfName::new(b"Visible"), PdfPrimitive::Boolean(true)),
+            ])
+        );
+    }
+
+    #[test]
+    fn parse_primitive_should_skip_comments_and_whitespace() {
+        let value = parse_primitive(PdfBytes::new(b"% comment\n[1 % inline\r\n2]"))
+            .expect("array with comments");
+
+        assert_eq!(
+            value,
+            PdfPrimitive::Array(vec![
+                PdfPrimitive::Number(PdfNumber::Integer(1)),
+                PdfPrimitive::Number(PdfNumber::Integer(2)),
+            ])
+        );
+    }
+
+    #[test]
+    fn parse_primitive_should_reject_trailing_tokens() {
+        let error = parse_primitive(PdfBytes::new(b"true false")).expect_err("trailing token");
+
+        assert_eq!(error.offset(), ByteOffset::new(5));
+        assert_eq!(error.kind(), SyntaxErrorKind::InvalidToken);
+    }
+
+    #[test]
+    fn parse_primitive_should_report_malformed_dictionary_offset() {
+        let error =
+            parse_primitive(PdfBytes::new(b"<< /Type >>")).expect_err("missing value should fail");
+
+        assert_eq!(error.offset(), ByteOffset::new(9));
+        assert_eq!(error.kind(), SyntaxErrorKind::InvalidToken);
     }
 }

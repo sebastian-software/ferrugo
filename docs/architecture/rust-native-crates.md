@@ -55,3 +55,9 @@ measurable slices against the PDFium baseline.
 `PdfBytes<'a>` and `ByteCursor<'a>` keep scanning over borrowed bytes, while
 `ByteOffset`, `SyntaxErrorKind`, and `SyntaxError` provide diagnostics that
 later parser layers can preserve without inventing new error plumbing.
+
+The initial primitive parser returns `PdfPrimitive<'a>` values for null,
+booleans, numbers, names, literal strings, hexadecimal strings, arrays, and
+dictionaries. Names and string contents are borrowed from the original input.
+Literal string escapes and hexadecimal string bytes are preserved raw for later
+semantic decoding.
