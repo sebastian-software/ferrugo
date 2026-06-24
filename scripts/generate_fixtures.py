@@ -798,6 +798,66 @@ def optional_content_ocmd_pdf() -> bytes:
     return pdf.render(catalog)
 
 
+def incremental_update_pdf() -> bytes:
+    pdf = bytearray(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
+    offsets: list[int] = [0]
+
+    def add_object(number: int, body: bytes) -> int:
+        offset = len(pdf)
+        offsets.append(offset)
+        pdf.extend(f"{number} 0 obj\n".encode("ascii"))
+        pdf.extend(body)
+        pdf.extend(b"\nendobj\n")
+        return offset
+
+    base_content = b"0 0.6 0 rg 10 10 40 40 re f"
+    updated_content = b"0.9 0 0 rg 10 10 40 40 re f"
+    add_object(1, b"<< /Type /Catalog /Pages 2 0 R >>")
+    add_object(2, b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
+    add_object(
+        3,
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 120 80] /Contents 4 0 R >>",
+    )
+    add_object(
+        4,
+        f"<< /Length {len(base_content)} >>\nstream\n".encode("ascii")
+        + base_content
+        + b"\nendstream",
+    )
+    first_xref = len(pdf)
+    pdf.extend(b"xref\n0 5\n0000000000 65535 f \n")
+    for offset in offsets[1:]:
+        pdf.extend(f"{offset:010d} 00000 n \n".encode("ascii"))
+    pdf.extend(
+        f"trailer\n<< /Size 5 /Root 1 0 R >>\nstartxref\n{first_xref}\n%%EOF\n".encode(
+            "ascii"
+        )
+    )
+
+    updated_page = add_object(
+        3,
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 120 80] /Contents 5 0 R >>",
+    )
+    updated_stream = add_object(
+        5,
+        f"<< /Length {len(updated_content)} >>\nstream\n".encode("ascii")
+        + updated_content
+        + b"\nendstream",
+    )
+    second_xref = len(pdf)
+    pdf.extend(
+        (
+            "xref\n3 1\n"
+            f"{updated_page:010d} 00000 n \n"
+            "5 1\n"
+            f"{updated_stream:010d} 00000 n \n"
+            f"trailer\n<< /Size 6 /Root 1 0 R /Prev {first_xref} >>\n"
+            f"startxref\n{second_xref}\n%%EOF\n"
+        ).encode("ascii")
+    )
+    return bytes(pdf)
+
+
 def embedded_font_pdf() -> bytes:
     pdf = Pdf()
     content = b"BT /F1 18 Tf 20 60 Td (embedded font fixture) Tj ET"
@@ -970,6 +1030,7 @@ def main() -> None:
     write("optional-content-layer-on.pdf", optional_content_layer_pdf(visible=True))
     write("optional-content-layer-off.pdf", optional_content_layer_pdf(visible=False))
     write("optional-content-ocmd.pdf", optional_content_ocmd_pdf())
+    write("incremental-update.pdf", incremental_update_pdf())
     write("embedded-font.pdf", embedded_font_pdf())
     write("tounicode-text.pdf", tounicode_text_pdf())
     write("encoding-differences.pdf", encoding_differences_pdf())

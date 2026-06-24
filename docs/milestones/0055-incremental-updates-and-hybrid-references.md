@@ -54,5 +54,15 @@ In progress:
   revisions win while older xrefs still fill missing objects.
 - Added object-loader tests for latest object revision selection,
   incremental-update cycles, and incremental-update depth overflow.
+- Fixture slice adds generated `fixtures/generated/incremental-update.pdf`
+  with a base green page revision and a later red page/content revision. Native
+  rendering verifies that the latest reachable object revisions are used
+  end-to-end.
+- PDFium/native comparison for `incremental-update.pdf` at `max-edge 120`
+  renders `1600` non-white pixels in both backends, with the later red content
+  visible.
 - Current validation:
   - `cargo test -p pdfrust-object incremental -- --nocapture`
+  - `cargo test -p pdfrust-native incremental_update -- --nocapture`
+  - `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render fixtures/generated/incremental-update.pdf --max-edge 120 --output target/pdfrust-thumbnails/incremental-update-pdfium-0055.png`
+  - `cargo run -p pdfrust-cli -- render-native fixtures/generated/incremental-update.pdf --max-edge 120 --output target/pdfrust-thumbnails/incremental-update-native-0055.png`

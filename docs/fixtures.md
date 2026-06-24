@@ -45,6 +45,7 @@ The initial seed set covers:
 - AcroForm signature placeholder widget appearance streams
 - optional content group default-visible and default-hidden layers
 - unsupported optional content membership dictionaries
+- classic incremental update object revisions
 - axial DeviceRGB shading gradients
 - radial DeviceRGB shading gradients
 - colored tiling patterns
