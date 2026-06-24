@@ -17,6 +17,11 @@ Committed fixtures live under `fixtures/generated/` and must meet these rules:
 - Focused on one behavior per fixture.
 - Regenerable without network access.
 
+`fixtures/corpus-manifest.tsv` assigns each committed fixture to a corpus
+family and records source, license, page-count, feature, and note metadata.
+See `docs/corpus-taxonomy.md` for family definitions and private sampling
+rules.
+
 The initial seed set covers:
 
 - page size
