@@ -72,3 +72,4 @@ full-renderer parity until after those measurements exist.
 - [Thumbnail generation plan](docs/plans/2026-06-24-thumbnail-generation-plan.md)
 - [Roadmap](docs/roadmap.md)
 - [Attribution policy](docs/policies/attribution.md)
+- [PDFium checkout recipe](docs/build/pdfium-checkout.md)

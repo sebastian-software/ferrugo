@@ -1,6 +1,6 @@
 # 0005: PDFium Source Checkout Recipe
 
-Status: todo
+Status: done
 Phase: 0
 Size: small
 Depends on: 0003
@@ -42,5 +42,11 @@ probe.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-24.
 
+- Added `docs/build/pdfium-checkout.md`.
+- Pinned PDFium revision
+  `573758fe2dd928279cd52b5a4bc955a6938aab39`.
+- Verified the remote revision with `git ls-remote`.
+- Full checkout remains a machine-local heavy network step because
+  `depot_tools` is not installed in this environment.
