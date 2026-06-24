@@ -6488,6 +6488,42 @@ mod tests {
     }
 
     #[test]
+    fn text_display_list_should_parse_generated_spacing_fixture() {
+        let decoded = generated_fixture_content("text-spacing.pdf");
+        let list = build_text_display_list(
+            tokenize_content(PdfBytes::new(&decoded)),
+            &test_font_resources(),
+            DisplayListOptions::default(),
+        )
+        .expect("spacing fixture should build text display list");
+
+        assert_eq!(list.len(), 4);
+        let DisplayItem::Text(first) = &list.items()[0] else {
+            panic!("expected first text item");
+        };
+        let DisplayItem::Text(second) = &list.items()[1] else {
+            panic!("expected second text item");
+        };
+        let DisplayItem::Text(third) = &list.items()[2] else {
+            panic!("expected third text item");
+        };
+        let DisplayItem::Text(hidden) = &list.items()[3] else {
+            panic!("expected hidden text item");
+        };
+
+        assert_eq!(first.text, "office");
+        assert_eq!(first.origin, Point { x: 20.0, y: 76.0 });
+        assert_eq!(second.text, "export");
+        assert!((second.origin.x - 74.108).abs() < 0.001);
+        assert_eq!(second.origin.y, 76.0);
+        assert_eq!(third.text, "normal text");
+        assert_eq!(third.origin, Point { x: 40.0, y: 34.0 });
+        assert_eq!(hidden.text, "hidden");
+        assert_eq!(hidden.origin, Point { x: 40.0, y: 54.0 });
+        assert_eq!(hidden.rendering_mode, TextRenderingMode::Invisible);
+    }
+
+    #[test]
     fn text_display_list_should_apply_tm_and_ctm_to_origin() {
         let list = build_text_display_list(
             tokenize_content(PdfBytes::new(

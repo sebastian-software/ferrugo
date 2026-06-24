@@ -28,6 +28,7 @@ The initial seed set covers:
 - embedded TrueType font resource resolution
 - ToUnicode text character-code mapping
 - Encoding Differences array mapping
+- text spacing, `TJ` fragmentation, and invisible text rendering mode
 
 ## Local Corpora
 

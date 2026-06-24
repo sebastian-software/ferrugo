@@ -234,6 +234,18 @@ def encoding_differences_pdf() -> bytes:
     return pdf.render(catalog)
 
 
+def text_spacing_pdf() -> bytes:
+    return page_pdf(
+        "[0 0 260 120]",
+        (
+            "BT /F1 18 Tf 1.5 Tc 5 Tw 90 Tz 20 76 Td "
+            "[(office) 160 (export)] TJ "
+            "0 Tc 0 Tw 100 Tz 20 -42 Td (normal text) Tj "
+            "3 Tr 0 20 Td (hidden) Tj ET"
+        ),
+    )
+
+
 def write(name: str, data: bytes) -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     (OUT / name).write_bytes(data)
@@ -272,6 +284,7 @@ def main() -> None:
     write("embedded-font.pdf", embedded_font_pdf())
     write("tounicode-text.pdf", tounicode_text_pdf())
     write("encoding-differences.pdf", encoding_differences_pdf())
+    write("text-spacing.pdf", text_spacing_pdf())
 
 
 if __name__ == "__main__":
