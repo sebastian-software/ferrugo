@@ -192,6 +192,9 @@ impl Default for StreamDecodeOptions {
 /// Default decoded stream size limit.
 pub const DEFAULT_MAX_DECODED_LEN: usize = 16 * 1024 * 1024;
 
+/// Default maximum number of classic trailer revisions followed through `/Prev`.
+pub const DEFAULT_INCREMENTAL_UPDATE_DEPTH_LIMIT: usize = 16;
+
 /// Object table with duplicate detection.
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct ObjectTable<'a> {
@@ -632,7 +635,7 @@ impl<'a> ObjectParser<'a> {
 pub fn load_classic_document(input: PdfBytes<'_>) -> ObjectResult<ClassicDocument<'_>> {
     let bytes = input.as_bytes();
     let startxref = locate_startxref(bytes)?;
-    let (xref, trailer) = parse_classic_xref_and_trailer(bytes, startxref)?;
+    let (xref, trailer) = parse_classic_xref_chain(bytes, startxref)?;
     let mut objects = ObjectTable::new();
 
     for entry in xref.entries() {
@@ -1010,6 +1013,57 @@ fn parse_classic_xref_and_trailer<'a>(
         ClassicXrefTable { startxref, entries },
         Trailer { dictionary },
     ))
+}
+
+fn parse_classic_xref_chain<'a>(
+    bytes: &'a [u8],
+    startxref: ByteOffset,
+) -> ObjectResult<(ClassicXrefTable, Trailer<'a>)> {
+    let mut current = startxref;
+    let mut seen = Vec::new();
+    let mut tables = Vec::new();
+    let mut trailers = Vec::new();
+
+    loop {
+        if seen.contains(&current) {
+            return Err(ObjectError::IncrementalUpdateCycle { offset: current });
+        }
+        if seen.len() >= DEFAULT_INCREMENTAL_UPDATE_DEPTH_LIMIT {
+            return Err(ObjectError::IncrementalUpdateDepthExceeded {
+                limit: DEFAULT_INCREMENTAL_UPDATE_DEPTH_LIMIT,
+            });
+        }
+        seen.push(current);
+        let (xref, trailer) = parse_classic_xref_and_trailer(bytes, current)?;
+        let previous = trailer_prev_offset(&trailer)?;
+        tables.push(xref);
+        trailers.push(trailer);
+        let Some(previous) = previous else {
+            break;
+        };
+        current = previous;
+    }
+
+    let mut entries = Vec::new();
+    for table in &tables {
+        for entry in table.entries() {
+            if !entries
+                .iter()
+                .any(|existing: &ClassicXrefEntry| existing.id == entry.id)
+            {
+                entries.push(*entry);
+            }
+        }
+    }
+    let trailer = trailers.remove(0);
+    Ok((ClassicXrefTable { startxref, entries }, trailer))
+}
+
+fn trailer_prev_offset(trailer: &Trailer<'_>) -> ObjectResult<Option<ByteOffset>> {
+    dictionary_value(trailer.entries(), b"Prev")
+        .map(primitive_usize)
+        .transpose()
+        .map(|offset| offset.map(ByteOffset::new))
 }
 
 struct RawParser<'a> {
@@ -1907,6 +1961,16 @@ pub enum ObjectError {
     },
     /// Page box is missing, malformed, or not positive-sized.
     InvalidPageBox,
+    /// Incremental update `/Prev` chain points back to an already parsed xref.
+    IncrementalUpdateCycle {
+        /// Repeated xref byte offset.
+        offset: ByteOffset,
+    },
+    /// Incremental update `/Prev` chain exceeds the configured depth limit.
+    IncrementalUpdateDepthExceeded {
+        /// Configured maximum revision count.
+        limit: usize,
+    },
     /// Duplicate indirect object ID.
     DuplicateObject {
         /// Duplicated object ID.
@@ -1943,7 +2007,9 @@ impl ObjectError {
             | Self::MissingObject { .. }
             | Self::MissingPageTreeField { .. }
             | Self::PageTreeCycle { .. }
-            | Self::InvalidPageBox => None,
+            | Self::InvalidPageBox
+            | Self::IncrementalUpdateDepthExceeded { .. } => None,
+            Self::IncrementalUpdateCycle { offset } => Some(*offset),
             Self::DuplicateObject { .. } => None,
             Self::XrefOffsetMismatch { offset, .. } => Some(*offset),
         }
@@ -2019,6 +2085,15 @@ impl fmt::Display for ObjectError {
                 id.generation.get()
             ),
             Self::InvalidPageBox => f.write_str("invalid page box"),
+            Self::IncrementalUpdateCycle { offset } => {
+                write!(f, "incremental update cycle at {offset}")
+            }
+            Self::IncrementalUpdateDepthExceeded { limit } => {
+                write!(
+                    f,
+                    "incremental update chain exceeds limit of {limit} revisions"
+                )
+            }
             Self::DuplicateObject { id } => write!(
                 f,
                 "duplicate object {} {}",
@@ -2271,6 +2346,47 @@ mod tests {
     }
 
     #[test]
+    fn load_classic_document_should_use_latest_incremental_object_revision() {
+        let pdf = build_incremental_classic_pdf();
+
+        let document = load_classic_document(PdfBytes::new(&pdf)).expect("incremental document");
+        let page_tree = document.page_tree().expect("page tree");
+
+        assert_eq!(document.objects.len(), 3);
+        assert_eq!(document.xref.entries().len(), 3);
+        assert_eq!(
+            page_tree.first_page_size(),
+            Some(PageSize {
+                width: 612.0,
+                height: 792.0
+            })
+        );
+    }
+
+    #[test]
+    fn load_classic_document_should_reject_incremental_update_cycle() {
+        let pdf = build_cyclic_incremental_xref_pdf();
+
+        let error = load_classic_document(PdfBytes::new(&pdf)).expect_err("cycle");
+
+        assert!(matches!(error, ObjectError::IncrementalUpdateCycle { .. }));
+    }
+
+    #[test]
+    fn load_classic_document_should_reject_incremental_update_depth_overflow() {
+        let pdf = build_incremental_depth_overflow_pdf();
+
+        let error = load_classic_document(PdfBytes::new(&pdf)).expect_err("depth overflow");
+
+        assert_eq!(
+            error,
+            ObjectError::IncrementalUpdateDepthExceeded {
+                limit: DEFAULT_INCREMENTAL_UPDATE_DEPTH_LIMIT
+            }
+        );
+    }
+
+    #[test]
     fn load_classic_document_should_require_startxref() {
         let error =
             load_classic_document(PdfBytes::new(b"%PDF-1.7\n")).expect_err("missing startxref");
@@ -2423,6 +2539,68 @@ mod tests {
             )
             .as_bytes(),
         );
+        pdf
+    }
+
+    fn build_incremental_classic_pdf() -> Vec<u8> {
+        let mut pdf = b"%PDF-1.7\n".to_vec();
+        let object_1 = append_object(
+            &mut pdf,
+            b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n",
+        );
+        let object_2 = append_object(
+            &mut pdf,
+            b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n",
+        );
+        let object_3 = append_object(
+            &mut pdf,
+            b"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 160] >>\nendobj\n",
+        );
+        let first_xref = pdf.len();
+        pdf.extend_from_slice(
+            format!(
+                "xref\n0 4\n0000000000 65535 f \n{object_1:010} 00000 n \n{object_2:010} 00000 n \n{object_3:010} 00000 n \ntrailer\n<< /Size 4 /Root 1 0 R >>\nstartxref\n{first_xref}\n%%EOF\n"
+            )
+            .as_bytes(),
+        );
+        let updated_object_3 = append_object(
+            &mut pdf,
+            b"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>\nendobj\n",
+        );
+        let update_xref = pdf.len();
+        pdf.extend_from_slice(
+            format!(
+                "xref\n3 1\n{updated_object_3:010} 00000 n \ntrailer\n<< /Size 4 /Root 1 0 R /Prev {first_xref} >>\nstartxref\n{update_xref}\n%%EOF\n"
+            )
+            .as_bytes(),
+        );
+        pdf
+    }
+
+    fn build_cyclic_incremental_xref_pdf() -> Vec<u8> {
+        let mut pdf = b"%PDF-1.7\n".to_vec();
+        let xref_offset = pdf.len();
+        pdf.extend_from_slice(
+            format!(
+                "xref\n0 1\n0000000000 65535 f \ntrailer\n<< /Size 1 /Prev {xref_offset} >>\nstartxref\n{xref_offset}\n%%EOF\n"
+            )
+            .as_bytes(),
+        );
+        pdf
+    }
+
+    fn build_incremental_depth_overflow_pdf() -> Vec<u8> {
+        let mut pdf = b"%PDF-1.7\n".to_vec();
+        let mut previous = None;
+        for _ in 0..=DEFAULT_INCREMENTAL_UPDATE_DEPTH_LIMIT {
+            let xref_offset = pdf.len();
+            pdf.extend_from_slice(b"xref\n0 1\n0000000000 65535 f \ntrailer\n<< /Size 1");
+            if let Some(previous) = previous {
+                pdf.extend_from_slice(format!(" /Prev {previous}").as_bytes());
+            }
+            pdf.extend_from_slice(format!(" >>\nstartxref\n{xref_offset}\n%%EOF\n").as_bytes());
+            previous = Some(xref_offset);
+        }
         pdf
     }
 

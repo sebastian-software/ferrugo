@@ -1,6 +1,6 @@
 # 0055: Incremental Updates And Hybrid References
 
-Status: todo
+Status: in-progress
 Phase: 7
 Size: medium
 Depends on: 0054
@@ -46,4 +46,13 @@ trailers as common producer output.
 
 ## Completion Notes
 
-Empty until done.
+In progress:
+
+- First implementation slice follows classic trailer `/Prev` chains with a
+  `16`-revision depth limit and cycle detection.
+- Classic xref entries are merged newest-first so later reachable object
+  revisions win while older xrefs still fill missing objects.
+- Added object-loader tests for latest object revision selection,
+  incremental-update cycles, and incremental-update depth overflow.
+- Current validation:
+  - `cargo test -p pdfrust-object incremental -- --nocapture`
