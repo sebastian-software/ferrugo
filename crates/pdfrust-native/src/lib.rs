@@ -160,6 +160,7 @@ fn render_bytes(bytes: &[u8], options: &ThumbnailOptions) -> Result<Thumbnail, T
     let optional_content = page_optional_content_properties(&document, page)?;
     let optional_content_state = document_optional_content_state(&document)?;
     let content = filter_optional_content(&content, &optional_content, &optional_content_state)?;
+    let xobject_invocations = xobject_invocation_names(&content)?;
     let display_options = DisplayListOptions::default();
     let ext_graphics_states = page_ext_graphics_state_resources(&document, page)?;
     let shadings = page_shading_resources(&document, page)?;
@@ -174,7 +175,7 @@ fn render_bytes(bytes: &[u8], options: &ThumbnailOptions) -> Result<Thumbnail, T
     .map_err(map_graphics_error)?;
     let transform =
         PageTransform::new(page_geometry(*page), options.max_edge).map_err(map_raster_error)?;
-    let form_resources = page_form_resources(&document, page)?;
+    let form_resources = page_form_resources(&document, page, &xobject_invocations)?;
     let form_list = build_form_display_list_with_graphics_resources(
         tokenize_content(PdfBytes::new(&content)),
         &form_resources,
@@ -184,7 +185,7 @@ fn render_bytes(bytes: &[u8], options: &ThumbnailOptions) -> Result<Thumbnail, T
         DisplayListOptions::default(),
     )
     .map_err(map_graphics_error)?;
-    let image_resources = page_image_resources(&document, page)?;
+    let image_resources = page_image_resources(&document, page, &xobject_invocations)?;
     let image_list = build_image_display_list(
         tokenize_content(PdfBytes::new(&content)),
         &image_resources,
@@ -360,6 +361,49 @@ fn page_paint_order(
         }
     }
     Ok(paint_order)
+}
+
+fn xobject_invocation_names(content: &[u8]) -> Result<Vec<Vec<u8>>, ThumbnailError> {
+    let mut names = Vec::new();
+    let mut operands = Vec::new();
+    for token in spanned_content_tokens(content)? {
+        match token.kind {
+            SpannedContentTokenKind::Operand(value) => operands.push(value),
+            SpannedContentTokenKind::Operator(name) => {
+                if name.as_slice() == b"Do" {
+                    if let [PdfPrimitive::Name(resource)] = operands.as_slice() {
+                        let resource = resource.as_bytes();
+                        if !names
+                            .iter()
+                            .any(|name: &Vec<u8>| name.as_slice() == resource)
+                        {
+                            names.push(resource.to_vec());
+                        }
+                    }
+                }
+                operands.clear();
+            }
+            SpannedContentTokenKind::InlineImage => {
+                operands.clear();
+            }
+        }
+    }
+    Ok(names)
+}
+
+fn filter_invoked_resources<'a>(
+    resources: &'a [(PdfName<'a>, PdfPrimitive<'a>)],
+    invocations: &[Vec<u8>],
+) -> Vec<(PdfName<'a>, PdfPrimitive<'a>)> {
+    resources
+        .iter()
+        .filter(|(name, _)| {
+            invocations
+                .iter()
+                .any(|invocation| invocation.as_slice() == name.as_bytes())
+        })
+        .map(|(name, value)| (*name, value.clone()))
+        .collect()
 }
 
 fn ordered_display_list(
@@ -578,6 +622,7 @@ fn page_tiling_pattern_resources(
 fn page_image_resources(
     document: &ClassicDocument<'_>,
     page: &ObjectPageMetadata,
+    xobject_invocations: &[Vec<u8>],
 ) -> Result<ImageResources, ThumbnailError> {
     let object = document
         .objects
@@ -609,13 +654,19 @@ fn page_image_resources(
     else {
         return Ok(ImageResources::empty());
     };
-    ImageResources::from_xobject_dictionary(xobjects, document, DisplayListOptions::default())
-        .map_err(map_graphics_error)
+    let xobjects = filter_invoked_resources(xobjects, xobject_invocations);
+    ImageResources::from_xobject_dictionary(
+        xobjects.as_slice(),
+        document,
+        DisplayListOptions::default(),
+    )
+    .map_err(map_graphics_error)
 }
 
 fn page_form_resources(
     document: &ClassicDocument<'_>,
     page: &ObjectPageMetadata,
+    xobject_invocations: &[Vec<u8>],
 ) -> Result<FormResources, ThumbnailError> {
     let object = document
         .objects
@@ -647,7 +698,9 @@ fn page_form_resources(
     else {
         return Ok(FormResources::empty());
     };
-    FormResources::from_xobject_dictionary(xobjects, document).map_err(map_graphics_error)
+    let xobjects = filter_invoked_resources(xobjects, xobject_invocations);
+    FormResources::from_xobject_dictionary(xobjects.as_slice(), document)
+        .map_err(map_graphics_error)
 }
 
 fn page_annotation_appearance_resources(

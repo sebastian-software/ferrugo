@@ -1606,6 +1606,7 @@ def page_targeted_stream_pdf() -> bytes:
     pdf = Pdf()
     content_1 = b"q 0.1 0.6 0.2 rg 20 20 80 40 re f Q"
     content_2 = b"this stream should not decode while rendering page zero"
+    unused_image = b"unused image should not decode"
     contents_1 = pdf.add(
         f"<< /Length {len(content_1)} >>\nstream\n".encode("ascii")
         + content_1
@@ -1618,17 +1619,25 @@ def page_targeted_stream_pdf() -> bytes:
         + content_2
         + b"\nendstream"
     )
+    image = pdf.add(
+        b"<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /BitsPerComponent 8 "
+        b"/ColorSpace /DeviceRGB /Filter /UnsupportedDecode /Length "
+        + str(len(unused_image)).encode("ascii")
+        + b" >>\nstream\n"
+        + unused_image
+        + b"\nendstream"
+    )
     page_1 = pdf.add(
-        "<< /Type /Page /Parent 5 0 R /MediaBox [0 0 120 80] "
-        f"/Resources << >> /Contents {contents_1} 0 R >>"
+        "<< /Type /Page /Parent 6 0 R /MediaBox [0 0 120 80] "
+        f"/Resources << /XObject << /Unused {image} 0 R >> >> /Contents {contents_1} 0 R >>"
     )
     page_2 = pdf.add(
-        "<< /Type /Page /Parent 5 0 R /MediaBox [0 0 120 80] "
+        "<< /Type /Page /Parent 6 0 R /MediaBox [0 0 120 80] "
         f"/Resources << >> /Contents {contents_2} 0 R >>"
     )
     pages = pdf.add(f"<< /Type /Pages /Kids [{page_1} 0 R {page_2} 0 R] /Count 2 >>")
     catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
-    assert pages == 5
+    assert pages == 6
     return pdf.render(catalog)
 
 
