@@ -1,6 +1,6 @@
 # 0072: Vector Graphics Stress Coverage
 
-Status: todo
+Status: done
 Phase: 11
 Size: medium
 Depends on: 0071
@@ -45,4 +45,14 @@ Make vector-heavy diagrams, charts, and technical PDFs render reliably.
 
 ## Completion Notes
 
-Empty until done.
+Completed with the `test: add vector stress coverage` implementation and the
+`docs: complete vector stress coverage` report update.
+
+- Added `fixtures/generated/vector-stress.pdf`, a generated chart-like vector
+  stress fixture with nested clips, many small path items, and a cubic curve.
+- Added render-crate and native-backend tests for native rasterization of the
+  fixture.
+- Added a targeted flattened-segment budget test that fails predictably with
+  `PathComplexityOverflow`.
+- Recorded vector corpus comparison, native/PDFium render evidence, and timing
+  notes in `docs/reports/vector-stress-coverage-2026-06-24.md`.
