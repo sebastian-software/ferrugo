@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/pdfrust-cli",
+    "crates/pdfrust-pdfium",
     "crates/pdfrust-thumbnail",
 ]
 resolver = "2"
@@ -12,7 +13,7 @@ repository = "https://github.com/pdfrust/pdfrust"
 rust-version = "1.81"
 
 [workspace.lints.rust]
-unsafe_code = "forbid"
+unsafe_op_in_unsafe_fn = "deny"
 
 [workspace.lints.clippy]
 all = "deny"

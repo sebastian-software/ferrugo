@@ -1,6 +1,6 @@
 # 0011: PDFium Backend Linkage
 
-Status: todo
+Status: done
 Phase: 0
 Size: medium
 Depends on: 0006, 0010
@@ -43,5 +43,12 @@ Connect the Rust thumbnail facade to a locally built PDFium library.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-24.
 
+- Added `pdfrust-pdfium` as an isolated backend crate.
+- Added runtime loading through `PDFRUST_PDFIUM_LIBRARY`.
+- Added a serialized smoke probe for `FPDF_InitLibrary`,
+  `FPDF_GetLastError`, and `FPDF_DestroyLibrary`.
+- Documented local PDFium configuration in `docs/backend/pdfium.md`.
+- A live smoke probe was not run because no local PDFium library is available in
+  this environment.
