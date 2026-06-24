@@ -31,6 +31,7 @@ fixtures/generated/office-table.pdf	office-export	scripts/generate_fixtures.py	M
 fixtures/generated/page-size-letter.pdf	browser-print	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	page-size,letter	Generated letter page geometry fixture.
 fixtures/generated/predictor-image.pdf	scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,flate,predictor	Generated Flate image PNG predictor fixture.
 fixtures/generated/radial-gradient.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	shading,radial-gradient	Generated DeviceRGB radial shading fixture.
+fixtures/generated/scanned-page.pdf	scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,page-sized,devicegray	Generated page-sized scan-like DeviceGray image fixture.
 fixtures/generated/soft-mask-image.pdf	scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,soft-mask,alpha	Generated soft-mask image alpha fixture.
 fixtures/generated/text-page.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,type1	Generated simple text page fixture.
 fixtures/generated/text-spacing.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,spacing,invisible-text	Generated text spacing and invisible render-mode fixture.

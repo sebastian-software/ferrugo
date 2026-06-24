@@ -355,6 +355,37 @@ def soft_mask_image_pdf() -> bytes:
     return pdf.render(catalog)
 
 
+def scanned_page_pdf() -> bytes:
+    pdf = Pdf()
+    width = 64
+    height = 80
+    image = bytes((x * 3 + y * 2) % 256 for y in range(height) for x in range(width))
+    content = b"q 160 0 0 200 0 0 cm /Im1 Do Q"
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 160 200] "
+        "/Resources << /XObject << /Im1 4 0 R >> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    image_object = pdf.add(
+        (
+            f"<< /Type /XObject /Subtype /Image /Width {width} /Height {height} "
+            f"/ColorSpace /DeviceGray /BitsPerComponent 8 /Length {len(image)} >>\n"
+            "stream\n"
+        ).encode("ascii")
+        + image
+        + b"\nendstream"
+    )
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert image_object == 4
+    return pdf.render(catalog)
+
+
 def transparency_group_pdf() -> bytes:
     pdf = Pdf()
     content = b"q 1 0 0 1 10 10 cm /Fm1 Do Q"
@@ -1144,6 +1175,7 @@ def main() -> None:
     write("dct-image.pdf", dct_image_pdf())
     write("predictor-image.pdf", predictor_image_pdf())
     write("soft-mask-image.pdf", soft_mask_image_pdf())
+    write("scanned-page.pdf", scanned_page_pdf())
     write("transparency-group.pdf", transparency_group_pdf())
     write("blend-modes.pdf", blend_modes_pdf())
     write("axial-gradient.pdf", axial_gradient_pdf())

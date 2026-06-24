@@ -33,6 +33,7 @@ The initial seed set covers:
 - DCT/JPEG Image XObject decoding
 - Flate image PNG predictor decoding
 - image soft-mask alpha compositing
+- page-sized scan-like DeviceGray image placement
 - Form XObject invocation
 - path-only Form XObject transparency groups
 - ExtGState Multiply and Screen path blend modes

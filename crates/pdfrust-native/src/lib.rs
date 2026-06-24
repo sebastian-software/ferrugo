@@ -1416,6 +1416,27 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_render_generated_scanned_page_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/scanned-page.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 200,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated scan-like fixture should render through native backend");
+
+        assert_eq!(thumbnail.width, 160);
+        assert_eq!(thumbnail.height, 200);
+        assert!(thumbnail
+            .bytes
+            .chunks_exact(4)
+            .any(|pixel| pixel != [255, 255, 255, 255]));
+    }
+
+    #[test]
     fn native_backend_should_render_generated_inline_image_fixture() {
         let bytes = include_bytes!("../../../fixtures/generated/inline-image.pdf");
         let thumbnail = ThumbnailBackend::render(
