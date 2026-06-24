@@ -40,6 +40,7 @@ fn run(args: Vec<OsString>) -> Result<(), CliError> {
         Some("compare-metadata") => compare_metadata_command(&args[1..]),
         Some("summarize-fallbacks") => summarize_fallbacks_command(&args[1..]),
         Some("extract-corpus-metadata") => extract_corpus_metadata_command(&args[1..]),
+        Some("benchmark-native") => benchmark_native_command(&args[1..]),
         Some("--version" | "-V") => {
             println!("pdfrust-cli {}", env!("CARGO_PKG_VERSION"));
             Ok(())
@@ -325,6 +326,42 @@ fn extract_corpus_metadata_command(args: &[OsString]) -> Result<(), CliError> {
     }
 
     Ok(())
+}
+
+fn benchmark_native_command(args: &[OsString]) -> Result<(), CliError> {
+    let config = BenchmarkConfig::parse(args)?;
+    let options = ThumbnailOptions {
+        page_index: config.page_index,
+        max_edge: config.max_edge,
+        background: config.background,
+        output_format: pdfrust_thumbnail::OutputFormat::Rgba,
+        timeout: config.timeout,
+    };
+    let fixtures = pdf_inputs(&config.input)?;
+    let manifest = match &config.manifest {
+        Some(path) => Some(read_corpus_manifest(path)?),
+        None => None,
+    };
+    let report = benchmark_native(&fixtures, &options, manifest.as_ref(), &config);
+    let json = benchmark_report_json(&report);
+
+    if let Some(output) = config.output {
+        fs::write(&output, &json).map_err(|source| CliError::Io {
+            path: output,
+            source,
+        })?;
+    } else {
+        println!("{json}");
+    }
+
+    if config.fail_on_budget && report.budget_failures > 0 {
+        Err(CliError::Benchmark(format!(
+            "{} benchmark budget failure(s)",
+            report.budget_failures
+        )))
+    } else {
+        Ok(())
+    }
 }
 
 fn render_isolated(config: RenderConfig) -> Result<(), CliError> {
@@ -699,6 +736,122 @@ impl CorpusMetadataConfig {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct BenchmarkConfig {
+    input: PathBuf,
+    manifest: Option<PathBuf>,
+    output: Option<PathBuf>,
+    page_index: u32,
+    max_edge: u32,
+    background: Rgba,
+    timeout: Duration,
+    iterations: usize,
+    max_ms: u64,
+    max_output_bytes: usize,
+    fail_on_budget: bool,
+}
+
+impl BenchmarkConfig {
+    fn parse(args: &[OsString]) -> Result<Self, CliError> {
+        let mut input = None;
+        let mut manifest = None;
+        let mut output = None;
+        let mut page_index = DEFAULT_PAGE_INDEX;
+        let mut max_edge = 160;
+        let mut background = Rgba::WHITE;
+        let mut timeout = DEFAULT_TIMEOUT;
+        let mut iterations = 1;
+        let mut max_ms = 250;
+        let mut max_output_bytes = 4 * 160 * 160;
+        let mut fail_on_budget = false;
+
+        let mut index = 0;
+        while index < args.len() {
+            let arg = args[index]
+                .to_str()
+                .ok_or_else(|| CliError::Usage("arguments must be valid UTF-8".to_string()))?;
+            match arg {
+                "--output" | "-o" => {
+                    index += 1;
+                    output = Some(required_path(args, index, "--output")?);
+                }
+                "--manifest" => {
+                    index += 1;
+                    manifest = Some(required_path(args, index, "--manifest")?);
+                }
+                "--page-index" => {
+                    index += 1;
+                    page_index = parse_u32(args, index, "--page-index")?;
+                }
+                "--max-edge" => {
+                    index += 1;
+                    max_edge = parse_u32(args, index, "--max-edge")?;
+                }
+                "--background" => {
+                    index += 1;
+                    background = parse_background(required_str(args, index, "--background")?)?;
+                }
+                "--timeout" => {
+                    index += 1;
+                    let seconds = parse_u64(args, index, "--timeout")?;
+                    timeout = Duration::from_secs(seconds);
+                }
+                "--iterations" => {
+                    index += 1;
+                    iterations = parse_usize(args, index, "--iterations")?;
+                }
+                "--max-ms" => {
+                    index += 1;
+                    max_ms = parse_u64(args, index, "--max-ms")?;
+                }
+                "--max-output-bytes" => {
+                    index += 1;
+                    max_output_bytes = parse_usize(args, index, "--max-output-bytes")?;
+                }
+                "--fail-on-budget" => {
+                    fail_on_budget = true;
+                }
+                value if value.starts_with('-') => {
+                    return Err(CliError::Usage(format!("unknown option `{value}`")));
+                }
+                value => {
+                    if input.replace(PathBuf::from(value)).is_some() {
+                        return Err(CliError::Usage(
+                            "only one input path is supported".to_string(),
+                        ));
+                    }
+                }
+            }
+            index += 1;
+        }
+
+        if max_edge == 0 {
+            return Err(CliError::Usage(
+                "--max-edge must be greater than zero".to_string(),
+            ));
+        }
+        if iterations == 0 {
+            return Err(CliError::Usage(
+                "--iterations must be greater than zero".to_string(),
+            ));
+        }
+
+        Ok(Self {
+            input: input.ok_or_else(|| CliError::Usage("missing input path".to_string()))?,
+            manifest,
+            output,
+            page_index,
+            max_edge,
+            background,
+            timeout,
+            iterations,
+            max_ms,
+            max_output_bytes,
+            fail_on_budget,
+        })
+    }
+}
+
 impl CompareMetadataConfig {
     fn parse(args: &[OsString]) -> Result<Self, CliError> {
         let mut input = None;
@@ -845,6 +998,84 @@ struct CorpusMetadataRecord {
     path: String,
     manifest: Option<CorpusManifestEntry>,
     metadata: MetadataOutcome,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct BenchmarkReport {
+    total: usize,
+    native_rendered: usize,
+    fallback_required: usize,
+    errors: usize,
+    budget_failures: usize,
+    iterations: usize,
+    max_ms: u64,
+    max_output_bytes: usize,
+    families: BTreeMap<String, FamilyBenchmarkSummary>,
+    fixtures: Vec<BenchmarkRecord>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq)]
+struct FamilyBenchmarkSummary {
+    total: usize,
+    native_rendered: usize,
+    fallback_required: usize,
+    errors: usize,
+    budget_failures: usize,
+    total_ms: f64,
+    max_ms: f64,
+    total_output_bytes: usize,
+}
+
+impl FamilyBenchmarkSummary {
+    fn record(&mut self, record: &BenchmarkRecord) {
+        self.total += 1;
+        self.budget_failures += usize::from(!record.budget_violations.is_empty());
+        match &record.outcome {
+            BenchmarkOutcome::NativeRendered {
+                mean_ms,
+                output_bytes,
+                ..
+            } => {
+                self.native_rendered += 1;
+                self.total_ms += *mean_ms;
+                self.max_ms = self.max_ms.max(*mean_ms);
+                self.total_output_bytes += *output_bytes;
+            }
+            BenchmarkOutcome::FallbackRequired { .. } => {
+                self.fallback_required += 1;
+            }
+            BenchmarkOutcome::Error { .. } => {
+                self.errors += 1;
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct BenchmarkRecord {
+    path: String,
+    family: String,
+    budget_violations: Vec<&'static str>,
+    outcome: BenchmarkOutcome,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum BenchmarkOutcome {
+    NativeRendered {
+        width: u32,
+        height: u32,
+        output_bytes: usize,
+        mean_ms: f64,
+    },
+    FallbackRequired {
+        reason: FallbackReason,
+        mean_ms: f64,
+    },
+    Error {
+        class: &'static str,
+        message: String,
+        mean_ms: f64,
+    },
 }
 
 fn compare_metadata_results(
@@ -1002,6 +1233,137 @@ fn extract_native_corpus_metadata(
         .collect()
 }
 
+fn benchmark_native(
+    paths: &[PathBuf],
+    options: &ThumbnailOptions,
+    manifest: Option<&CorpusManifest>,
+    config: &BenchmarkConfig,
+) -> BenchmarkReport {
+    let native = NativeBackend::new();
+    let mut families = BTreeMap::new();
+    let mut fixtures = Vec::with_capacity(paths.len());
+    let mut native_rendered = 0;
+    let mut fallback_required = 0;
+    let mut errors = 0;
+    let mut budget_failures = 0;
+
+    for path in paths {
+        let path_key = normalize_manifest_path(path);
+        let family = manifest
+            .and_then(|manifest| manifest.family_for_path(path))
+            .unwrap_or("unclassified")
+            .to_string();
+        let record = benchmark_native_fixture(&native, path, options, config, path_key, family);
+        match record.outcome {
+            BenchmarkOutcome::NativeRendered { .. } => native_rendered += 1,
+            BenchmarkOutcome::FallbackRequired { .. } => fallback_required += 1,
+            BenchmarkOutcome::Error { .. } => errors += 1,
+        }
+        budget_failures += usize::from(!record.budget_violations.is_empty());
+        families
+            .entry(record.family.clone())
+            .or_insert_with(FamilyBenchmarkSummary::default)
+            .record(&record);
+        fixtures.push(record);
+    }
+
+    BenchmarkReport {
+        total: paths.len(),
+        native_rendered,
+        fallback_required,
+        errors,
+        budget_failures,
+        iterations: config.iterations,
+        max_ms: config.max_ms,
+        max_output_bytes: config.max_output_bytes,
+        families,
+        fixtures,
+    }
+}
+
+fn benchmark_native_fixture(
+    native: &NativeBackend,
+    path: &Path,
+    options: &ThumbnailOptions,
+    config: &BenchmarkConfig,
+    path_key: String,
+    family: String,
+) -> BenchmarkRecord {
+    let started = Instant::now();
+    let mut last_success = None;
+    for _ in 0..config.iterations {
+        match native.render(PdfSource::from_path(path), options) {
+            Ok(thumbnail) => last_success = Some(thumbnail),
+            Err(error) => {
+                let mean_ms = elapsed_mean_ms(started.elapsed(), config.iterations);
+                let (outcome, mut budget_violations) = benchmark_error_outcome(error, mean_ms);
+                if matches!(outcome, BenchmarkOutcome::FallbackRequired { .. }) {
+                    budget_violations.push("native_fallback");
+                } else {
+                    budget_violations.push("render_error");
+                }
+                return BenchmarkRecord {
+                    path: path_key,
+                    family,
+                    budget_violations,
+                    outcome,
+                };
+            }
+        }
+    }
+
+    let thumbnail = last_success.expect("iterations is validated as non-zero");
+    let mean_ms = elapsed_mean_ms(started.elapsed(), config.iterations);
+    let output_bytes = thumbnail.bytes.len();
+    let mut budget_violations = Vec::new();
+    if mean_ms > config.max_ms as f64 {
+        budget_violations.push("render_time");
+    }
+    if output_bytes > config.max_output_bytes {
+        budget_violations.push("output_bytes");
+    }
+
+    BenchmarkRecord {
+        path: path_key,
+        family,
+        budget_violations,
+        outcome: BenchmarkOutcome::NativeRendered {
+            width: thumbnail.width,
+            height: thumbnail.height,
+            output_bytes,
+            mean_ms,
+        },
+    }
+}
+
+fn benchmark_error_outcome(
+    error: ThumbnailError,
+    mean_ms: f64,
+) -> (BenchmarkOutcome, Vec<&'static str>) {
+    if error.class() == pdfrust_thumbnail::ThumbnailErrorClass::Unsupported {
+        (
+            BenchmarkOutcome::FallbackRequired {
+                reason: FallbackReason::from_native_error(&error),
+                mean_ms,
+            },
+            Vec::new(),
+        )
+    } else {
+        (
+            BenchmarkOutcome::Error {
+                class: error.class().as_str(),
+                message: error.to_string(),
+                mean_ms,
+            },
+            Vec::new(),
+        )
+    }
+}
+
+fn elapsed_mean_ms(duration: Duration, iterations: usize) -> f64 {
+    duration.as_secs_f64() * 1000.0 / iterations as f64
+}
+
 impl CorpusManifest {
     fn family_for_path(&self, path: &Path) -> Option<&str> {
         let path = normalize_manifest_path(path);
@@ -1081,6 +1443,7 @@ enum CliError {
         message: String,
     },
     Compare(String),
+    Benchmark(String),
     Encode(String),
     Io {
         path: PathBuf,
@@ -1104,6 +1467,7 @@ impl fmt::Display for CliError {
             Self::Process(message) => write!(f, "process error: {message}"),
             Self::Render { class, message } => write!(f, "render error [{class}]: {message}"),
             Self::Compare(message) => write!(f, "metadata comparison mismatch: {message}"),
+            Self::Benchmark(message) => write!(f, "benchmark budget failure: {message}"),
             Self::Encode(message) => write!(f, "PNG encode error: {message}"),
             Self::Io { path, source } => {
                 write!(f, "failed to write `{}`: {source}", path.display())
@@ -1137,6 +1501,12 @@ fn parse_u32(args: &[OsString], index: usize, option: &str) -> Result<u32, CliEr
 }
 
 fn parse_u64(args: &[OsString], index: usize, option: &str) -> Result<u64, CliError> {
+    required_str(args, index, option)?
+        .parse()
+        .map_err(|_| CliError::Usage(format!("{option} must be an unsigned integer")))
+}
+
+fn parse_usize(args: &[OsString], index: usize, option: &str) -> Result<usize, CliError> {
     required_str(args, index, option)?
         .parse()
         .map_err(|_| CliError::Usage(format!("{option} must be an unsigned integer")))
@@ -1307,6 +1677,128 @@ fn corpus_metadata_record_json(record: &CorpusMetadataRecord) -> String {
     )
 }
 
+fn benchmark_report_json(report: &BenchmarkReport) -> String {
+    let fixtures = report
+        .fixtures
+        .iter()
+        .map(benchmark_record_json)
+        .collect::<Vec<_>>()
+        .join(",");
+    format!(
+        concat!(
+            "{{\n",
+            "  \"schema_version\": 1,\n",
+            "  \"backend\": \"rust-native\",\n",
+            "  \"config\": {{\"iterations\":{},\"max_ms\":{},\"max_output_bytes\":{}}},\n",
+            "  \"summary\": {{\"total\":{},\"native_rendered\":{},\"fallback_required\":{},\"errors\":{},\"budget_failures\":{}}},\n",
+            "  \"families\": {},\n",
+            "  \"fixtures\": [{}]\n",
+            "}}\n"
+        ),
+        report.iterations,
+        report.max_ms,
+        report.max_output_bytes,
+        report.total,
+        report.native_rendered,
+        report.fallback_required,
+        report.errors,
+        report.budget_failures,
+        benchmark_family_map_json(&report.families),
+        fixtures
+    )
+}
+
+fn benchmark_family_map_json(families: &BTreeMap<String, FamilyBenchmarkSummary>) -> String {
+    let values = families
+        .iter()
+        .map(|(family, summary)| {
+            format!(
+                "{}:{}",
+                json_string(family),
+                benchmark_family_summary_json(summary)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    format!("{{{values}}}")
+}
+
+fn benchmark_family_summary_json(summary: &FamilyBenchmarkSummary) -> String {
+    let mean_ms = if summary.native_rendered == 0 {
+        0.0
+    } else {
+        summary.total_ms / summary.native_rendered as f64
+    };
+    format!(
+        concat!(
+            "{{",
+            "\"total\":{},",
+            "\"native_rendered\":{},",
+            "\"fallback_required\":{},",
+            "\"errors\":{},",
+            "\"budget_failures\":{},",
+            "\"mean_ms\":{:.3},",
+            "\"max_ms\":{:.3},",
+            "\"output_bytes\":{}",
+            "}}"
+        ),
+        summary.total,
+        summary.native_rendered,
+        summary.fallback_required,
+        summary.errors,
+        summary.budget_failures,
+        mean_ms,
+        summary.max_ms,
+        summary.total_output_bytes
+    )
+}
+
+fn benchmark_record_json(record: &BenchmarkRecord) -> String {
+    format!(
+        concat!(
+            "{{",
+            "\"path\":{},",
+            "\"family\":{},",
+            "\"budget_violations\":{},",
+            "\"outcome\":{}",
+            "}}"
+        ),
+        json_string(&record.path),
+        json_string(&record.family),
+        json_str_array(record.budget_violations.as_slice()),
+        benchmark_outcome_json(&record.outcome)
+    )
+}
+
+fn benchmark_outcome_json(outcome: &BenchmarkOutcome) -> String {
+    match outcome {
+        BenchmarkOutcome::NativeRendered {
+            width,
+            height,
+            output_bytes,
+            mean_ms,
+        } => format!(
+            "{{\"status\":\"native_rendered\",\"width\":{},\"height\":{},\"output_bytes\":{},\"mean_ms\":{:.3}}}",
+            width, height, output_bytes, mean_ms
+        ),
+        BenchmarkOutcome::FallbackRequired { reason, mean_ms } => format!(
+            "{{\"status\":\"fallback_required\",\"reason\":{},\"mean_ms\":{:.3}}}",
+            json_string(reason.as_str()),
+            mean_ms
+        ),
+        BenchmarkOutcome::Error {
+            class,
+            message,
+            mean_ms,
+        } => format!(
+            "{{\"status\":\"error\",\"error_class\":{},\"message\":{},\"mean_ms\":{:.3}}}",
+            json_string(class),
+            json_string(message),
+            mean_ms
+        ),
+    }
+}
+
 fn manifest_entry_json(entry: Option<&CorpusManifestEntry>) -> String {
     match entry {
         Some(entry) => format!(
@@ -1407,6 +1899,15 @@ fn metadata_outcome_json(outcome: &MetadataOutcome) -> String {
 }
 
 fn json_string_array(values: &[String]) -> String {
+    let values = values
+        .iter()
+        .map(|value| json_string(value))
+        .collect::<Vec<_>>()
+        .join(",");
+    format!("[{values}]")
+}
+
+fn json_str_array(values: &[&str]) -> String {
     let values = values
         .iter()
         .map(|value| json_string(value))
@@ -1522,9 +2023,10 @@ fn crc32(bytes: impl IntoIterator<Item = u8>) -> u32 {
 
 fn print_usage() {
     println!(
-        "Usage: pdfrust-cli <render|render-auto|render-native|render-pdfium|render-isolated|compare-metadata|summarize-fallbacks|extract-corpus-metadata> <input.pdf> \
+        "Usage: pdfrust-cli <render|render-auto|render-native|render-pdfium|render-isolated|compare-metadata|summarize-fallbacks|extract-corpus-metadata|benchmark-native> <input.pdf> \
          [--output PATH] [--page-index N] [--max-edge N] [--background #RRGGBB] \
-         [--timeout SECONDS] [--native-only] [--deny-fallback-reason BUCKET] [--manifest PATH]"
+         [--timeout SECONDS] [--iterations N] [--max-ms N] [--max-output-bytes N] \
+         [--native-only] [--deny-fallback-reason BUCKET] [--manifest PATH]"
     );
 }
 
@@ -1778,6 +2280,72 @@ mod tests {
         assert!(json.contains("\"status\":\"success\""));
         assert!(json.contains("\"width\":220.000"));
         assert!(json.contains("\"height\":180.000"));
+    }
+
+    #[test]
+    fn benchmark_config_should_apply_smoke_defaults() {
+        let config = BenchmarkConfig::parse(&[
+            OsString::from("fixtures/generated"),
+            OsString::from("--manifest"),
+            OsString::from("fixtures/corpus-manifest.tsv"),
+            OsString::from("--output"),
+            OsString::from("target/benchmark.json"),
+        ])
+        .expect("valid benchmark config");
+
+        assert_eq!(config.input, PathBuf::from("fixtures/generated"));
+        assert_eq!(config.max_edge, 160);
+        assert_eq!(config.iterations, 1);
+        assert_eq!(config.max_ms, 250);
+        assert_eq!(config.max_output_bytes, 4 * 160 * 160);
+        assert_eq!(
+            config.manifest,
+            Some(PathBuf::from("fixtures/corpus-manifest.tsv"))
+        );
+    }
+
+    #[test]
+    fn benchmark_native_should_group_results_and_budget_failures() {
+        let fixture_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let manifest_path = fixture_root.join("fixtures/corpus-manifest.tsv");
+        let manifest = read_corpus_manifest(&manifest_path).expect("manifest should parse");
+        let paths = vec![
+            fixture_root.join("fixtures/generated/vector-paths.pdf"),
+            fixture_root.join("fixtures/generated/optional-content-ocmd.pdf"),
+        ];
+        let options = ThumbnailOptions {
+            page_index: 0,
+            max_edge: 120,
+            background: Rgba::WHITE,
+            output_format: pdfrust_thumbnail::OutputFormat::Rgba,
+            timeout: Duration::from_secs(5),
+        };
+        let config = BenchmarkConfig {
+            input: fixture_root.join("fixtures/generated"),
+            manifest: Some(manifest_path),
+            output: None,
+            page_index: 0,
+            max_edge: 120,
+            background: Rgba::WHITE,
+            timeout: Duration::from_secs(5),
+            iterations: 1,
+            max_ms: 60_000,
+            max_output_bytes: 1,
+            fail_on_budget: false,
+        };
+
+        let report = benchmark_native(&paths, &options, Some(&manifest), &config);
+        let json = benchmark_report_json(&report);
+
+        assert_eq!(report.total, 2);
+        assert_eq!(report.native_rendered, 1);
+        assert_eq!(report.fallback_required, 1);
+        assert_eq!(report.budget_failures, 2);
+        assert!(json.contains("\"backend\": \"rust-native\""));
+        assert!(json.contains("\"family\":\"browser-print\""));
+        assert!(json.contains("\"family\":\"presentation\""));
+        assert!(json.contains("\"output_bytes\""));
+        assert!(json.contains("\"native_fallback\""));
     }
 
     #[test]
