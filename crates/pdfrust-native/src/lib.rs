@@ -748,6 +748,33 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_render_generated_radial_gradient_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/radial-gradient.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 120,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated radial-gradient fixture should render through native backend");
+
+        assert_eq!(thumbnail.width, 120);
+        assert_eq!(thumbnail.height, 120);
+        let center = rgba_at(&thumbnail, 60, 60);
+        let mid = rgba_at(&thumbnail, 90, 60);
+        let corner = rgba_at(&thumbnail, 0, 0);
+        assert!(center[0] > 240);
+        assert!(center[1] > 240);
+        assert!(mid[0] > 100 && mid[0] < 160);
+        assert!(mid[1] > 100 && mid[1] < 160);
+        assert!(corner[0] < 10);
+        assert!(corner[1] < 10);
+        assert!(corner[2] > 240);
+    }
+
+    #[test]
     fn native_backend_should_render_generated_text_fixture() {
         let bytes = include_bytes!("../../../fixtures/generated/text-page.pdf");
         let thumbnail = ThumbnailBackend::render(

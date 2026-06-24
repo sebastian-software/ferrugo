@@ -411,6 +411,28 @@ def axial_gradient_pdf() -> bytes:
     return pdf.render(catalog)
 
 
+def radial_gradient_pdf() -> bytes:
+    pdf = Pdf()
+    content = b"/Sh1 sh"
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 120 120] "
+        "/Resources << /Shading << /Sh1 << "
+        "/ShadingType 3 /ColorSpace /DeviceRGB /Coords [60 60 0 60 60 60] "
+        "/Function << /FunctionType 2 /Domain [0 1] /C0 [1 1 1] /C1 [0 0 1] /N 1 >> "
+        "/Extend [true true] "
+        ">> >> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    return pdf.render(catalog)
+
+
 def embedded_font_pdf() -> bytes:
     pdf = Pdf()
     content = b"BT /F1 18 Tf 20 60 Td (embedded font fixture) Tj ET"
@@ -566,6 +588,7 @@ def main() -> None:
     write("transparency-group.pdf", transparency_group_pdf())
     write("blend-modes.pdf", blend_modes_pdf())
     write("axial-gradient.pdf", axial_gradient_pdf())
+    write("radial-gradient.pdf", radial_gradient_pdf())
     write("embedded-font.pdf", embedded_font_pdf())
     write("tounicode-text.pdf", tounicode_text_pdf())
     write("encoding-differences.pdf", encoding_differences_pdf())

@@ -70,13 +70,26 @@ In progress:
   Sample pixels: left PDFium `(224,0,31,255)` vs native `(222,0,33,255)`,
   center PDFium `(128,0,127,255)` vs native `(126,0,129,255)`, right PDFium
   `(33,0,222,255)` vs native `(31,0,224,255)`.
+- Fourth fixture slice adds generated `fixtures/generated/radial-gradient.pdf`
+  through `scripts/generate_fixtures.py`, covering a concentric white-to-blue
+  `DeviceRGB` radial shading.
+- PDFium/native comparison for `radial-gradient.pdf` at `max-edge 120`:
+  `120x120`, changed pixels `12968`, MAE `1.854`, p95 `4`, max channel delta
+  `5`, native non-white pixels `14400`.
+  Sample pixels: center PDFium `(255,255,255,255)` vs native
+  `(252,252,255,255)`, mid PDFium `(128,128,255,255)` vs native
+  `(125,125,255,255)`, corner PDFium `(1,1,255,255)` vs native
+  `(0,0,255,255)`.
 - Current validation:
   - `cargo fmt --check`
   - `git diff --check`
   - `cargo check`
   - `cargo test --quiet`
   - `cargo test -p pdfrust-native axial_gradient -- --nocapture`
+  - `cargo test -p pdfrust-native radial_gradient -- --nocapture`
   - `cargo test -p pdfrust-render shading -- --nocapture`
   - `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render fixtures/generated/axial-gradient.pdf --max-edge 120 --output target/pdfrust-thumbnails/axial-gradient-pdfium-0050.png`
   - `cargo run -p pdfrust-cli -- render-native fixtures/generated/axial-gradient.pdf --max-edge 120 --output target/pdfrust-thumbnails/axial-gradient-native-0050.png`
+  - `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render fixtures/generated/radial-gradient.pdf --max-edge 120 --output target/pdfrust-thumbnails/radial-gradient-pdfium-0050.png`
+  - `cargo run -p pdfrust-cli -- render-native fixtures/generated/radial-gradient.pdf --max-edge 120 --output target/pdfrust-thumbnails/radial-gradient-native-0050.png`
   - `cargo clippy --all-targets --all-features -- -D warnings`

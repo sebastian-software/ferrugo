@@ -32,6 +32,7 @@ The initial seed set covers:
 - path-only Form XObject transparency groups
 - ExtGState Multiply and Screen path blend modes
 - axial DeviceRGB shading gradients
+- radial DeviceRGB shading gradients
 - embedded TrueType font resource resolution
 - ToUnicode text character-code mapping
 - Encoding Differences array mapping
