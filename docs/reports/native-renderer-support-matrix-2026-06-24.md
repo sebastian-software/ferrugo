@@ -69,3 +69,28 @@ The unfiltered inline-image slice landed as 0041a; filtered inline images remain
 part of 0047 image filter coverage.
 Path-only native Form XObject composition landed as 0041b. Text and image
 execution inside forms remains a later parity gap.
+
+## RC 0080 Update
+
+The 0080 release-candidate gate supersedes the early 0041 category estimates
+for committed generated fixtures.
+
+| Category | 0080 generated-corpus status | Native blocker | PDFium fallback status |
+| --- | --- | --- | --- |
+| browser-print | 4/4 rendered | visual text fidelity still needs diff review | keep as oracle |
+| form | 6/6 rendered | visual widget fidelity still needs diff review | keep as oracle |
+| mixed-layout | 8/9 rendered, 1 encrypted expected error | encrypted policy, not render fallback | no fallback blocker |
+| office-export | 10/10 rendered | text/table visual fidelity still needs diff review | keep for quality-sensitive comparison |
+| presentation | 3/4 rendered | `optional-content-ocmd.pdf` needs `graphics.optional-content` fallback | required |
+| report | 12/12 rendered | `vector-stress.pdf` exceeds smoke render-time budget | keep as benchmark oracle |
+| scan | 7/7 rendered | real-world codec breadth still unknown | keep as oracle |
+
+Release blockers from 0080:
+
+1. Optional-content membership policy fallback in the presentation family.
+2. Missing full-corpus visual diff workflow.
+3. `vector-stress.pdf` render-time budget failure.
+4. Text-heavy visual fidelity risk without automated comparison thresholds.
+
+The native renderer can remain native-first for controlled categories, but
+PDFium is still required as oracle and fallback until these blockers are closed.
