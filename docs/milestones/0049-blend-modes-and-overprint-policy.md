@@ -1,6 +1,6 @@
 # 0049: Blend Modes And Overprint Policy
 
-Status: in-progress
+Status: done
 Phase: 6
 Size: medium
 Depends on: 0048
@@ -45,7 +45,10 @@ for thumbnails.
 
 ## Completion Notes
 
-In progress:
+Completed with:
+
+- `9578902 feat: apply path blend modes`
+- `c3a7140 feat: share blend states with form scans`
 
 - First implementation slice adds direct `/ExtGState` resource parsing for
   `/BM` values `Normal`, `Compatible`, `Multiply`, and `Screen`.
