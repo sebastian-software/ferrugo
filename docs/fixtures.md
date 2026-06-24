@@ -34,6 +34,7 @@ The initial seed set covers:
 - dashed vector strokes
 - stroke line-cap styles
 - stroke line-join styles
+- even-odd path clipping
 - axial DeviceRGB shading gradients
 - radial DeviceRGB shading gradients
 - colored tiling patterns

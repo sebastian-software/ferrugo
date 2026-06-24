@@ -89,6 +89,13 @@ In progress:
   path-rasterizer clips. The rasterizer keeps a cumulative list of flattened
   clips and samples fills, strokes, and tiling-pattern fills only when the
   sample is inside every active clip, avoiding a full-page clip mask allocation.
+- Eighth fixture slice adds generated `fixtures/generated/clipped-paths.pdf`
+  through `scripts/generate_fixtures.py`, covering an Even-Odd clipping path
+  with a rectangular hole.
+- PDFium/native comparison for `clipped-paths.pdf` at `max-edge 120`:
+  `120x120`, changed RGB pixels `0`, RGB MAE `0.0000`, p95 RGB delta `0`,
+  max channel delta `0`, native non-white pixels `10944`. Filled, hole, and
+  outside-clip sample pixels match PDFium exactly.
 - Current validation:
   - `cargo test -p pdfrust-render dash -- --nocapture`
   - `cargo test -p pdfrust-render line_cap -- --nocapture`
@@ -97,9 +104,12 @@ In progress:
   - `cargo test -p pdfrust-native dashed_stroke -- --nocapture`
   - `cargo test -p pdfrust-native line_caps -- --nocapture`
   - `cargo test -p pdfrust-native line_joins -- --nocapture`
+  - `cargo test -p pdfrust-native clipped_paths -- --nocapture`
   - `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render fixtures/generated/dashed-stroke.pdf --max-edge 120 --output target/pdfrust-thumbnails/dashed-stroke-pdfium-0051.png`
   - `cargo run -p pdfrust-cli -- render-native fixtures/generated/dashed-stroke.pdf --max-edge 120 --output target/pdfrust-thumbnails/dashed-stroke-native-0051.png`
   - `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render fixtures/generated/line-caps.pdf --max-edge 120 --output target/pdfrust-thumbnails/line-caps-pdfium-0051.png`
   - `cargo run -p pdfrust-cli -- render-native fixtures/generated/line-caps.pdf --max-edge 120 --output target/pdfrust-thumbnails/line-caps-native-0051.png`
   - `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render fixtures/generated/line-joins.pdf --max-edge 120 --output target/pdfrust-thumbnails/line-joins-pdfium-0051.png`
   - `cargo run -p pdfrust-cli -- render-native fixtures/generated/line-joins.pdf --max-edge 120 --output target/pdfrust-thumbnails/line-joins-native-0051.png`
+  - `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render fixtures/generated/clipped-paths.pdf --max-edge 120 --output target/pdfrust-thumbnails/clipped-paths-pdfium-0051.png`
+  - `cargo run -p pdfrust-cli -- render-native fixtures/generated/clipped-paths.pdf --max-edge 120 --output target/pdfrust-thumbnails/clipped-paths-native-0051.png`

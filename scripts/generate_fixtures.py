@@ -488,6 +488,14 @@ def line_joins_pdf() -> bytes:
     )
 
 
+def clipped_paths_pdf() -> bytes:
+    return page_pdf(
+        "[0 0 120 120]",
+        "4 4 112 112 re 40 40 40 40 re W* n "
+        "0 0 0 rg 0 0 120 120 re f",
+    )
+
+
 def embedded_font_pdf() -> bytes:
     pdf = Pdf()
     content = b"BT /F1 18 Tf 20 60 Td (embedded font fixture) Tj ET"
@@ -648,6 +656,7 @@ def main() -> None:
     write("dashed-stroke.pdf", dashed_stroke_pdf())
     write("line-caps.pdf", line_caps_pdf())
     write("line-joins.pdf", line_joins_pdf())
+    write("clipped-paths.pdf", clipped_paths_pdf())
     write("embedded-font.pdf", embedded_font_pdf())
     write("tounicode-text.pdf", tounicode_text_pdf())
     write("encoding-differences.pdf", encoding_differences_pdf())
