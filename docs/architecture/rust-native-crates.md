@@ -66,3 +66,8 @@ semantic decoding.
 can parse contiguous `obj ... endobj` slices into `IndirectObject<'a>` values
 and store them in an `ObjectTable<'a>` with duplicate detection. Xref lookup and
 object-stream loading remain later milestones.
+
+The classic document loader locates `startxref`, parses classic `xref`
+subsections, reads the trailer dictionary, and resolves all in-use xref entries
+into the object table. It verifies that each xref offset points at the expected
+object ID. Xref streams and repair mode remain separate milestones.

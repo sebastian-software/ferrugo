@@ -5,7 +5,7 @@
 use std::fmt;
 
 use pdfrust_syntax::{
-    parse_primitive, ByteCursor, ByteOffset, PdfBytes, PdfPrimitive, SyntaxError,
+    parse_primitive, ByteCursor, ByteOffset, PdfBytes, PdfName, PdfPrimitive, SyntaxError,
 };
 
 /// Stable crate role used by architecture smoke tests and documentation.
@@ -165,6 +165,61 @@ impl<'a> ObjectTable<'a> {
     }
 }
 
+/// Parsed classic cross-reference entry for one in-use indirect object.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ClassicXrefEntry {
+    /// Object ID described by the xref entry.
+    pub id: ObjectId,
+    /// Byte offset to the indirect object.
+    pub offset: ByteOffset,
+}
+
+/// Parsed classic cross-reference table.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClassicXrefTable {
+    startxref: ByteOffset,
+    entries: Vec<ClassicXrefEntry>,
+}
+
+impl ClassicXrefTable {
+    /// Returns the `startxref` byte offset.
+    #[must_use]
+    pub const fn startxref(&self) -> ByteOffset {
+        self.startxref
+    }
+
+    /// Returns in-use xref entries.
+    #[must_use]
+    pub fn entries(&self) -> &[ClassicXrefEntry] {
+        &self.entries
+    }
+}
+
+/// Parsed trailer dictionary.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Trailer<'a> {
+    dictionary: Vec<(PdfName<'a>, PdfPrimitive<'a>)>,
+}
+
+impl<'a> Trailer<'a> {
+    /// Returns trailer dictionary entries in source order.
+    #[must_use]
+    pub fn entries(&self) -> &[(PdfName<'a>, PdfPrimitive<'a>)] {
+        &self.dictionary
+    }
+}
+
+/// Loaded classic-xref PDF document.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClassicDocument<'a> {
+    /// Parsed classic xref table.
+    pub xref: ClassicXrefTable,
+    /// Parsed trailer dictionary.
+    pub trailer: Trailer<'a>,
+    /// Indirect objects resolved through in-use xref entries.
+    pub objects: ObjectTable<'a>,
+}
+
 /// Parses one indirect reference such as `12 0 R`.
 ///
 /// # Errors
@@ -215,6 +270,254 @@ pub fn parse_indirect_object(input: PdfBytes<'_>) -> ObjectResult<IndirectObject
         ));
     }
     Ok(IndirectObject { id, value })
+}
+
+/// Loads a simple PDF that uses a classic xref table.
+///
+/// # Errors
+///
+/// Returns [`ObjectError`] when `startxref`, the xref table, trailer, or any
+/// in-use indirect object is malformed.
+pub fn load_classic_document(input: PdfBytes<'_>) -> ObjectResult<ClassicDocument<'_>> {
+    let bytes = input.as_bytes();
+    let startxref = locate_startxref(bytes)?;
+    let (xref, trailer) = parse_classic_xref_and_trailer(bytes, startxref)?;
+    let mut objects = ObjectTable::new();
+
+    for entry in xref.entries() {
+        let object = parse_object_at_offset(bytes, *entry)?;
+        objects.insert(object)?;
+    }
+
+    Ok(ClassicDocument {
+        xref,
+        trailer,
+        objects,
+    })
+}
+
+fn parse_object_at_offset<'a>(
+    bytes: &'a [u8],
+    entry: ClassicXrefEntry,
+) -> ObjectResult<IndirectObject<'a>> {
+    let start = entry.offset.get();
+    if start >= bytes.len() {
+        return Err(ObjectError::malformed(
+            entry.offset,
+            "xref offset is outside input",
+        ));
+    }
+    let tail = &bytes[start..];
+    let endobj_offset = find_keyword(tail, b"endobj")
+        .ok_or_else(|| ObjectError::malformed(entry.offset, "xref object is missing endobj"))?;
+    let end = start + endobj_offset + b"endobj".len();
+    let object = parse_indirect_object(PdfBytes::new(&bytes[start..end]))?;
+    if object.id != entry.id {
+        return Err(ObjectError::XrefOffsetMismatch {
+            expected: entry.id,
+            actual: object.id,
+            offset: entry.offset,
+        });
+    }
+    Ok(object)
+}
+
+fn locate_startxref(bytes: &[u8]) -> ObjectResult<ByteOffset> {
+    let startxref_keyword = find_last_keyword(bytes, b"startxref")
+        .ok_or_else(|| ObjectError::malformed(ByteOffset::new(0), "missing startxref"))?;
+    let mut parser = RawParser::new(bytes, startxref_keyword + b"startxref".len());
+    parser.skip_whitespace()?;
+    parser.parse_byte_offset()
+}
+
+fn parse_classic_xref_and_trailer<'a>(
+    bytes: &'a [u8],
+    startxref: ByteOffset,
+) -> ObjectResult<(ClassicXrefTable, Trailer<'a>)> {
+    let mut parser = RawParser::new(bytes, startxref.get());
+    parser.consume_keyword(b"xref")?;
+    let mut entries = Vec::new();
+
+    loop {
+        parser.skip_whitespace()?;
+        if parser.starts_with(b"trailer") {
+            break;
+        }
+        let first_object = parser.parse_u32()?;
+        parser.skip_horizontal_whitespace()?;
+        let count = parser.parse_u32()?;
+        parser.skip_line_break()?;
+
+        for index in 0..count {
+            parser.skip_blank_lines()?;
+            let offset = parser.parse_byte_offset()?;
+            parser.skip_horizontal_whitespace()?;
+            let generation = parser.parse_u16()?;
+            parser.skip_horizontal_whitespace()?;
+            let marker = parser.read_byte()?;
+            parser.skip_until_next_line()?;
+            if marker == b'n' {
+                let raw_number = first_object.checked_add(index).ok_or_else(|| {
+                    ObjectError::malformed(parser.offset(), "xref object number overflow")
+                })?;
+                let number = ObjectNumber::new(raw_number).map_err(|_| {
+                    ObjectError::malformed(parser.offset(), "xref in-use object number is zero")
+                })?;
+                entries.push(ClassicXrefEntry {
+                    id: ObjectId::new(number, GenerationNumber::new(generation)),
+                    offset,
+                });
+            } else if marker != b'f' {
+                return Err(ObjectError::malformed(
+                    parser.offset(),
+                    "xref entry marker must be n or f",
+                ));
+            }
+        }
+    }
+
+    parser.consume_keyword(b"trailer")?;
+    parser.skip_whitespace()?;
+    let trailer_start = parser.offset().get();
+    let trailer_end = find_keyword(&bytes[trailer_start..], b"startxref")
+        .map(|relative| trailer_start + relative)
+        .ok_or_else(|| ObjectError::malformed(parser.offset(), "trailer is missing startxref"))?;
+    let trailer_value = parse_primitive(PdfBytes::new(&bytes[trailer_start..trailer_end]))?;
+    let PdfPrimitive::Dictionary(dictionary) = trailer_value else {
+        return Err(ObjectError::malformed(
+            ByteOffset::new(trailer_start),
+            "trailer must be a dictionary",
+        ));
+    };
+
+    Ok((
+        ClassicXrefTable { startxref, entries },
+        Trailer { dictionary },
+    ))
+}
+
+struct RawParser<'a> {
+    bytes: &'a [u8],
+    offset: usize,
+}
+
+impl<'a> RawParser<'a> {
+    const fn new(bytes: &'a [u8], offset: usize) -> Self {
+        Self { bytes, offset }
+    }
+
+    const fn offset(&self) -> ByteOffset {
+        ByteOffset::new(self.offset)
+    }
+
+    fn starts_with(&self, keyword: &[u8]) -> bool {
+        self.bytes[self.offset..].starts_with(keyword)
+    }
+
+    fn consume_keyword(&mut self, keyword: &[u8]) -> ObjectResult<()> {
+        if !self.starts_with(keyword) {
+            return Err(ObjectError::malformed(self.offset(), "expected keyword"));
+        }
+        self.offset += keyword.len();
+        Ok(())
+    }
+
+    fn read_byte(&mut self) -> ObjectResult<u8> {
+        let byte = self
+            .bytes
+            .get(self.offset)
+            .copied()
+            .ok_or_else(|| ObjectError::malformed(self.offset(), "unexpected end of input"))?;
+        self.offset += 1;
+        Ok(byte)
+    }
+
+    fn skip_whitespace(&mut self) -> ObjectResult<()> {
+        while matches!(self.bytes.get(self.offset), Some(byte) if is_whitespace(*byte)) {
+            self.offset += 1;
+        }
+        Ok(())
+    }
+
+    fn skip_horizontal_whitespace(&mut self) -> ObjectResult<()> {
+        while matches!(self.bytes.get(self.offset), Some(b' ' | b'\t')) {
+            self.offset += 1;
+        }
+        Ok(())
+    }
+
+    fn skip_line_break(&mut self) -> ObjectResult<()> {
+        match self.bytes.get(self.offset) {
+            Some(b'\r') => {
+                self.offset += 1;
+                if self.bytes.get(self.offset) == Some(&b'\n') {
+                    self.offset += 1;
+                }
+                Ok(())
+            }
+            Some(b'\n') => {
+                self.offset += 1;
+                Ok(())
+            }
+            _ => Err(ObjectError::malformed(self.offset(), "expected line break")),
+        }
+    }
+
+    fn skip_blank_lines(&mut self) -> ObjectResult<()> {
+        loop {
+            let checkpoint = self.offset;
+            self.skip_horizontal_whitespace()?;
+            match self.bytes.get(self.offset) {
+                Some(b'\r' | b'\n') => self.skip_line_break()?,
+                _ => {
+                    self.offset = checkpoint;
+                    return Ok(());
+                }
+            }
+        }
+    }
+
+    fn skip_until_next_line(&mut self) -> ObjectResult<()> {
+        while let Some(byte) = self.bytes.get(self.offset) {
+            if *byte == b'\r' || *byte == b'\n' {
+                return self.skip_line_break();
+            }
+            self.offset += 1;
+        }
+        Ok(())
+    }
+
+    fn parse_byte_offset(&mut self) -> ObjectResult<ByteOffset> {
+        let raw = self.parse_unsigned_decimal()?;
+        let text = std::str::from_utf8(raw)
+            .map_err(|_| ObjectError::malformed(self.offset(), "offset is not valid UTF-8"))?;
+        let value = text
+            .parse::<usize>()
+            .map_err(|_| ObjectError::malformed(self.offset(), "offset is out of range"))?;
+        Ok(ByteOffset::new(value))
+    }
+
+    fn parse_u32(&mut self) -> ObjectResult<u32> {
+        parse_u32(self.parse_unsigned_decimal()?, self.offset())
+    }
+
+    fn parse_u16(&mut self) -> ObjectResult<u16> {
+        parse_u16(self.parse_unsigned_decimal()?, self.offset())
+    }
+
+    fn parse_unsigned_decimal(&mut self) -> ObjectResult<&'a [u8]> {
+        let start = self.offset;
+        while matches!(self.bytes.get(self.offset), Some(byte) if byte.is_ascii_digit()) {
+            self.offset += 1;
+        }
+        if start == self.offset {
+            return Err(ObjectError::malformed(
+                ByteOffset::new(start),
+                "expected unsigned decimal number",
+            ));
+        }
+        Ok(&self.bytes[start..self.offset])
+    }
 }
 
 struct ObjectParser<'a> {
@@ -296,6 +599,12 @@ fn find_keyword(haystack: &[u8], keyword: &[u8]) -> Option<usize> {
         .position(|window| window == keyword)
 }
 
+fn find_last_keyword(haystack: &[u8], keyword: &[u8]) -> Option<usize> {
+    haystack
+        .windows(keyword.len())
+        .rposition(|window| window == keyword)
+}
+
 const fn is_whitespace(byte: u8) -> bool {
     matches!(byte, b'\0' | b'\t' | b'\n' | b'\x0c' | b'\r' | b' ')
 }
@@ -317,6 +626,15 @@ pub enum ObjectError {
         /// Duplicated object ID.
         id: ObjectId,
     },
+    /// Xref entry points at a different indirect object.
+    XrefOffsetMismatch {
+        /// Object ID expected from the xref table.
+        expected: ObjectId,
+        /// Object ID parsed at the xref offset.
+        actual: ObjectId,
+        /// Xref byte offset.
+        offset: ByteOffset,
+    },
 }
 
 impl ObjectError {
@@ -331,6 +649,7 @@ impl ObjectError {
             Self::Syntax(error) => Some(error.offset()),
             Self::Malformed { offset, .. } => Some(*offset),
             Self::DuplicateObject { .. } => None,
+            Self::XrefOffsetMismatch { offset, .. } => Some(*offset),
         }
     }
 }
@@ -351,6 +670,18 @@ impl fmt::Display for ObjectError {
                 "duplicate object {} {}",
                 id.number.get(),
                 id.generation.get()
+            ),
+            Self::XrefOffsetMismatch {
+                expected,
+                actual,
+                offset,
+            } => write!(
+                f,
+                "xref offset mismatch at {offset}: expected {} {}, got {} {}",
+                expected.number.get(),
+                expected.generation.get(),
+                actual.number.get(),
+                actual.generation.get()
             ),
         }
     }
@@ -432,5 +763,79 @@ mod tests {
         let error = table.insert(second).expect_err("duplicate");
 
         assert!(matches!(error, ObjectError::DuplicateObject { .. }));
+    }
+
+    #[test]
+    fn load_classic_document_should_load_xref_trailer_and_objects() {
+        let pdf = build_classic_pdf(false);
+
+        let document = load_classic_document(PdfBytes::new(&pdf)).expect("classic document");
+
+        assert_eq!(document.objects.len(), 3);
+        assert_eq!(document.xref.entries().len(), 3);
+        assert_eq!(document.trailer.entries().len(), 2);
+        assert!(document
+            .objects
+            .get(ObjectId::new(
+                ObjectNumber::new(1).expect("object number"),
+                GenerationNumber::new(0)
+            ))
+            .is_some());
+        assert_eq!(
+            document.trailer.entries()[1].1,
+            PdfPrimitive::Reference(pdfrust_syntax::PdfReference::new(1, 0))
+        );
+    }
+
+    #[test]
+    fn load_classic_document_should_report_offset_mismatch() {
+        let pdf = build_classic_pdf(true);
+
+        let error = load_classic_document(PdfBytes::new(&pdf)).expect_err("bad xref offset");
+
+        assert!(matches!(error, ObjectError::XrefOffsetMismatch { .. }));
+    }
+
+    #[test]
+    fn load_classic_document_should_require_startxref() {
+        let error =
+            load_classic_document(PdfBytes::new(b"%PDF-1.7\n")).expect_err("missing startxref");
+
+        assert_eq!(error.offset(), Some(ByteOffset::new(0)));
+    }
+
+    fn build_classic_pdf(use_wrong_first_offset: bool) -> Vec<u8> {
+        let mut pdf = b"%PDF-1.7\n".to_vec();
+        let object_1 = append_object(
+            &mut pdf,
+            b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n",
+        );
+        let object_2 = append_object(
+            &mut pdf,
+            b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n",
+        );
+        let object_3 = append_object(
+            &mut pdf,
+            b"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 160] >>\nendobj\n",
+        );
+        let xref_offset = pdf.len();
+        let object_1_xref = if use_wrong_first_offset {
+            object_2
+        } else {
+            object_1
+        };
+        pdf.extend_from_slice(
+            format!(
+                "xref\n0 4\n0000000000 65535 f \n{object_1_xref:010} 00000 n \n{object_2:010} 00000 n \n{object_3:010} 00000 n \ntrailer\n<< /Size 4 /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF\n"
+            )
+            .as_bytes(),
+        );
+        pdf
+    }
+
+    fn append_object(pdf: &mut Vec<u8>, object: &[u8]) -> usize {
+        let offset = pdf.len();
+        pdf.extend_from_slice(object);
+        offset
     }
 }

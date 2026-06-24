@@ -157,6 +157,8 @@ pub enum PdfPrimitive<'a> {
     Array(Vec<PdfPrimitive<'a>>),
     /// Dictionary object.
     Dictionary(Vec<(PdfName<'a>, PdfPrimitive<'a>)>),
+    /// Indirect reference, such as `12 0 R`.
+    Reference(PdfReference),
 }
 
 /// Parsed PDF number.
@@ -166,6 +168,23 @@ pub enum PdfNumber {
     Integer(i64),
     /// Real number.
     Real(f64),
+}
+
+/// Parsed PDF indirect reference.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PdfReference {
+    /// Object number.
+    pub object: u32,
+    /// Generation number.
+    pub generation: u16,
+}
+
+impl PdfReference {
+    /// Creates a parsed indirect reference.
+    #[must_use]
+    pub const fn new(object: u32, generation: u16) -> Self {
+        Self { object, generation }
+    }
 }
 
 /// Parsed PDF name bytes without the leading slash.
@@ -253,7 +272,7 @@ impl<'a> PrimitiveParser<'a> {
             b'[' => self.parse_array(),
             b'<' if self.starts_with(b"<<") => self.parse_dictionary(),
             b'<' => self.parse_hex_string().map(PdfPrimitive::String),
-            b'+' | b'-' | b'.' | b'0'..=b'9' => self.parse_number().map(PdfPrimitive::Number),
+            b'+' | b'-' | b'.' | b'0'..=b'9' => self.parse_number_or_reference(),
             _ => Err(SyntaxError::new(offset, SyntaxErrorKind::InvalidToken)),
         }
     }
@@ -311,7 +330,7 @@ impl<'a> PrimitiveParser<'a> {
         if start == end {
             return Err(SyntaxError::new(offset, SyntaxErrorKind::InvalidToken));
         }
-        Ok(PdfName::new(&self.cursor.bytes[start..end]))
+        Ok(PdfName::new(&self.cursor.input()[start..end]))
     }
 
     fn parse_literal_string(&mut self) -> SyntaxResult<PdfString<'a>> {
@@ -334,7 +353,7 @@ impl<'a> PrimitiveParser<'a> {
                 b')' => {
                     depth -= 1;
                     if depth == 0 {
-                        return Ok(PdfString::Literal(&self.cursor.bytes[start..byte_offset]));
+                        return Ok(PdfString::Literal(&self.cursor.input()[start..byte_offset]));
                     }
                 }
                 _ => {}
@@ -352,32 +371,59 @@ impl<'a> PrimitiveParser<'a> {
             let byte_offset = self.cursor.offset().get();
             self.cursor.advance(1)?;
             if byte == b'>' {
-                return Ok(PdfString::Hex(&self.cursor.bytes[start..byte_offset]));
+                return Ok(PdfString::Hex(&self.cursor.input()[start..byte_offset]));
             }
         }
         Err(SyntaxError::new(offset, SyntaxErrorKind::UnexpectedEof))
     }
 
-    fn parse_number(&mut self) -> SyntaxResult<PdfNumber> {
-        let offset = self.cursor.offset();
-        let start = offset.get();
+    fn parse_number_or_reference(&mut self) -> SyntaxResult<PdfPrimitive<'a>> {
+        let first_offset = self.cursor.offset();
+        let first_raw = self.parse_number_raw()?;
+        let after_first = self.cursor;
+
+        if is_unsigned_integer_raw(first_raw) {
+            self.skip_whitespace_and_comments()?;
+            let second_offset = self.cursor.offset();
+            if let Ok(second_raw) = self.parse_number_raw() {
+                if is_unsigned_integer_raw(second_raw) {
+                    self.skip_whitespace_and_comments()?;
+                    if self.cursor.peek() == Some(b'R') {
+                        self.cursor.advance(1)?;
+                        match self.cursor.peek() {
+                            Some(byte) if !is_whitespace(byte) && !is_delimiter(byte) => {}
+                            _ => {
+                                let object = parse_u32(first_raw, first_offset)?;
+                                let generation = parse_u16(second_raw, second_offset)?;
+                                return Ok(PdfPrimitive::Reference(PdfReference::new(
+                                    object, generation,
+                                )));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        self.cursor = after_first;
+        parse_number_raw_value(first_raw, first_offset).map(PdfPrimitive::Number)
+    }
+
+    fn parse_number_raw(&mut self) -> SyntaxResult<&'a [u8]> {
+        let start = self.cursor.offset().get();
         while let Some(byte) = self.cursor.peek() {
             if is_whitespace(byte) || is_delimiter(byte) {
                 break;
             }
             self.cursor.advance(1)?;
         }
-        let raw = std::str::from_utf8(&self.cursor.bytes[start..self.cursor.offset().get()])
-            .map_err(|_| SyntaxError::new(offset, SyntaxErrorKind::InvalidToken))?;
-        if raw.contains('.') {
-            raw.parse::<f64>()
-                .map(PdfNumber::Real)
-                .map_err(|_| SyntaxError::new(offset, SyntaxErrorKind::InvalidToken))
-        } else {
-            raw.parse::<i64>()
-                .map(PdfNumber::Integer)
-                .map_err(|_| SyntaxError::new(offset, SyntaxErrorKind::InvalidToken))
+        if start == self.cursor.offset().get() {
+            return Err(SyntaxError::new(
+                ByteOffset::new(start),
+                SyntaxErrorKind::InvalidToken,
+            ));
         }
+        Ok(&self.cursor.input()[start..self.cursor.offset().get()])
     }
 
     fn parse_array(&mut self) -> SyntaxResult<PdfPrimitive<'a>> {
@@ -453,6 +499,48 @@ const fn is_delimiter(byte: u8) -> bool {
         byte,
         b'(' | b')' | b'<' | b'>' | b'[' | b']' | b'{' | b'}' | b'/' | b'%'
     )
+}
+
+fn parse_number_raw_value(raw: &[u8], offset: ByteOffset) -> SyntaxResult<PdfNumber> {
+    let text = std::str::from_utf8(raw)
+        .map_err(|_| SyntaxError::new(offset, SyntaxErrorKind::InvalidToken))?;
+    if text.contains('.') {
+        text.parse::<f64>()
+            .map(PdfNumber::Real)
+            .map_err(|_| SyntaxError::new(offset, SyntaxErrorKind::InvalidToken))
+    } else {
+        text.parse::<i64>()
+            .map(PdfNumber::Integer)
+            .map_err(|_| SyntaxError::new(offset, SyntaxErrorKind::InvalidToken))
+    }
+}
+
+fn parse_u32(raw: &[u8], offset: ByteOffset) -> SyntaxResult<u32> {
+    let text = std::str::from_utf8(raw)
+        .map_err(|_| SyntaxError::new(offset, SyntaxErrorKind::InvalidToken))?;
+    text.parse::<u32>()
+        .map_err(|_| SyntaxError::new(offset, SyntaxErrorKind::InvalidToken))
+}
+
+fn parse_u16(raw: &[u8], offset: ByteOffset) -> SyntaxResult<u16> {
+    let text = std::str::from_utf8(raw)
+        .map_err(|_| SyntaxError::new(offset, SyntaxErrorKind::InvalidToken))?;
+    text.parse::<u16>()
+        .map_err(|_| SyntaxError::new(offset, SyntaxErrorKind::InvalidToken))
+}
+
+const fn is_unsigned_integer_raw(raw: &[u8]) -> bool {
+    if raw.is_empty() {
+        return false;
+    }
+    let mut index = 0;
+    while index < raw.len() {
+        if !raw[index].is_ascii_digit() {
+            return false;
+        }
+        index += 1;
+    }
+    true
 }
 
 /// Syntax parser error with the source byte offset that triggered the failure.
@@ -590,6 +678,10 @@ mod tests {
             parse_primitive(PdfBytes::new(b"3.5")).expect("real"),
             PdfPrimitive::Number(PdfNumber::Real(3.5))
         );
+        assert_eq!(
+            parse_primitive(PdfBytes::new(b"12 0 R")).expect("reference"),
+            PdfPrimitive::Reference(PdfReference::new(12, 0))
+        );
     }
 
     #[test]
@@ -609,7 +701,7 @@ mod tests {
     #[test]
     fn parse_primitive_should_parse_arrays_and_dictionaries() {
         let value = parse_primitive(PdfBytes::new(
-            b"<< /Type /Page /MediaBox [0 0 300 160] /Visible true >>",
+            b"<< /Type /Page /Parent 1 0 R /MediaBox [0 0 300 160] /Visible true >>",
         ))
         .expect("dictionary");
 
@@ -619,6 +711,10 @@ mod tests {
                 (
                     PdfName::new(b"Type"),
                     PdfPrimitive::Name(PdfName::new(b"Page")),
+                ),
+                (
+                    PdfName::new(b"Parent"),
+                    PdfPrimitive::Reference(PdfReference::new(1, 0)),
                 ),
                 (
                     PdfName::new(b"MediaBox"),

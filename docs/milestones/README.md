@@ -21,7 +21,6 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
-| 0025 | [Classic Xref And Trailer Loader](0025-classic-xref-and-trailer-loader.md) | 1 | medium | 0024 |
 | 0026 | [Streams And Basic Filters](0026-streams-and-basic-filters.md) | 1 | medium | 0025 |
 | 0027 | [Xref Streams And Object Streams](0027-xref-streams-and-object-streams.md) | 1 | medium | 0026 |
 | 0028 | [Catalog And Page Tree](0028-catalog-and-page-tree.md) | 1 | medium | 0027 |
@@ -70,6 +69,7 @@ No milestones are currently in progress.
 | 0022 | [Byte Input And Offset Errors](0022-byte-input-and-offset-errors.md) | 1 | small | 2026-06-24 |
 | 0023 | [PDF Primitive Parser](0023-pdf-primitive-parser.md) | 1 | medium | 2026-06-24 |
 | 0024 | [Indirect Objects And References](0024-indirect-objects-and-references.md) | 1 | medium | 2026-06-24 |
+| 0025 | [Classic Xref And Trailer Loader](0025-classic-xref-and-trailer-loader.md) | 1 | medium | 2026-06-24 |
 
 ## Update Rules
 

@@ -1,6 +1,6 @@
 # 0025: Classic Xref And Trailer Loader
 
-Status: todo
+Status: done
 Phase: 1
 Size: medium
 Depends on: 0024
@@ -45,4 +45,16 @@ Load classic cross-reference tables and trailer dictionaries.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-24.
+
+- Added `ClassicXrefEntry`, `ClassicXrefTable`, `Trailer`, and
+  `ClassicDocument`.
+- Added `load_classic_document` for simple PDFs with classic xref tables.
+- Added `startxref` location, xref subsection parsing, trailer dictionary
+  parsing, and in-use object loading through xref offsets.
+- Added offset mismatch diagnostics when an xref entry points at a different
+  object ID.
+- Extended the primitive parser with `PdfPrimitive::Reference` so trailer
+  dictionaries can represent `/Root 1 0 R`.
+- Added generated in-test classic PDF fixtures for successful load, xref offset
+  mismatch, and missing `startxref`.
