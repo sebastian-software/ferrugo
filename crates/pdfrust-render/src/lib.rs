@@ -506,6 +506,8 @@ pub struct TextDisplayItem {
     pub text: String,
     /// Source character-code to Unicode mapping used for this run.
     pub glyphs: Vec<TextGlyph>,
+    /// Device-space glyph origins after text and graphics transforms.
+    pub glyph_origins: Vec<Point>,
     /// Font descriptor selected by `Tf`.
     pub font: FontDescriptor,
     /// Font size selected by `Tf`.
@@ -514,8 +516,58 @@ pub struct TextDisplayItem {
     pub origin: Point,
     /// Text matrix at paint time.
     pub text_matrix: Matrix,
+    /// PDF text rendering mode active at paint time.
+    pub rendering_mode: TextRenderingMode,
     /// Graphics state snapshot at paint time.
     pub state: GraphicsState,
+}
+
+/// PDF text rendering mode.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum TextRenderingMode {
+    /// Fill glyphs.
+    #[default]
+    Fill,
+    /// Stroke glyphs.
+    Stroke,
+    /// Fill, then stroke glyphs.
+    FillStroke,
+    /// Do not paint glyphs.
+    Invisible,
+    /// Fill glyphs and add them to the clipping path.
+    FillClip,
+    /// Stroke glyphs and add them to the clipping path.
+    StrokeClip,
+    /// Fill, then stroke glyphs and add them to the clipping path.
+    FillStrokeClip,
+    /// Add glyphs to the clipping path without painting.
+    Clip,
+}
+
+impl TextRenderingMode {
+    fn from_pdf_value(value: i64) -> Option<Self> {
+        match value {
+            0 => Some(Self::Fill),
+            1 => Some(Self::Stroke),
+            2 => Some(Self::FillStroke),
+            3 => Some(Self::Invisible),
+            4 => Some(Self::FillClip),
+            5 => Some(Self::StrokeClip),
+            6 => Some(Self::FillStrokeClip),
+            7 => Some(Self::Clip),
+            _ => None,
+        }
+    }
+
+    fn paint_color(self, state: GraphicsState) -> Option<DeviceColor> {
+        match self {
+            Self::Fill | Self::FillClip | Self::FillStroke | Self::FillStrokeClip => {
+                Some(state.fill_color)
+            }
+            Self::Stroke | Self::StrokeClip => Some(state.stroke_color),
+            Self::Invisible | Self::Clip => None,
+        }
+    }
 }
 
 /// Decoded text glyph metadata carried before outline extraction.
@@ -2851,6 +2903,10 @@ impl<'r> TextDisplayListInterpreter<'r> {
             b"BT" => self.begin_text(offset, operands),
             b"ET" => self.end_text(offset, operands),
             b"Tf" => self.set_font(offset, operands),
+            b"Tc" => self.set_character_spacing(offset, operands),
+            b"Tw" => self.set_word_spacing(offset, operands),
+            b"Tz" => self.set_horizontal_scaling(offset, operands),
+            b"Tr" => self.set_text_rendering_mode(offset, operands),
             b"Td" => self.move_text_position(offset, operands),
             b"Tm" => self.set_text_matrix(offset, operands),
             b"Tj" => self.show_text(offset, operands),
@@ -2962,6 +3018,58 @@ impl<'r> TextDisplayListInterpreter<'r> {
         Ok(())
     }
 
+    fn set_character_spacing(
+        &mut self,
+        offset: ByteOffset,
+        operands: &[PdfPrimitive<'_>],
+    ) -> GraphicsResult<()> {
+        self.require_text_object(offset, b"Tc")?;
+        expect_operand_count(offset, b"Tc", operands, 1)?;
+        self.text.character_spacing = number_operand(offset, b"Tc", operands, 0)?;
+        Ok(())
+    }
+
+    fn set_word_spacing(
+        &mut self,
+        offset: ByteOffset,
+        operands: &[PdfPrimitive<'_>],
+    ) -> GraphicsResult<()> {
+        self.require_text_object(offset, b"Tw")?;
+        expect_operand_count(offset, b"Tw", operands, 1)?;
+        self.text.word_spacing = number_operand(offset, b"Tw", operands, 0)?;
+        Ok(())
+    }
+
+    fn set_horizontal_scaling(
+        &mut self,
+        offset: ByteOffset,
+        operands: &[PdfPrimitive<'_>],
+    ) -> GraphicsResult<()> {
+        self.require_text_object(offset, b"Tz")?;
+        expect_operand_count(offset, b"Tz", operands, 1)?;
+        let scaling = number_operand(offset, b"Tz", operands, 0)?;
+        if !scaling.is_finite() || scaling <= 0.0 {
+            return Err(invalid_operand(offset, b"Tz"));
+        }
+        self.text.horizontal_scaling = scaling / 100.0;
+        Ok(())
+    }
+
+    fn set_text_rendering_mode(
+        &mut self,
+        offset: ByteOffset,
+        operands: &[PdfPrimitive<'_>],
+    ) -> GraphicsResult<()> {
+        self.require_text_object(offset, b"Tr")?;
+        expect_operand_count(offset, b"Tr", operands, 1)?;
+        let PdfPrimitive::Number(PdfNumber::Integer(value)) = operands[0] else {
+            return Err(invalid_operand(offset, b"Tr"));
+        };
+        self.text.rendering_mode = TextRenderingMode::from_pdf_value(value)
+            .ok_or_else(|| invalid_operand(offset, b"Tr"))?;
+        Ok(())
+    }
+
     fn move_text_position(
         &mut self,
         offset: ByteOffset,
@@ -3012,7 +3120,7 @@ impl<'r> TextDisplayListInterpreter<'r> {
             offset,
             self.options.max_text_run_bytes,
         )?;
-        self.push_text(offset, text)
+        self.show_decoded_text(offset, text)
     }
 
     fn show_text_array(
@@ -3026,9 +3134,6 @@ impl<'r> TextDisplayListInterpreter<'r> {
             return Err(invalid_operand(offset, b"TJ"));
         };
         let font = self.selected_font(offset)?;
-        let mut text = String::new();
-        let mut glyphs = Vec::new();
-        let mut adjustment = 0.0;
         for value in values {
             match value {
                 PdfPrimitive::String(string) => {
@@ -3038,50 +3143,54 @@ impl<'r> TextDisplayListInterpreter<'r> {
                         offset,
                         self.options.max_text_run_bytes,
                     )?;
-                    if text.len() + chunk.text.len() > self.options.max_text_run_bytes {
-                        return Err(GraphicsError::new(
-                            Some(offset),
-                            GraphicsErrorKind::TextRunOverflow {
-                                limit: self.options.max_text_run_bytes,
-                            },
-                        ));
-                    }
-                    text.push_str(&chunk.text);
-                    glyphs.extend(chunk.glyphs);
+                    self.show_decoded_text(offset, chunk)?;
                 }
                 PdfPrimitive::Number(PdfNumber::Integer(value)) => {
-                    adjustment += *value as f64;
+                    self.advance_text(self.adjustment_advance(*value as f64));
                 }
                 PdfPrimitive::Number(PdfNumber::Real(value)) if value.is_finite() => {
-                    adjustment += *value;
+                    self.advance_text(self.adjustment_advance(*value));
                 }
                 _ => return Err(invalid_operand(offset, b"TJ")),
             }
         }
-        self.push_text(offset, DecodedTextRun { text, glyphs })?;
-        self.advance_text(-adjustment / 1000.0 * self.text.font_size);
         Ok(())
     }
 
-    fn push_text(&mut self, offset: ByteOffset, text: DecodedTextRun) -> GraphicsResult<()> {
-        let glyph_count = text.glyphs.len();
+    fn show_decoded_text(
+        &mut self,
+        offset: ByteOffset,
+        text: DecodedTextRun,
+    ) -> GraphicsResult<()> {
         let font = self.selected_font(offset)?;
-        let origin_matrix = self.current.ctm.multiply(self.text.text_matrix);
-        let origin = origin_matrix.transform_point(0.0, 0.0);
+        let text_matrix = self.text.text_matrix;
+        let mut glyph_origins = Vec::with_capacity(text.glyphs.len());
+        for glyph in &text.glyphs {
+            let origin_matrix = self.current.ctm.multiply(self.text.text_matrix);
+            glyph_origins.push(origin_matrix.transform_point(0.0, 0.0));
+            self.advance_text(self.glyph_advance(glyph));
+        }
+        let origin = glyph_origins.first().copied().unwrap_or_else(|| {
+            self.current
+                .ctm
+                .multiply(text_matrix)
+                .transform_point(0.0, 0.0)
+        });
         self.display_list.push(
             DisplayItem::Text(TextDisplayItem {
                 text: text.text,
                 glyphs: text.glyphs,
+                glyph_origins,
                 font,
                 font_size: self.text.font_size,
                 origin,
-                text_matrix: self.text.text_matrix,
+                text_matrix,
+                rendering_mode: self.text.rendering_mode,
                 state: self.current,
             }),
             self.options.max_display_items,
             offset,
         )?;
-        self.advance_text(glyph_count as f64 * self.text.font_size * 0.5);
         Ok(())
     }
 
@@ -3097,6 +3206,20 @@ impl<'r> TextDisplayListInterpreter<'r> {
             .text
             .text_matrix
             .multiply(Matrix::translate(advance, 0.0));
+    }
+
+    fn glyph_advance(&self, glyph: &TextGlyph) -> f64 {
+        let word_spacing = if glyph.unicode == " " {
+            self.text.word_spacing
+        } else {
+            0.0
+        };
+        (self.text.font_size * 0.5 + self.text.character_spacing + word_spacing)
+            * self.text.horizontal_scaling
+    }
+
+    fn adjustment_advance(&self, adjustment: f64) -> f64 {
+        -adjustment / 1000.0 * self.text.font_size * self.text.horizontal_scaling
     }
 
     fn require_text_object(
@@ -3269,13 +3392,33 @@ impl<'r> ImageDisplayListInterpreter<'r> {
     }
 }
 
-#[derive(Debug, Default, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 struct TextState {
     in_text_object: bool,
     text_matrix: Matrix,
     line_matrix: Matrix,
     font: Option<FontDescriptor>,
     font_size: f64,
+    character_spacing: f64,
+    word_spacing: f64,
+    horizontal_scaling: f64,
+    rendering_mode: TextRenderingMode,
+}
+
+impl Default for TextState {
+    fn default() -> Self {
+        Self {
+            in_text_object: false,
+            text_matrix: Matrix::default(),
+            line_matrix: Matrix::default(),
+            font: None,
+            font_size: 0.0,
+            character_spacing: 0.0,
+            word_spacing: 0.0,
+            horizontal_scaling: 1.0,
+            rendering_mode: TextRenderingMode::default(),
+        }
+    }
 }
 
 #[derive(Debug, Default, Clone, PartialEq)]
@@ -4188,25 +4331,30 @@ fn draw_text_run(
     text: &TextDisplayItem,
     page_transform: PageTransform,
 ) -> RasterResult<()> {
-    let color = device_color_to_rgba(text.state.fill_color);
+    let Some(color) = text
+        .rendering_mode
+        .paint_color(text.state)
+        .map(device_color_to_rgba)
+    else {
+        return Ok(());
+    };
     let cell = text.font_size / 7.0;
-    let glyph_advance = cell * 6.0;
-    let mut cursor_x = text.origin.x;
-    for character in text.text.chars() {
+    for (glyph, origin) in text.glyphs.iter().zip(text.glyph_origins.iter()) {
+        let Some(character) = glyph.unicode.chars().next() else {
+            continue;
+        };
         if character == ' ' {
-            cursor_x += glyph_advance;
             continue;
         }
         draw_ascii_glyph(
             device,
             page_transform,
             character,
-            cursor_x,
-            text.origin.y,
+            origin.x,
+            origin.y,
             cell,
             color,
         )?;
-        cursor_x += glyph_advance;
     }
     Ok(())
 }
@@ -6333,6 +6481,10 @@ mod tests {
         assert_eq!(text.font.resource_name, b"F1");
         assert_eq!(text.font_size, 24.0);
         assert_eq!(text.origin, Point { x: 40.0, y: 90.0 });
+        assert_eq!(
+            text.glyph_origins.first().copied(),
+            Some(Point { x: 40.0, y: 90.0 })
+        );
     }
 
     #[test]
@@ -6363,17 +6515,61 @@ mod tests {
         )
         .expect("valid TJ stream");
 
-        assert_eq!(list.len(), 2);
+        assert_eq!(list.len(), 3);
         let DisplayItem::Text(first) = &list.items()[0] else {
             panic!("expected first text item");
         };
         let DisplayItem::Text(second) = &list.items()[1] else {
             panic!("expected second text item");
         };
-        assert_eq!(first.text, "AB");
-        assert_eq!(second.text, "C");
-        assert!((second.origin.x - 18.8).abs() < 0.001);
+        let DisplayItem::Text(third) = &list.items()[2] else {
+            panic!("expected third text item");
+        };
+        assert_eq!(first.text, "A");
+        assert_eq!(second.text, "B");
+        assert_eq!(third.text, "C");
+        assert_eq!(first.origin, Point { x: 10.0, y: 20.0 });
+        assert!((second.origin.x - 13.8).abs() < 0.001);
         assert_eq!(second.origin.y, 20.0);
+        assert!((third.origin.x - 18.8).abs() < 0.001);
+        assert_eq!(third.origin.y, 20.0);
+    }
+
+    #[test]
+    fn text_display_list_should_apply_spacing_state_to_glyph_origins() {
+        let list = build_text_display_list(
+            tokenize_content(PdfBytes::new(
+                b"BT /F1 10 Tf 2 Tc 4 Tw 80 Tz 10 20 Td (A B) Tj ET",
+            )),
+            &test_font_resources(),
+            DisplayListOptions::default(),
+        )
+        .expect("valid text spacing stream");
+
+        let DisplayItem::Text(text) = &list.items()[0] else {
+            panic!("expected text item");
+        };
+        assert_eq!(text.text, "A B");
+        assert_eq!(text.glyph_origins[0], Point { x: 10.0, y: 20.0 });
+        assert!((text.glyph_origins[1].x - 15.6).abs() < 0.001);
+        assert_eq!(text.glyph_origins[1].y, 20.0);
+        assert!((text.glyph_origins[2].x - 24.4).abs() < 0.001);
+        assert_eq!(text.glyph_origins[2].y, 20.0);
+    }
+
+    #[test]
+    fn text_display_list_should_capture_text_rendering_mode() {
+        let list = build_text_display_list(
+            tokenize_content(PdfBytes::new(b"BT /F1 10 Tf 3 Tr 10 20 Td (A) Tj ET")),
+            &test_font_resources(),
+            DisplayListOptions::default(),
+        )
+        .expect("valid invisible text stream");
+
+        let DisplayItem::Text(text) = &list.items()[0] else {
+            panic!("expected text item");
+        };
+        assert_eq!(text.rendering_mode, TextRenderingMode::Invisible);
     }
 
     #[test]

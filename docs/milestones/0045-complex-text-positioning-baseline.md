@@ -1,6 +1,6 @@
 # 0045: Complex Text Positioning Baseline
 
-Status: todo
+Status: in-progress
 Phase: 5
 Size: medium
 Depends on: 0044
@@ -47,3 +47,12 @@ PDF output without taking on full shaping.
 ## Completion Notes
 
 Empty until done.
+
+## Progress Notes
+
+- Added text-state handling for character spacing (`Tc`), word spacing (`Tw`),
+  horizontal scaling (`Tz`), and text rendering mode (`Tr`).
+- Changed `TJ` arrays to emit positioned chunks around numeric adjustments
+  instead of applying all adjustments after the combined text.
+- Carried per-glyph origins in text display items so spacing survives into the
+  fallback rasterizer and later real glyph-outline rasterization.

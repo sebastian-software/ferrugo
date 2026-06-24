@@ -21,7 +21,6 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
-| 0045 | [Complex Text Positioning Baseline](0045-complex-text-positioning-baseline.md) | 5 | medium | 0044 |
 | 0046 | [Color Spaces And Decode Arrays](0046-color-spaces-and-decode-arrays.md) | 6 | medium | 0045 |
 | 0047 | [Image Filter Coverage](0047-image-filter-coverage.md) | 6 | medium | 0046 |
 | 0048 | [Soft Masks And Transparency Groups](0048-soft-masks-and-transparency-groups.md) | 6 | medium | 0047 |
@@ -42,6 +41,7 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
+| 0045 | [Complex Text Positioning Baseline](0045-complex-text-positioning-baseline.md) | 5 | medium | 0044 |
 
 ## Done
 
