@@ -52,7 +52,7 @@ The PDFium-enabled CLI adds:
 - `compare-metadata`
 - `benchmark-pdfium`
 - PDFium fallback from `render` / `render-auto` when Rust-native returns
-  `unsupported`
+  `unsupported` and the caller passes `--allow-pdfium-fallback`
 
 ## Workspace Defaults
 

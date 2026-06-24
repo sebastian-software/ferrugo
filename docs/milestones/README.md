@@ -21,7 +21,6 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
-| 0082 | [Native Default API And CLI Stabilization](0082-native-default-api-and-cli-stabilization.md) | 14 | medium | 0081 |
 | 0083 | [Real-World Corpus Ingestion And Classification](0083-real-world-corpus-ingestion-and-classification.md) | 14 | medium | 0082 |
 | 0084 | [Visual Diff Dashboard And Review Workflow](0084-visual-diff-dashboard-and-review-workflow.md) | 14 | medium | 0083 |
 | 0085 | [Page Geometry Boxes Rotation And User Units](0085-page-geometry-boxes-rotation-and-user-units.md) | 15 | medium | 0084 |
@@ -50,6 +49,7 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Completed |
 | --- | --- | --- | --- | --- |
+| 0082 | [Native Default API And CLI Stabilization](0082-native-default-api-and-cli-stabilization.md) | 14 | medium | 2026-06-24 |
 | 0081 | [RC Gap Synthesis And PDFium Retirement Backlog](0081-rc-gap-synthesis-and-pdfium-retirement-backlog.md) | 14 | small | 2026-06-24 |
 | 0080 | [Native Renderer Release Candidate Gate](0080-native-renderer-release-candidate-gate.md) | 13 | medium | 2026-06-24 |
 | 0079 | [Optional PDFium Build Feature Split](0079-optional-pdfium-build-feature-split.md) | 13 | medium | 2026-06-24 |

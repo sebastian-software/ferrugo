@@ -8,8 +8,10 @@ the backend-neutral types from `pdfrust-thumbnail`; PDFium handles and symbols
 do not appear in the facade API.
 
 PDFium support is optional for `pdfrust-cli`. Default CLI builds are
-native-only. Use `--features pdfium` when running PDFium commands, fallback
-renders, metadata comparisons, or PDFium benchmarks.
+native-only. Use `--features pdfium` when running PDFium commands, metadata
+comparisons, or PDFium benchmarks. Native-default `render` / `render-auto`
+commands only retry through PDFium when the caller also passes
+`--allow-pdfium-fallback`.
 
 ## Runtime Configuration
 
