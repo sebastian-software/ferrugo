@@ -55,6 +55,7 @@ fn run(args: Vec<OsString>) -> Result<(), CliError> {
         Some("extract-corpus-metadata") => extract_corpus_metadata_command(&args[1..]),
         Some("benchmark-native") => benchmark_native_command(&args[1..]),
         Some("benchmark-pdfium") => benchmark_pdfium_command(&args[1..]),
+        Some("visual-diff") => visual_diff_command(&args[1..]),
         Some("--version" | "-V") => {
             println!("pdfrust-cli {}", env!("CARGO_PKG_VERSION"));
             Ok(())
@@ -468,6 +469,58 @@ fn benchmark_pdfium_command_enabled(args: &[OsString]) -> Result<(), CliError> {
         false,
     );
     write_benchmark_report(config, report)
+}
+
+fn visual_diff_command(args: &[OsString]) -> Result<(), CliError> {
+    #[cfg(not(feature = "pdfium"))]
+    {
+        let _ = args;
+        return Err(pdfium_feature_disabled());
+    }
+
+    #[cfg(feature = "pdfium")]
+    {
+        visual_diff_command_enabled(args)
+    }
+}
+
+#[cfg(feature = "pdfium")]
+fn visual_diff_command_enabled(args: &[OsString]) -> Result<(), CliError> {
+    let config = VisualDiffConfig::parse(args)?;
+    let options = ThumbnailOptions {
+        page_index: config.page_index,
+        max_edge: config.max_edge,
+        background: config.background,
+        output_format: pdfrust_thumbnail::OutputFormat::Rgba,
+        timeout: config.timeout,
+    };
+    let fixtures = pdf_inputs(&config.input)?;
+    let manifest = match &config.manifest {
+        Some(path) => Some(read_corpus_manifest(path)?),
+        None => None,
+    };
+    let native = NativeBackend::new();
+    let pdfium = PdfiumBackend::from_env().map_err(|err| CliError::Backend(err.to_string()))?;
+    let report = visual_diff_report(
+        &native,
+        &pdfium,
+        &fixtures,
+        &options,
+        manifest.as_ref(),
+        config.thresholds,
+    );
+    let json = visual_diff_report_json(&report);
+
+    if let Some(output) = config.output {
+        fs::write(&output, &json).map_err(|source| CliError::Io {
+            path: output,
+            source,
+        })?;
+    } else {
+        println!("{json}");
+    }
+
+    Ok(())
 }
 
 #[cfg(not(feature = "pdfium"))]
@@ -901,6 +954,38 @@ struct BenchmarkConfig {
     fail_on_budget: bool,
 }
 
+#[cfg(feature = "pdfium")]
+#[derive(Debug, Clone, PartialEq)]
+struct VisualDiffConfig {
+    input: PathBuf,
+    manifest: Option<PathBuf>,
+    output: Option<PathBuf>,
+    page_index: u32,
+    max_edge: u32,
+    background: Rgba,
+    timeout: Duration,
+    thresholds: VisualDiffThresholds,
+}
+
+#[cfg(any(feature = "pdfium", test))]
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct VisualDiffThresholds {
+    max_mean_abs_error: f64,
+    max_p95_channel_delta: u8,
+    max_changed_ratio: f64,
+}
+
+#[cfg(any(feature = "pdfium", test))]
+impl Default for VisualDiffThresholds {
+    fn default() -> Self {
+        Self {
+            max_mean_abs_error: 2.0,
+            max_p95_channel_delta: 16,
+            max_changed_ratio: 0.05,
+        }
+    }
+}
+
 impl BenchmarkConfig {
     fn parse(args: &[OsString]) -> Result<Self, CliError> {
         let mut input = None;
@@ -998,6 +1083,104 @@ impl BenchmarkConfig {
             max_ms,
             max_output_bytes,
             fail_on_budget,
+        })
+    }
+}
+
+#[cfg(feature = "pdfium")]
+impl VisualDiffConfig {
+    fn parse(args: &[OsString]) -> Result<Self, CliError> {
+        let mut input = None;
+        let mut manifest = None;
+        let mut output = None;
+        let mut page_index = DEFAULT_PAGE_INDEX;
+        let mut max_edge = 160;
+        let mut background = Rgba::WHITE;
+        let mut timeout = DEFAULT_TIMEOUT;
+        let mut thresholds = VisualDiffThresholds::default();
+
+        let mut index = 0;
+        while index < args.len() {
+            let arg = args[index]
+                .to_str()
+                .ok_or_else(|| CliError::Usage("arguments must be valid UTF-8".to_string()))?;
+            match arg {
+                "--manifest" => {
+                    index += 1;
+                    manifest = Some(required_path(args, index, "--manifest")?);
+                }
+                "--output" | "-o" => {
+                    index += 1;
+                    output = Some(required_path(args, index, "--output")?);
+                }
+                "--page-index" => {
+                    index += 1;
+                    page_index = parse_u32(args, index, "--page-index")?;
+                }
+                "--max-edge" => {
+                    index += 1;
+                    max_edge = parse_u32(args, index, "--max-edge")?;
+                }
+                "--background" => {
+                    index += 1;
+                    background = parse_background(required_str(args, index, "--background")?)?;
+                }
+                "--timeout" => {
+                    index += 1;
+                    let seconds = parse_u64(args, index, "--timeout")?;
+                    timeout = Duration::from_secs(seconds);
+                }
+                "--max-mae" => {
+                    index += 1;
+                    thresholds.max_mean_abs_error = parse_f64(args, index, "--max-mae")?;
+                }
+                "--max-p95" => {
+                    index += 1;
+                    thresholds.max_p95_channel_delta = parse_u8(args, index, "--max-p95")?;
+                }
+                "--max-changed-ratio" => {
+                    index += 1;
+                    thresholds.max_changed_ratio = parse_f64(args, index, "--max-changed-ratio")?;
+                }
+                value if value.starts_with('-') => {
+                    return Err(CliError::Usage(format!("unknown option `{value}`")));
+                }
+                value => {
+                    if input.replace(PathBuf::from(value)).is_some() {
+                        return Err(CliError::Usage(
+                            "only one input path is supported".to_string(),
+                        ));
+                    }
+                }
+            }
+            index += 1;
+        }
+
+        if max_edge == 0 {
+            return Err(CliError::Usage(
+                "--max-edge must be greater than zero".to_string(),
+            ));
+        }
+        if thresholds.max_changed_ratio < 0.0 || thresholds.max_changed_ratio > 1.0 {
+            return Err(CliError::Usage(
+                "--max-changed-ratio must be between 0.0 and 1.0".to_string(),
+            ));
+        }
+        if thresholds.max_mean_abs_error < 0.0 {
+            return Err(CliError::Usage(
+                "--max-mae must be greater than or equal to zero".to_string(),
+            ));
+        }
+
+        Ok(Self {
+            input: input.ok_or_else(|| CliError::Usage("missing input path".to_string()))?,
+            manifest,
+            output,
+            page_index,
+            max_edge,
+            background,
+            timeout,
+            thresholds,
         })
     }
 }
@@ -1165,6 +1348,110 @@ struct BenchmarkReport {
     max_output_bytes: usize,
     families: BTreeMap<String, FamilyBenchmarkSummary>,
     fixtures: Vec<BenchmarkRecord>,
+}
+
+#[cfg(feature = "pdfium")]
+#[derive(Debug, Clone, PartialEq)]
+struct VisualDiffReport {
+    thresholds: VisualDiffThresholds,
+    total: usize,
+    exact: usize,
+    accepted_drift: usize,
+    blockers: usize,
+    native_errors: usize,
+    pdfium_errors: usize,
+    both_errors: usize,
+    families: BTreeMap<String, FamilyVisualDiffSummary>,
+    subsystems: BTreeMap<String, FamilyVisualDiffSummary>,
+    fixtures: Vec<VisualDiffRecord>,
+}
+
+#[cfg(feature = "pdfium")]
+#[derive(Debug, Clone, Default, PartialEq)]
+struct FamilyVisualDiffSummary {
+    total: usize,
+    exact: usize,
+    accepted_drift: usize,
+    blockers: usize,
+    native_errors: usize,
+    pdfium_errors: usize,
+    both_errors: usize,
+}
+
+#[cfg(feature = "pdfium")]
+impl FamilyVisualDiffSummary {
+    fn record(&mut self, record: &VisualDiffRecord) {
+        self.total += 1;
+        match record.status {
+            VisualDiffStatus::Exact => self.exact += 1,
+            VisualDiffStatus::AcceptedDrift => self.accepted_drift += 1,
+            VisualDiffStatus::Blocker => self.blockers += 1,
+            VisualDiffStatus::NativeError => self.native_errors += 1,
+            VisualDiffStatus::PdfiumError => self.pdfium_errors += 1,
+            VisualDiffStatus::BothError => self.both_errors += 1,
+        }
+    }
+}
+
+#[cfg(feature = "pdfium")]
+#[derive(Debug, Clone, PartialEq)]
+struct VisualDiffRecord {
+    path: String,
+    family: String,
+    subsystem: &'static str,
+    status: VisualDiffStatus,
+    metrics: Option<VisualDiffMetrics>,
+    native_error: Option<VisualDiffError>,
+    pdfium_error: Option<VisualDiffError>,
+}
+
+#[cfg(any(feature = "pdfium", test))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum VisualDiffStatus {
+    Exact,
+    AcceptedDrift,
+    Blocker,
+    #[cfg(feature = "pdfium")]
+    NativeError,
+    #[cfg(feature = "pdfium")]
+    PdfiumError,
+    #[cfg(feature = "pdfium")]
+    BothError,
+}
+
+#[cfg(feature = "pdfium")]
+impl VisualDiffStatus {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Exact => "exact",
+            Self::AcceptedDrift => "accepted_drift",
+            Self::Blocker => "blocker",
+            Self::NativeError => "native_error",
+            Self::PdfiumError => "pdfium_error",
+            Self::BothError => "both_error",
+        }
+    }
+}
+
+#[cfg(any(feature = "pdfium", test))]
+#[derive(Debug, Clone, PartialEq)]
+struct VisualDiffMetrics {
+    width: u32,
+    height: u32,
+    changed_pixels: usize,
+    changed_ratio: f64,
+    mean_abs_error: f64,
+    p95_channel_delta: u8,
+    max_channel_delta: u8,
+    native_nonwhite_pixels: usize,
+    pdfium_nonwhite_pixels: usize,
+}
+
+#[cfg(feature = "pdfium")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct VisualDiffError {
+    class: &'static str,
+    message: String,
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -1530,6 +1817,291 @@ fn benchmark_error_outcome(
     }
 }
 
+#[cfg(feature = "pdfium")]
+fn visual_diff_report<N: ThumbnailBackend, P: ThumbnailBackend>(
+    native: &N,
+    pdfium: &P,
+    paths: &[PathBuf],
+    options: &ThumbnailOptions,
+    manifest: Option<&CorpusManifest>,
+    thresholds: VisualDiffThresholds,
+) -> VisualDiffReport {
+    let mut families = BTreeMap::new();
+    let mut fixtures = Vec::with_capacity(paths.len());
+    let mut exact = 0;
+    let mut accepted_drift = 0;
+    let mut blockers = 0;
+    let mut native_errors = 0;
+    let mut pdfium_errors = 0;
+    let mut both_errors = 0;
+    let mut subsystems = BTreeMap::new();
+
+    for path in paths {
+        let path_key = normalize_manifest_path(path);
+        let family = manifest
+            .and_then(|manifest| manifest.family_for_path(path))
+            .unwrap_or("unclassified")
+            .to_string();
+        let record =
+            visual_diff_fixture(native, pdfium, path, options, path_key, family, thresholds);
+        match record.status {
+            VisualDiffStatus::Exact => exact += 1,
+            VisualDiffStatus::AcceptedDrift => accepted_drift += 1,
+            VisualDiffStatus::Blocker => blockers += 1,
+            VisualDiffStatus::NativeError => native_errors += 1,
+            VisualDiffStatus::PdfiumError => pdfium_errors += 1,
+            VisualDiffStatus::BothError => both_errors += 1,
+        }
+        families
+            .entry(record.family.clone())
+            .or_insert_with(FamilyVisualDiffSummary::default)
+            .record(&record);
+        subsystems
+            .entry(record.subsystem.to_string())
+            .or_insert_with(FamilyVisualDiffSummary::default)
+            .record(&record);
+        fixtures.push(record);
+    }
+
+    VisualDiffReport {
+        thresholds,
+        total: paths.len(),
+        exact,
+        accepted_drift,
+        blockers,
+        native_errors,
+        pdfium_errors,
+        both_errors,
+        families,
+        subsystems,
+        fixtures,
+    }
+}
+
+#[cfg(feature = "pdfium")]
+fn visual_diff_fixture<N: ThumbnailBackend, P: ThumbnailBackend>(
+    native: &N,
+    pdfium: &P,
+    path: &Path,
+    options: &ThumbnailOptions,
+    path_key: String,
+    family: String,
+    thresholds: VisualDiffThresholds,
+) -> VisualDiffRecord {
+    let native_result = native.render(PdfSource::from_path(path), options);
+    let pdfium_result = pdfium.render(PdfSource::from_path(path), options);
+    let subsystem = visual_diff_subsystem(path_key.as_str(), family.as_str());
+
+    match (native_result, pdfium_result) {
+        (Ok(native), Ok(pdfium)) => {
+            let metrics = visual_diff_metrics(&native, &pdfium);
+            let status = metrics
+                .as_ref()
+                .map(|metrics| classify_visual_diff(metrics, thresholds))
+                .unwrap_or(VisualDiffStatus::Blocker);
+            VisualDiffRecord {
+                path: path_key,
+                family,
+                subsystem,
+                status,
+                metrics,
+                native_error: None,
+                pdfium_error: None,
+            }
+        }
+        (Err(native), Ok(_)) => VisualDiffRecord {
+            path: path_key,
+            family,
+            subsystem,
+            status: VisualDiffStatus::NativeError,
+            metrics: None,
+            native_error: Some(VisualDiffError {
+                class: native.class().as_str(),
+                message: native.to_string(),
+            }),
+            pdfium_error: None,
+        },
+        (Ok(_), Err(pdfium)) => VisualDiffRecord {
+            path: path_key,
+            family,
+            subsystem,
+            status: VisualDiffStatus::PdfiumError,
+            metrics: None,
+            native_error: None,
+            pdfium_error: Some(VisualDiffError {
+                class: pdfium.class().as_str(),
+                message: pdfium.to_string(),
+            }),
+        },
+        (Err(native), Err(pdfium)) => VisualDiffRecord {
+            path: path_key,
+            family,
+            subsystem,
+            status: VisualDiffStatus::BothError,
+            metrics: None,
+            native_error: Some(VisualDiffError {
+                class: native.class().as_str(),
+                message: native.to_string(),
+            }),
+            pdfium_error: Some(VisualDiffError {
+                class: pdfium.class().as_str(),
+                message: pdfium.to_string(),
+            }),
+        },
+    }
+}
+
+#[cfg(any(feature = "pdfium", test))]
+fn visual_diff_subsystem(path: &str, family: &str) -> &'static str {
+    let path = path.rsplit('/').next().unwrap_or(path);
+    if family == "secure-document" || path.contains("encrypted") {
+        return "document-security";
+    }
+    if path.contains("optional-content") {
+        return "optional-content";
+    }
+    if path.contains("acroform")
+        || path.contains("annotation")
+        || path.contains("widget")
+        || path.contains("signature")
+    {
+        return "annotations-forms";
+    }
+    if path.contains("font")
+        || path.contains("text")
+        || path.contains("cid")
+        || path.contains("cjk")
+        || path.contains("tounicode")
+        || path.contains("encoding")
+        || path.contains("rtl")
+    {
+        return "text-fonts";
+    }
+    if path.contains("image")
+        || path.contains("scanned")
+        || path.contains("dct")
+        || path.contains("cmyk")
+        || path.contains("indexed")
+        || path.contains("predictor")
+    {
+        return "images-color";
+    }
+    if path.contains("transparency") || path.contains("blend") || path.contains("soft-mask") {
+        return "transparency";
+    }
+    if path.contains("gradient")
+        || path.contains("shading")
+        || path.contains("vector")
+        || path.contains("path")
+        || path.contains("stroke")
+        || path.contains("line-")
+        || path.contains("pattern")
+    {
+        return "vector-graphics";
+    }
+    if path.contains("page") || path.contains("crop") || path.contains("rotation") {
+        return "page-geometry";
+    }
+    if path.contains("hybrid") || path.contains("xref") || path.contains("incremental") {
+        return "document-structure";
+    }
+    "rendering-core"
+}
+
+#[cfg(any(feature = "pdfium", test))]
+fn visual_diff_metrics(
+    native: &pdfrust_thumbnail::Thumbnail,
+    pdfium: &pdfrust_thumbnail::Thumbnail,
+) -> Option<VisualDiffMetrics> {
+    if native.width != pdfium.width || native.height != pdfium.height {
+        return None;
+    }
+
+    let mut changed_pixels = 0;
+    let mut native_nonwhite_pixels = 0;
+    let mut pdfium_nonwhite_pixels = 0;
+    let mut channel_sum = 0usize;
+    let mut max_channel_delta = 0u8;
+    let mut histogram = [0usize; 256];
+    let mut channels = 0usize;
+
+    for (native_pixel, pdfium_pixel) in native
+        .bytes
+        .chunks_exact(4)
+        .zip(pdfium.bytes.chunks_exact(4))
+    {
+        let mut pixel_changed = false;
+        if native_pixel != [255, 255, 255, 255] {
+            native_nonwhite_pixels += 1;
+        }
+        if pdfium_pixel != [255, 255, 255, 255] {
+            pdfium_nonwhite_pixels += 1;
+        }
+
+        for channel in 0..3 {
+            let delta = native_pixel[channel].abs_diff(pdfium_pixel[channel]);
+            if delta > 0 {
+                pixel_changed = true;
+            }
+            max_channel_delta = max_channel_delta.max(delta);
+            channel_sum += usize::from(delta);
+            histogram[usize::from(delta)] += 1;
+            channels += 1;
+        }
+
+        if pixel_changed {
+            changed_pixels += 1;
+        }
+    }
+
+    let pixels = (native.width as usize).checked_mul(native.height as usize)?;
+    Some(VisualDiffMetrics {
+        width: native.width,
+        height: native.height,
+        changed_pixels,
+        changed_ratio: changed_pixels as f64 / pixels as f64,
+        mean_abs_error: channel_sum as f64 / channels as f64,
+        p95_channel_delta: percentile_delta(&histogram, channels, 0.95),
+        max_channel_delta,
+        native_nonwhite_pixels,
+        pdfium_nonwhite_pixels,
+    })
+}
+
+#[cfg(any(feature = "pdfium", test))]
+fn classify_visual_diff(
+    metrics: &VisualDiffMetrics,
+    thresholds: VisualDiffThresholds,
+) -> VisualDiffStatus {
+    if metrics.changed_pixels == 0 && metrics.max_channel_delta == 0 {
+        return VisualDiffStatus::Exact;
+    }
+    if metrics.mean_abs_error <= thresholds.max_mean_abs_error
+        && metrics.p95_channel_delta <= thresholds.max_p95_channel_delta
+        && metrics.changed_ratio <= thresholds.max_changed_ratio
+    {
+        VisualDiffStatus::AcceptedDrift
+    } else {
+        VisualDiffStatus::Blocker
+    }
+}
+
+#[cfg(any(feature = "pdfium", test))]
+fn percentile_delta(histogram: &[usize; 256], total: usize, percentile: f64) -> u8 {
+    if total == 0 {
+        return 0;
+    }
+    let target = ((total as f64 * percentile).ceil() as usize).max(1);
+    let mut cumulative = 0usize;
+    for (delta, count) in histogram.iter().enumerate() {
+        cumulative += count;
+        if cumulative >= target {
+            return delta as u8;
+        }
+    }
+    u8::MAX
+}
+
 fn elapsed_mean_ms(duration: Duration, iterations: usize) -> f64 {
     duration.as_secs_f64() * 1000.0 / iterations as f64
 }
@@ -1677,6 +2249,20 @@ fn parse_u64(args: &[OsString], index: usize, option: &str) -> Result<u64, CliEr
     required_str(args, index, option)?
         .parse()
         .map_err(|_| CliError::Usage(format!("{option} must be an unsigned integer")))
+}
+
+#[cfg(feature = "pdfium")]
+fn parse_u8(args: &[OsString], index: usize, option: &str) -> Result<u8, CliError> {
+    required_str(args, index, option)?
+        .parse()
+        .map_err(|_| CliError::Usage(format!("{option} must be an integer between 0 and 255")))
+}
+
+#[cfg(feature = "pdfium")]
+fn parse_f64(args: &[OsString], index: usize, option: &str) -> Result<f64, CliError> {
+    required_str(args, index, option)?
+        .parse()
+        .map_err(|_| CliError::Usage(format!("{option} must be a number")))
 }
 
 fn parse_usize(args: &[OsString], index: usize, option: &str) -> Result<usize, CliError> {
@@ -1947,6 +2533,148 @@ fn benchmark_record_json(record: &BenchmarkRecord) -> String {
     )
 }
 
+#[cfg(feature = "pdfium")]
+fn visual_diff_report_json(report: &VisualDiffReport) -> String {
+    let fixtures = report
+        .fixtures
+        .iter()
+        .map(visual_diff_record_json)
+        .collect::<Vec<_>>()
+        .join(",");
+    format!(
+        concat!(
+            "{{\n",
+            "  \"schema_version\": 1,\n",
+            "  \"thresholds\": {{\"max_mean_abs_error\":{:.3},\"max_p95_channel_delta\":{},\"max_changed_ratio\":{:.6}}},\n",
+            "  \"summary\": {{\"total\":{},\"exact\":{},\"accepted_drift\":{},\"blockers\":{},\"native_errors\":{},\"pdfium_errors\":{},\"both_errors\":{}}},\n",
+            "  \"families\": {},\n",
+            "  \"subsystems\": {},\n",
+            "  \"fixtures\": [{}]\n",
+            "}}\n"
+        ),
+        report.thresholds.max_mean_abs_error,
+        report.thresholds.max_p95_channel_delta,
+        report.thresholds.max_changed_ratio,
+        report.total,
+        report.exact,
+        report.accepted_drift,
+        report.blockers,
+        report.native_errors,
+        report.pdfium_errors,
+        report.both_errors,
+        visual_diff_family_map_json(&report.families),
+        visual_diff_family_map_json(&report.subsystems),
+        fixtures
+    )
+}
+
+#[cfg(feature = "pdfium")]
+fn visual_diff_family_map_json(families: &BTreeMap<String, FamilyVisualDiffSummary>) -> String {
+    let values = families
+        .iter()
+        .map(|(family, summary)| {
+            format!(
+                "{}:{}",
+                json_string(family),
+                visual_diff_family_summary_json(summary)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    format!("{{{values}}}")
+}
+
+#[cfg(feature = "pdfium")]
+fn visual_diff_family_summary_json(summary: &FamilyVisualDiffSummary) -> String {
+    format!(
+        concat!(
+            "{{",
+            "\"total\":{},",
+            "\"exact\":{},",
+            "\"accepted_drift\":{},",
+            "\"blockers\":{},",
+            "\"native_errors\":{},",
+            "\"pdfium_errors\":{},",
+            "\"both_errors\":{}",
+            "}}"
+        ),
+        summary.total,
+        summary.exact,
+        summary.accepted_drift,
+        summary.blockers,
+        summary.native_errors,
+        summary.pdfium_errors,
+        summary.both_errors
+    )
+}
+
+#[cfg(feature = "pdfium")]
+fn visual_diff_record_json(record: &VisualDiffRecord) -> String {
+    format!(
+        concat!(
+            "{{",
+            "\"path\":{},",
+            "\"family\":{},",
+            "\"subsystem\":{},",
+            "\"status\":{},",
+            "\"metrics\":{},",
+            "\"native_error\":{},",
+            "\"pdfium_error\":{}",
+            "}}"
+        ),
+        json_string(&record.path),
+        json_string(&record.family),
+        json_string(record.subsystem),
+        json_string(record.status.as_str()),
+        visual_diff_metrics_json(record.metrics.as_ref()),
+        visual_diff_error_json(record.native_error.as_ref()),
+        visual_diff_error_json(record.pdfium_error.as_ref())
+    )
+}
+
+#[cfg(feature = "pdfium")]
+fn visual_diff_metrics_json(metrics: Option<&VisualDiffMetrics>) -> String {
+    match metrics {
+        Some(metrics) => format!(
+            concat!(
+                "{{",
+                "\"width\":{},",
+                "\"height\":{},",
+                "\"changed_pixels\":{},",
+                "\"changed_ratio\":{:.6},",
+                "\"mean_abs_error\":{:.3},",
+                "\"p95_channel_delta\":{},",
+                "\"max_channel_delta\":{},",
+                "\"native_nonwhite_pixels\":{},",
+                "\"pdfium_nonwhite_pixels\":{}",
+                "}}"
+            ),
+            metrics.width,
+            metrics.height,
+            metrics.changed_pixels,
+            metrics.changed_ratio,
+            metrics.mean_abs_error,
+            metrics.p95_channel_delta,
+            metrics.max_channel_delta,
+            metrics.native_nonwhite_pixels,
+            metrics.pdfium_nonwhite_pixels
+        ),
+        None => "null".to_string(),
+    }
+}
+
+#[cfg(feature = "pdfium")]
+fn visual_diff_error_json(error: Option<&VisualDiffError>) -> String {
+    match error {
+        Some(error) => format!(
+            "{{\"class\":{},\"message\":{}}}",
+            json_string(error.class),
+            json_string(&error.message)
+        ),
+        None => "null".to_string(),
+    }
+}
+
 fn benchmark_outcome_json(outcome: &BenchmarkOutcome) -> String {
     match outcome {
         BenchmarkOutcome::NativeRendered {
@@ -2200,10 +2928,11 @@ fn crc32(bytes: impl IntoIterator<Item = u8>) -> u32 {
 
 fn print_usage() {
     println!(
-        "Usage: pdfrust-cli <render|render-auto|render-native|render-pdfium|render-isolated|compare-metadata|summarize-fallbacks|extract-corpus-metadata|benchmark-native|benchmark-pdfium> <input.pdf> \
+        "Usage: pdfrust-cli <render|render-auto|render-native|render-pdfium|render-isolated|compare-metadata|summarize-fallbacks|extract-corpus-metadata|benchmark-native|benchmark-pdfium|visual-diff> <input.pdf> \
          [--output PATH] [--page-index N] [--max-edge N] [--background #RRGGBB] \
          [--timeout SECONDS] [--iterations N] [--max-ms N] [--max-output-bytes N] \
-         [--allow-pdfium-fallback] [--native-only] [--deny-fallback-reason BUCKET] [--manifest PATH]"
+         [--allow-pdfium-fallback] [--native-only] [--deny-fallback-reason BUCKET] [--manifest PATH] \
+         [--max-mae N] [--max-p95 N] [--max-changed-ratio N]"
     );
 }
 
@@ -2734,6 +3463,72 @@ mod tests {
         let png = encode_rgba_png(&thumbnail).expect("valid PNG");
 
         assert_eq!(&png[..8], b"\x89PNG\r\n\x1a\n");
+    }
+
+    #[test]
+    fn visual_diff_metrics_should_classify_exact_and_drift() {
+        let exact_a = Thumbnail::rgba(1, 1, vec![10, 20, 30, 255]).expect("valid thumbnail");
+        let exact_b = Thumbnail::rgba(1, 1, vec![10, 20, 30, 255]).expect("valid thumbnail");
+        let exact_metrics = visual_diff_metrics(&exact_a, &exact_b).expect("same dimensions");
+
+        assert_eq!(
+            classify_visual_diff(&exact_metrics, VisualDiffThresholds::default()),
+            VisualDiffStatus::Exact
+        );
+
+        let drift = Thumbnail::rgba(1, 1, vec![11, 21, 30, 255]).expect("valid thumbnail");
+        let drift_metrics = visual_diff_metrics(&exact_a, &drift).expect("same dimensions");
+
+        assert_eq!(drift_metrics.changed_pixels, 1);
+        assert_eq!(drift_metrics.max_channel_delta, 1);
+        assert_eq!(
+            classify_visual_diff(
+                &drift_metrics,
+                VisualDiffThresholds {
+                    max_changed_ratio: 1.0,
+                    ..VisualDiffThresholds::default()
+                },
+            ),
+            VisualDiffStatus::AcceptedDrift
+        );
+        assert_eq!(
+            classify_visual_diff(
+                &drift_metrics,
+                VisualDiffThresholds {
+                    max_mean_abs_error: 0.0,
+                    max_p95_channel_delta: 0,
+                    max_changed_ratio: 0.0,
+                },
+            ),
+            VisualDiffStatus::Blocker
+        );
+    }
+
+    #[test]
+    fn visual_diff_subsystem_should_group_common_renderer_areas() {
+        assert_eq!(
+            visual_diff_subsystem("fixtures/generated/acroform-text-field.pdf", "form"),
+            "annotations-forms"
+        );
+        assert_eq!(
+            visual_diff_subsystem("fixtures/generated/shaped-rtl-text.pdf", "unclassified"),
+            "text-fonts"
+        );
+        assert_eq!(
+            visual_diff_subsystem("fixtures/generated/cmyk-image.pdf", "unclassified"),
+            "images-color"
+        );
+        assert_eq!(
+            visual_diff_subsystem("fixtures/generated/vector-stress.pdf", "report"),
+            "vector-graphics"
+        );
+        assert_eq!(
+            visual_diff_subsystem(
+                "fixtures/generated/encrypted-placeholder.pdf",
+                "secure-document",
+            ),
+            "document-security"
+        );
     }
 
     #[test]
