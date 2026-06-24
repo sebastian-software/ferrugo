@@ -145,6 +145,12 @@ transform. The native backend resolves page `/Resources /XObject` dictionaries,
 builds image display-list items, and composites opaque image samples into the
 same RGBA raster used for paths. Unsupported filters and color spaces still
 fail during image resource resolution with typed errors.
+Inline image streams are tokenized as one borrowed `BI`/`ID`/`EI` object so raw
+sample bytes do not flow through the generic operator tokenizer. The image
+interpreter supports bounded, unfiltered 8-bit `DeviceRGB`/`DeviceGray` inline
+images by converting them into the same image display items used for Image
+XObjects. Filtered inline images remain explicit unsupported cases until the
+image-filter milestone.
 Basic text rasterization uses an internal 5x7 ASCII fallback font for the first
 visible text milestone. It renders positioned text display-list runs using the
 captured text origin, font size, and fill color, and `pdfrust-native` resolves

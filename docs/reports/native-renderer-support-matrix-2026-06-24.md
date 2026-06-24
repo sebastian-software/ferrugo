@@ -22,7 +22,7 @@ Milestone: 0041.
 | `text-page.pdf` | `degraded` | fallback ASCII text | 0042-0045 font pipeline | yes for faithful text |
 | `image-xobject.pdf` | `rendered` | DeviceRGB Image XObject | done in 0038 | no for unfiltered RGB/gray images |
 | `form-xobject.pdf` | `unsupported` | Form XObject composition | pull forward before 0042, then 0059 parity | yes |
-| `inline-image.pdf` | `unsupported` | inline image stream execution | pull forward before 0047 image filters | yes |
+| `inline-image.pdf` | `rendered` | unfiltered inline image stream execution | done in 0041a | no for unfiltered RGB/gray inline images |
 
 ## Local Corpus Category Matrix
 
@@ -41,16 +41,15 @@ Milestone: 0041.
 
 | Rank | Gap | Product value | Implementation risk | Memory risk | Owner |
 | --- | --- | --- | --- | --- | --- |
-| 1 | Inline image stream execution (`BI`/`ID`/`EI`) | high | medium | medium | pull forward before 0047 |
-| 2 | Combined native Form XObject rendering | high | medium | low to medium | pull forward before 0042 |
-| 3 | Font program loading and fallback policy | high | high | medium | 0042 |
-| 4 | CMap and ToUnicode mapping | high | high | low to medium | 0043 |
-| 5 | Glyph outline extraction | high | high | medium | 0044 |
-| 6 | Complex text positioning baseline | high | medium | low | 0045 |
-| 7 | Color spaces and decode arrays | high | medium | low | 0046 |
-| 8 | Image filter coverage | high | medium to high | high | 0047 |
-| 9 | Soft masks and transparency groups | medium to high | high | high | 0048 |
-| 10 | Advanced stroke and clipping fidelity | medium | medium | low | 0051 |
+| 1 | Combined native Form XObject rendering | high | medium | low to medium | pull forward before 0042 |
+| 2 | Font program loading and fallback policy | high | high | medium | 0042 |
+| 3 | CMap and ToUnicode mapping | high | high | low to medium | 0043 |
+| 4 | Glyph outline extraction | high | high | medium | 0044 |
+| 5 | Complex text positioning baseline | high | medium | low | 0045 |
+| 6 | Color spaces and decode arrays | high | medium | low | 0046 |
+| 7 | Image filter coverage | high | medium to high | high | 0047 |
+| 8 | Soft masks and transparency groups | medium to high | high | high | 0048 |
+| 9 | Advanced stroke and clipping fidelity | medium | medium | low | 0051 |
 
 ## Error Taxonomy Decision
 
@@ -66,3 +65,5 @@ The existing milestone chain covers the font, image, graphics, document, cache,
 facade, and retirement gates. The 0040 evidence adds two higher-priority
 integration gaps that should be pulled forward before the font pipeline or
 image-filter work: inline image streams and combined Form XObject rendering.
+The unfiltered inline-image slice landed as 0041a; filtered inline images remain
+part of 0047 image filter coverage.

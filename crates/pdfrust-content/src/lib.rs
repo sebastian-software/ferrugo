@@ -5,7 +5,8 @@
 use std::fmt;
 
 use pdfrust_syntax::{
-    parse_primitive_prefix, ByteOffset, PdfBytes, PdfPrimitive, SyntaxError, SyntaxErrorKind,
+    parse_primitive_prefix, ByteOffset, PdfBytes, PdfName, PdfPrimitive, SyntaxError,
+    SyntaxErrorKind,
 };
 
 /// Stable crate role used by architecture smoke tests and documentation.
@@ -56,6 +57,11 @@ impl<'a> ContentTokenizer<'a> {
         }
 
         let offset = ByteOffset::new(self.offset);
+        if starts_inline_image(self.input, self.offset) {
+            let image = self.parse_inline_image(offset)?;
+            return Ok(Some(ContentToken::InlineImage { offset, image }));
+        }
+
         if should_parse_primitive(&self.input[self.offset..]) {
             let (value, consumed) =
                 parse_primitive_prefix(PdfBytes::new(&self.input[self.offset..]))
@@ -105,6 +111,46 @@ impl<'a> ContentTokenizer<'a> {
             }
         }
     }
+
+    fn parse_inline_image(&mut self, offset: ByteOffset) -> ContentResult<InlineImage<'a>> {
+        self.offset += b"BI".len();
+        let mut attributes = Vec::new();
+
+        loop {
+            self.skip_whitespace_and_comments();
+            if starts_inline_image_data(self.input, self.offset) {
+                self.offset += b"ID".len();
+                if self
+                    .input
+                    .get(self.offset)
+                    .is_some_and(|byte| is_whitespace(*byte))
+                {
+                    self.offset += 1;
+                }
+                let data_start = self.offset;
+                let (data_end, next_offset) = find_inline_image_end(self.input, data_start)
+                    .ok_or_else(|| ContentError::new(offset, ContentErrorKind::UnexpectedEof))?;
+                self.offset = next_offset;
+                return Ok(InlineImage {
+                    attributes,
+                    data: &self.input[data_start..data_end],
+                });
+            }
+
+            let (key, consumed) = parse_primitive_prefix(PdfBytes::new(&self.input[self.offset..]))
+                .map_err(|error| ContentError::from_syntax(self.offset, error))?;
+            self.offset += consumed.get();
+            let PdfPrimitive::Name(name) = key else {
+                return Err(ContentError::new(offset, ContentErrorKind::InvalidOperand));
+            };
+
+            let (value, consumed) =
+                parse_primitive_prefix(PdfBytes::new(&self.input[self.offset..]))
+                    .map_err(|error| ContentError::from_syntax(self.offset, error))?;
+            self.offset += consumed.get();
+            attributes.push((name, value));
+        }
+    }
 }
 
 impl<'a> Iterator for ContentTokenizer<'a> {
@@ -139,6 +185,34 @@ pub enum ContentToken<'a> {
         /// Borrowed operator name bytes.
         name: OperatorName<'a>,
     },
+    /// Inline image object parsed from `BI`/`ID`/`EI`.
+    InlineImage {
+        /// Byte offset where `BI` starts.
+        offset: ByteOffset,
+        /// Borrowed inline image metadata and raw sample data.
+        image: InlineImage<'a>,
+    },
+}
+
+/// Borrowed inline image object from a content stream.
+#[derive(Debug, Clone, PartialEq)]
+pub struct InlineImage<'a> {
+    attributes: Vec<(PdfName<'a>, PdfPrimitive<'a>)>,
+    data: &'a [u8],
+}
+
+impl<'a> InlineImage<'a> {
+    /// Returns the inline image attribute dictionary entries.
+    #[must_use]
+    pub fn attributes(&self) -> &[(PdfName<'a>, PdfPrimitive<'a>)] {
+        &self.attributes
+    }
+
+    /// Returns the borrowed raw inline image data between `ID` and `EI`.
+    #[must_use]
+    pub const fn data(&self) -> &'a [u8] {
+        self.data
+    }
 }
 
 /// Borrowed content-stream operator name.
@@ -261,6 +335,47 @@ fn starts_with_keyword(input: &[u8], keyword: &[u8]) -> bool {
     }
 }
 
+fn starts_inline_image(input: &[u8], offset: usize) -> bool {
+    input
+        .get(offset..)
+        .is_some_and(|remaining| starts_operator(remaining, b"BI"))
+}
+
+fn starts_inline_image_data(input: &[u8], offset: usize) -> bool {
+    input
+        .get(offset..)
+        .is_some_and(|remaining| starts_operator(remaining, b"ID"))
+}
+
+fn starts_operator(input: &[u8], operator: &[u8]) -> bool {
+    if !input.starts_with(operator) {
+        return false;
+    }
+    match input.get(operator.len()) {
+        Some(byte) => is_whitespace(*byte),
+        None => false,
+    }
+}
+
+fn find_inline_image_end(input: &[u8], data_start: usize) -> Option<(usize, usize)> {
+    let mut offset = data_start.saturating_add(1);
+    while offset + 1 < input.len() {
+        if input[offset] == b'E'
+            && input[offset + 1] == b'I'
+            && offset > data_start
+            && is_whitespace(input[offset - 1])
+            && match input.get(offset + 2) {
+                Some(byte) => is_whitespace(*byte) || is_delimiter(*byte),
+                None => true,
+            }
+        {
+            return Some((offset - 1, offset + 2));
+        }
+        offset += 1;
+    }
+    None
+}
+
 const fn is_whitespace(byte: u8) -> bool {
     matches!(byte, b'\0' | b'\t' | b'\n' | b'\x0c' | b'\r' | b' ')
 }
@@ -367,6 +482,63 @@ mod tests {
                 name: OperatorName::new(b"ET"),
             })
         );
+    }
+
+    #[test]
+    fn tokenizer_should_parse_inline_image_as_single_token() {
+        let tokens = tokenize_content(PdfBytes::new(
+            b"q BI /W 2 /H 1 /CS /RGB /BPC 8 ID \xff\0\0\0\xff\0 EI Q",
+        ))
+        .collect::<ContentResult<Vec<_>>>()
+        .expect("valid inline image stream");
+
+        assert_eq!(tokens.len(), 3);
+        let ContentToken::InlineImage { offset, image } = &tokens[1] else {
+            panic!("expected inline image token");
+        };
+        assert_eq!(*offset, ByteOffset::new(2));
+        assert_eq!(image.attributes().len(), 4);
+        assert_eq!(image.attributes()[0].0, PdfName::new(b"W"));
+        assert_eq!(image.data(), b"\xff\0\0\0\xff\0");
+    }
+
+    #[test]
+    fn tokenizer_should_parse_generated_inline_image_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/inline-image.pdf");
+        let document = load_classic_document(PdfBytes::new(bytes))
+            .expect("fixture should load as classic PDF");
+        let content_id = ObjectId::new(
+            ObjectNumber::new(1).expect("object number"),
+            GenerationNumber::new(0),
+        );
+        let content = document
+            .objects
+            .get(content_id)
+            .expect("content stream object");
+        let ObjectValue::Stream(stream) = &content.value else {
+            panic!("content object should be a stream");
+        };
+        let decoded = stream.decode().expect("content stream should decode");
+        let tokens = tokenize_content(PdfBytes::new(&decoded))
+            .collect::<ContentResult<Vec<_>>>()
+            .expect("fixture content stream should tokenize");
+
+        assert!(tokens.iter().any(|token| {
+            matches!(
+                token,
+                ContentToken::InlineImage { image, .. } if image.data().len() == 12
+            )
+        }));
+    }
+
+    #[test]
+    fn tokenizer_should_report_unterminated_inline_image_data() {
+        let error = tokenize_content(PdfBytes::new(b"BI /W 1 /H 1 /CS /G /BPC 8 ID \0"))
+            .collect::<ContentResult<Vec<_>>>()
+            .expect_err("missing EI should fail");
+
+        assert_eq!(error.offset(), ByteOffset::new(0));
+        assert_eq!(error.kind(), ContentErrorKind::UnexpectedEof);
     }
 
     #[test]

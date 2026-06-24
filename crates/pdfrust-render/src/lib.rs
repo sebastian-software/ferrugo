@@ -6,7 +6,7 @@ use std::fmt;
 use std::sync::Arc;
 
 use pdfrust_content::{
-    tokenize_content, ContentErrorKind, ContentResult, ContentToken, OperatorName,
+    tokenize_content, ContentErrorKind, ContentResult, ContentToken, InlineImage, OperatorName,
 };
 use pdfrust_object::{
     ClassicDocument, GenerationNumber, IndirectObject, ModernDocument, ObjectId, ObjectNumber,
@@ -1463,6 +1463,9 @@ impl<'r> DisplayListInterpreter<'r> {
                     self.apply_operator(offset, name, &operands)?;
                     operands.clear();
                 }
+                ContentToken::InlineImage { .. } => {
+                    operands.clear();
+                }
             }
         }
         Ok(())
@@ -1940,6 +1943,9 @@ impl<'r> TextDisplayListInterpreter<'r> {
                     self.apply_operator(offset, name, &operands)?;
                     operands.clear();
                 }
+                ContentToken::InlineImage { .. } => {
+                    operands.clear();
+                }
             }
         }
         Ok(())
@@ -2239,6 +2245,10 @@ impl<'r> ImageDisplayListInterpreter<'r> {
                     self.apply_operator(offset, name, &operands)?;
                     operands.clear();
                 }
+                ContentToken::InlineImage { offset, image } => {
+                    self.place_inline_image(offset, &image)?;
+                    operands.clear();
+                }
             }
         }
         Ok(())
@@ -2334,6 +2344,25 @@ impl<'r> ImageDisplayListInterpreter<'r> {
             offset,
         )
     }
+
+    fn place_inline_image(
+        &mut self,
+        offset: ByteOffset,
+        inline_image: &InlineImage<'_>,
+    ) -> GraphicsResult<()> {
+        let image = decode_inline_image(inline_image, self.options.max_image_bytes)?;
+        let transform = self.current.ctm;
+        self.display_list.push(
+            DisplayItem::Image(ImageDisplayItem {
+                image,
+                transform,
+                bounds: unit_square_bounds(transform),
+                state: self.current,
+            }),
+            self.options.max_display_items,
+            offset,
+        )
+    }
 }
 
 #[derive(Debug, Default, Clone, PartialEq)]
@@ -2405,6 +2434,9 @@ impl GraphicsStateInterpreter {
                 ContentToken::Operand { value, .. } => operands.push(value),
                 ContentToken::Operator { offset, name } => {
                     self.apply_operator(offset, name, &operands)?;
+                    operands.clear();
+                }
+                ContentToken::InlineImage { .. } => {
                     operands.clear();
                 }
             }
@@ -2729,6 +2761,54 @@ fn decode_image_xobject(
         bits_per_component,
         color_space,
         samples: Arc::from(decoded),
+    })
+}
+
+fn decode_inline_image(
+    image: &InlineImage<'_>,
+    max_image_bytes: usize,
+) -> GraphicsResult<ImageXObject> {
+    let attributes = image.attributes();
+    require_unfiltered_inline_image(attributes)?;
+    let width = required_u32(attributes, b"Width")
+        .or_else(|_| required_u32(attributes, b"W"))
+        .map_err(|_| invalid_image_resource(b"inline-image"))?;
+    let height = required_u32(attributes, b"Height")
+        .or_else(|_| required_u32(attributes, b"H"))
+        .map_err(|_| invalid_image_resource(b"inline-image"))?;
+    let bits_per_component = required_u8(attributes, b"BitsPerComponent")
+        .or_else(|_| required_u8(attributes, b"BPC"))
+        .map_err(|_| invalid_image_resource(b"inline-image"))?;
+    if bits_per_component != 8 {
+        return Err(invalid_image_resource(b"inline-image"));
+    }
+    let color_space = image_color_space(attributes)?;
+    let data = image.data();
+    if data.len() > max_image_bytes {
+        return Err(GraphicsError::new(
+            None,
+            GraphicsErrorKind::ImageBytesOverflow {
+                limit: max_image_bytes,
+            },
+        ));
+    }
+    let expected_len = expected_image_len(width, height, color_space)?;
+    if data.len() != expected_len {
+        return Err(GraphicsError::new(
+            None,
+            GraphicsErrorKind::InvalidImageDataLength {
+                expected: expected_len,
+                actual: data.len(),
+            },
+        ));
+    }
+    Ok(ImageXObject {
+        resource_name: b"inline-image".to_vec(),
+        width,
+        height,
+        bits_per_component,
+        color_space,
+        samples: Arc::from(data),
     })
 }
 
@@ -3369,6 +3449,25 @@ fn require_supported_image_filter(
     }
 }
 
+fn require_unfiltered_inline_image(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+) -> GraphicsResult<()> {
+    let Some(filter) =
+        dictionary_value(dictionary, b"Filter").or_else(|| dictionary_value(dictionary, b"F"))
+    else {
+        return Ok(());
+    };
+    let filter = match filter {
+        PdfPrimitive::Name(name) => name.as_bytes().to_vec(),
+        PdfPrimitive::Array(_) => b"filter-chain".to_vec(),
+        _ => b"malformed-filter".to_vec(),
+    };
+    Err(GraphicsError::new(
+        None,
+        GraphicsErrorKind::UnsupportedImageFilter { filter },
+    ))
+}
+
 fn image_color_space(
     dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
 ) -> GraphicsResult<ImageColorSpace> {
@@ -3386,9 +3485,11 @@ fn image_color_space(
         PdfPrimitive::Name(name) if name.as_bytes() == b"DeviceRGB" => {
             Ok(ImageColorSpace::DeviceRgb)
         }
+        PdfPrimitive::Name(name) if name.as_bytes() == b"RGB" => Ok(ImageColorSpace::DeviceRgb),
         PdfPrimitive::Name(name) if name.as_bytes() == b"DeviceGray" => {
             Ok(ImageColorSpace::DeviceGray)
         }
+        PdfPrimitive::Name(name) if name.as_bytes() == b"G" => Ok(ImageColorSpace::DeviceGray),
         PdfPrimitive::Name(name) => Err(GraphicsError::new(
             None,
             GraphicsErrorKind::UnsupportedImageColorSpace {
@@ -4921,6 +5022,89 @@ mod tests {
             }
         );
         assert_eq!(image.image.resource_name, b"Im1");
+    }
+
+    #[test]
+    fn image_display_list_should_place_inline_image_with_ctm_bounds() {
+        let list = build_image_display_list(
+            tokenize_content(PdfBytes::new(
+                b"q 64 0 0 64 28 28 cm BI /W 2 /H 2 /CS /RGB /BPC 8 ID \xff\0\0\0\xff\0\0\0\xff\xff\xff\0 EI Q",
+            )),
+            &ImageResources::empty(),
+            DisplayListOptions::default(),
+        )
+        .expect("valid inline image placement");
+
+        let DisplayItem::Image(image) = &list.items()[0] else {
+            panic!("expected image item");
+        };
+        assert_eq!(
+            image.bounds,
+            PathBounds {
+                min_x: 28.0,
+                min_y: 28.0,
+                max_x: 92.0,
+                max_y: 92.0,
+            }
+        );
+        assert_eq!(image.image.resource_name, b"inline-image");
+    }
+
+    #[test]
+    fn image_rasterizer_should_draw_generated_inline_image_fixture() {
+        let decoded = generated_fixture_content("inline-image.pdf");
+        let list = build_image_display_list(
+            tokenize_content(PdfBytes::new(&decoded)),
+            &ImageResources::empty(),
+            DisplayListOptions::default(),
+        )
+        .expect("generated inline image display list");
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 120.0,
+                    max_y: 120.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            120,
+        )
+        .expect("inline image fixture transform");
+        let mut device = transform.create_device(Rgba::WHITE).expect("raster device");
+
+        rasterize_images(&list, &mut device, transform).expect("inline image should rasterize");
+
+        assert_eq!(
+            device.pixel(44, 44).expect("top-left sample"),
+            Rgba {
+                r: 255,
+                g: 0,
+                b: 0,
+                a: 255,
+            }
+        );
+    }
+
+    #[test]
+    fn image_display_list_should_report_unsupported_inline_image_filter() {
+        let error = build_image_display_list(
+            tokenize_content(PdfBytes::new(
+                b"BI /W 1 /H 1 /CS /G /BPC 8 /F /FlateDecode ID \0 EI",
+            )),
+            &ImageResources::empty(),
+            DisplayListOptions::default(),
+        )
+        .expect_err("inline image filters are not decoded yet");
+
+        assert_eq!(
+            error.kind(),
+            &GraphicsErrorKind::UnsupportedImageFilter {
+                filter: b"FlateDecode".to_vec(),
+            }
+        );
     }
 
     #[test]
