@@ -21,7 +21,6 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
-| 0014 | [Error Taxonomy Mapping](0014-error-taxonomy-mapping.md) | 0 | small | 0011 |
 | 0015 | [Differential Baseline Format](0015-differential-baseline-format.md) | 0 | small | 0012, 0014 |
 | 0016 | [Phase 0 Report And Pivot Decision](0016-phase-0-report-and-pivot-decision.md) | 0 | small | 0007, 0015 |
 
@@ -46,6 +45,7 @@ No milestones are currently in progress.
 | 0011 | [PDFium Backend Linkage](0011-pdfium-backend-linkage.md) | 0 | medium | 2026-06-24 |
 | 0012 | [Render Page Zero To RGBA](0012-render-page-zero-to-rgba.md) | 0 | small | 2026-06-24 |
 | 0013 | [PNG Output CLI](0013-png-output-cli.md) | 0 | small | 2026-06-24 |
+| 0014 | [Error Taxonomy Mapping](0014-error-taxonomy-mapping.md) | 0 | small | 2026-06-24 |
 
 ## Update Rules
 

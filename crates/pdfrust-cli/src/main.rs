@@ -53,7 +53,10 @@ fn render_command(args: &[OsString]) -> Result<(), CliError> {
     let source = PdfSource::from_path(&config.input);
     let thumbnail = backend
         .render(source, &options)
-        .map_err(|err| CliError::Render(err.to_string()))?;
+        .map_err(|err| CliError::Render {
+            class: err.class().as_str(),
+            message: err.to_string(),
+        })?;
     let png = encode_rgba_png(&thumbnail)?;
     fs::write(&config.output, png).map_err(|source| CliError::Io {
         path: config.output,
@@ -143,7 +146,10 @@ impl RenderConfig {
 enum CliError {
     Usage(String),
     Backend(String),
-    Render(String),
+    Render {
+        class: &'static str,
+        message: String,
+    },
     Encode(String),
     Io {
         path: PathBuf,
@@ -156,7 +162,7 @@ impl fmt::Display for CliError {
         match self {
             Self::Usage(message) => write!(f, "usage error: {message}"),
             Self::Backend(message) => write!(f, "backend error: {message}"),
-            Self::Render(message) => write!(f, "render error: {message}"),
+            Self::Render { class, message } => write!(f, "render error [{class}]: {message}"),
             Self::Encode(message) => write!(f, "PNG encode error: {message}"),
             Self::Io { path, source } => {
                 write!(f, "failed to write `{}`: {source}", path.display())
@@ -357,5 +363,18 @@ mod tests {
         let png = encode_rgba_png(&thumbnail).expect("valid PNG");
 
         assert_eq!(&png[..8], b"\x89PNG\r\n\x1a\n");
+    }
+
+    #[test]
+    fn render_error_should_include_error_class() {
+        let error = CliError::Render {
+            class: "malformed",
+            message: "PDF is malformed".to_string(),
+        };
+
+        assert_eq!(
+            error.to_string(),
+            "render error [malformed]: PDF is malformed"
+        );
     }
 }

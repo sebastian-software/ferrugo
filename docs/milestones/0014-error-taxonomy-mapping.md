@@ -1,6 +1,6 @@
 # 0014: Error Taxonomy Mapping
 
-Status: todo
+Status: done
 Phase: 0
 Size: small
 Depends on: 0011
@@ -43,5 +43,11 @@ Map PDFium/backend failures into the project's stable thumbnail error classes.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-24.
 
+- Added `ThumbnailErrorClass` and `ThumbnailError::class()`.
+- Mapped known PDFium error codes to stable thumbnail classes.
+- Added CLI render error output with the stable class.
+- Documented the taxonomy in `docs/errors.md`.
+- Timeout is reserved in the facade taxonomy; live timeout probes require the
+  local PDFium backend.

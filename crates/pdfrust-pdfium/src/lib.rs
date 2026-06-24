@@ -15,6 +15,14 @@ static PDFIUM_LOCK: Mutex<()> = Mutex::new(());
 /// Environment variable pointing at a local PDFium dynamic library.
 pub const PDFIUM_LIBRARY_ENV: &str = "PDFRUST_PDFIUM_LIBRARY";
 
+const FPDF_ERR_SUCCESS: u32 = 0;
+const FPDF_ERR_UNKNOWN: u32 = 1;
+const FPDF_ERR_FILE: u32 = 2;
+const FPDF_ERR_FORMAT: u32 = 3;
+const FPDF_ERR_PASSWORD: u32 = 4;
+const FPDF_ERR_SECURITY: u32 = 5;
+const FPDF_ERR_PAGE: u32 = 6;
+
 /// Backend that loads a local PDFium library at runtime.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PdfiumBackend {
@@ -158,6 +166,20 @@ impl fmt::Display for PdfiumBackendError {
 
 impl std::error::Error for PdfiumBackendError {}
 
+/// Maps a raw `FPDF_GetLastError` code into the stable thumbnail taxonomy.
+#[must_use]
+pub fn map_pdfium_error_code(code: u32) -> ThumbnailError {
+    match code {
+        FPDF_ERR_PASSWORD | FPDF_ERR_SECURITY => ThumbnailError::Encrypted,
+        FPDF_ERR_FILE | FPDF_ERR_FORMAT => ThumbnailError::Malformed,
+        FPDF_ERR_PAGE => ThumbnailError::Unsupported,
+        FPDF_ERR_SUCCESS | FPDF_ERR_UNKNOWN => {
+            ThumbnailError::internal(format!("PDFium error code {code}"))
+        }
+        other => ThumbnailError::internal(format!("unrecognized PDFium error code {other}")),
+    }
+}
+
 #[cfg(unix)]
 mod sys {
     use std::ffi::{CStr, CString};
@@ -166,6 +188,7 @@ mod sys {
     use std::ptr::NonNull;
 
     use super::PdfiumBackendError;
+    use crate::map_pdfium_error_code;
     use pdfrust_thumbnail::{PixelFormat, Rgba, Thumbnail, ThumbnailError, ThumbnailOptions};
 
     const RTLD_NOW: c_int = 2;
@@ -283,7 +306,8 @@ mod sys {
                     NO_PASSWORD,
                 )
             };
-            let document = NonNull::new(document).ok_or(ThumbnailError::Malformed)?;
+            let document = NonNull::new(document)
+                .ok_or_else(|| map_pdfium_error_code(unsafe { self.get_last_error() }))?;
             let document = PdfDocument {
                 library: self,
                 document,
@@ -291,7 +315,8 @@ mod sys {
             let page = unsafe {
                 (self.load_page)(document.document.as_ptr(), options.page_index as c_int)
             };
-            let page = NonNull::new(page).ok_or(ThumbnailError::Malformed)?;
+            let page = NonNull::new(page)
+                .ok_or_else(|| map_pdfium_error_code(unsafe { self.get_last_error() }))?;
             let page = PdfPage {
                 library: self,
                 page,
@@ -559,5 +584,37 @@ mod tests {
             .expect_err("missing file should fail");
 
         assert_eq!(error, ThumbnailError::Malformed);
+    }
+
+    #[test]
+    fn map_pdfium_error_code_should_map_password_to_encrypted() {
+        assert_eq!(
+            map_pdfium_error_code(FPDF_ERR_PASSWORD),
+            ThumbnailError::Encrypted
+        );
+    }
+
+    #[test]
+    fn map_pdfium_error_code_should_map_format_to_malformed() {
+        assert_eq!(
+            map_pdfium_error_code(FPDF_ERR_FORMAT),
+            ThumbnailError::Malformed
+        );
+    }
+
+    #[test]
+    fn map_pdfium_error_code_should_map_page_to_unsupported() {
+        assert_eq!(
+            map_pdfium_error_code(FPDF_ERR_PAGE),
+            ThumbnailError::Unsupported
+        );
+    }
+
+    #[test]
+    fn map_pdfium_error_code_should_map_unknown_to_internal() {
+        assert_eq!(
+            map_pdfium_error_code(FPDF_ERR_UNKNOWN).class().as_str(),
+            "internal"
+        );
     }
 }

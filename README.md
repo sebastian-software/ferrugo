@@ -75,6 +75,7 @@ full-renderer parity until after those measurements exist.
 - [PDFium build measurement baseline](docs/measurements/pdfium-build-baseline.md)
 - [Fixture policy](docs/fixtures.md)
 - [PDFium backend notes](docs/backend/pdfium.md)
+- [Thumbnail error taxonomy](docs/errors.md)
 
 ## Workspace
 

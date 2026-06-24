@@ -195,6 +195,53 @@ impl ThumbnailError {
     pub fn internal(message: impl Into<String>) -> Self {
         Self::Internal(message.into())
     }
+
+    /// Returns the stable high-level error class.
+    #[must_use]
+    pub const fn class(&self) -> ThumbnailErrorClass {
+        match self {
+            Self::Encrypted => ThumbnailErrorClass::Encrypted,
+            Self::Malformed => ThumbnailErrorClass::Malformed,
+            Self::Unsupported => ThumbnailErrorClass::Unsupported,
+            Self::Timeout => ThumbnailErrorClass::Timeout,
+            Self::Internal(_) => ThumbnailErrorClass::Internal,
+        }
+    }
+}
+
+/// Stable error classes for CLI output and baseline metadata.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ThumbnailErrorClass {
+    /// The document is encrypted or password protected.
+    Encrypted,
+    /// The document is malformed or cannot be loaded as a PDF.
+    Malformed,
+    /// The document or request uses unsupported features.
+    Unsupported,
+    /// Rendering exceeded the configured timeout.
+    Timeout,
+    /// Backend failure not covered by a more specific stable class.
+    Internal,
+}
+
+impl ThumbnailErrorClass {
+    /// Returns the metadata-safe class name.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Encrypted => "encrypted",
+            Self::Malformed => "malformed",
+            Self::Unsupported => "unsupported",
+            Self::Timeout => "timeout",
+            Self::Internal => "internal",
+        }
+    }
+}
+
+impl fmt::Display for ThumbnailErrorClass {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
 }
 
 impl fmt::Display for ThumbnailError {
@@ -266,6 +313,11 @@ mod tests {
             ThumbnailError::Encrypted.to_string(),
             "PDF is encrypted or password protected"
         );
+    }
+
+    #[test]
+    fn error_class_should_be_stable() {
+        assert_eq!(ThumbnailError::Timeout.class().as_str(), "timeout");
     }
 
     #[test]
