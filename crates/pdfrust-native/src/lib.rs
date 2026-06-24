@@ -1256,6 +1256,26 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_render_generated_widget_annotation_appearance_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/widget-annotation-appearance.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 120,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated widget annotation appearance fixture should render");
+
+        assert_eq!(thumbnail.width, 120);
+        assert_eq!(thumbnail.height, 120);
+        assert_eq!(rgba_at(&thumbnail, 25, 86), [230, 230, 230, 255]);
+        assert_low_intensity(rgba_at(&thumbnail, 20, 77), 96);
+        assert_eq!(rgba_at(&thumbnail, 75, 86), [255, 255, 255, 255]);
+    }
+
+    #[test]
     fn native_backend_should_render_generated_text_fixture() {
         let bytes = include_bytes!("../../../fixtures/generated/text-page.pdf");
         let thumbnail = ThumbnailBackend::render(
@@ -1422,6 +1442,22 @@ mod tests {
         assert!(rgba[0] < 32, "red channel should be dark: {rgba:?}");
         assert!(rgba[1] < 32, "green channel should be dark: {rgba:?}");
         assert!(rgba[2] < 32, "blue channel should be dark: {rgba:?}");
+        assert_eq!(rgba[3], 255);
+    }
+
+    fn assert_low_intensity(rgba: [u8; 4], maximum: u8) {
+        assert!(
+            rgba[0] <= maximum,
+            "red channel should be below {maximum}: {rgba:?}"
+        );
+        assert!(
+            rgba[1] <= maximum,
+            "green channel should be below {maximum}: {rgba:?}"
+        );
+        assert!(
+            rgba[2] <= maximum,
+            "blue channel should be below {maximum}: {rgba:?}"
+        );
         assert_eq!(rgba[3], 255);
     }
 }

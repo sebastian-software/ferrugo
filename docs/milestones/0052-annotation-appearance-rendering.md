@@ -84,6 +84,15 @@ In progress:
   `max-edge 120`: `120x120`, changed RGB pixels `0`, RGB MAE `0.0000`, p95 RGB
   delta `0`, max channel delta `0`, native non-white pixels `600`. Highlight
   fill and outside sample pixels match PDFium exactly.
+- Seventh fixture slice adds generated
+  `fixtures/generated/widget-annotation-appearance.pdf`, covering a static
+  `/Subtype /Widget` text-field annotation appearance without implementing
+  interactive form behavior.
+- PDFium bridge probe for `widget-annotation-appearance.pdf` at `max-edge 120`
+  currently stays blank for the Widget appearance through the plain
+  `FPDF_RenderPageBitmap` path, while native renders `900` non-white pixels.
+  Keep this as native regression coverage until a form-fill-aware PDFium oracle
+  path exists.
 - PDFium/native comparison for `annotation-appearance.pdf` at `max-edge 120`:
   `120x120`, changed RGB pixels `0`, RGB MAE `0.0000`, p95 RGB delta `0`,
   max channel delta `0`, native non-white pixels `800`. Filled and outside
@@ -93,9 +102,12 @@ In progress:
   - `cargo test -p pdfrust-native annotation_without_appearance -- --nocapture`
   - `cargo test -p pdfrust-native link_annotation_appearance -- --nocapture`
   - `cargo test -p pdfrust-native highlight_annotation_appearance -- --nocapture`
+  - `cargo test -p pdfrust-native widget_annotation_appearance -- --nocapture`
   - `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render fixtures/generated/annotation-appearance.pdf --max-edge 120 --output target/pdfrust-thumbnails/annotation-appearance-pdfium-0052.png`
   - `cargo run -p pdfrust-cli -- render-native fixtures/generated/annotation-appearance.pdf --max-edge 120 --output target/pdfrust-thumbnails/annotation-appearance-native-0052.png`
   - `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render fixtures/generated/link-annotation-appearance.pdf --max-edge 120 --output target/pdfrust-thumbnails/link-annotation-appearance-pdfium-0052.png`
   - `cargo run -p pdfrust-cli -- render-native fixtures/generated/link-annotation-appearance.pdf --max-edge 120 --output target/pdfrust-thumbnails/link-annotation-appearance-native-0052.png`
   - `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render fixtures/generated/highlight-annotation-appearance.pdf --max-edge 120 --output target/pdfrust-thumbnails/highlight-annotation-appearance-pdfium-0052.png`
   - `cargo run -p pdfrust-cli -- render-native fixtures/generated/highlight-annotation-appearance.pdf --max-edge 120 --output target/pdfrust-thumbnails/highlight-annotation-appearance-native-0052.png`
+  - `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render fixtures/generated/widget-annotation-appearance.pdf --max-edge 120 --output target/pdfrust-thumbnails/widget-annotation-appearance-pdfium-0052.png`
+  - `cargo run -p pdfrust-cli -- render-native fixtures/generated/widget-annotation-appearance.pdf --max-edge 120 --output target/pdfrust-thumbnails/widget-annotation-appearance-native-0052.png`

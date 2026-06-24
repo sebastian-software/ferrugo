@@ -39,6 +39,7 @@ The initial seed set covers:
 - annotations without usable appearance streams
 - link annotation appearance streams
 - text-markup highlight annotation appearance streams
+- widget annotation appearance streams
 - axial DeviceRGB shading gradients
 - radial DeviceRGB shading gradients
 - colored tiling patterns
