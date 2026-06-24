@@ -35,6 +35,26 @@ Allowed statuses:
 | 0058 | [Renderer Cache And Memory Budgets](0058-renderer-cache-and-memory-budgets.md) | 8 | medium | 0057 |
 | 0059 | [Native Backend Facade Parity](0059-native-backend-facade-parity.md) | 8 | medium | 0058 |
 | 0060 | [PDFium Retirement Gate](0060-pdfium-retirement-gate.md) | 8 | medium | 0059 |
+| 0061 | [Native Renderer Default Rollout](0061-native-renderer-default-rollout.md) | 9 | medium | 0060 |
+| 0062 | [PDFium Fallback Telemetry And Kill Switch](0062-pdfium-fallback-telemetry-and-kill-switch.md) | 9 | small | 0061 |
+| 0063 | [Corpus Taxonomy And Sampling Expansion](0063-corpus-taxonomy-and-sampling-expansion.md) | 9 | medium | 0062 |
+| 0064 | [Office Export Document Coverage](0064-office-export-document-coverage.md) | 10 | medium | 0063 |
+| 0065 | [Browser Print Document Coverage](0065-browser-print-document-coverage.md) | 10 | medium | 0064 |
+| 0066 | [Scanned Document And Large Image Coverage](0066-scanned-document-and-large-image-coverage.md) | 10 | medium | 0065 |
+| 0067 | [Mixed Text Image Page Fidelity](0067-mixed-text-image-page-fidelity.md) | 10 | medium | 0066 |
+| 0068 | [Complex Font Subsetting And CID Fonts](0068-complex-font-subsetting-and-cid-fonts.md) | 11 | medium | 0067 |
+| 0069 | [Vertical And CJK Text Coverage](0069-vertical-and-cjk-text-coverage.md) | 11 | medium | 0068 |
+| 0070 | [Bidirectional And Shaped Text Policy](0070-bidirectional-and-shaped-text-policy.md) | 11 | medium | 0069 |
+| 0071 | [Transparency Stack Fidelity Gate](0071-transparency-stack-fidelity-gate.md) | 11 | medium | 0070 |
+| 0072 | [Vector Graphics Stress Coverage](0072-vector-graphics-stress-coverage.md) | 11 | medium | 0071 |
+| 0073 | [Table And Report Layout Fidelity](0073-table-and-report-layout-fidelity.md) | 12 | medium | 0072 |
+| 0074 | [Annotation And Form Interaction Coverage](0074-annotation-and-form-interaction-coverage.md) | 12 | medium | 0073 |
+| 0075 | [Color Management And Output Intent Policy](0075-color-management-and-output-intent-policy.md) | 12 | medium | 0074 |
+| 0076 | [Streaming Parse And Incremental Rendering](0076-streaming-parse-and-incremental-rendering.md) | 12 | medium | 0075 |
+| 0077 | [Parallel Page Rendering Scheduler](0077-parallel-page-rendering-scheduler.md) | 12 | medium | 0076 |
+| 0078 | [Renderer Benchmark Suite And Budgets](0078-renderer-benchmark-suite-and-budgets.md) | 13 | medium | 0077 |
+| 0079 | [Optional PDFium Build Feature Split](0079-optional-pdfium-build-feature-split.md) | 13 | medium | 0078 |
+| 0080 | [Native Renderer Release Candidate Gate](0080-native-renderer-release-candidate-gate.md) | 13 | medium | 0079 |
 
 ## In Progress
 
