@@ -1,6 +1,6 @@
 # 0085: Page Geometry Boxes Rotation And User Units
 
-Status: todo
+Status: done
 Phase: 15
 Size: medium
 Depends on: 0084
@@ -46,4 +46,27 @@ rotation, and user units.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-24.
+
+- Commit `fbfb703`: added object-layer parsing for `/Rotate` and `/UserUnit`,
+  native geometry wiring, and generated geometry fixtures.
+- Added fixtures:
+  - `fixtures/generated/rotated-office-export.pdf`
+  - `fixtures/generated/cropped-scan-page.pdf`
+  - `fixtures/generated/user-unit-page.pdf`
+- Recorded native/PDFium comparison evidence in
+  `docs/reports/page-geometry-coverage-2026-06-24.md`.
+
+Validation completed:
+
+```text
+cargo fmt --check
+cargo check
+cargo test
+cargo test -p pdfrust-cli --features pdfium
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --output target/0085-geometry-visual-diff.json
+```
+
+Note: full `git diff --check` still reports pre-existing trailing whitespace in
+the unstaged `.gitignore` change. The 0085 touched-file diff check passed.
