@@ -1170,7 +1170,8 @@ pub fn extract_glyph_outline(
 ) -> GraphicsResult<Option<GlyphOutline>> {
     match program.key.kind {
         FontProgramKind::TrueType => extract_truetype_glyph_outline(program, glyph_code, options),
-        FontProgramKind::Type1 | FontProgramKind::Cff => Err(GraphicsError::new(
+        FontProgramKind::Cff => extract_cff_glyph_outline(program, glyph_code, options),
+        FontProgramKind::Type1 => Err(GraphicsError::new(
             None,
             GraphicsErrorKind::UnsupportedGlyphOutlineProgram {
                 kind: program.key.kind,
@@ -1674,6 +1675,81 @@ fn extract_truetype_glyph_outline(
         left_side_bearing: f64::from(face.glyph_hor_side_bearing(glyph_id).unwrap_or(0)),
         segments: builder.segments,
     }))
+}
+
+const SYNTHETIC_CFF_MAX_GLYPHS: u16 = u16::MAX;
+
+fn extract_cff_glyph_outline(
+    program: &FontProgram,
+    glyph_code: u32,
+    options: GlyphOutlineOptions,
+) -> GraphicsResult<Option<GlyphOutline>> {
+    let glyph_id =
+        ttf_parser::GlyphId(u16::try_from(glyph_code).map_err(|_| invalid_glyph_outline())?);
+    let head = synthetic_cff_head_table();
+    let hhea = synthetic_cff_hhea_table();
+    let maxp = synthetic_cff_maxp_table();
+    let face = ttf_parser::Face::from_raw_tables(ttf_parser::RawFaceTables {
+        head: &head,
+        hhea: &hhea,
+        maxp: &maxp,
+        cff: Some(program.bytes.as_ref()),
+        ..ttf_parser::RawFaceTables::default()
+    })
+    .map_err(|_| invalid_glyph_outline())?;
+    let mut builder = TtfOutlineBuilder {
+        segments: Vec::new(),
+        current: None,
+        max_segments: options.max_segments,
+        overflowed: false,
+    };
+    let Some(_) = face.outline_glyph(glyph_id, &mut builder) else {
+        return Ok(None);
+    };
+    if builder.overflowed {
+        return Err(GraphicsError::new(
+            None,
+            GraphicsErrorKind::GlyphOutlineSegmentOverflow {
+                limit: options.max_segments,
+            },
+        ));
+    }
+    Ok(Some(GlyphOutline {
+        glyph_code,
+        advance_width: f64::from(face.glyph_hor_advance(glyph_id).unwrap_or(0)),
+        left_side_bearing: f64::from(face.glyph_hor_side_bearing(glyph_id).unwrap_or(0)),
+        segments: builder.segments,
+    }))
+}
+
+fn synthetic_cff_head_table() -> [u8; 54] {
+    let mut head = [0; 54];
+    head[0..4].copy_from_slice(&0x0001_0000u32.to_be_bytes());
+    head[4..8].copy_from_slice(&0x0001_0000u32.to_be_bytes());
+    head[12..16].copy_from_slice(&0x5f0f_3cf5u32.to_be_bytes());
+    head[18..20].copy_from_slice(&1000u16.to_be_bytes());
+    head[36..38].copy_from_slice(&(-16_384i16).to_be_bytes());
+    head[38..40].copy_from_slice(&(-16_384i16).to_be_bytes());
+    head[40..42].copy_from_slice(&16_383i16.to_be_bytes());
+    head[42..44].copy_from_slice(&16_383i16.to_be_bytes());
+    head[46..48].copy_from_slice(&8u16.to_be_bytes());
+    head
+}
+
+fn synthetic_cff_hhea_table() -> [u8; 36] {
+    let mut hhea = [0; 36];
+    hhea[0..4].copy_from_slice(&0x0001_0000u32.to_be_bytes());
+    hhea[4..6].copy_from_slice(&800i16.to_be_bytes());
+    hhea[6..8].copy_from_slice(&(-200i16).to_be_bytes());
+    hhea[34..36].copy_from_slice(&1u16.to_be_bytes());
+    hhea
+}
+
+fn synthetic_cff_maxp_table() -> [u8; 6] {
+    let mut maxp = [0; 6];
+    maxp[0..4].copy_from_slice(&0x0000_5000u32.to_be_bytes());
+    maxp[4..6].copy_from_slice(&SYNTHETIC_CFF_MAX_GLYPHS.to_be_bytes());
+    maxp
 }
 
 struct TtfOutlineBuilder {
@@ -6657,17 +6733,23 @@ mod tests {
     }
 
     #[test]
-    fn glyph_outline_should_report_unsupported_cff_program() {
-        let mut program = test_truetype_program();
-        program.key.kind = FontProgramKind::Cff;
-        let error = extract_glyph_outline(&program, 1, GlyphOutlineOptions::default())
-            .expect_err("CFF outline parser is not part of this slice");
+    fn glyph_outline_should_extract_simple_cff_charstring() {
+        let program = test_cff_program();
+        let outline = extract_glyph_outline(&program, 1, GlyphOutlineOptions::default())
+            .expect("CFF outline extraction should succeed")
+            .expect("glyph should exist");
 
+        assert_eq!(outline.glyph_code, 1);
         assert_eq!(
-            error.kind(),
-            &GraphicsErrorKind::UnsupportedGlyphOutlineProgram {
-                kind: FontProgramKind::Cff,
-            }
+            outline.segments,
+            vec![
+                PathSegment::MoveTo(Point { x: 0.0, y: 0.0 }),
+                PathSegment::LineTo(Point { x: 100.0, y: 0.0 }),
+                PathSegment::LineTo(Point { x: 100.0, y: 100.0 }),
+                PathSegment::LineTo(Point { x: 0.0, y: 100.0 }),
+                PathSegment::LineTo(Point { x: 0.0, y: 0.0 }),
+                PathSegment::Close,
+            ]
         );
     }
 
@@ -7319,6 +7401,85 @@ mod tests {
             },
             bytes: Arc::from(minimal_truetype_font()),
         }
+    }
+
+    fn test_cff_program() -> FontProgram {
+        FontProgram {
+            key: FontProgramKey {
+                reference: Reference::new(ObjectId::new(
+                    ObjectNumber::new(8).expect("object number"),
+                    GenerationNumber::new(0),
+                )),
+                kind: FontProgramKind::Cff,
+            },
+            bytes: Arc::from(minimal_cff_font()),
+        }
+    }
+
+    fn minimal_cff_font() -> Vec<u8> {
+        let header = vec![1, 0, 4, 1];
+        let name_index = cff_index(&[b"A".as_slice()]);
+        let string_index = cff_index(&[]);
+        let global_subr_index = cff_index(&[]);
+        let glyph0 = [14];
+        let glyph1 = [
+            type2_number(0),
+            type2_number(0),
+            21,
+            type2_number(100),
+            type2_number(0),
+            type2_number(0),
+            type2_number(100),
+            type2_number(-100),
+            type2_number(0),
+            type2_number(0),
+            type2_number(-100),
+            5,
+            14,
+        ];
+        let charstrings_index = cff_index(&[glyph0.as_slice(), glyph1.as_slice()]);
+        let charstrings_offset =
+            header.len() + name_index.len() + 7 + string_index.len() + global_subr_index.len();
+        let top_dict = [dict_number(charstrings_offset as i32), 17];
+        let top_index = cff_index(&[top_dict.as_slice()]);
+
+        let mut cff = Vec::new();
+        cff.extend_from_slice(&header);
+        cff.extend_from_slice(&name_index);
+        cff.extend_from_slice(&top_index);
+        cff.extend_from_slice(&string_index);
+        cff.extend_from_slice(&global_subr_index);
+        cff.extend_from_slice(&charstrings_index);
+        cff
+    }
+
+    fn cff_index(objects: &[&[u8]]) -> Vec<u8> {
+        let mut index = Vec::new();
+        index.extend_from_slice(&(objects.len() as u16).to_be_bytes());
+        if objects.is_empty() {
+            return index;
+        }
+        index.push(1);
+        let mut offset = 1u8;
+        index.push(offset);
+        for object in objects {
+            offset = offset
+                .checked_add(u8::try_from(object.len()).expect("small CFF object"))
+                .expect("small CFF index");
+            index.push(offset);
+        }
+        for object in objects {
+            index.extend_from_slice(object);
+        }
+        index
+    }
+
+    fn dict_number(value: i32) -> u8 {
+        u8::try_from(value + 139).expect("small DICT number")
+    }
+
+    fn type2_number(value: i16) -> u8 {
+        u8::try_from(i32::from(value) + 139).expect("small Type 2 number")
     }
 
     fn minimal_truetype_font() -> Vec<u8> {

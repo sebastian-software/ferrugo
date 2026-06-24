@@ -165,8 +165,10 @@ bounded embedded Type1, TrueType, and CFF font program streams behind a small
 object-identity cache. Text strings are decoded through simple font encodings
 or ToUnicode CMaps and carry their source character codes forward.
 Glyph-outline extraction uses `ttf-parser` as the bounded, safe Rust parser for
-SFNT-backed TrueType outlines, converting `OutlineBuilder` callbacks into the
-existing path segment representation behind a small glyph-outline cache. Raw
-PDF `/FontFile3` CFF streams remain explicitly unsupported until a dedicated
-CFF path lands. The current rasterizer still uses the visible fallback font;
-true font-backed rasterization remains a later milestone.
+SFNT-backed TrueType outlines and raw PDF `/FontFile3` CFF streams, converting
+`OutlineBuilder` callbacks into the existing path segment representation behind
+a small glyph-outline cache. Raw CFF streams are passed through
+`Face::from_raw_tables` with synthetic required OpenType tables so the native
+renderer does not take an extra CFF parser dependency. Type1 `/FontFile`
+outlines remain unsupported. The current rasterizer still uses the visible
+fallback font; true font-backed rasterization remains a later milestone.

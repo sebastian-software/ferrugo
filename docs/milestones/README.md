@@ -42,12 +42,12 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
-| 0044 | [Glyph Outline Extraction](0044-glyph-outline-extraction.md) | 5 | medium | 0043 |
 
 ## Done
 
 | ID | Milestone | Phase | Size | Completed |
 | --- | --- | --- | --- | --- |
+| 0044 | [Glyph Outline Extraction](0044-glyph-outline-extraction.md) | 5 | medium | 2026-06-24 |
 | 0001 | [Milestone Tracking Structure](0001-milestone-tracking-structure.md) | 0 | small | 2026-06-24 |
 | 0002 | [Research And Porting Baseline](0002-research-and-porting-baseline.md) | 0 | small | 2026-06-24 |
 | 0003 | [Phase 0 Decision Baseline](0003-phase-0-decision-baseline.md) | 0 | small | 2026-06-24 |

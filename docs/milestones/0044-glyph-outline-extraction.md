@@ -1,6 +1,6 @@
 # 0044: Glyph Outline Extraction
 
-Status: in-progress
+Status: done
 Phase: 5
 Size: medium
 Depends on: 0043
@@ -45,13 +45,28 @@ renderer path data.
 
 ## Completion Notes
 
-Empty until done.
+- Implemented bounded glyph-outline extraction for embedded TrueType/SFNT and
+  raw `/FontFile3` CFF programs through `ttf-parser`.
+- Added a small glyph-outline cache with explicit entry and segment budgets.
+- CFF extraction uses synthetic required OpenType tables around the raw CFF
+  table, avoiding an additional parser dependency while keeping outline parsing
+  in `ttf-parser`.
+- Type1 `/FontFile` outlines remain unsupported and are tracked separately from
+  the 0044 TrueType/CFF scope.
+- Validation: `cargo fmt --check`, `cargo check`, `cargo test`,
+  `cargo clippy --all-targets --all-features -- -D warnings`, native CLI
+  smokes for `embedded-font.pdf`, `tounicode-text.pdf`, and
+  `encoding-differences.pdf`, plus PDFium/native text comparison for
+  `text-page.pdf` at `300x160`, MAE `12.082`, max `255`,
+  `native_nonwhite_pixels=2653`.
 
 ## Progress Notes
 
 - Selected `ttf-parser` 0.25.1 with only the `std` feature as the safe,
-  zero-allocation outline parser dependency for SFNT-backed TrueType outlines.
+  zero-allocation outline parser dependency for SFNT-backed TrueType and CFF
+  outlines.
 - Added the initial glyph-outline API, metrics capture, path-segment
   conversion, segment budget, and cache boundaries.
-- Raw PDF CFF (`/FontFile3`) outline extraction remains open for this
-  milestone.
+- Added direct raw PDF CFF (`/FontFile3`) outline extraction by passing the CFF
+  table to `ttf-parser::Face::from_raw_tables` with synthetic required
+  OpenType tables.
