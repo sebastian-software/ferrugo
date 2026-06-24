@@ -1,6 +1,6 @@
 # 0054: Optional Content And Layer Policy
 
-Status: in-progress
+Status: done
 Phase: 7
 Size: medium
 Depends on: 0053
@@ -45,7 +45,7 @@ default thumbnail.
 
 ## Completion Notes
 
-In progress:
+Completed:
 
 - First implementation slice resolves simple catalog `/OCProperties /D`
   defaults, page `/Resources /Properties` OCG references, and `/OC ... BDC`
@@ -61,9 +61,16 @@ In progress:
   `fixtures/generated/optional-content-ocmd.pdf` and verifies that `/OCMD`
   membership dictionaries return `unsupported` instead of silently rendering a
   potentially misleading thumbnail.
+- Unsupported optional content behavior is documented in
+  `docs/policies/optional-content.md`; native unsupported diagnostics can use
+  the `graphics.optional-content` bucket recorded in `docs/errors.md`.
 - Current validation:
   - `cargo test -p pdfrust-native optional_content_layer -- --nocapture`
   - `cargo test -p pdfrust-native optional_content_membership -- --nocapture`
+  - `cargo fmt --check`
+  - `cargo check`
+  - `cargo clippy --all-targets --all-features -- -D warnings`
+  - `cargo test --quiet`
   - `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render fixtures/generated/optional-content-layer-on.pdf --max-edge 120 --output target/pdfrust-thumbnails/optional-content-layer-on-pdfium-0054.png`
   - `cargo run -p pdfrust-cli -- render-native fixtures/generated/optional-content-layer-on.pdf --max-edge 120 --output target/pdfrust-thumbnails/optional-content-layer-on-native-0054.png`
   - `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render fixtures/generated/optional-content-layer-off.pdf --max-edge 120 --output target/pdfrust-thumbnails/optional-content-layer-off-pdfium-0054.png`

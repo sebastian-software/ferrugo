@@ -46,6 +46,7 @@ preserving the public `unsupported` class:
 | `graphics.stroke-clip` | Page depends on stroke joins, caps, dashes, or clipping fidelity. | 0051 |
 | `annotation.appearance` | Annotation appearance is missing, malformed, dynamically generated, or requires unsupported form/interaction behavior. | 0052 |
 | `form.acroform` | AcroForm widget appearance is missing, dynamic, XFA-backed, script-backed, or requires validation/editing behavior. | 0053 |
+| `graphics.optional-content` | Optional content uses unsupported membership, usage application, intent, or viewer-state policy. | 0054 |
 
 These buckets are not API classes. They make support matrices and corpus
 reports stable without forcing downstream callers to depend on milestone-level
