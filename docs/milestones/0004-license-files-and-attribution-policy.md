@@ -1,6 +1,6 @@
 # 0004: License Files And Attribution Policy
 
-Status: todo
+Status: done
 Phase: 0
 Size: small
 Depends on: 0002
@@ -42,5 +42,8 @@ attribution policy for PDFium-guided work.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-24.
 
+- Added `LICENSE-MIT` and `LICENSE-APACHE`.
+- Added `docs/policies/attribution.md`.
+- Linked the policy from the README and Phase 0 decision baseline.

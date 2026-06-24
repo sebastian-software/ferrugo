@@ -21,7 +21,6 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
-| 0004 | [License Files And Attribution Policy](0004-license-files-and-attribution-policy.md) | 0 | small | 0002 |
 | 0005 | [PDFium Source Checkout Recipe](0005-pdfium-source-checkout-recipe.md) | 0 | small | 0003 |
 | 0006 | [Minimal PDFium GN Configuration](0006-minimal-pdfium-gn-configuration.md) | 0 | small | 0005 |
 | 0007 | [PDFium Build Measurement Baseline](0007-pdfium-build-measurement-baseline.md) | 0 | medium | 0006 |
@@ -46,6 +45,7 @@ No milestones are currently in progress.
 | 0001 | [Milestone Tracking Structure](0001-milestone-tracking-structure.md) | 0 | small | 2026-06-24 |
 | 0002 | [Research And Porting Baseline](0002-research-and-porting-baseline.md) | 0 | small | 2026-06-24 |
 | 0003 | [Phase 0 Decision Baseline](0003-phase-0-decision-baseline.md) | 0 | small | 2026-06-24 |
+| 0004 | [License Files And Attribution Policy](0004-license-files-and-attribution-policy.md) | 0 | small | 2026-06-24 |
 
 ## Update Rules
 
@@ -56,4 +56,3 @@ No milestones are currently in progress.
 - When blocked, move the row to a `Blocked` section if needed, set
   `Status: blocked`, and document the unblock condition.
 - Keep milestones small. If a milestone grows beyond two focused days, split it.
-

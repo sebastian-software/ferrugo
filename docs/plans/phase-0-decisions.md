@@ -66,6 +66,8 @@ Consequence:
 MuPDF and Poppler remain references and comparison renderers, not direct
 porting bases. Any direct PDFium code porting requires attribution and license
 review. No AGPL dependency should enter the core library.
+The repository-level attribution policy records the distinction between
+behavioral reference, architecture inspiration, and code porting.
 
 ## 3. First Runtime Surface
 
@@ -324,4 +326,3 @@ Phase 0 is complete when:
 - Batch page rendering.
 - Full PDF renderer crate layout.
 - Public compatibility with PDFium's C API.
-

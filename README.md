@@ -9,6 +9,11 @@ bindings.
 This repository currently contains concept and research notes only. It is not
 yet an implementation workspace.
 
+Unless noted otherwise, repository code and documentation are licensed under
+either MIT or Apache-2.0 at the user's option. PDFium and other renderers are
+used as behavior references under the project's attribution policy; their
+source code is not vendored here.
+
 ## Working Thesis
 
 No open-source, Rust-native renderer appears to match PDFium's rendering
@@ -66,3 +71,4 @@ full-renderer parity until after those measurements exist.
 - [Node API surface](docs/concepts/2026-06-24-node-api-surface.md)
 - [Thumbnail generation plan](docs/plans/2026-06-24-thumbnail-generation-plan.md)
 - [Roadmap](docs/roadmap.md)
+- [Attribution policy](docs/policies/attribution.md)
