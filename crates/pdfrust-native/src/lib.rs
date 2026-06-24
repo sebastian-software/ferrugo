@@ -12,11 +12,11 @@ use pdfrust_object::{
 };
 use pdfrust_render::{
     build_form_display_list_with_graphics_resources, build_image_display_list,
-    build_path_display_list_with_graphics_resources, build_text_display_list, rasterize_images,
-    rasterize_paths, rasterize_paths_into, rasterize_text, DisplayListOptions,
-    ExtGraphicsStateResources, FontResources, FormResources, GraphicsError, GraphicsErrorKind,
-    ImageResources, PageGeometry, PageRotation, PageTransform, PathBounds, PathRasterOptions,
-    RasterError, ShadingResources,
+    build_path_display_list_with_graphics_resources, build_text_display_list,
+    decode_tiling_pattern, rasterize_images, rasterize_paths, rasterize_paths_into, rasterize_text,
+    DisplayListOptions, ExtGraphicsStateResources, FontResources, FormResources, GraphicsError,
+    GraphicsErrorKind, ImageResources, PageGeometry, PageRotation, PageTransform, PathBounds,
+    PathRasterOptions, RasterError, ShadingResources, TilingPatternResources,
 };
 use pdfrust_syntax::{PdfBytes, PdfName, PdfPrimitive};
 use pdfrust_thumbnail::{
@@ -108,10 +108,12 @@ fn render_bytes(bytes: &[u8], options: &ThumbnailOptions) -> Result<Thumbnail, T
     let display_options = DisplayListOptions::default();
     let ext_graphics_states = page_ext_graphics_state_resources(&document, page)?;
     let shadings = page_shading_resources(&document, page)?;
+    let patterns = page_tiling_pattern_resources(&document, page)?;
     let display_list = build_path_display_list_with_graphics_resources(
         tokenize_content(PdfBytes::new(&content)),
         &ext_graphics_states,
         &shadings,
+        &patterns,
         display_options,
     )
     .map_err(map_graphics_error)?;
@@ -130,6 +132,7 @@ fn render_bytes(bytes: &[u8], options: &ThumbnailOptions) -> Result<Thumbnail, T
         &form_resources,
         &ext_graphics_states,
         &shadings,
+        &patterns,
         DisplayListOptions::default(),
     )
     .map_err(map_graphics_error)?;
@@ -246,6 +249,72 @@ fn page_shading_resources(
         return Ok(ShadingResources::empty());
     };
     ShadingResources::from_shading_dictionary(shadings).map_err(map_graphics_error)
+}
+
+fn page_tiling_pattern_resources(
+    document: &ClassicDocument<'_>,
+    page: &ObjectPageMetadata,
+) -> Result<TilingPatternResources, ThumbnailError> {
+    let object = document
+        .objects
+        .get(page.id)
+        .ok_or(ThumbnailError::Malformed)?;
+    let dictionary = object_dictionary(&object.value)?;
+    let Some(resources) = dictionary_value(dictionary, b"Resources") else {
+        return Ok(TilingPatternResources::empty());
+    };
+    let resource_dictionary = match resources {
+        PdfPrimitive::Dictionary(dictionary) => dictionary.as_slice(),
+        PdfPrimitive::Reference(reference) => {
+            let object_number =
+                ObjectNumber::new(reference.object).map_err(|_| ThumbnailError::Malformed)?;
+            let reference = Reference::new(ObjectId::new(
+                object_number,
+                GenerationNumber::new(reference.generation),
+            ));
+            let object = document
+                .objects
+                .get(reference.id)
+                .ok_or(ThumbnailError::Malformed)?;
+            object_dictionary(&object.value)?
+        }
+        _ => return Err(ThumbnailError::Malformed),
+    };
+    let Some(PdfPrimitive::Dictionary(patterns)) =
+        dictionary_value(resource_dictionary, b"Pattern")
+    else {
+        return Ok(TilingPatternResources::empty());
+    };
+    let mut decoded = Vec::new();
+    for (name, value) in patterns {
+        let PdfPrimitive::Reference(reference) = value else {
+            return Err(ThumbnailError::Unsupported);
+        };
+        let object_number =
+            ObjectNumber::new(reference.object).map_err(|_| ThumbnailError::Malformed)?;
+        let reference = Reference::new(ObjectId::new(
+            object_number,
+            GenerationNumber::new(reference.generation),
+        ));
+        let object = document
+            .objects
+            .get(reference.id)
+            .ok_or(ThumbnailError::Malformed)?;
+        let ObjectValue::Stream(stream) = &object.value else {
+            return Err(ThumbnailError::Malformed);
+        };
+        let content = stream.decode().map_err(|_| ThumbnailError::Unsupported)?;
+        decoded.push(
+            decode_tiling_pattern(
+                name.as_bytes().to_vec(),
+                stream.dictionary(),
+                &content,
+                DisplayListOptions::default(),
+            )
+            .map_err(map_graphics_error)?,
+        );
+    }
+    Ok(TilingPatternResources::new(decoded))
 }
 
 fn page_image_resources(

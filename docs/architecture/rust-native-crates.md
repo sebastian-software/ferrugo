@@ -110,6 +110,9 @@ Page `/ExtGState` resources can set path blend mode state for `Normal`,
 explicit unsupported policy until print-production semantics are modeled.
 Page `/Shading` resources support the first axial `/ShadingType 2` subset via
 `DeviceRGB`/`DeviceGray` Type 2 functions and the `sh` content operator.
+Page `/Pattern` resources support the first colored tiling-pattern subset via
+indirect `/PatternType 1` streams, `cs /Pattern`, and `/Name scn` fill
+selection with bounded repeat sampling.
 Text display-list support interprets `BT`, `ET`, `Tf`, `Td`, `Tm`, `Tj`, and
 `TJ` into positioned `TextDisplayItem` values. Font descriptors carry simple
 single-byte encodings, Differences arrays, and bounded ToUnicode CMaps for the
@@ -165,6 +168,8 @@ generated vector fixtures can be compared against the PDFium backend during
 development.
 Axial shadings are rasterized by projecting device pixels onto the transformed
 gradient axis and sampling the supported Type 2 function directly.
+Colored tiling patterns are sampled from decoded path display-list tiles during
+fill rasterization and enforce an explicit repeat budget before painting.
 Image XObject rasterization draws decoded `DeviceRGB`, `DeviceGray`,
 `DeviceCMYK`, and Indexed images with nearest-neighbor sampling through the
 image placement matrix and the page transform. The native backend resolves page

@@ -80,11 +80,16 @@ In progress:
   `(252,252,255,255)`, mid PDFium `(128,128,255,255)` vs native
   `(125,125,255,255)`, corner PDFium `(1,1,255,255)` vs native
   `(0,0,255,255)`.
+- Fifth implementation slice adds colored tiling pattern support for
+  `/PatternType 1`, `/PaintType 1` stream resources, fill color-space
+  selection through `cs /Pattern`, pattern selection through `/Name scn`, and
+  bounded repeated sampling in path fills.
 - Current validation:
   - `cargo fmt --check`
   - `git diff --check`
   - `cargo check`
   - `cargo test --quiet`
+  - `cargo test -p pdfrust-render pattern -- --nocapture`
   - `cargo test -p pdfrust-native axial_gradient -- --nocapture`
   - `cargo test -p pdfrust-native radial_gradient -- --nocapture`
   - `cargo test -p pdfrust-render shading -- --nocapture`

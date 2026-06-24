@@ -64,6 +64,9 @@ pub const DEFAULT_FLATTENED_PATH_SEGMENT_LIMIT: usize = 65_536;
 /// Default maximum pixels in one transparency group intermediate raster.
 pub const DEFAULT_TRANSPARENCY_GROUP_PIXELS_LIMIT: usize = 16 * 1024 * 1024;
 
+/// Default maximum number of repeated pattern tiles in one rasterization pass.
+pub const DEFAULT_PATTERN_TILE_LIMIT: usize = 65_536;
+
 /// Result alias for graphics-state interpretation.
 pub type GraphicsResult<T> = Result<T, GraphicsError>;
 
@@ -250,6 +253,8 @@ pub struct PathRasterOptions {
     pub max_flattened_segments: usize,
     /// Maximum pixels accepted in one transparency group intermediate raster.
     pub max_transparency_group_pixels: usize,
+    /// Maximum repeated pattern tiles accepted in one rasterization pass.
+    pub max_pattern_tiles: usize,
 }
 
 impl Default for PathRasterOptions {
@@ -258,6 +263,7 @@ impl Default for PathRasterOptions {
             supersample: 2,
             max_flattened_segments: DEFAULT_FLATTENED_PATH_SEGMENT_LIMIT,
             max_transparency_group_pixels: DEFAULT_TRANSPARENCY_GROUP_PIXELS_LIMIT,
+            max_pattern_tiles: DEFAULT_PATTERN_TILE_LIMIT,
         }
     }
 }
@@ -414,6 +420,15 @@ impl DeviceColor {
     pub const BLACK: Self = Self::Gray(DeviceGray::BLACK);
 }
 
+/// Fill color-space mode tracked for pattern color setting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FillColorSpace {
+    /// Normal device color operators.
+    Device,
+    /// PDF `/Pattern` color space.
+    Pattern,
+}
+
 /// Current graphics state subset needed by early renderer milestones.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GraphicsState {
@@ -429,6 +444,10 @@ pub struct GraphicsState {
     pub fill_color: DeviceColor,
     /// Current stroke color.
     pub stroke_color: DeviceColor,
+    /// Current fill color-space mode.
+    pub fill_color_space: FillColorSpace,
+    /// Current fill pattern resource index, if `/Pattern` color space is active.
+    pub fill_pattern: Option<usize>,
     /// Current blend mode for path painting.
     pub blend_mode: BlendMode,
     /// Placeholder flag set by `W` or `W*` until clipping is modeled fully.
@@ -444,6 +463,8 @@ impl Default for GraphicsState {
             stroke_gray: DeviceGray::BLACK,
             fill_color: DeviceColor::BLACK,
             stroke_color: DeviceColor::BLACK,
+            fill_color_space: FillColorSpace::Device,
+            fill_pattern: None,
             blend_mode: BlendMode::Normal,
             clip_path_pending: false,
         }
@@ -527,6 +548,21 @@ pub struct RadialShading {
     pub extend_end: bool,
 }
 
+/// Decoded colored tiling pattern resource.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TilingPattern {
+    /// Pattern resource name without the leading slash.
+    pub resource_name: Vec<u8>,
+    /// Pattern cell bounding box.
+    pub bbox: PathBounds,
+    /// Horizontal tile step.
+    pub x_step: f64,
+    /// Vertical tile step.
+    pub y_step: f64,
+    /// Decoded pattern cell path items.
+    pub items: DisplayList,
+}
+
 /// Path fill rule.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FillRule {
@@ -582,6 +618,8 @@ pub struct PathDisplayItem {
     pub paint: PaintMode,
     /// Graphics state snapshot at paint time.
     pub state: GraphicsState,
+    /// Optional colored tiling pattern used by fill painting.
+    pub fill_pattern: Option<TilingPattern>,
 }
 
 impl PathDisplayItem {
@@ -1078,6 +1116,42 @@ impl ShadingResources {
         self.shadings.iter().find_map(|(resource, shading)| {
             (resource.as_slice() == name.as_bytes()).then_some(shading)
         })
+    }
+}
+
+/// Tiling pattern resource map.
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct TilingPatternResources {
+    patterns: Vec<TilingPattern>,
+}
+
+impl TilingPatternResources {
+    /// Creates an empty tiling pattern resource map.
+    #[must_use]
+    pub const fn empty() -> Self {
+        Self {
+            patterns: Vec::new(),
+        }
+    }
+
+    /// Creates a tiling pattern resource map from decoded patterns.
+    #[must_use]
+    pub fn new(patterns: Vec<TilingPattern>) -> Self {
+        Self { patterns }
+    }
+
+    /// Returns the resource index matching a PDF pattern name.
+    #[must_use]
+    pub fn index_of(&self, name: PdfName<'_>) -> Option<usize> {
+        self.patterns
+            .iter()
+            .position(|pattern| pattern.resource_name.as_slice() == name.as_bytes())
+    }
+
+    /// Returns the pattern at a resource index.
+    #[must_use]
+    pub fn get_index(&self, index: usize) -> Option<&TilingPattern> {
+        self.patterns.get(index)
     }
 }
 
@@ -2405,7 +2479,14 @@ pub fn build_path_display_list_with_ext_graphics_states<'a>(
     options: DisplayListOptions,
 ) -> GraphicsResult<DisplayList> {
     let shadings = ShadingResources::empty();
-    build_path_display_list_with_graphics_resources(tokens, ext_graphics_states, &shadings, options)
+    let patterns = TilingPatternResources::empty();
+    build_path_display_list_with_graphics_resources(
+        tokens,
+        ext_graphics_states,
+        &shadings,
+        &patterns,
+        options,
+    )
 }
 
 /// Builds a path display list with external graphics and shading resources.
@@ -2419,10 +2500,15 @@ pub fn build_path_display_list_with_graphics_resources<'a>(
     tokens: impl IntoIterator<Item = ContentResult<ContentToken<'a>>>,
     ext_graphics_states: &ExtGraphicsStateResources,
     shadings: &ShadingResources,
+    patterns: &TilingPatternResources,
     options: DisplayListOptions,
 ) -> GraphicsResult<DisplayList> {
-    let mut interpreter =
-        DisplayListInterpreter::new_with_graphics_resources(options, ext_graphics_states, shadings);
+    let mut interpreter = DisplayListInterpreter::new_with_graphics_resources(
+        options,
+        ext_graphics_states,
+        shadings,
+        patterns,
+    );
     interpreter.interpret(tokens)?;
     Ok(interpreter.display_list)
 }
@@ -2490,11 +2576,13 @@ pub fn build_form_display_list_with_ext_graphics_states<'a>(
     options: DisplayListOptions,
 ) -> GraphicsResult<DisplayList> {
     let shadings = ShadingResources::empty();
+    let patterns = TilingPatternResources::empty();
     build_form_display_list_with_graphics_resources(
         tokens,
         forms,
         ext_graphics_states,
         &shadings,
+        &patterns,
         options,
     )
 }
@@ -2511,14 +2599,19 @@ pub fn build_form_display_list_with_graphics_resources<'a>(
     forms: &FormResources,
     ext_graphics_states: &ExtGraphicsStateResources,
     shadings: &ShadingResources,
+    patterns: &TilingPatternResources,
     options: DisplayListOptions,
 ) -> GraphicsResult<DisplayList> {
+    let resources = GraphicsResourceContext {
+        ext_graphics_states: Some(ext_graphics_states),
+        shadings: Some(shadings),
+        patterns: Some(patterns),
+    };
     let mut interpreter = DisplayListInterpreter::new_with_forms(
         GraphicsState::default(),
         options,
         forms,
-        Some(ext_graphics_states),
-        Some(shadings),
+        resources,
         FormResourceScope::page(),
         0,
     );
@@ -2718,14 +2811,20 @@ fn rasterize_path_item(
     )?;
     match path.paint {
         PaintMode::Fill { rule } => {
-            fill_path(
-                device,
-                &flattened,
-                rule,
-                path.state.fill_color,
-                path.state.blend_mode,
-                options,
-            )?;
+            if let Some(pattern) = &path.fill_pattern {
+                fill_path_with_tiling_pattern(
+                    device, &flattened, rule, pattern, path.state, transform, options,
+                )?;
+            } else {
+                fill_path(
+                    device,
+                    &flattened,
+                    rule,
+                    path.state.fill_color,
+                    path.state.blend_mode,
+                    options,
+                )?;
+            }
         }
         PaintMode::Stroke => {
             stroke_path(
@@ -2738,14 +2837,20 @@ fn rasterize_path_item(
             )?;
         }
         PaintMode::FillStroke { rule } => {
-            fill_path(
-                device,
-                &flattened,
-                rule,
-                path.state.fill_color,
-                path.state.blend_mode,
-                options,
-            )?;
+            if let Some(pattern) = &path.fill_pattern {
+                fill_path_with_tiling_pattern(
+                    device, &flattened, rule, pattern, path.state, transform, options,
+                )?;
+            } else {
+                fill_path(
+                    device,
+                    &flattened,
+                    rule,
+                    path.state.fill_color,
+                    path.state.blend_mode,
+                    options,
+                )?;
+            }
             stroke_path(
                 device,
                 &flattened,
@@ -2892,9 +2997,15 @@ struct DisplayListInterpreter<'r> {
     current_path: CurrentPath,
     display_list: DisplayList,
     options: DisplayListOptions,
+    resources: GraphicsResourceContext<'r>,
+    forms: Option<FormInterpreterContext<'r>>,
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+struct GraphicsResourceContext<'r> {
     ext_graphics_states: Option<&'r ExtGraphicsStateResources>,
     shadings: Option<&'r ShadingResources>,
-    forms: Option<FormInterpreterContext<'r>>,
+    patterns: Option<&'r TilingPatternResources>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -2934,8 +3045,7 @@ impl<'r> DisplayListInterpreter<'r> {
             current_path: CurrentPath::default(),
             display_list: DisplayList::new(),
             options,
-            ext_graphics_states: None,
-            shadings: None,
+            resources: GraphicsResourceContext::default(),
             forms: None,
         }
     }
@@ -2944,15 +3054,20 @@ impl<'r> DisplayListInterpreter<'r> {
         options: DisplayListOptions,
         ext_graphics_states: &'r ExtGraphicsStateResources,
         shadings: &'r ShadingResources,
+        patterns: &'r TilingPatternResources,
     ) -> Self {
+        let resources = GraphicsResourceContext {
+            ext_graphics_states: Some(ext_graphics_states),
+            shadings: Some(shadings),
+            patterns: Some(patterns),
+        };
         Self {
             current: GraphicsState::default(),
             stack: Vec::new(),
             current_path: CurrentPath::default(),
             display_list: DisplayList::new(),
             options,
-            ext_graphics_states: Some(ext_graphics_states),
-            shadings: Some(shadings),
+            resources,
             forms: None,
         }
     }
@@ -2961,8 +3076,7 @@ impl<'r> DisplayListInterpreter<'r> {
         current: GraphicsState,
         options: DisplayListOptions,
         forms: &'r FormResources,
-        ext_graphics_states: Option<&'r ExtGraphicsStateResources>,
-        shadings: Option<&'r ShadingResources>,
+        resources: GraphicsResourceContext<'r>,
         scope: FormResourceScope<'r>,
         recursion_depth: usize,
     ) -> Self {
@@ -2972,8 +3086,7 @@ impl<'r> DisplayListInterpreter<'r> {
             current_path: CurrentPath::default(),
             display_list: DisplayList::new(),
             options,
-            ext_graphics_states,
-            shadings,
+            resources,
             forms: Some(FormInterpreterContext {
                 resources: forms,
                 scope,
@@ -3017,6 +3130,8 @@ impl<'r> DisplayListInterpreter<'r> {
             b"G" => self.set_stroke_gray(offset, operands),
             b"rg" => self.set_fill_rgb(offset, operands),
             b"RG" => self.set_stroke_rgb(offset, operands),
+            b"cs" => self.set_fill_color_space(offset, operands),
+            b"scn" => self.set_fill_pattern(offset, operands),
             b"gs" => self.set_ext_graphics_state(offset, operands),
             b"sh" => self.paint_shading(offset, operands),
             b"m" => self.move_to(offset, operands),
@@ -3123,8 +3238,7 @@ impl<'r> DisplayListInterpreter<'r> {
             nested_state,
             self.options,
             context.resources,
-            self.ext_graphics_states,
-            self.shadings,
+            self.resources,
             FormResourceScope::for_form(form),
             context.recursion_depth + 1,
         );
@@ -3240,6 +3354,8 @@ impl<'r> DisplayListInterpreter<'r> {
         let gray = DeviceGray(number_operand(offset, b"g", operands, 0)?.clamp(0.0, 1.0));
         self.current.fill_gray = gray;
         self.current.fill_color = DeviceColor::Gray(gray);
+        self.current.fill_color_space = FillColorSpace::Device;
+        self.current.fill_pattern = None;
         Ok(())
     }
 
@@ -3266,6 +3382,8 @@ impl<'r> DisplayListInterpreter<'r> {
             g: number_operand(offset, b"rg", operands, 1)?.clamp(0.0, 1.0),
             b: number_operand(offset, b"rg", operands, 2)?.clamp(0.0, 1.0),
         };
+        self.current.fill_color_space = FillColorSpace::Device;
+        self.current.fill_pattern = None;
         Ok(())
     }
 
@@ -3283,6 +3401,48 @@ impl<'r> DisplayListInterpreter<'r> {
         Ok(())
     }
 
+    fn set_fill_color_space(
+        &mut self,
+        offset: ByteOffset,
+        operands: &[PdfPrimitive<'_>],
+    ) -> GraphicsResult<()> {
+        expect_operand_count(offset, b"cs", operands, 1)?;
+        let name = name_operand(offset, b"cs", operands, 0)?;
+        if name.as_bytes() == b"Pattern" {
+            self.current.fill_color_space = FillColorSpace::Pattern;
+            return Ok(());
+        }
+        self.current.fill_color_space = FillColorSpace::Device;
+        self.current.fill_pattern = None;
+        Ok(())
+    }
+
+    fn set_fill_pattern(
+        &mut self,
+        offset: ByteOffset,
+        operands: &[PdfPrimitive<'_>],
+    ) -> GraphicsResult<()> {
+        if self.current.fill_color_space != FillColorSpace::Pattern {
+            return Ok(());
+        }
+        expect_operand_count(offset, b"scn", operands, 1)?;
+        let name = name_operand(offset, b"scn", operands, 0)?;
+        let pattern = self
+            .resources
+            .patterns
+            .and_then(|patterns| patterns.index_of(name))
+            .ok_or_else(|| {
+                GraphicsError::new(
+                    Some(offset),
+                    GraphicsErrorKind::MissingPattern {
+                        name: name.as_bytes().to_vec(),
+                    },
+                )
+            })?;
+        self.current.fill_pattern = Some(pattern);
+        Ok(())
+    }
+
     fn set_ext_graphics_state(
         &mut self,
         offset: ByteOffset,
@@ -3291,6 +3451,7 @@ impl<'r> DisplayListInterpreter<'r> {
         expect_operand_count(offset, b"gs", operands, 1)?;
         let name = name_operand(offset, b"gs", operands, 0)?;
         let state = self
+            .resources
             .ext_graphics_states
             .and_then(|states| states.get(name))
             .ok_or_else(|| {
@@ -3313,6 +3474,7 @@ impl<'r> DisplayListInterpreter<'r> {
         expect_operand_count(offset, b"sh", operands, 1)?;
         let name = name_operand(offset, b"sh", operands, 0)?;
         let shading = self
+            .resources
             .shadings
             .and_then(|shadings| shadings.get(name))
             .ok_or_else(|| {
@@ -3453,15 +3615,28 @@ impl<'r> DisplayListInterpreter<'r> {
             return Ok(());
         }
         let segments = self.current_path.take_segments();
+        let fill_pattern = self.fill_pattern_for_paint(paint);
         self.display_list.push(
             DisplayItem::Path(PathDisplayItem {
                 segments,
                 paint,
                 state: self.current,
+                fill_pattern,
             }),
             self.options.max_display_items,
             offset,
         )
+    }
+
+    fn fill_pattern_for_paint(&self, paint: PaintMode) -> Option<TilingPattern> {
+        if matches!(paint, PaintMode::Stroke) {
+            return None;
+        }
+        let pattern_index = self.current.fill_pattern?;
+        self.resources
+            .patterns
+            .and_then(|patterns| patterns.get_index(pattern_index))
+            .cloned()
     }
 
     fn clip_placeholder(
@@ -4628,6 +4803,59 @@ fn decode_shading(dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)]) -> GraphicsRes
     }
 }
 
+/// Decodes a colored tiling pattern stream into a reusable pattern resource.
+///
+/// # Errors
+///
+/// Returns [`GraphicsError`] when required pattern metadata is malformed or
+/// when the pattern content stream exceeds display-list limits.
+pub fn decode_tiling_pattern(
+    resource_name: Vec<u8>,
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    content: &[u8],
+    options: DisplayListOptions,
+) -> GraphicsResult<TilingPattern> {
+    let Some(PdfPrimitive::Number(PdfNumber::Integer(1))) =
+        dictionary_value(dictionary, b"PatternType")
+    else {
+        return Err(invalid_pattern_resource(&resource_name));
+    };
+    let Some(PdfPrimitive::Number(PdfNumber::Integer(1))) =
+        dictionary_value(dictionary, b"PaintType")
+    else {
+        return Err(unsupported_pattern(b"PaintType"));
+    };
+    match dictionary_value(dictionary, b"TilingType") {
+        Some(PdfPrimitive::Number(PdfNumber::Integer(1..=3))) => {}
+        _ => return Err(unsupported_pattern(b"TilingType")),
+    }
+    let bbox =
+        required_bbox(dictionary, b"BBox").map_err(|_| invalid_pattern_resource(&resource_name))?;
+    let x_step = required_pattern_number(dictionary, b"XStep", &resource_name)?;
+    let y_step = required_pattern_number(dictionary, b"YStep", &resource_name)?;
+    if !x_step.is_finite() || !y_step.is_finite() || x_step <= 0.0 || y_step <= 0.0 {
+        return Err(invalid_pattern_resource(&resource_name));
+    }
+    let items = build_path_display_list(tokenize_content(PdfBytes::new(content)), options)?;
+    Ok(TilingPattern {
+        resource_name,
+        bbox,
+        x_step,
+        y_step,
+        items,
+    })
+}
+
+fn required_pattern_number(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    key: &'static [u8],
+    resource_name: &[u8],
+) -> GraphicsResult<f64> {
+    dictionary_value(dictionary, key)
+        .and_then(number_from_primitive)
+        .ok_or_else(|| invalid_pattern_resource(resource_name))
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ShadingColorSpace {
     DeviceGray,
@@ -5563,6 +5791,152 @@ fn fill_path(
         }
     }
     Ok(())
+}
+
+#[derive(Debug, Clone)]
+struct PatternSample {
+    path: FlattenedPath,
+    rule: FillRule,
+    color: Rgba,
+}
+
+fn fill_path_with_tiling_pattern(
+    device: &mut RasterDevice,
+    path: &FlattenedPath,
+    rule: FillRule,
+    pattern: &TilingPattern,
+    state: GraphicsState,
+    transform: PageTransform,
+    options: PathRasterOptions,
+) -> RasterResult<()> {
+    validate_pattern_tile_budget(path, pattern, options)?;
+    let pattern_samples = pattern_samples(pattern, options)?;
+    if pattern_samples.is_empty() {
+        return Ok(());
+    }
+    let inverse = transform
+        .matrix
+        .inverse()
+        .ok_or_else(|| RasterError::new(RasterErrorKind::InvalidPageBox))?;
+    let samples = u32::from(options.supersample);
+    let sample_count = samples * samples;
+    let dimensions = device.dimensions();
+    for y in 0..dimensions.height {
+        for x in 0..dimensions.width {
+            let mut covered = 0;
+            for sample_y in 0..samples {
+                for sample_x in 0..samples {
+                    let point = sample_point(x, y, sample_x, sample_y, samples);
+                    if point_in_path(point, path, rule) {
+                        covered += 1;
+                    }
+                }
+            }
+            if covered == 0 {
+                continue;
+            }
+            let user = inverse.transform_point(f64::from(x) + 0.5, f64::from(y) + 0.5);
+            let Some(source) = pattern_color_at(pattern, &pattern_samples, user) else {
+                continue;
+            };
+            blend_pixel(
+                device,
+                x,
+                y,
+                source,
+                state.blend_mode,
+                f64::from(covered) / f64::from(sample_count),
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_pattern_tile_budget(
+    path: &FlattenedPath,
+    pattern: &TilingPattern,
+    options: PathRasterOptions,
+) -> RasterResult<()> {
+    let bounds =
+        flattened_bounds(path).ok_or_else(|| RasterError::new(RasterErrorKind::InvalidPageBox))?;
+    let columns = ((bounds.max_x - bounds.min_x) / pattern.x_step.abs())
+        .ceil()
+        .max(1.0) as usize;
+    let rows = ((bounds.max_y - bounds.min_y) / pattern.y_step.abs())
+        .ceil()
+        .max(1.0) as usize;
+    let tiles = columns
+        .checked_mul(rows)
+        .ok_or_else(|| RasterError::new(RasterErrorKind::BufferOverflow))?;
+    if tiles > options.max_pattern_tiles {
+        return Err(RasterError::new(RasterErrorKind::PatternTileOverflow {
+            limit: options.max_pattern_tiles,
+        }));
+    }
+    Ok(())
+}
+
+fn flattened_bounds(path: &FlattenedPath) -> Option<PathBounds> {
+    let mut points = path.subpaths.iter().flat_map(|subpath| subpath.iter());
+    let first = *points.next()?;
+    let mut bounds = PathBounds {
+        min_x: first.x,
+        min_y: first.y,
+        max_x: first.x,
+        max_y: first.y,
+    };
+    for point in points {
+        bounds.min_x = bounds.min_x.min(point.x);
+        bounds.min_y = bounds.min_y.min(point.y);
+        bounds.max_x = bounds.max_x.max(point.x);
+        bounds.max_y = bounds.max_y.max(point.y);
+    }
+    Some(bounds)
+}
+
+fn pattern_samples(
+    pattern: &TilingPattern,
+    options: PathRasterOptions,
+) -> RasterResult<Vec<PatternSample>> {
+    let mut samples = Vec::new();
+    for item in pattern.items.items() {
+        let DisplayItem::Path(path) = item else {
+            continue;
+        };
+        let rule = match path.paint {
+            PaintMode::Fill { rule } | PaintMode::FillStroke { rule } => rule,
+            PaintMode::Stroke => continue,
+        };
+        samples.push(PatternSample {
+            path: flatten_path_segments(
+                &path.segments,
+                Matrix::IDENTITY,
+                options.max_flattened_segments,
+            )?,
+            rule,
+            color: device_color_to_rgba(path.state.fill_color),
+        });
+    }
+    Ok(samples)
+}
+
+fn pattern_color_at(
+    pattern: &TilingPattern,
+    samples: &[PatternSample],
+    user_point: Point,
+) -> Option<Rgba> {
+    let point = Point {
+        x: wrap_pattern_coordinate(user_point.x, pattern.bbox.min_x, pattern.x_step),
+        y: wrap_pattern_coordinate(user_point.y, pattern.bbox.min_y, pattern.y_step),
+    };
+    samples
+        .iter()
+        .rev()
+        .find_map(|sample| point_in_path(point, &sample.path, sample.rule).then_some(sample.color))
+}
+
+fn wrap_pattern_coordinate(value: f64, origin: f64, step: f64) -> f64 {
+    (value - origin).rem_euclid(step) + origin
 }
 
 fn stroke_path(
@@ -7132,6 +7506,24 @@ fn unsupported_shading(feature: &[u8]) -> GraphicsError {
     )
 }
 
+fn invalid_pattern_resource(name: &[u8]) -> GraphicsError {
+    GraphicsError::new(
+        None,
+        GraphicsErrorKind::InvalidPatternResource {
+            name: name.to_vec(),
+        },
+    )
+}
+
+fn unsupported_pattern(feature: &[u8]) -> GraphicsError {
+    GraphicsError::new(
+        None,
+        GraphicsErrorKind::UnsupportedPattern {
+            feature: feature.to_vec(),
+        },
+    )
+}
+
 fn unsupported_image_filter(filter: &[u8]) -> GraphicsError {
     GraphicsError::new(
         None,
@@ -7237,6 +7629,11 @@ pub enum RasterErrorKind {
         /// Configured transparency group pixel limit.
         limit: usize,
     },
+    /// Tiling pattern expansion exceeds the configured repeat limit.
+    PatternTileOverflow {
+        /// Configured pattern tile limit.
+        limit: usize,
+    },
     /// Image transform could not be inverted for sampling.
     SingularImageTransform,
     /// Row or pixel coordinate was outside the raster.
@@ -7258,6 +7655,9 @@ impl fmt::Display for RasterErrorKind {
             }
             Self::TransparencyGroupPixelsOverflow { limit } => {
                 write!(f, "transparency group exceeds pixel limit {limit}")
+            }
+            Self::PatternTileOverflow { limit } => {
+                write!(f, "tiling pattern exceeds tile limit {limit}")
             }
             Self::SingularImageTransform => f.write_str("image transform is singular"),
             Self::OutOfBounds => f.write_str("raster coordinate is out of bounds"),
@@ -7533,6 +7933,21 @@ pub enum GraphicsErrorKind {
         /// Unsupported shading feature.
         feature: Vec<u8>,
     },
+    /// Pattern resource name was not present in the resource map.
+    MissingPattern {
+        /// Missing pattern resource name.
+        name: Vec<u8>,
+    },
+    /// Pattern resource dictionary is malformed.
+    InvalidPatternResource {
+        /// Invalid pattern resource or field name.
+        name: Vec<u8>,
+    },
+    /// Pattern resource uses a feature outside the current support.
+    UnsupportedPattern {
+        /// Unsupported pattern feature.
+        feature: Vec<u8>,
+    },
     /// Form resource name was not present in the resource map.
     MissingForm {
         /// Missing form resource name.
@@ -7749,6 +8164,21 @@ impl fmt::Display for GraphicsErrorKind {
             Self::UnsupportedShading { feature } => write!(
                 f,
                 "unsupported shading feature {}",
+                String::from_utf8_lossy(feature)
+            ),
+            Self::MissingPattern { name } => write!(
+                f,
+                "missing pattern resource {}",
+                String::from_utf8_lossy(name)
+            ),
+            Self::InvalidPatternResource { name } => write!(
+                f,
+                "invalid pattern resource {}",
+                String::from_utf8_lossy(name)
+            ),
+            Self::UnsupportedPattern { feature } => write!(
+                f,
+                "unsupported pattern feature {}",
                 String::from_utf8_lossy(feature)
             ),
             Self::MissingForm { name } => {
@@ -8586,10 +9016,12 @@ mod tests {
         let shadings =
             ShadingResources::from_shading_dictionary(&dictionary).expect("axial shading");
         let ext_graphics_states = ExtGraphicsStateResources::empty();
+        let patterns = TilingPatternResources::empty();
         let list = build_path_display_list_with_graphics_resources(
             tokenize_content(PdfBytes::new(b"/Sh1 sh")),
             &ext_graphics_states,
             &shadings,
+            &patterns,
             DisplayListOptions::default(),
         )
         .expect("valid shading stream");
@@ -8658,6 +9090,112 @@ mod tests {
             Rgba {
                 r: 128,
                 g: 128,
+                b: 255,
+                a: 255,
+            }
+        );
+    }
+
+    #[test]
+    fn tiling_pattern_should_decode_colored_pattern_stream() {
+        let pattern = test_tiling_pattern();
+
+        assert_eq!(pattern.resource_name, b"P1");
+        assert_eq!(pattern.x_step, 10.0);
+        assert_eq!(pattern.y_step, 10.0);
+        assert_eq!(pattern.items.len(), 2);
+    }
+
+    #[test]
+    fn display_list_should_capture_tiling_pattern_fill() {
+        let patterns = TilingPatternResources::new(vec![test_tiling_pattern()]);
+        let ext_graphics_states = ExtGraphicsStateResources::empty();
+        let shadings = ShadingResources::empty();
+        let list = build_path_display_list_with_graphics_resources(
+            tokenize_content(PdfBytes::new(b"/Pattern cs /P1 scn 0 0 20 10 re f")),
+            &ext_graphics_states,
+            &shadings,
+            &patterns,
+            DisplayListOptions::default(),
+        )
+        .expect("valid tiling pattern fill");
+
+        let DisplayItem::Path(path) = &list.items()[0] else {
+            panic!("expected path display item");
+        };
+        assert!(path.fill_pattern.is_some());
+    }
+
+    #[test]
+    fn rasterize_paths_should_repeat_tiling_pattern_fill() {
+        let patterns = TilingPatternResources::new(vec![test_tiling_pattern()]);
+        let ext_graphics_states = ExtGraphicsStateResources::empty();
+        let shadings = ShadingResources::empty();
+        let list = build_path_display_list_with_graphics_resources(
+            tokenize_content(PdfBytes::new(b"/Pattern cs /P1 scn 0 0 20 10 re f")),
+            &ext_graphics_states,
+            &shadings,
+            &patterns,
+            DisplayListOptions::default(),
+        )
+        .expect("valid tiling pattern fill");
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 20.0,
+                    max_y: 10.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            20,
+        )
+        .expect("pattern transform");
+        let raster = rasterize_paths(
+            &list,
+            transform,
+            Rgba::WHITE,
+            PathRasterOptions {
+                supersample: 1,
+                ..PathRasterOptions::default()
+            },
+        )
+        .expect("pattern should rasterize");
+
+        assert_eq!(
+            raster.pixel(2, 5).expect("left first tile"),
+            Rgba {
+                r: 255,
+                g: 0,
+                b: 0,
+                a: 255,
+            }
+        );
+        assert_eq!(
+            raster.pixel(7, 5).expect("right first tile"),
+            Rgba {
+                r: 0,
+                g: 0,
+                b: 255,
+                a: 255,
+            }
+        );
+        assert_eq!(
+            raster.pixel(12, 5).expect("left second tile"),
+            Rgba {
+                r: 255,
+                g: 0,
+                b: 0,
+                a: 255,
+            }
+        );
+        assert_eq!(
+            raster.pixel(17, 5).expect("right second tile"),
+            Rgba {
+                r: 0,
+                g: 0,
                 b: 255,
                 a: 255,
             }
@@ -10483,6 +11021,46 @@ mod tests {
                 ]),
             ),
         ]
+    }
+
+    fn test_tiling_pattern() -> TilingPattern {
+        decode_tiling_pattern(
+            b"P1".to_vec(),
+            &[
+                (
+                    PdfName::new(b"PatternType"),
+                    PdfPrimitive::Number(PdfNumber::Integer(1)),
+                ),
+                (
+                    PdfName::new(b"PaintType"),
+                    PdfPrimitive::Number(PdfNumber::Integer(1)),
+                ),
+                (
+                    PdfName::new(b"TilingType"),
+                    PdfPrimitive::Number(PdfNumber::Integer(1)),
+                ),
+                (
+                    PdfName::new(b"BBox"),
+                    PdfPrimitive::Array(vec![
+                        PdfPrimitive::Number(PdfNumber::Integer(0)),
+                        PdfPrimitive::Number(PdfNumber::Integer(0)),
+                        PdfPrimitive::Number(PdfNumber::Integer(10)),
+                        PdfPrimitive::Number(PdfNumber::Integer(10)),
+                    ]),
+                ),
+                (
+                    PdfName::new(b"XStep"),
+                    PdfPrimitive::Number(PdfNumber::Integer(10)),
+                ),
+                (
+                    PdfName::new(b"YStep"),
+                    PdfPrimitive::Number(PdfNumber::Integer(10)),
+                ),
+            ],
+            b"1 0 0 rg 0 0 5 10 re f 0 0 1 rg 5 0 5 10 re f",
+            DisplayListOptions::default(),
+        )
+        .expect("valid tiling pattern")
     }
 
     fn content_stream_from_document(document: &ClassicDocument<'_>) -> Vec<u8> {
