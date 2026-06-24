@@ -1,6 +1,6 @@
 # 0078: Renderer Benchmark Suite And Budgets
 
-Status: todo
+Status: done
 Phase: 13
 Size: medium
 Depends on: 0077
@@ -46,4 +46,22 @@ that guide PDFium replacement decisions.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-24.
+
+- Added the reusable renderer benchmark harness in
+  `pdfrust-cli benchmark-native` and `pdfrust-cli benchmark-pdfium`.
+- Added JSON benchmark reports with backend, budget config, summary, family
+  aggregates, fixture outcomes, and typed budget violations.
+- Documented benchmark commands and budget policy in `docs/benchmarks.md`.
+- Recorded native, PDFium, and deep-local baselines in
+  `docs/reports/renderer-benchmark-suite-2026-06-24.md`.
+- Validation passed:
+  `cargo fmt --check`,
+  `cargo test -p pdfrust-cli benchmark -- --nocapture`,
+  `cargo check`,
+  `cargo test`,
+  `cargo clippy --all-targets --all-features -- -D warnings`.
+
+Implementation commit:
+
+- `12254e5 feat: add renderer benchmark harness`

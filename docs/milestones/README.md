@@ -21,7 +21,6 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
-| 0078 | [Renderer Benchmark Suite And Budgets](0078-renderer-benchmark-suite-and-budgets.md) | 13 | medium | 0077 |
 | 0079 | [Optional PDFium Build Feature Split](0079-optional-pdfium-build-feature-split.md) | 13 | medium | 0078 |
 | 0080 | [Native Renderer Release Candidate Gate](0080-native-renderer-release-candidate-gate.md) | 13 | medium | 0079 |
 | 0081 | [RC Gap Synthesis And PDFium Retirement Backlog](0081-rc-gap-synthesis-and-pdfium-retirement-backlog.md) | 14 | small | 0080 |
@@ -54,6 +53,7 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Completed |
 | --- | --- | --- | --- | --- |
+| 0078 | [Renderer Benchmark Suite And Budgets](0078-renderer-benchmark-suite-and-budgets.md) | 13 | medium | 2026-06-24 |
 | 0077 | [Parallel Page Rendering Scheduler](0077-parallel-page-rendering-scheduler.md) | 12 | medium | 2026-06-24 |
 | 0076 | [Streaming Parse And Incremental Rendering](0076-streaming-parse-and-incremental-rendering.md) | 12 | medium | 2026-06-24 |
 | 0075 | [Color Management And Output Intent Policy](0075-color-management-and-output-intent-policy.md) | 12 | medium | 2026-06-24 |
