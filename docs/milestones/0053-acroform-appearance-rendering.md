@@ -1,6 +1,6 @@
 # 0053: AcroForm Appearance Rendering
 
-Status: in-progress
+Status: done
 Phase: 7
 Size: medium
 Depends on: 0052
@@ -45,7 +45,7 @@ form engine.
 
 ## Completion Notes
 
-In progress:
+Completed:
 
 - First fixture slice adds generated `fixtures/generated/acroform-text-field.pdf`
   through `scripts/generate_fixtures.py`, covering a catalog `/AcroForm` with a
@@ -72,10 +72,17 @@ In progress:
 - PDFium bridge probe for `acroform-signature-placeholder.pdf` at `max-edge 160`
   stays blank through the plain `FPDF_RenderPageBitmap` path, while native
   renders `3000` non-white pixels.
+- Unsupported interactive form behavior and missing/dynamic appearance policy
+  are documented in `docs/policies/acroform-appearances.md`; native unsupported
+  diagnostics can use the `form.acroform` bucket recorded in `docs/errors.md`.
 - Current validation:
   - `cargo test -p pdfrust-native acroform_text_field -- --nocapture`
   - `cargo test -p pdfrust-native acroform_checkbox -- --nocapture`
   - `cargo test -p pdfrust-native acroform_signature -- --nocapture`
+  - `cargo fmt --check`
+  - `cargo check`
+  - `cargo clippy --all-targets --all-features -- -D warnings`
+  - `cargo test --quiet`
   - `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render fixtures/generated/acroform-text-field.pdf --max-edge 140 --output target/pdfrust-thumbnails/acroform-text-field-pdfium-0053.png`
   - `cargo run -p pdfrust-cli -- render-native fixtures/generated/acroform-text-field.pdf --max-edge 140 --output target/pdfrust-thumbnails/acroform-text-field-native-0053.png`
   - `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render fixtures/generated/acroform-checkbox.pdf --max-edge 80 --output target/pdfrust-thumbnails/acroform-checkbox-pdfium-0053.png`
