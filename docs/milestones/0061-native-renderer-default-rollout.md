@@ -49,3 +49,5 @@ PDFium retirement gate, while keeping fallback behavior explicit.
   falls back to PDFium only for public `unsupported` native outcomes. Forced
   native remains `render-native`; forced PDFium remains `render` or
   `render-isolated`.
+- Second slice made `render-auto` report the selected backend in diagnostics
+  and added direct backend-choice regression coverage.

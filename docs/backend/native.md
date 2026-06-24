@@ -65,6 +65,7 @@ cargo run -p pdfrust-cli -- render-auto fixtures/generated/text-page.pdf \
 `render-auto` tries the Rust-native backend first. If native returns the public
 `unsupported` class, it retries through PDFium using `PDFRUST_PDFIUM_LIBRARY`.
 `encrypted`, `malformed`, and `internal` failures are not silently retried.
+The selected backend is printed as a render diagnostic.
 
 Compare metadata with PDFium when the local PDFium environment is available:
 

@@ -78,34 +78,65 @@ fn render_auto_command(args: &[OsString]) -> Result<(), CliError> {
 }
 
 fn render_auto(config: RenderConfig) -> Result<(), CliError> {
-    let options = thumbnail_options(&config);
-    let source = PdfSource::from_path(&config.input);
-    let native = NativeBackend::new();
-    let thumbnail = match native.render(source, &options) {
-        Ok(thumbnail) => thumbnail,
-        Err(ThumbnailError::Unsupported) => {
-            let pdfium =
-                PdfiumBackend::from_env().map_err(|err| CliError::Backend(err.to_string()))?;
-            pdfium
-                .render(PdfSource::from_path(&config.input), &options)
-                .map_err(|err| CliError::Render {
-                    class: err.class().as_str(),
-                    message: err.to_string(),
-                })?
-        }
-        Err(err) => {
-            return Err(CliError::Render {
-                class: err.class().as_str(),
-                message: err.to_string(),
-            });
-        }
-    };
-    let png = encode_rgba_png(&thumbnail)?;
+    let outcome = render_auto_thumbnail(&config)?;
+    eprintln!("render backend: {}", outcome.backend.as_str());
+    let png = encode_rgba_png(&outcome.thumbnail)?;
     fs::write(&config.output, png).map_err(|source| CliError::Io {
         path: config.output,
         source,
     })?;
     Ok(())
+}
+
+fn render_auto_thumbnail(config: &RenderConfig) -> Result<AutoRenderOutcome, CliError> {
+    let options = thumbnail_options(config);
+    let source = PdfSource::from_path(&config.input);
+    let native = NativeBackend::new();
+    match native.render(source, &options) {
+        Ok(thumbnail) => Ok(AutoRenderOutcome {
+            thumbnail,
+            backend: AutoRenderBackend::Native,
+        }),
+        Err(ThumbnailError::Unsupported) => {
+            let pdfium =
+                PdfiumBackend::from_env().map_err(|err| CliError::Backend(err.to_string()))?;
+            let thumbnail = pdfium
+                .render(PdfSource::from_path(&config.input), &options)
+                .map_err(|err| CliError::Render {
+                    class: err.class().as_str(),
+                    message: err.to_string(),
+                })?;
+            Ok(AutoRenderOutcome {
+                thumbnail,
+                backend: AutoRenderBackend::PdfiumFallback,
+            })
+        }
+        Err(err) => Err(CliError::Render {
+            class: err.class().as_str(),
+            message: err.to_string(),
+        }),
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AutoRenderBackend {
+    Native,
+    PdfiumFallback,
+}
+
+impl AutoRenderBackend {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Native => "native",
+            Self::PdfiumFallback => "pdfium fallback_reason=unsupported",
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct AutoRenderOutcome {
+    thumbnail: pdfrust_thumbnail::Thumbnail,
+    backend: AutoRenderBackend,
 }
 
 fn render_native_command(args: &[OsString]) -> Result<(), CliError> {
@@ -886,6 +917,26 @@ mod tests {
 
         let png = fs::read(&output).expect("auto PNG should be written");
         assert!(png.starts_with(b"\x89PNG\r\n\x1a\n"));
+    }
+
+    #[test]
+    fn render_auto_thumbnail_should_report_native_backend_choice() {
+        env::remove_var(pdfrust_pdfium::PDFIUM_LIBRARY_ENV);
+        let input =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/generated/vector-paths.pdf");
+        let output = PathBuf::from("target/unused-auto-choice.png");
+        let config = RenderConfig {
+            input,
+            output,
+            page_index: 0,
+            max_edge: 220,
+            background: Rgba::WHITE,
+            timeout: Duration::from_secs(5),
+        };
+
+        let outcome = render_auto_thumbnail(&config).expect("supported fixture should render");
+
+        assert_eq!(outcome.backend, AutoRenderBackend::Native);
     }
 
     #[test]
