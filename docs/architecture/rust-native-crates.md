@@ -163,6 +163,10 @@ captured text origin, font size, and fill color. `pdfrust-native` resolves page
 `/Resources /Font` entries into font descriptors, and the render layer loads
 bounded embedded Type1, TrueType, and CFF font program streams behind a small
 object-identity cache. Text strings are decoded through simple font encodings
-or ToUnicode CMaps and carry their source character codes forward. The current
-rasterizer still uses the visible fallback font; glyph outlines and true
-font-backed rasterization remain later milestones.
+or ToUnicode CMaps and carry their source character codes forward.
+Glyph-outline extraction uses `ttf-parser` as the bounded, safe Rust parser for
+SFNT-backed TrueType outlines, converting `OutlineBuilder` callbacks into the
+existing path segment representation behind a small glyph-outline cache. Raw
+PDF `/FontFile3` CFF streams remain explicitly unsupported until a dedicated
+CFF path lands. The current rasterizer still uses the visible fallback font;
+true font-backed rasterization remains a later milestone.

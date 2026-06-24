@@ -1,6 +1,6 @@
 # 0044: Glyph Outline Extraction
 
-Status: todo
+Status: in-progress
 Phase: 5
 Size: medium
 Depends on: 0043
@@ -46,3 +46,12 @@ renderer path data.
 ## Completion Notes
 
 Empty until done.
+
+## Progress Notes
+
+- Selected `ttf-parser` 0.25.1 with only the `std` feature as the safe,
+  zero-allocation outline parser dependency for SFNT-backed TrueType outlines.
+- Added the initial glyph-outline API, metrics capture, path-segment
+  conversion, segment budget, and cache boundaries.
+- Raw PDF CFF (`/FontFile3`) outline extraction remains open for this
+  milestone.

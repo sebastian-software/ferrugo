@@ -11,6 +11,7 @@ pdfrust-content = { path = "../pdfrust-content" }
 pdfrust-object = { path = "../pdfrust-object" }
 pdfrust-syntax = { path = "../pdfrust-syntax" }
 pdfrust-thumbnail = { path = "../pdfrust-thumbnail" }
+ttf-parser = { version = "0.25.1", default-features = false, features = ["std"] }
 
 [dev-dependencies]
 

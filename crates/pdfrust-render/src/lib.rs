@@ -36,6 +36,12 @@ pub const DEFAULT_CMAP_BYTES_LIMIT: usize = 1024 * 1024;
 /// Default maximum entries accepted in one parsed ToUnicode CMap.
 pub const DEFAULT_CMAP_ENTRIES_LIMIT: usize = 4_096;
 
+/// Default maximum path segments accepted in one decoded glyph outline.
+pub const DEFAULT_GLYPH_OUTLINE_SEGMENT_LIMIT: usize = 2_048;
+
+/// Default maximum cached glyph outlines per outline cache.
+pub const DEFAULT_GLYPH_OUTLINE_CACHE_LIMIT: usize = 4_096;
+
 /// Default maximum decoded bytes for one embedded font program.
 pub const DEFAULT_FONT_PROGRAM_BYTES_LIMIT: usize = 16 * 1024 * 1024;
 
@@ -1056,6 +1062,123 @@ pub struct FontProgram {
     pub bytes: Arc<[u8]>,
 }
 
+/// Glyph outline extraction options.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GlyphOutlineOptions {
+    /// Maximum path segments accepted in one decoded glyph outline.
+    pub max_segments: usize,
+    /// Maximum cached glyph outlines.
+    pub max_cache_entries: usize,
+}
+
+impl Default for GlyphOutlineOptions {
+    fn default() -> Self {
+        Self {
+            max_segments: DEFAULT_GLYPH_OUTLINE_SEGMENT_LIMIT,
+            max_cache_entries: DEFAULT_GLYPH_OUTLINE_CACHE_LIMIT,
+        }
+    }
+}
+
+/// Decoded glyph metrics and outline path.
+#[derive(Debug, Clone, PartialEq)]
+pub struct GlyphOutline {
+    /// Glyph code requested from the font program.
+    pub glyph_code: u32,
+    /// Advance width in font units.
+    pub advance_width: f64,
+    /// Left side bearing in font units.
+    pub left_side_bearing: f64,
+    /// Outline path segments in font units.
+    pub segments: Vec<PathSegment>,
+}
+
+/// Small glyph outline cache keyed by font program identity and glyph code.
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct GlyphOutlineCache {
+    outlines: Vec<CachedGlyphOutline>,
+}
+
+impl GlyphOutlineCache {
+    /// Returns a cached outline or extracts and caches it.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`GraphicsError`] when the font program is unsupported,
+    /// malformed, exceeds the configured segment budget, or the cache is full.
+    pub fn outline_for(
+        &mut self,
+        program: &FontProgram,
+        glyph_code: u32,
+        options: GlyphOutlineOptions,
+    ) -> GraphicsResult<Option<GlyphOutline>> {
+        if let Some(entry) = self
+            .outlines
+            .iter()
+            .find(|entry| entry.key == program.key && entry.glyph_code == glyph_code)
+        {
+            return Ok(entry.outline.clone());
+        }
+        if self.outlines.len() >= options.max_cache_entries {
+            return Err(GraphicsError::new(
+                None,
+                GraphicsErrorKind::GlyphOutlineCacheOverflow {
+                    limit: options.max_cache_entries,
+                },
+            ));
+        }
+        let outline = extract_glyph_outline(program, glyph_code, options)?;
+        self.outlines.push(CachedGlyphOutline {
+            key: program.key,
+            glyph_code,
+            outline: outline.clone(),
+        });
+        Ok(outline)
+    }
+
+    /// Returns the number of cached glyph outline lookups.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.outlines.len()
+    }
+
+    /// Returns true when no glyph outlines are cached.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.outlines.is_empty()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct CachedGlyphOutline {
+    key: FontProgramKey,
+    glyph_code: u32,
+    outline: Option<GlyphOutline>,
+}
+
+/// Extracts a glyph outline from a loaded font program.
+///
+/// # Errors
+///
+/// Returns [`GraphicsError`] when the font program kind is unsupported by the
+/// current outline layer, the font bytes are malformed, or the outline exceeds
+/// the configured segment budget.
+pub fn extract_glyph_outline(
+    program: &FontProgram,
+    glyph_code: u32,
+    options: GlyphOutlineOptions,
+) -> GraphicsResult<Option<GlyphOutline>> {
+    match program.key.kind {
+        FontProgramKind::TrueType => extract_truetype_glyph_outline(program, glyph_code, options),
+        FontProgramKind::Type1 | FontProgramKind::Cff => Err(GraphicsError::new(
+            None,
+            GraphicsErrorKind::UnsupportedGlyphOutlineProgram {
+                kind: program.key.kind,
+            },
+        )),
+    }
+}
+
 /// Single-byte font encoding metadata.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct FontEncoding {
@@ -1518,6 +1641,125 @@ where
         ));
     }
     parse_to_unicode_cmap(&decoded, options.max_cmap_entries).map(Some)
+}
+
+fn extract_truetype_glyph_outline(
+    program: &FontProgram,
+    glyph_code: u32,
+    options: GlyphOutlineOptions,
+) -> GraphicsResult<Option<GlyphOutline>> {
+    let glyph_id =
+        ttf_parser::GlyphId(u16::try_from(glyph_code).map_err(|_| invalid_glyph_outline())?);
+    let face = ttf_parser::Face::parse(&program.bytes, 0).map_err(|_| invalid_glyph_outline())?;
+    let mut builder = TtfOutlineBuilder {
+        segments: Vec::new(),
+        current: None,
+        max_segments: options.max_segments,
+        overflowed: false,
+    };
+    let Some(_) = face.outline_glyph(glyph_id, &mut builder) else {
+        return Ok(None);
+    };
+    if builder.overflowed {
+        return Err(GraphicsError::new(
+            None,
+            GraphicsErrorKind::GlyphOutlineSegmentOverflow {
+                limit: options.max_segments,
+            },
+        ));
+    }
+    Ok(Some(GlyphOutline {
+        glyph_code,
+        advance_width: f64::from(face.glyph_hor_advance(glyph_id).unwrap_or(0)),
+        left_side_bearing: f64::from(face.glyph_hor_side_bearing(glyph_id).unwrap_or(0)),
+        segments: builder.segments,
+    }))
+}
+
+struct TtfOutlineBuilder {
+    segments: Vec<PathSegment>,
+    current: Option<Point>,
+    max_segments: usize,
+    overflowed: bool,
+}
+
+impl TtfOutlineBuilder {
+    fn push(&mut self, segment: PathSegment) {
+        if self.segments.len() >= self.max_segments {
+            self.overflowed = true;
+            return;
+        }
+        self.segments.push(segment);
+    }
+}
+
+impl ttf_parser::OutlineBuilder for TtfOutlineBuilder {
+    fn move_to(&mut self, x: f32, y: f32) {
+        let point = Point {
+            x: f64::from(x),
+            y: f64::from(y),
+        };
+        self.current = Some(point);
+        self.push(PathSegment::MoveTo(point));
+    }
+
+    fn line_to(&mut self, x: f32, y: f32) {
+        let point = Point {
+            x: f64::from(x),
+            y: f64::from(y),
+        };
+        self.current = Some(point);
+        self.push(PathSegment::LineTo(point));
+    }
+
+    fn quad_to(&mut self, x1: f32, y1: f32, x: f32, y: f32) {
+        let Some(from) = self.current else {
+            self.overflowed = true;
+            return;
+        };
+        let control = Point {
+            x: f64::from(x1),
+            y: f64::from(y1),
+        };
+        let to = Point {
+            x: f64::from(x),
+            y: f64::from(y),
+        };
+        let c1 = Point {
+            x: from.x + (control.x - from.x) * (2.0 / 3.0),
+            y: from.y + (control.y - from.y) * (2.0 / 3.0),
+        };
+        let c2 = Point {
+            x: to.x + (control.x - to.x) * (2.0 / 3.0),
+            y: to.y + (control.y - to.y) * (2.0 / 3.0),
+        };
+        self.current = Some(to);
+        self.push(PathSegment::CubicTo { c1, c2, to });
+    }
+
+    fn curve_to(&mut self, x1: f32, y1: f32, x2: f32, y2: f32, x: f32, y: f32) {
+        let to = Point {
+            x: f64::from(x),
+            y: f64::from(y),
+        };
+        self.current = Some(to);
+        self.push(PathSegment::CubicTo {
+            c1: Point {
+                x: f64::from(x1),
+                y: f64::from(y1),
+            },
+            c2: Point {
+                x: f64::from(x2),
+                y: f64::from(y2),
+            },
+            to,
+        });
+    }
+
+    fn close(&mut self) {
+        self.current = None;
+        self.push(PathSegment::Close);
+    }
 }
 
 /// Approximate axis-aligned path bounds.
@@ -4805,6 +5047,10 @@ fn invalid_cmap() -> GraphicsError {
     GraphicsError::new(None, GraphicsErrorKind::InvalidCMap)
 }
 
+fn invalid_glyph_outline() -> GraphicsError {
+    GraphicsError::new(None, GraphicsErrorKind::InvalidGlyphOutline)
+}
+
 fn missing_current_point(offset: ByteOffset, operator: &'static [u8]) -> GraphicsError {
     GraphicsError::new(
         Some(offset),
@@ -5029,6 +5275,28 @@ pub enum GraphicsErrorKind {
         /// Configured decoded font program byte limit.
         limit: usize,
     },
+    /// Font program kind cannot produce outlines in the current extractor.
+    UnsupportedGlyphOutlineProgram {
+        /// Unsupported font program kind.
+        kind: FontProgramKind,
+    },
+    /// Glyph outline format uses a feature outside the current support.
+    UnsupportedGlyphOutline {
+        /// Unsupported outline feature name.
+        feature: Vec<u8>,
+    },
+    /// Glyph outline data is malformed for the supported subset.
+    InvalidGlyphOutline,
+    /// Decoded glyph outline exceeds the configured segment limit.
+    GlyphOutlineSegmentOverflow {
+        /// Configured outline segment limit.
+        limit: usize,
+    },
+    /// Glyph outline cache reached the configured entry limit.
+    GlyphOutlineCacheOverflow {
+        /// Configured cache entry limit.
+        limit: usize,
+    },
     /// Text string uses an encoding outside the current ASCII stub policy.
     UnsupportedTextEncoding,
     /// Font encoding metadata uses a feature outside the current support.
@@ -5190,6 +5458,21 @@ impl fmt::Display for GraphicsErrorKind {
             ),
             Self::FontProgramBytesOverflow { limit } => {
                 write!(f, "decoded font program exceeds byte limit {limit}")
+            }
+            Self::UnsupportedGlyphOutlineProgram { kind } => {
+                write!(f, "unsupported glyph outline font program {kind:?}")
+            }
+            Self::UnsupportedGlyphOutline { feature } => write!(
+                f,
+                "unsupported glyph outline feature {}",
+                String::from_utf8_lossy(feature)
+            ),
+            Self::InvalidGlyphOutline => f.write_str("invalid glyph outline data"),
+            Self::GlyphOutlineSegmentOverflow { limit } => {
+                write!(f, "decoded glyph outline exceeds segment limit {limit}")
+            }
+            Self::GlyphOutlineCacheOverflow { limit } => {
+                write!(f, "glyph outline cache exceeds entry limit {limit}")
             }
             Self::UnsupportedTextEncoding => f.write_str("unsupported text encoding"),
             Self::UnsupportedTextEncodingFeature { feature } => write!(
@@ -6306,6 +6589,89 @@ mod tests {
     }
 
     #[test]
+    fn glyph_outline_should_extract_simple_truetype_contour() {
+        let program = test_truetype_program();
+        let outline = extract_glyph_outline(&program, 1, GlyphOutlineOptions::default())
+            .expect("outline extraction should succeed")
+            .expect("glyph should exist");
+
+        assert_eq!(outline.glyph_code, 1);
+        assert_eq!(outline.advance_width, 600.0);
+        assert_eq!(outline.left_side_bearing, 0.0);
+        assert_eq!(
+            outline.segments,
+            vec![
+                PathSegment::MoveTo(Point { x: 0.0, y: 0.0 }),
+                PathSegment::LineTo(Point { x: 100.0, y: 0.0 }),
+                PathSegment::LineTo(Point { x: 100.0, y: 100.0 }),
+                PathSegment::LineTo(Point { x: 0.0, y: 100.0 }),
+                PathSegment::LineTo(Point { x: 0.0, y: 0.0 }),
+                PathSegment::Close,
+            ]
+        );
+    }
+
+    #[test]
+    fn glyph_outline_should_report_missing_truetype_glyph() {
+        let program = test_truetype_program();
+        let outline = extract_glyph_outline(&program, 0, GlyphOutlineOptions::default())
+            .expect("missing glyph should not be malformed");
+
+        assert!(outline.is_none());
+    }
+
+    #[test]
+    fn glyph_outline_cache_should_reuse_decoded_outline() {
+        let program = test_truetype_program();
+        let mut cache = GlyphOutlineCache::default();
+        let first = cache
+            .outline_for(&program, 1, GlyphOutlineOptions::default())
+            .expect("first extraction")
+            .expect("glyph should exist");
+        let second = cache
+            .outline_for(&program, 1, GlyphOutlineOptions::default())
+            .expect("cached extraction")
+            .expect("glyph should exist");
+
+        assert_eq!(first, second);
+        assert_eq!(cache.len(), 1);
+    }
+
+    #[test]
+    fn glyph_outline_should_enforce_segment_budget() {
+        let program = test_truetype_program();
+        let error = extract_glyph_outline(
+            &program,
+            1,
+            GlyphOutlineOptions {
+                max_segments: 2,
+                ..GlyphOutlineOptions::default()
+            },
+        )
+        .expect_err("rectangle glyph should exceed segment budget");
+
+        assert_eq!(
+            error.kind(),
+            &GraphicsErrorKind::GlyphOutlineSegmentOverflow { limit: 2 }
+        );
+    }
+
+    #[test]
+    fn glyph_outline_should_report_unsupported_cff_program() {
+        let mut program = test_truetype_program();
+        program.key.kind = FontProgramKind::Cff;
+        let error = extract_glyph_outline(&program, 1, GlyphOutlineOptions::default())
+            .expect_err("CFF outline parser is not part of this slice");
+
+        assert_eq!(
+            error.kind(),
+            &GraphicsErrorKind::UnsupportedGlyphOutlineProgram {
+                kind: FontProgramKind::Cff,
+            }
+        );
+    }
+
+    #[test]
     fn image_resources_should_decode_flate_rgb_xobject() {
         let document = load_image_xobject_pdf(
             b"q 64 0 0 64 28 28 cm /Im1 Do Q",
@@ -6940,6 +7306,127 @@ mod tests {
         let pdf = build_classic_pdf_from_objects(&objects);
         let leaked = Box::leak(pdf.into_boxed_slice());
         load_classic_document(PdfBytes::new(leaked)).expect("ToUnicode text PDF should load")
+    }
+
+    fn test_truetype_program() -> FontProgram {
+        FontProgram {
+            key: FontProgramKey {
+                reference: Reference::new(ObjectId::new(
+                    ObjectNumber::new(7).expect("object number"),
+                    GenerationNumber::new(0),
+                )),
+                kind: FontProgramKind::TrueType,
+            },
+            bytes: Arc::from(minimal_truetype_font()),
+        }
+    }
+
+    fn minimal_truetype_font() -> Vec<u8> {
+        let mut head = vec![0; 54];
+        head[0..4].copy_from_slice(&0x0001_0000u32.to_be_bytes());
+        head[4..8].copy_from_slice(&0x0001_0000u32.to_be_bytes());
+        head[12..16].copy_from_slice(&0x5f0f_3cf5u32.to_be_bytes());
+        head[18..20].copy_from_slice(&1000u16.to_be_bytes());
+        head[40..42].copy_from_slice(&100i16.to_be_bytes());
+        head[42..44].copy_from_slice(&100i16.to_be_bytes());
+        head[46..48].copy_from_slice(&8u16.to_be_bytes());
+        head[50..52].copy_from_slice(&0i16.to_be_bytes());
+
+        let mut maxp = Vec::new();
+        maxp.extend_from_slice(&0x0001_0000u32.to_be_bytes());
+        maxp.extend_from_slice(&2u16.to_be_bytes());
+        maxp.extend_from_slice(&4u16.to_be_bytes());
+        maxp.extend_from_slice(&1u16.to_be_bytes());
+        maxp.resize(32, 0);
+
+        let mut hhea = vec![0; 36];
+        hhea[0..4].copy_from_slice(&0x0001_0000u32.to_be_bytes());
+        hhea[4..6].copy_from_slice(&800i16.to_be_bytes());
+        hhea[6..8].copy_from_slice(&(-200i16).to_be_bytes());
+        hhea[10..12].copy_from_slice(&600u16.to_be_bytes());
+        hhea[18..20].copy_from_slice(&100i16.to_be_bytes());
+        hhea[20..22].copy_from_slice(&1i16.to_be_bytes());
+        hhea[34..36].copy_from_slice(&2u16.to_be_bytes());
+
+        let mut hmtx = Vec::new();
+        hmtx.extend_from_slice(&0u16.to_be_bytes());
+        hmtx.extend_from_slice(&0i16.to_be_bytes());
+        hmtx.extend_from_slice(&600u16.to_be_bytes());
+        hmtx.extend_from_slice(&0i16.to_be_bytes());
+
+        let glyph = simple_rectangle_glyph();
+        let mut loca = Vec::new();
+        loca.extend_from_slice(&0u16.to_be_bytes());
+        loca.extend_from_slice(&0u16.to_be_bytes());
+        loca.extend_from_slice(&((glyph.len() / 2) as u16).to_be_bytes());
+
+        build_truetype_font(&[
+            (*b"head", head),
+            (*b"maxp", maxp),
+            (*b"hhea", hhea),
+            (*b"hmtx", hmtx),
+            (*b"loca", loca),
+            (*b"glyf", glyph),
+        ])
+    }
+
+    fn simple_rectangle_glyph() -> Vec<u8> {
+        let mut glyph = Vec::new();
+        glyph.extend_from_slice(&1i16.to_be_bytes());
+        glyph.extend_from_slice(&0i16.to_be_bytes());
+        glyph.extend_from_slice(&0i16.to_be_bytes());
+        glyph.extend_from_slice(&100i16.to_be_bytes());
+        glyph.extend_from_slice(&100i16.to_be_bytes());
+        glyph.extend_from_slice(&3u16.to_be_bytes());
+        glyph.extend_from_slice(&0u16.to_be_bytes());
+        glyph.extend_from_slice(&[0x01, 0x01, 0x01, 0x01]);
+        for delta in [0i16, 100, 0, -100] {
+            glyph.extend_from_slice(&delta.to_be_bytes());
+        }
+        for delta in [0i16, 0, 100, 0] {
+            glyph.extend_from_slice(&delta.to_be_bytes());
+        }
+        glyph
+    }
+
+    fn build_truetype_font(tables: &[([u8; 4], Vec<u8>)]) -> Vec<u8> {
+        let table_count = tables.len();
+        let mut offset = align4(12 + table_count * 16);
+        let mut records = Vec::new();
+        for (tag, data) in tables {
+            records.push((*tag, offset, data.len()));
+            offset = align4(offset + data.len());
+        }
+
+        let mut font = Vec::with_capacity(offset);
+        font.extend_from_slice(&0x0001_0000u32.to_be_bytes());
+        font.extend_from_slice(&(table_count as u16).to_be_bytes());
+        font.extend_from_slice(&0u16.to_be_bytes());
+        font.extend_from_slice(&0u16.to_be_bytes());
+        font.extend_from_slice(&0u16.to_be_bytes());
+        for (tag, table_offset, length) in &records {
+            font.extend_from_slice(tag);
+            font.extend_from_slice(&0u32.to_be_bytes());
+            font.extend_from_slice(&(*table_offset as u32).to_be_bytes());
+            font.extend_from_slice(&(*length as u32).to_be_bytes());
+        }
+        while font.len() < align4(12 + table_count * 16) {
+            font.push(0);
+        }
+        for ((_, data), (_, table_offset, _)) in tables.iter().zip(records.iter()) {
+            while font.len() < *table_offset {
+                font.push(0);
+            }
+            font.extend_from_slice(data);
+            while font.len() % 4 != 0 {
+                font.push(0);
+            }
+        }
+        font
+    }
+
+    fn align4(value: usize) -> usize {
+        (value + 3) & !3
     }
 
     fn indirect_object_bytes(number: u32, body: &[u8]) -> Vec<u8> {
