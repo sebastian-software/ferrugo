@@ -36,6 +36,26 @@ Allowed statuses:
 | 0038 | [Image Rasterization And Alpha](0038-image-rasterization-and-alpha.md) | 3 | medium | 0037 |
 | 0039 | [Basic Text Rasterization](0039-basic-text-rasterization.md) | 3 | medium | 0038 |
 | 0040 | [Typical Document Coverage Gate](0040-typical-document-coverage-gate.md) | 4 | medium | 0039 |
+| 0041 | [Renderer Gap Triage And Support Matrix](0041-renderer-gap-triage-and-support-matrix.md) | 5 | small | 0040 |
+| 0042 | [Font Program Loading](0042-font-program-loading.md) | 5 | medium | 0041 |
+| 0043 | [CMap And ToUnicode Mapping](0043-cmap-and-tounicode-mapping.md) | 5 | medium | 0042 |
+| 0044 | [Glyph Outline Extraction](0044-glyph-outline-extraction.md) | 5 | medium | 0043 |
+| 0045 | [Complex Text Positioning Baseline](0045-complex-text-positioning-baseline.md) | 5 | medium | 0044 |
+| 0046 | [Color Spaces And Decode Arrays](0046-color-spaces-and-decode-arrays.md) | 6 | medium | 0045 |
+| 0047 | [Image Filter Coverage](0047-image-filter-coverage.md) | 6 | medium | 0046 |
+| 0048 | [Soft Masks And Transparency Groups](0048-soft-masks-and-transparency-groups.md) | 6 | medium | 0047 |
+| 0049 | [Blend Modes And Overprint Policy](0049-blend-modes-and-overprint-policy.md) | 6 | medium | 0048 |
+| 0050 | [Patterns Shadings And Gradients](0050-patterns-shadings-and-gradients.md) | 6 | medium | 0049 |
+| 0051 | [Advanced Stroke And Clipping Fidelity](0051-advanced-stroke-and-clipping-fidelity.md) | 6 | medium | 0050 |
+| 0052 | [Annotation Appearance Rendering](0052-annotation-appearance-rendering.md) | 7 | medium | 0051 |
+| 0053 | [AcroForm Appearance Rendering](0053-acroform-appearance-rendering.md) | 7 | medium | 0052 |
+| 0054 | [Optional Content And Layer Policy](0054-optional-content-and-layer-policy.md) | 7 | medium | 0053 |
+| 0055 | [Incremental Updates And Hybrid References](0055-incremental-updates-and-hybrid-references.md) | 7 | medium | 0054 |
+| 0056 | [Encryption And Permissions Policy](0056-encryption-and-permissions-policy.md) | 7 | small | 0055 |
+| 0057 | [Malformed PDF Recovery Budget](0057-malformed-pdf-recovery-budget.md) | 7 | medium | 0056 |
+| 0058 | [Renderer Cache And Memory Budgets](0058-renderer-cache-and-memory-budgets.md) | 8 | medium | 0057 |
+| 0059 | [Native Backend Facade Parity](0059-native-backend-facade-parity.md) | 8 | medium | 0058 |
+| 0060 | [PDFium Retirement Gate](0060-pdfium-retirement-gate.md) | 8 | medium | 0059 |
 
 ## In Progress
 
