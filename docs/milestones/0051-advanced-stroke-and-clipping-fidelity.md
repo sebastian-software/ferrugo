@@ -73,9 +73,15 @@ In progress:
   delta `56`, native non-white pixels `992`. Samples before the left endpoint
   show matching Butt white and Square black coverage; the Round cap differs
   only by antialiasing intensity at that pixel.
+- Fifth implementation slice adds line-join state for the `j` operator and
+  miter-limit state for `M`. Stroke sampling now evaluates internal joins from
+  flattened subpaths: Round joins cover the vertex radius, Bevel joins add the
+  corner triangle, and Miter joins use offset-line intersections until the
+  configured miter limit falls back to Bevel geometry.
 - Current validation:
   - `cargo test -p pdfrust-render dash -- --nocapture`
   - `cargo test -p pdfrust-render line_cap -- --nocapture`
+  - `cargo test -p pdfrust-render line_join -- --nocapture`
   - `cargo test -p pdfrust-native dashed_stroke -- --nocapture`
   - `cargo test -p pdfrust-native line_caps -- --nocapture`
   - `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render fixtures/generated/dashed-stroke.pdf --max-edge 120 --output target/pdfrust-thumbnails/dashed-stroke-pdfium-0051.png`

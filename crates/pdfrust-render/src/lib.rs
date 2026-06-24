@@ -504,6 +504,29 @@ impl LineCap {
     }
 }
 
+/// Stroke line-join style.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum LineJoin {
+    /// Extend outer edges until the configured miter limit is reached.
+    #[default]
+    Miter,
+    /// Add a circular join around the path vertex.
+    Round,
+    /// Connect outer stroke corners directly.
+    Bevel,
+}
+
+impl LineJoin {
+    fn from_pdf(value: i64) -> Option<Self> {
+        match value {
+            0 => Some(Self::Miter),
+            1 => Some(Self::Round),
+            2 => Some(Self::Bevel),
+            _ => None,
+        }
+    }
+}
+
 /// Current graphics state subset needed by early renderer milestones.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GraphicsState {
@@ -527,6 +550,10 @@ pub struct GraphicsState {
     pub stroke_dash: StrokeDashPattern,
     /// Current stroke line-cap style.
     pub line_cap: LineCap,
+    /// Current stroke line-join style.
+    pub line_join: LineJoin,
+    /// Current stroke miter limit.
+    pub miter_limit: f64,
     /// Current blend mode for path painting.
     pub blend_mode: BlendMode,
     /// Placeholder flag set by `W` or `W*` until clipping is modeled fully.
@@ -546,6 +573,8 @@ impl Default for GraphicsState {
             fill_pattern: None,
             stroke_dash: StrokeDashPattern::solid(),
             line_cap: LineCap::Butt,
+            line_join: LineJoin::Miter,
+            miter_limit: 10.0,
             blend_mode: BlendMode::Normal,
             clip_path_pending: false,
         }
@@ -2918,6 +2947,8 @@ fn rasterize_path_item(
                     dash_pattern: path.state.stroke_dash,
                     dash_scale: transform.scale,
                     line_cap: path.state.line_cap,
+                    line_join: path.state.line_join,
+                    miter_limit: path.state.miter_limit,
                 },
                 options,
             )?;
@@ -2947,6 +2978,8 @@ fn rasterize_path_item(
                     dash_pattern: path.state.stroke_dash,
                     dash_scale: transform.scale,
                     line_cap: path.state.line_cap,
+                    line_join: path.state.line_join,
+                    miter_limit: path.state.miter_limit,
                 },
                 options,
             )?;
@@ -3218,6 +3251,8 @@ impl<'r> DisplayListInterpreter<'r> {
             b"cm" => self.concatenate_matrix(offset, operands),
             b"w" => self.set_line_width(offset, operands),
             b"J" => self.set_line_cap(offset, operands),
+            b"j" => self.set_line_join(offset, operands),
+            b"M" => self.set_miter_limit(offset, operands),
             b"d" => self.set_stroke_dash(offset, operands),
             b"g" => self.set_fill_gray(offset, operands),
             b"G" => self.set_stroke_gray(offset, operands),
@@ -3453,6 +3488,24 @@ impl<'r> DisplayListInterpreter<'r> {
         operands: &[PdfPrimitive<'_>],
     ) -> GraphicsResult<()> {
         self.current.line_cap = line_cap_operand(offset, operands)?;
+        Ok(())
+    }
+
+    fn set_line_join(
+        &mut self,
+        offset: ByteOffset,
+        operands: &[PdfPrimitive<'_>],
+    ) -> GraphicsResult<()> {
+        self.current.line_join = line_join_operand(offset, operands)?;
+        Ok(())
+    }
+
+    fn set_miter_limit(
+        &mut self,
+        offset: ByteOffset,
+        operands: &[PdfPrimitive<'_>],
+    ) -> GraphicsResult<()> {
+        self.current.miter_limit = miter_limit_operand(offset, operands)?;
         Ok(())
     }
 
@@ -3792,12 +3845,20 @@ impl<'r> DisplayListInterpreter<'r> {
 struct FlattenedPath {
     subpaths: Vec<Vec<Point>>,
     lines: Vec<LineSegment>,
+    joins: Vec<StrokeJoin>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct LineSegment {
     from: Point,
     to: Point,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct StrokeJoin {
+    previous: LineSegment,
+    next: LineSegment,
+    point: Point,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -3808,6 +3869,8 @@ struct StrokeRasterState {
     dash_pattern: StrokeDashPattern,
     dash_scale: f64,
     line_cap: LineCap,
+    line_join: LineJoin,
+    miter_limit: f64,
 }
 
 struct TextDisplayListInterpreter<'r> {
@@ -4464,6 +4527,8 @@ impl GraphicsStateInterpreter {
             b"cm" => self.concatenate_matrix(offset, operands),
             b"w" => self.set_line_width(offset, operands),
             b"J" => self.set_line_cap(offset, operands),
+            b"j" => self.set_line_join(offset, operands),
+            b"M" => self.set_miter_limit(offset, operands),
             b"d" => self.set_stroke_dash(offset, operands),
             b"g" => self.set_fill_gray(offset, operands),
             b"G" => self.set_stroke_gray(offset, operands),
@@ -4552,6 +4617,24 @@ impl GraphicsStateInterpreter {
         operands: &[PdfPrimitive<'_>],
     ) -> GraphicsResult<()> {
         self.current.line_cap = line_cap_operand(offset, operands)?;
+        Ok(())
+    }
+
+    fn set_line_join(
+        &mut self,
+        offset: ByteOffset,
+        operands: &[PdfPrimitive<'_>],
+    ) -> GraphicsResult<()> {
+        self.current.line_join = line_join_operand(offset, operands)?;
+        Ok(())
+    }
+
+    fn set_miter_limit(
+        &mut self,
+        offset: ByteOffset,
+        operands: &[PdfPrimitive<'_>],
+    ) -> GraphicsResult<()> {
+        self.current.miter_limit = miter_limit_operand(offset, operands)?;
         Ok(())
     }
 
@@ -4704,6 +4787,26 @@ fn line_cap_operand(offset: ByteOffset, operands: &[PdfPrimitive<'_>]) -> Graphi
         return Err(invalid_operand(offset, b"J"));
     };
     LineCap::from_pdf(*value).ok_or_else(|| invalid_operand(offset, b"J"))
+}
+
+fn line_join_operand(
+    offset: ByteOffset,
+    operands: &[PdfPrimitive<'_>],
+) -> GraphicsResult<LineJoin> {
+    expect_operand_count(offset, b"j", operands, 1)?;
+    let Some(PdfPrimitive::Number(PdfNumber::Integer(value))) = operands.first() else {
+        return Err(invalid_operand(offset, b"j"));
+    };
+    LineJoin::from_pdf(*value).ok_or_else(|| invalid_operand(offset, b"j"))
+}
+
+fn miter_limit_operand(offset: ByteOffset, operands: &[PdfPrimitive<'_>]) -> GraphicsResult<f64> {
+    expect_operand_count(offset, b"M", operands, 1)?;
+    let limit = number_operand(offset, b"M", operands, 0)?;
+    if limit < 1.0 {
+        return Err(invalid_operand(offset, b"M"));
+    }
+    Ok(limit)
 }
 
 fn name_operand<'a>(
@@ -5913,6 +6016,7 @@ fn flatten_path_segments(
         }
     }
     finish_subpath(&mut flattened, &mut current_subpath);
+    flattened.joins = stroke_joins_from_subpaths(&flattened.subpaths, limit)?;
     Ok(flattened)
 }
 
@@ -5937,6 +6041,34 @@ fn push_flattened_line(
     }
     flattened.lines.push(LineSegment { from, to });
     Ok(())
+}
+
+fn stroke_joins_from_subpaths(
+    subpaths: &[Vec<Point>],
+    limit: usize,
+) -> RasterResult<Vec<StrokeJoin>> {
+    let mut joins = Vec::new();
+    for subpath in subpaths {
+        for points in subpath.windows(3) {
+            if joins.len() >= limit {
+                return Err(RasterError::new(RasterErrorKind::PathComplexityOverflow {
+                    limit,
+                }));
+            }
+            joins.push(StrokeJoin {
+                previous: LineSegment {
+                    from: points[0],
+                    to: points[1],
+                },
+                next: LineSegment {
+                    from: points[1],
+                    to: points[2],
+                },
+                point: points[1],
+            });
+        }
+    }
+    Ok(joins)
 }
 
 fn cubic_point(from: Point, c1: Point, c2: Point, to: Point, t: f64) -> Point {
@@ -6148,15 +6280,15 @@ fn stroke_path(
         state.line_width / 2.0
     };
     let dashed_lines;
-    let stroke_lines = if state.dash_pattern.is_solid() {
-        path.lines.as_slice()
+    let (stroke_lines, joins): (&[LineSegment], &[StrokeJoin]) = if state.dash_pattern.is_solid() {
+        (path.lines.as_slice(), path.joins.as_slice())
     } else {
         dashed_lines = dashed_line_segments(
             &path.lines,
             state.dash_pattern.scaled(state.dash_scale),
             options.max_flattened_segments,
         )?;
-        dashed_lines.as_slice()
+        (dashed_lines.as_slice(), &[])
     };
     let samples = u32::from(options.supersample);
     let sample_count = samples * samples;
@@ -6167,7 +6299,9 @@ fn stroke_path(
             for sample_y in 0..samples {
                 for sample_x in 0..samples {
                     let point = sample_point(x, y, sample_x, sample_y, samples);
-                    if point_in_stroke(point, stroke_lines, radius, state.line_cap) {
+                    if point_in_stroke(point, stroke_lines, radius, state.line_cap)
+                        || point_in_join(point, joins, radius, state.line_join, state.miter_limit)
+                    {
                         covered += 1;
                     }
                 }
@@ -6328,6 +6462,166 @@ fn point_in_stroke(point: Point, lines: &[LineSegment], radius: f64, line_cap: L
                 .is_some_and(|distance| distance <= radius_squared)
         }
     })
+}
+
+fn point_in_join(
+    point: Point,
+    joins: &[StrokeJoin],
+    radius: f64,
+    line_join: LineJoin,
+    miter_limit: f64,
+) -> bool {
+    let radius_squared = radius * radius;
+    joins.iter().any(|join| match line_join {
+        LineJoin::Round => distance_squared(point, join.point) <= radius_squared,
+        LineJoin::Bevel => {
+            point_in_join_side(point, *join, radius, LineJoin::Bevel, miter_limit, 1.0)
+                || point_in_join_side(point, *join, radius, LineJoin::Bevel, miter_limit, -1.0)
+        }
+        LineJoin::Miter => {
+            point_in_join_side(point, *join, radius, LineJoin::Miter, miter_limit, 1.0)
+                || point_in_join_side(point, *join, radius, LineJoin::Miter, miter_limit, -1.0)
+        }
+    })
+}
+
+fn point_in_join_side(
+    point: Point,
+    join: StrokeJoin,
+    radius: f64,
+    line_join: LineJoin,
+    miter_limit: f64,
+    side: f64,
+) -> bool {
+    let Some(previous_direction) = unit_line_direction(join.previous) else {
+        return false;
+    };
+    let Some(next_direction) = unit_line_direction(join.next) else {
+        return false;
+    };
+    let previous_normal = signed_left_normal(previous_direction, side);
+    let next_normal = signed_left_normal(next_direction, side);
+    let previous_outer = Point {
+        x: previous_normal.x.mul_add(radius, join.point.x),
+        y: previous_normal.y.mul_add(radius, join.point.y),
+    };
+    let next_outer = Point {
+        x: next_normal.x.mul_add(radius, join.point.x),
+        y: next_normal.y.mul_add(radius, join.point.y),
+    };
+
+    if matches!(line_join, LineJoin::Miter) {
+        let miter = line_intersection(
+            previous_outer,
+            previous_direction,
+            next_outer,
+            next_direction,
+        );
+        if let Some(miter) = miter {
+            if distance_squared(join.point, miter) <= (radius * miter_limit).powi(2) {
+                return point_in_triangle(point, previous_outer, miter, next_outer);
+            }
+        }
+    }
+
+    point_in_triangle(point, join.point, previous_outer, next_outer)
+}
+
+fn unit_line_direction(line: LineSegment) -> Option<Point> {
+    let dx = line.to.x - line.from.x;
+    let dy = line.to.y - line.from.y;
+    let length = dx.hypot(dy);
+    (length > f64::EPSILON).then_some(Point {
+        x: dx / length,
+        y: dy / length,
+    })
+}
+
+fn signed_left_normal(direction: Point, side: f64) -> Point {
+    Point {
+        x: -direction.y * side,
+        y: direction.x * side,
+    }
+}
+
+fn line_intersection(
+    point_a: Point,
+    direction_a: Point,
+    point_b: Point,
+    direction_b: Point,
+) -> Option<Point> {
+    let denominator = cross(direction_a, direction_b);
+    if denominator.abs() <= f64::EPSILON {
+        return None;
+    }
+    let delta = Point {
+        x: point_b.x - point_a.x,
+        y: point_b.y - point_a.y,
+    };
+    let t = cross(delta, direction_b) / denominator;
+    Some(Point {
+        x: direction_a.x.mul_add(t, point_a.x),
+        y: direction_a.y.mul_add(t, point_a.y),
+    })
+}
+
+fn point_in_triangle(point: Point, a: Point, b: Point, c: Point) -> bool {
+    let area = cross(
+        Point {
+            x: b.x - a.x,
+            y: b.y - a.y,
+        },
+        Point {
+            x: c.x - a.x,
+            y: c.y - a.y,
+        },
+    );
+    if area.abs() <= f64::EPSILON {
+        return false;
+    }
+    let ab = cross(
+        Point {
+            x: b.x - a.x,
+            y: b.y - a.y,
+        },
+        Point {
+            x: point.x - a.x,
+            y: point.y - a.y,
+        },
+    );
+    let bc = cross(
+        Point {
+            x: c.x - b.x,
+            y: c.y - b.y,
+        },
+        Point {
+            x: point.x - b.x,
+            y: point.y - b.y,
+        },
+    );
+    let ca = cross(
+        Point {
+            x: a.x - c.x,
+            y: a.y - c.y,
+        },
+        Point {
+            x: point.x - c.x,
+            y: point.y - c.y,
+        },
+    );
+    let has_negative = ab < 0.0 || bc < 0.0 || ca < 0.0;
+    let has_positive = ab > 0.0 || bc > 0.0 || ca > 0.0;
+    !(has_negative && has_positive)
+}
+
+fn cross(a: Point, b: Point) -> f64 {
+    a.x.mul_add(b.y, -(a.y * b.x))
+}
+
+fn distance_squared(a: Point, b: Point) -> f64 {
+    let dx = a.x - b.x;
+    let dy = a.y - b.y;
+    dx.mul_add(dx, dy * dy)
 }
 
 fn distance_to_line_body_squared(point: Point, line: LineSegment) -> Option<f64> {
@@ -9021,6 +9315,18 @@ mod tests {
     }
 
     #[test]
+    fn graphics_state_should_track_line_join_and_miter_limit() {
+        let state = interpret_graphics_state(
+            tokenize_content(PdfBytes::new(b"1 j 3 M")),
+            GraphicsStateOptions::default(),
+        )
+        .expect("valid line-join operators");
+
+        assert_eq!(state.line_join, LineJoin::Round);
+        assert_eq!(state.miter_limit, 3.0);
+    }
+
+    #[test]
     fn graphics_state_should_restore_saved_state() {
         let state = interpret_graphics_state(
             tokenize_content(PdfBytes::new(b"0.25 g q 0.75 g Q")),
@@ -9178,6 +9484,21 @@ mod tests {
             panic!("expected path display item");
         };
         assert_eq!(path.state.line_cap, LineCap::Round);
+    }
+
+    #[test]
+    fn display_list_should_capture_line_join_and_miter_limit() {
+        let list = build_path_display_list(
+            tokenize_content(PdfBytes::new(b"2 j 4 M 2 w 0 5 m 10 5 l 10 10 l S")),
+            DisplayListOptions::default(),
+        )
+        .expect("valid line-join stream");
+
+        let DisplayItem::Path(path) = &list.items()[0] else {
+            panic!("expected path display item");
+        };
+        assert_eq!(path.state.line_join, LineJoin::Bevel);
+        assert_eq!(path.state.miter_limit, 4.0);
     }
 
     #[test]
@@ -9640,6 +9961,24 @@ mod tests {
         assert_eq!(butt.pixel(3, 4).expect("butt before start"), Rgba::WHITE);
         assert_eq!(round.pixel(3, 4).expect("round before start"), black);
         assert_eq!(square.pixel(3, 4).expect("square before start"), black);
+    }
+
+    #[test]
+    fn rasterize_paths_should_apply_round_line_join() {
+        let bevel = rasterize_line_join_stream(b"2 j 6 w 5 5 m 10 5 l 10 10 l S");
+        let round = rasterize_line_join_stream(b"1 j 6 w 5 5 m 10 5 l 10 10 l S");
+        let black = Rgba {
+            r: 0,
+            g: 0,
+            b: 0,
+            a: 255,
+        };
+
+        assert_eq!(
+            bevel.pixel(12, 11).expect("bevel outside corner"),
+            Rgba::WHITE
+        );
+        assert_eq!(round.pixel(12, 11).expect("round outside corner"), black);
     }
 
     #[test]
@@ -11315,6 +11654,39 @@ mod tests {
             },
         )
         .expect("line-cap stroke should rasterize")
+    }
+
+    fn rasterize_line_join_stream(content: &[u8]) -> RasterDevice {
+        let list = build_path_display_list(
+            tokenize_content(PdfBytes::new(content)),
+            DisplayListOptions::default(),
+        )
+        .expect("valid line-join stream");
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 20.0,
+                    max_y: 15.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            20,
+        )
+        .expect("line-join transform");
+
+        rasterize_paths(
+            &list,
+            transform,
+            Rgba::WHITE,
+            PathRasterOptions {
+                supersample: 1,
+                ..PathRasterOptions::default()
+            },
+        )
+        .expect("line-join stroke should rasterize")
     }
 
     fn image_resources_from_document(
