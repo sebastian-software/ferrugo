@@ -1,6 +1,6 @@
 # 0084: Visual Diff Dashboard And Review Workflow
 
-Status: todo
+Status: done
 Phase: 14
 Size: medium
 Depends on: 0083
@@ -46,4 +46,26 @@ turning every small pixel delta into manual work.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-24.
+
+- Commit `faed727`: added `pdfrust-cli visual-diff` behind the `pdfium`
+  feature.
+- Added per-fixture visual metrics, exact/accepted-drift/blocker
+  classification, family grouping, and renderer-subsystem grouping.
+- Added focused tests for visual-diff metric classification and subsystem
+  assignment.
+- Added threshold and review workflow documentation in
+  `docs/policies/visual-diff-thresholds.md`.
+- Recorded the local review evidence in
+  `docs/reports/visual-diff-dashboard-2026-06-24.md`.
+
+Validation completed:
+
+```text
+cargo fmt --check
+cargo check
+cargo test
+cargo test -p pdfrust-cli --features pdfium
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/real-world-style-manifest.tsv --max-edge 120 --output target/0084-visual-diff.json
+```

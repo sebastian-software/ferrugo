@@ -21,7 +21,6 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
-| 0084 | [Visual Diff Dashboard And Review Workflow](0084-visual-diff-dashboard-and-review-workflow.md) | 14 | medium | 0083 |
 | 0085 | [Page Geometry Boxes Rotation And User Units](0085-page-geometry-boxes-rotation-and-user-units.md) | 15 | medium | 0084 |
 | 0086 | [Type3 Font And CharProc Rendering](0086-type3-font-and-charproc-rendering.md) | 15 | medium | 0085 |
 | 0087 | [Font Hinting Glyph Cache And Subpixel Policy](0087-font-hinting-glyph-cache-and-subpixel-policy.md) | 15 | medium | 0086 |
@@ -68,6 +67,7 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Completed |
 | --- | --- | --- | --- | --- |
+| 0084 | [Visual Diff Dashboard And Review Workflow](0084-visual-diff-dashboard-and-review-workflow.md) | 14 | medium | 2026-06-24 |
 | 0083 | [Real-World Corpus Ingestion And Classification](0083-real-world-corpus-ingestion-and-classification.md) | 14 | medium | 2026-06-24 |
 | 0082 | [Native Default API And CLI Stabilization](0082-native-default-api-and-cli-stabilization.md) | 14 | medium | 2026-06-24 |
 | 0081 | [RC Gap Synthesis And PDFium Retirement Backlog](0081-rc-gap-synthesis-and-pdfium-retirement-backlog.md) | 14 | small | 2026-06-24 |
