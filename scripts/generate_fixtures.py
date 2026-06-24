@@ -527,6 +527,31 @@ def blend_modes_pdf() -> bytes:
     return pdf.render(catalog)
 
 
+def transparency_alpha_pdf() -> bytes:
+    pdf = Pdf()
+    content = (
+        b"0.5 0.5 0.5 rg 0 0 120 120 re f "
+        b"q /GSFill gs 1 0 0 rg 10 10 40 40 re f Q "
+        b"q /GSStroke gs 0 0 1 RG 8 w 70 10 40 40 re S Q"
+    )
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 120 120] "
+        "/Resources << /ExtGState << "
+        "/GSFill << /ca 0.5 >> "
+        "/GSStroke << /CA 0.5 >> "
+        ">> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    return pdf.render(catalog)
+
+
 def axial_gradient_pdf() -> bytes:
     pdf = Pdf()
     content = b"/Sh1 sh"
@@ -1409,6 +1434,7 @@ def main() -> None:
     write("mixed-text-image.pdf", mixed_text_image_pdf())
     write("transparency-group.pdf", transparency_group_pdf())
     write("blend-modes.pdf", blend_modes_pdf())
+    write("transparency-alpha.pdf", transparency_alpha_pdf())
     write("axial-gradient.pdf", axial_gradient_pdf())
     write("radial-gradient.pdf", radial_gradient_pdf())
     write("tiling-pattern.pdf", tiling_pattern_pdf())

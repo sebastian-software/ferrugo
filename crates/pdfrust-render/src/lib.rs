@@ -559,6 +559,10 @@ pub struct GraphicsState {
     pub miter_limit: f64,
     /// Current blend mode for path painting.
     pub blend_mode: BlendMode,
+    /// Current nonstroking alpha constant.
+    pub fill_alpha: f64,
+    /// Current stroking alpha constant.
+    pub stroke_alpha: f64,
     /// Placeholder flag set by `W` or `W*` until clipping is modeled fully.
     pub clip_path_pending: bool,
 }
@@ -579,6 +583,8 @@ impl Default for GraphicsState {
             line_join: LineJoin::Miter,
             miter_limit: 10.0,
             blend_mode: BlendMode::Normal,
+            fill_alpha: 1.0,
+            stroke_alpha: 1.0,
             clip_path_pending: false,
         }
     }
@@ -596,16 +602,22 @@ pub enum BlendMode {
 }
 
 /// Parsed external graphics state subset.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ExtGraphicsState {
     /// Blend mode applied by `gs`.
     pub blend_mode: BlendMode,
+    /// Nonstroking alpha constant from `/ca`.
+    pub fill_alpha: f64,
+    /// Stroking alpha constant from `/CA`.
+    pub stroke_alpha: f64,
 }
 
 impl Default for ExtGraphicsState {
     fn default() -> Self {
         Self {
             blend_mode: BlendMode::Normal,
+            fill_alpha: 1.0,
+            stroke_alpha: 1.0,
         }
     }
 }
@@ -1149,7 +1161,7 @@ impl ImageResources {
 }
 
 /// External graphics state resource map.
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct ExtGraphicsStateResources {
     states: Vec<(Vec<u8>, ExtGraphicsState)>,
 }
@@ -3113,6 +3125,7 @@ fn rasterize_path_item(
                     rule,
                     path.state.fill_color,
                     path.state.blend_mode,
+                    path.state.fill_alpha,
                     context,
                 )?;
             }
@@ -3125,6 +3138,7 @@ fn rasterize_path_item(
                     line_width: path.state.line_width * context.transform.scale,
                     color: path.state.stroke_color,
                     blend_mode: path.state.blend_mode,
+                    alpha: path.state.stroke_alpha,
                     dash_pattern: path.state.stroke_dash,
                     dash_scale: context.transform.scale,
                     line_cap: path.state.line_cap,
@@ -3146,6 +3160,7 @@ fn rasterize_path_item(
                     rule,
                     path.state.fill_color,
                     path.state.blend_mode,
+                    path.state.fill_alpha,
                     context,
                 )?;
             }
@@ -3156,6 +3171,7 @@ fn rasterize_path_item(
                     line_width: path.state.line_width * context.transform.scale,
                     color: path.state.stroke_color,
                     blend_mode: path.state.blend_mode,
+                    alpha: path.state.stroke_alpha,
                     dash_pattern: path.state.stroke_dash,
                     dash_scale: context.transform.scale,
                     line_cap: path.state.line_cap,
@@ -3808,6 +3824,8 @@ impl<'r> DisplayListInterpreter<'r> {
                 )
             })?;
         self.current.blend_mode = state.blend_mode;
+        self.current.fill_alpha = state.fill_alpha;
+        self.current.stroke_alpha = state.stroke_alpha;
         Ok(())
     }
 
@@ -4060,6 +4078,7 @@ struct StrokeRasterState {
     line_width: f64,
     color: DeviceColor,
     blend_mode: BlendMode,
+    alpha: f64,
     dash_pattern: StrokeDashPattern,
     dash_scale: f64,
     line_cap: LineCap,
@@ -5185,7 +5204,28 @@ fn decode_ext_graphics_state(
     reject_enabled_overprint(dictionary)?;
     Ok(ExtGraphicsState {
         blend_mode: ext_graphics_state_blend_mode(dictionary)?,
+        fill_alpha: ext_graphics_state_alpha(dictionary, b"ca")?,
+        stroke_alpha: ext_graphics_state_alpha(dictionary, b"CA")?,
     })
+}
+
+fn ext_graphics_state_alpha(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    key: &[u8],
+) -> GraphicsResult<f64> {
+    let Some(value) = dictionary_value(dictionary, key) else {
+        return Ok(1.0);
+    };
+    let alpha = match value {
+        PdfPrimitive::Number(PdfNumber::Integer(value)) => *value as f64,
+        PdfPrimitive::Number(PdfNumber::Real(value)) if value.is_finite() => *value,
+        _ => return Err(invalid_ext_graphics_state(key)),
+    };
+    if (0.0..=1.0).contains(&alpha) {
+        Ok(alpha)
+    } else {
+        Err(invalid_ext_graphics_state(key))
+    }
 }
 
 fn ext_graphics_state_blend_mode(
@@ -6296,6 +6336,7 @@ fn fill_path(
     rule: FillRule,
     color: DeviceColor,
     blend_mode: BlendMode,
+    alpha: f64,
     context: PathRasterContext<'_>,
 ) -> RasterResult<()> {
     let source = device_color_to_rgba(color);
@@ -6322,7 +6363,7 @@ fn fill_path(
                     y,
                     source,
                     blend_mode,
-                    f64::from(covered) / f64::from(sample_count),
+                    alpha * f64::from(covered) / f64::from(sample_count),
                 )?;
             }
         }
@@ -6384,7 +6425,7 @@ fn fill_path_with_tiling_pattern(
                 y,
                 source,
                 state.blend_mode,
-                f64::from(covered) / f64::from(sample_count),
+                state.fill_alpha * f64::from(covered) / f64::from(sample_count),
             )?;
         }
     }
@@ -6527,7 +6568,7 @@ fn stroke_path(
                     y,
                     source,
                     state.blend_mode,
-                    f64::from(covered) / f64::from(sample_count),
+                    state.alpha * f64::from(covered) / f64::from(sample_count),
                 )?;
             }
         }
@@ -6945,6 +6986,10 @@ fn blend_pixel(
     blend_mode: BlendMode,
     coverage: f64,
 ) -> RasterResult<()> {
+    let coverage = coverage.clamp(0.0, 1.0);
+    if coverage <= f64::EPSILON {
+        return Ok(());
+    }
     let dest = device.pixel(x, y)?;
     let blended = blend_source_with_backdrop(source, dest, blend_mode);
     let inv = 1.0 - coverage;
@@ -9852,7 +9897,57 @@ mod tests {
             resources.get(PdfName::new(b"GS1")),
             Some(ExtGraphicsState {
                 blend_mode: BlendMode::Multiply,
+                fill_alpha: 1.0,
+                stroke_alpha: 1.0,
             })
+        );
+    }
+
+    #[test]
+    fn ext_graphics_state_resources_should_parse_alpha_constants() {
+        let dictionary = vec![(
+            PdfName::new(b"GS1"),
+            PdfPrimitive::Dictionary(vec![
+                (
+                    PdfName::new(b"ca"),
+                    PdfPrimitive::Number(PdfNumber::Real(0.5)),
+                ),
+                (
+                    PdfName::new(b"CA"),
+                    PdfPrimitive::Number(PdfNumber::Real(0.25)),
+                ),
+            ]),
+        )];
+        let resources =
+            ExtGraphicsStateResources::from_extgstate_dictionary(&dictionary).expect("alpha state");
+
+        assert_eq!(
+            resources.get(PdfName::new(b"GS1")),
+            Some(ExtGraphicsState {
+                blend_mode: BlendMode::Normal,
+                fill_alpha: 0.5,
+                stroke_alpha: 0.25,
+            })
+        );
+    }
+
+    #[test]
+    fn ext_graphics_state_resources_should_reject_invalid_alpha_constants() {
+        let dictionary = vec![(
+            PdfName::new(b"GS1"),
+            PdfPrimitive::Dictionary(vec![(
+                PdfName::new(b"ca"),
+                PdfPrimitive::Number(PdfNumber::Real(1.2)),
+            )]),
+        )];
+        let error = ExtGraphicsStateResources::from_extgstate_dictionary(&dictionary)
+            .expect_err("invalid alpha should fail explicitly");
+
+        assert_eq!(
+            error.kind(),
+            &GraphicsErrorKind::InvalidExtGraphicsState {
+                name: b"ca".to_vec(),
+            }
         );
     }
 
@@ -9915,6 +10010,90 @@ mod tests {
             panic!("expected path display item");
         };
         assert_eq!(path.state.blend_mode, BlendMode::Screen);
+    }
+
+    #[test]
+    fn display_list_should_apply_external_graphics_state_alpha_constants() {
+        let dictionary = vec![(
+            PdfName::new(b"GS1"),
+            PdfPrimitive::Dictionary(vec![
+                (
+                    PdfName::new(b"ca"),
+                    PdfPrimitive::Number(PdfNumber::Real(0.5)),
+                ),
+                (
+                    PdfName::new(b"CA"),
+                    PdfPrimitive::Number(PdfNumber::Real(0.25)),
+                ),
+            ]),
+        )];
+        let resources =
+            ExtGraphicsStateResources::from_extgstate_dictionary(&dictionary).expect("alpha state");
+        let list = build_path_display_list_with_ext_graphics_states(
+            tokenize_content(PdfBytes::new(b"/GS1 gs 1 0 0 rg 0 0 10 10 re f")),
+            &resources,
+            DisplayListOptions::default(),
+        )
+        .expect("valid alpha graphics state stream");
+
+        let DisplayItem::Path(path) = &list.items()[0] else {
+            panic!("expected path display item");
+        };
+        assert_eq!(path.state.fill_alpha, 0.5);
+        assert_eq!(path.state.stroke_alpha, 0.25);
+    }
+
+    #[test]
+    fn rasterize_paths_should_composite_ext_graphics_state_alpha() {
+        let dictionary = vec![(
+            PdfName::new(b"GS1"),
+            PdfPrimitive::Dictionary(vec![(
+                PdfName::new(b"ca"),
+                PdfPrimitive::Number(PdfNumber::Real(0.5)),
+            )]),
+        )];
+        let resources =
+            ExtGraphicsStateResources::from_extgstate_dictionary(&dictionary).expect("alpha state");
+        let list = build_path_display_list_with_ext_graphics_states(
+            tokenize_content(PdfBytes::new(b"/GS1 gs 1 0 0 rg 0 0 10 10 re f")),
+            &resources,
+            DisplayListOptions::default(),
+        )
+        .expect("valid alpha graphics state stream");
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 10.0,
+                    max_y: 10.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            10,
+        )
+        .expect("alpha transform");
+        let device = rasterize_paths(
+            &list,
+            transform,
+            Rgba::WHITE,
+            PathRasterOptions {
+                supersample: 1,
+                ..PathRasterOptions::default()
+            },
+        )
+        .expect("alpha path should rasterize");
+
+        assert_eq!(
+            device.pixel(5, 5).expect("covered alpha pixel"),
+            Rgba {
+                r: 255,
+                g: 128,
+                b: 128,
+                a: 255,
+            }
+        );
     }
 
     #[test]

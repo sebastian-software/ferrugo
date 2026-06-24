@@ -40,6 +40,7 @@ fixtures/generated/text-page.pdf	office-export	scripts/generate_fixtures.py	MIT 
 fixtures/generated/text-spacing.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,spacing,invisible-text	Generated text spacing and invisible render-mode fixture.
 fixtures/generated/tiling-pattern.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	pattern,tiling	Generated colored tiling pattern fixture.
 fixtures/generated/tounicode-text.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,tounicode	Generated ToUnicode character-code mapping fixture.
+fixtures/generated/transparency-alpha.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	transparency,alpha,extgstate	Generated ExtGState fill and stroke alpha fixture.
 fixtures/generated/transparency-group.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	transparency,form-xobject	Generated path-only transparency group fixture.
 fixtures/generated/vector-paths.pdf	browser-print	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	vector,path	Generated vector path drawing fixture.
 fixtures/generated/vertical-cjk-text.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,type0,cid,cjk,vertical	Generated vertical CJK Type0 CID font fixture.

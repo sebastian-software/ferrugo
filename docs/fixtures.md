@@ -38,6 +38,7 @@ The initial seed set covers:
 - Form XObject invocation
 - path-only Form XObject transparency groups
 - ExtGState Multiply and Screen path blend modes
+- ExtGState fill and stroke alpha constants
 - dashed vector strokes
 - stroke line-cap styles
 - stroke line-join styles
