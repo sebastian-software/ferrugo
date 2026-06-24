@@ -1,6 +1,6 @@
 # 0032: Path Display List
 
-Status: todo
+Status: done
 Phase: 2
 Size: medium
 Depends on: 0031
@@ -45,4 +45,21 @@ Convert basic path construction and painting operators into a display list.
 
 ## Completion Notes
 
-Empty until done.
+Completed with the `feat: build path display lists` change.
+
+- Added bounded display-list types in `pdfrust-render`: `DisplayList`,
+  `DisplayItem`, `PathDisplayItem`, `PathSegment`, `PaintMode`, `FillRule`,
+  `PathBounds`, and `DisplayListOptions`.
+- Added `build_path_display_list` for supported path construction and painting
+  operators: `m`, `l`, `c`, `h`, `re`, `S`, `s`, `f`, `F`, `f*`, `B`, `B*`,
+  `W`, `W*`, and `n`.
+- Extended graphics-state color capture to `DeviceColor::Rgb` for generated
+  vector fixtures using `RG` and `rg`.
+- Added explicit path-segment and display-item limits with typed overflow
+  errors.
+- Added tests for stroked paths, rectangle fills, clipping placeholders, the
+  generated `vector-paths.pdf` fixture, unsupported path operators, missing
+  current point errors, and both complexity limits.
+- Validation:
+  - `cargo fmt --check`
+  - `cargo test -p pdfrust-render`

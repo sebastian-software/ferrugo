@@ -99,9 +99,10 @@ slices, skips content comments, and preserves byte offsets in `ContentError`.
 It deliberately does not execute graphics state, resolve resources, or build a
 display list yet.
 
-`pdfrust-render` now owns the first graphics-state execution slice. It provides
-deterministic affine `Matrix` math, a small copyable `GraphicsState`, stack
-limits for `q`/`Q`, and interpretation for `cm`, `w`, gray fill/stroke color,
-and clipping placeholders. Unsupported content operators are ignored for this
-slice after clearing operands so mixed text/vector streams can be scanned before
-later milestones add text and path execution.
+`pdfrust-render` now owns the first graphics-state and display-list execution
+slices. It provides deterministic affine `Matrix` math, a small copyable
+`GraphicsState`, stack limits for `q`/`Q`, interpretation for `cm`, `w`, gray
+and RGB fill/stroke color, and clipping placeholders. It also builds bounded
+path display lists for `m`, `l`, `c`, `h`, `re`, `S`, `s`, `f`, `F`, `f*`,
+`B`, and `B*`. Unsupported path construction operators return typed errors.
+Rasterization remains a later milestone.
