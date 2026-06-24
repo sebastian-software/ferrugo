@@ -1,6 +1,6 @@
 # 0034: Image XObject Decoding And Placement
 
-Status: todo
+Status: done
 Phase: 2
 Size: medium
 Depends on: 0033
@@ -45,4 +45,23 @@ Decode and place common image XObjects in the display list.
 
 ## Completion Notes
 
-Empty until done.
+Completed with the `feat: place decoded image xobjects` change.
+
+- Added `ImageResources`, `ImageObjectResolver`, `ImageXObject`,
+  `ImageDisplayItem`, and `ImageColorSpace` to `pdfrust-render`.
+- Resolved image XObjects from `/XObject` resource dictionaries against loaded
+  classic and modern documents.
+- Supported unfiltered and `FlateDecode` `DeviceRGB`/`DeviceGray` image streams
+  with explicit decoded-byte limits and exact sample-length validation.
+- Stored image placements as display-list items using the active CTM and unit
+  square bounds.
+- Used `Arc<[u8]>` for decoded image samples so repeated `Do` placements share
+  bytes instead of duplicating them.
+- Documented and enforced `DCTDecode`/JPEG as an explicit unsupported filter for
+  this milestone; full JPEG decoding is deferred to image filter coverage.
+- Added tests for Flate RGB image resources, DeviceGray image resources, CTM
+  placement bounds, shared decoded samples, missing image resources, unsupported
+  `DCTDecode`, and unsupported color spaces.
+- Validation:
+  - `cargo fmt --check`
+  - `cargo test -p pdfrust-render`

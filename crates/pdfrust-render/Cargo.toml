@@ -8,11 +8,11 @@ rust-version.workspace = true
 
 [dependencies]
 pdfrust-content = { path = "../pdfrust-content" }
+pdfrust-object = { path = "../pdfrust-object" }
 pdfrust-syntax = { path = "../pdfrust-syntax" }
 pdfrust-thumbnail = { path = "../pdfrust-thumbnail" }
 
 [dev-dependencies]
-pdfrust-object = { path = "../pdfrust-object" }
 
 [lints]
 workspace = true

@@ -110,3 +110,10 @@ Text display-list support interprets `BT`, `ET`, `Tf`, `Td`, `Tm`, `Tj`, and
 `FontDescriptor` stubs. The first text policy accepts simple ASCII literal
 strings only; CMaps, embedded font shaping, glyph outlines, and searchable text
 extraction remain later milestones. Rasterization remains a later milestone.
+Image XObject support resolves `/XObject` resources from the object model,
+decodes unfiltered and `FlateDecode` `DeviceRGB`/`DeviceGray` image streams
+within an explicit byte budget, and stores `ImageDisplayItem` placements using
+the active CTM. Decoded image samples are reference-counted so repeated `Do`
+placements share sample bytes. `DCTDecode`, broader filter chains, and full
+color management return typed unsupported errors until the image-filter and
+color-space milestones.

@@ -3,8 +3,13 @@
 #![forbid(unsafe_code)]
 
 use std::fmt;
+use std::sync::Arc;
 
 use pdfrust_content::{ContentErrorKind, ContentResult, ContentToken, OperatorName};
+use pdfrust_object::{
+    ClassicDocument, GenerationNumber, IndirectObject, ModernDocument, ObjectId, ObjectNumber,
+    ObjectValue, Reference, StreamObject,
+};
 use pdfrust_syntax::{ByteOffset, PdfName, PdfNumber, PdfPrimitive, PdfString};
 
 /// Stable crate role used by architecture smoke tests and documentation.
@@ -21,6 +26,9 @@ pub const DEFAULT_DISPLAY_ITEM_LIMIT: usize = 8_192;
 
 /// Default maximum bytes in one decoded text run.
 pub const DEFAULT_TEXT_RUN_BYTES_LIMIT: usize = 64 * 1024;
+
+/// Default maximum decoded bytes for one image XObject.
+pub const DEFAULT_IMAGE_BYTES_LIMIT: usize = 32 * 1024 * 1024;
 
 /// Result alias for graphics-state interpretation.
 pub type GraphicsResult<T> = Result<T, GraphicsError>;
@@ -292,6 +300,56 @@ pub struct TextDisplayItem {
     pub state: GraphicsState,
 }
 
+/// Supported image color-space metadata.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImageColorSpace {
+    /// DeviceGray image samples.
+    DeviceGray,
+    /// DeviceRGB image samples.
+    DeviceRgb,
+}
+
+impl ImageColorSpace {
+    /// Returns bytes per pixel for the supported 8-bit color spaces.
+    #[must_use]
+    pub const fn bytes_per_pixel(self) -> usize {
+        match self {
+            Self::DeviceGray => 1,
+            Self::DeviceRgb => 3,
+        }
+    }
+}
+
+/// Decoded image XObject resource.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImageXObject {
+    /// Resource name used by content streams, without the leading slash.
+    pub resource_name: Vec<u8>,
+    /// Pixel width.
+    pub width: u32,
+    /// Pixel height.
+    pub height: u32,
+    /// Bits per color component.
+    pub bits_per_component: u8,
+    /// Supported color space.
+    pub color_space: ImageColorSpace,
+    /// Decoded image samples.
+    pub samples: Arc<[u8]>,
+}
+
+/// One placed image item captured before rasterization.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ImageDisplayItem {
+    /// Decoded image resource.
+    pub image: ImageXObject,
+    /// Current transformation matrix at placement time.
+    pub transform: Matrix,
+    /// Approximate placement bounds from transforming the unit square.
+    pub bounds: PathBounds,
+    /// Graphics state snapshot at placement time.
+    pub state: GraphicsState,
+}
+
 /// Display-list item.
 #[derive(Debug, Clone, PartialEq)]
 pub enum DisplayItem {
@@ -308,6 +366,8 @@ pub enum DisplayItem {
     },
     /// Positioned text run.
     Text(TextDisplayItem),
+    /// Placed image XObject.
+    Image(ImageDisplayItem),
 }
 
 /// Display list produced from content streams before rasterization.
@@ -357,6 +417,7 @@ impl DisplayList {
                     max_x: text.origin.x,
                     max_y: text.origin.y,
                 }),
+                DisplayItem::Image(image) => Some(image.bounds),
             };
             if let Some(item_bounds) = item_bounds {
                 bounds = Some(match bounds {
@@ -377,6 +438,115 @@ impl DisplayList {
         }
         self.items.push(item);
         Ok(())
+    }
+}
+
+/// Image XObject resource map.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct ImageResources {
+    images: Vec<ImageXObject>,
+}
+
+impl ImageResources {
+    /// Creates an empty image resource map.
+    #[must_use]
+    pub const fn empty() -> Self {
+        Self { images: Vec::new() }
+    }
+
+    /// Creates an image resource map from decoded images.
+    #[must_use]
+    pub fn new(images: Vec<ImageXObject>) -> Self {
+        Self { images }
+    }
+
+    /// Resolves image XObjects from a PDF `/XObject` resource dictionary.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`GraphicsError`] when an image resource is malformed,
+    /// references a missing object, uses an unsupported color space or filter,
+    /// or decodes beyond the configured image byte budget.
+    pub fn from_xobject_dictionary<'a, R>(
+        dictionary: &[(PdfName<'a>, PdfPrimitive<'a>)],
+        resolver: &'a R,
+        options: DisplayListOptions,
+    ) -> GraphicsResult<Self>
+    where
+        R: ImageObjectResolver<'a> + ?Sized,
+    {
+        let mut images = Vec::new();
+        for (name, value) in dictionary {
+            let Some(reference) = reference_from_primitive(value) else {
+                continue;
+            };
+            let object = resolver.resolve_image_object(reference)?.ok_or_else(|| {
+                GraphicsError::new(
+                    None,
+                    GraphicsErrorKind::MissingImageObject {
+                        name: name.as_bytes().to_vec(),
+                    },
+                )
+            })?;
+            let ObjectValue::Stream(stream) = &object.value else {
+                return Err(invalid_image_resource(name.as_bytes()));
+            };
+            if !dictionary_name_is(stream.dictionary(), b"Subtype", b"Image") {
+                continue;
+            }
+            images.push(decode_image_xobject(
+                *name,
+                stream,
+                options.max_image_bytes,
+            )?);
+        }
+        Ok(Self { images })
+    }
+
+    /// Returns the image matching a PDF resource name.
+    #[must_use]
+    pub fn get(&self, name: PdfName<'_>) -> Option<&ImageXObject> {
+        self.images
+            .iter()
+            .find(|image| image.resource_name.as_slice() == name.as_bytes())
+    }
+}
+
+/// Resolves image XObject references from a loaded PDF document.
+pub trait ImageObjectResolver<'a> {
+    /// Resolves an indirect object reference.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`GraphicsError`] when object-stream parsing fails.
+    fn resolve_image_object(
+        &'a self,
+        reference: Reference,
+    ) -> GraphicsResult<Option<IndirectObject<'a>>>;
+}
+
+impl<'a> ImageObjectResolver<'a> for ClassicDocument<'a> {
+    fn resolve_image_object(
+        &'a self,
+        reference: Reference,
+    ) -> GraphicsResult<Option<IndirectObject<'a>>> {
+        Ok(self.objects.get(reference.id).cloned())
+    }
+}
+
+impl<'a> ImageObjectResolver<'a> for ModernDocument<'a> {
+    fn resolve_image_object(
+        &'a self,
+        reference: Reference,
+    ) -> GraphicsResult<Option<IndirectObject<'a>>> {
+        self.get_object(reference.id).map_err(|error| {
+            GraphicsError::new(
+                error.offset(),
+                GraphicsErrorKind::ObjectModel {
+                    message: error.to_string(),
+                },
+            )
+        })
     }
 }
 
@@ -508,6 +678,8 @@ pub struct DisplayListOptions {
     pub max_display_items: usize,
     /// Maximum bytes accepted in one decoded text run.
     pub max_text_run_bytes: usize,
+    /// Maximum decoded bytes accepted for one image XObject.
+    pub max_image_bytes: usize,
 }
 
 impl Default for DisplayListOptions {
@@ -517,6 +689,7 @@ impl Default for DisplayListOptions {
             max_path_segments: DEFAULT_PATH_SEGMENT_LIMIT,
             max_display_items: DEFAULT_DISPLAY_ITEM_LIMIT,
             max_text_run_bytes: DEFAULT_TEXT_RUN_BYTES_LIMIT,
+            max_image_bytes: DEFAULT_IMAGE_BYTES_LIMIT,
         }
     }
 }
@@ -569,6 +742,23 @@ pub fn build_text_display_list<'a>(
     options: DisplayListOptions,
 ) -> GraphicsResult<DisplayList> {
     let mut interpreter = TextDisplayListInterpreter::new(fonts, options);
+    interpreter.interpret(tokens)?;
+    Ok(interpreter.display_list)
+}
+
+/// Builds placed image display-list items from `Do` operators.
+///
+/// # Errors
+///
+/// Returns [`GraphicsError`] when tokenization fails, graphics-state stack
+/// operations are invalid, a named image is missing, or display limits are
+/// exceeded.
+pub fn build_image_display_list<'a>(
+    tokens: impl IntoIterator<Item = ContentResult<ContentToken<'a>>>,
+    images: &ImageResources,
+    options: DisplayListOptions,
+) -> GraphicsResult<DisplayList> {
+    let mut interpreter = ImageDisplayListInterpreter::new(images, options);
     interpreter.interpret(tokens)?;
     Ok(interpreter.display_list)
 }
@@ -1273,6 +1463,134 @@ impl<'r> TextDisplayListInterpreter<'r> {
     }
 }
 
+struct ImageDisplayListInterpreter<'r> {
+    current: GraphicsState,
+    stack: Vec<GraphicsState>,
+    images: &'r ImageResources,
+    display_list: DisplayList,
+    options: DisplayListOptions,
+}
+
+impl<'r> ImageDisplayListInterpreter<'r> {
+    fn new(images: &'r ImageResources, options: DisplayListOptions) -> Self {
+        Self {
+            current: GraphicsState::default(),
+            stack: Vec::new(),
+            images,
+            display_list: DisplayList::new(),
+            options,
+        }
+    }
+
+    fn interpret<'a>(
+        &mut self,
+        tokens: impl IntoIterator<Item = ContentResult<ContentToken<'a>>>,
+    ) -> GraphicsResult<()> {
+        let mut operands = Vec::new();
+        for token in tokens {
+            match token.map_err(GraphicsError::from_content)? {
+                ContentToken::Operand { value, .. } => operands.push(value),
+                ContentToken::Operator { offset, name } => {
+                    self.apply_operator(offset, name, &operands)?;
+                    operands.clear();
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn apply_operator(
+        &mut self,
+        offset: ByteOffset,
+        name: OperatorName<'_>,
+        operands: &[PdfPrimitive<'_>],
+    ) -> GraphicsResult<()> {
+        match name.as_bytes() {
+            b"q" => self.save_state(offset, operands),
+            b"Q" => self.restore_state(offset, operands),
+            b"cm" => self.concatenate_matrix(offset, operands),
+            b"Do" => self.place_image(offset, operands),
+            _ => Ok(()),
+        }
+    }
+
+    fn save_state(
+        &mut self,
+        offset: ByteOffset,
+        operands: &[PdfPrimitive<'_>],
+    ) -> GraphicsResult<()> {
+        expect_operand_count(offset, b"q", operands, 0)?;
+        if self.stack.len() >= self.options.max_stack_depth {
+            return Err(GraphicsError::new(
+                Some(offset),
+                GraphicsErrorKind::StackOverflow {
+                    limit: self.options.max_stack_depth,
+                },
+            ));
+        }
+        self.stack.push(self.current);
+        Ok(())
+    }
+
+    fn restore_state(
+        &mut self,
+        offset: ByteOffset,
+        operands: &[PdfPrimitive<'_>],
+    ) -> GraphicsResult<()> {
+        expect_operand_count(offset, b"Q", operands, 0)?;
+        self.current = self
+            .stack
+            .pop()
+            .ok_or_else(|| GraphicsError::new(Some(offset), GraphicsErrorKind::StackUnderflow))?;
+        Ok(())
+    }
+
+    fn concatenate_matrix(
+        &mut self,
+        offset: ByteOffset,
+        operands: &[PdfPrimitive<'_>],
+    ) -> GraphicsResult<()> {
+        expect_operand_count(offset, b"cm", operands, 6)?;
+        self.current.ctm = self.current.ctm.multiply(Matrix::new(
+            number_operand(offset, b"cm", operands, 0)?,
+            number_operand(offset, b"cm", operands, 1)?,
+            number_operand(offset, b"cm", operands, 2)?,
+            number_operand(offset, b"cm", operands, 3)?,
+            number_operand(offset, b"cm", operands, 4)?,
+            number_operand(offset, b"cm", operands, 5)?,
+        ));
+        Ok(())
+    }
+
+    fn place_image(
+        &mut self,
+        offset: ByteOffset,
+        operands: &[PdfPrimitive<'_>],
+    ) -> GraphicsResult<()> {
+        expect_operand_count(offset, b"Do", operands, 1)?;
+        let name = name_operand(offset, b"Do", operands, 0)?;
+        let image = self.images.get(name).cloned().ok_or_else(|| {
+            GraphicsError::new(
+                Some(offset),
+                GraphicsErrorKind::MissingImage {
+                    name: name.as_bytes().to_vec(),
+                },
+            )
+        })?;
+        let transform = self.current.ctm;
+        self.display_list.push(
+            DisplayItem::Image(ImageDisplayItem {
+                image,
+                transform,
+                bounds: unit_square_bounds(transform),
+                state: self.current,
+            }),
+            self.options.max_display_items,
+            offset,
+        )
+    }
+}
+
 #[derive(Debug, Default, Clone, PartialEq)]
 struct TextState {
     in_text_object: bool,
@@ -1579,8 +1897,243 @@ fn decode_pdf_text_string(
         .map_err(|_| GraphicsError::new(Some(offset), GraphicsErrorKind::UnsupportedTextEncoding))
 }
 
+fn decode_image_xobject(
+    resource_name: PdfName<'_>,
+    stream: &StreamObject<'_>,
+    max_image_bytes: usize,
+) -> GraphicsResult<ImageXObject> {
+    require_supported_image_filter(stream.dictionary())?;
+    let width = required_u32(stream.dictionary(), b"Width")
+        .or_else(|_| required_u32(stream.dictionary(), b"W"))
+        .map_err(|_| invalid_image_resource(resource_name.as_bytes()))?;
+    let height = required_u32(stream.dictionary(), b"Height")
+        .or_else(|_| required_u32(stream.dictionary(), b"H"))
+        .map_err(|_| invalid_image_resource(resource_name.as_bytes()))?;
+    let bits_per_component = required_u8(stream.dictionary(), b"BitsPerComponent")
+        .or_else(|_| required_u8(stream.dictionary(), b"BPC"))
+        .map_err(|_| invalid_image_resource(resource_name.as_bytes()))?;
+    if bits_per_component != 8 {
+        return Err(invalid_image_resource(resource_name.as_bytes()));
+    }
+    let color_space = image_color_space(stream.dictionary())?;
+    let decoded = stream.decode().map_err(|error| {
+        GraphicsError::new(
+            error.offset(),
+            GraphicsErrorKind::ObjectModel {
+                message: error.to_string(),
+            },
+        )
+    })?;
+    if decoded.len() > max_image_bytes {
+        return Err(GraphicsError::new(
+            None,
+            GraphicsErrorKind::ImageBytesOverflow {
+                limit: max_image_bytes,
+            },
+        ));
+    }
+    let expected_len = expected_image_len(width, height, color_space)?;
+    if decoded.len() != expected_len {
+        return Err(GraphicsError::new(
+            None,
+            GraphicsErrorKind::InvalidImageDataLength {
+                expected: expected_len,
+                actual: decoded.len(),
+            },
+        ));
+    }
+    Ok(ImageXObject {
+        resource_name: resource_name.as_bytes().to_vec(),
+        width,
+        height,
+        bits_per_component,
+        color_space,
+        samples: Arc::from(decoded),
+    })
+}
+
+fn expected_image_len(
+    width: u32,
+    height: u32,
+    color_space: ImageColorSpace,
+) -> GraphicsResult<usize> {
+    (width as usize)
+        .checked_mul(height as usize)
+        .and_then(|pixels| pixels.checked_mul(color_space.bytes_per_pixel()))
+        .ok_or_else(|| {
+            GraphicsError::new(
+                None,
+                GraphicsErrorKind::ImageBytesOverflow { limit: usize::MAX },
+            )
+        })
+}
+
+fn require_supported_image_filter(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+) -> GraphicsResult<()> {
+    let Some(filter) =
+        dictionary_value(dictionary, b"Filter").or_else(|| dictionary_value(dictionary, b"F"))
+    else {
+        return Ok(());
+    };
+    match filter {
+        PdfPrimitive::Name(name) if name.as_bytes() == b"FlateDecode" => Ok(()),
+        PdfPrimitive::Name(name) if name.as_bytes() == b"DCTDecode" => Err(GraphicsError::new(
+            None,
+            GraphicsErrorKind::UnsupportedImageFilter {
+                filter: name.as_bytes().to_vec(),
+            },
+        )),
+        PdfPrimitive::Name(name) => Err(GraphicsError::new(
+            None,
+            GraphicsErrorKind::UnsupportedImageFilter {
+                filter: name.as_bytes().to_vec(),
+            },
+        )),
+        PdfPrimitive::Array(filters) => {
+            if filters.len() == 1 {
+                if let PdfPrimitive::Name(name) = filters[0] {
+                    if name.as_bytes() == b"FlateDecode" {
+                        return Ok(());
+                    }
+                    return Err(GraphicsError::new(
+                        None,
+                        GraphicsErrorKind::UnsupportedImageFilter {
+                            filter: name.as_bytes().to_vec(),
+                        },
+                    ));
+                }
+            }
+            Err(GraphicsError::new(
+                None,
+                GraphicsErrorKind::UnsupportedImageFilter {
+                    filter: b"filter-chain".to_vec(),
+                },
+            ))
+        }
+        _ => Err(GraphicsError::new(
+            None,
+            GraphicsErrorKind::UnsupportedImageFilter {
+                filter: b"malformed-filter".to_vec(),
+            },
+        )),
+    }
+}
+
+fn image_color_space(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+) -> GraphicsResult<ImageColorSpace> {
+    let Some(value) =
+        dictionary_value(dictionary, b"ColorSpace").or_else(|| dictionary_value(dictionary, b"CS"))
+    else {
+        return Err(GraphicsError::new(
+            None,
+            GraphicsErrorKind::UnsupportedImageColorSpace {
+                color_space: b"missing".to_vec(),
+            },
+        ));
+    };
+    match value {
+        PdfPrimitive::Name(name) if name.as_bytes() == b"DeviceRGB" => {
+            Ok(ImageColorSpace::DeviceRgb)
+        }
+        PdfPrimitive::Name(name) if name.as_bytes() == b"DeviceGray" => {
+            Ok(ImageColorSpace::DeviceGray)
+        }
+        PdfPrimitive::Name(name) => Err(GraphicsError::new(
+            None,
+            GraphicsErrorKind::UnsupportedImageColorSpace {
+                color_space: name.as_bytes().to_vec(),
+            },
+        )),
+        _ => Err(GraphicsError::new(
+            None,
+            GraphicsErrorKind::UnsupportedImageColorSpace {
+                color_space: b"malformed".to_vec(),
+            },
+        )),
+    }
+}
+
+fn required_u32(dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)], key: &[u8]) -> GraphicsResult<u32> {
+    match dictionary_value(dictionary, key) {
+        Some(PdfPrimitive::Number(PdfNumber::Integer(value))) => {
+            u32::try_from(*value).map_err(|_| {
+                GraphicsError::new(
+                    None,
+                    GraphicsErrorKind::InvalidImageResource { name: key.to_vec() },
+                )
+            })
+        }
+        _ => Err(GraphicsError::new(
+            None,
+            GraphicsErrorKind::InvalidImageResource { name: key.to_vec() },
+        )),
+    }
+}
+
+fn required_u8(dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)], key: &[u8]) -> GraphicsResult<u8> {
+    required_u32(dictionary, key).and_then(|value| {
+        u8::try_from(value).map_err(|_| {
+            GraphicsError::new(
+                None,
+                GraphicsErrorKind::InvalidImageResource { name: key.to_vec() },
+            )
+        })
+    })
+}
+
+fn dictionary_value<'a>(
+    dictionary: &'a [(PdfName<'a>, PdfPrimitive<'a>)],
+    key: &[u8],
+) -> Option<&'a PdfPrimitive<'a>> {
+    dictionary
+        .iter()
+        .find_map(|(name, value)| (name.as_bytes() == key).then_some(value))
+}
+
+fn dictionary_name_is(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    key: &[u8],
+    expected: &[u8],
+) -> bool {
+    matches!(
+        dictionary_value(dictionary, key),
+        Some(PdfPrimitive::Name(name)) if name.as_bytes() == expected
+    )
+}
+
+fn reference_from_primitive(value: &PdfPrimitive<'_>) -> Option<Reference> {
+    let PdfPrimitive::Reference(reference) = *value else {
+        return None;
+    };
+    let number = ObjectNumber::new(reference.object).ok()?;
+    let generation = GenerationNumber::new(reference.generation);
+    Some(Reference::new(ObjectId::new(number, generation)))
+}
+
+fn unit_square_bounds(transform: Matrix) -> PathBounds {
+    let p0 = transform.transform_point(0.0, 0.0);
+    let p1 = transform.transform_point(1.0, 0.0);
+    let p2 = transform.transform_point(1.0, 1.0);
+    let p3 = transform.transform_point(0.0, 1.0);
+    let bounds = include_point(None, p0);
+    let bounds = include_point(Some(bounds), p1);
+    let bounds = include_point(Some(bounds), p2);
+    include_point(Some(bounds), p3)
+}
+
 fn invalid_operand(offset: ByteOffset, operator: &'static [u8]) -> GraphicsError {
     GraphicsError::new(Some(offset), GraphicsErrorKind::InvalidOperand { operator })
+}
+
+fn invalid_image_resource(name: &[u8]) -> GraphicsError {
+    GraphicsError::new(
+        None,
+        GraphicsErrorKind::InvalidImageResource {
+            name: name.to_vec(),
+        },
+    )
 }
 
 fn missing_current_point(offset: ByteOffset, operator: &'static [u8]) -> GraphicsError {
@@ -1719,6 +2272,48 @@ pub enum GraphicsErrorKind {
         /// Configured text run byte limit.
         limit: usize,
     },
+    /// Image resource name was not present in the resource map.
+    MissingImage {
+        /// Missing image resource name.
+        name: Vec<u8>,
+    },
+    /// Referenced image object was not present in the loaded document.
+    MissingImageObject {
+        /// Missing image resource name.
+        name: Vec<u8>,
+    },
+    /// Image resource dictionary or stream metadata is malformed.
+    InvalidImageResource {
+        /// Resource or field name related to the failure.
+        name: Vec<u8>,
+    },
+    /// Image color space is unsupported by this milestone.
+    UnsupportedImageColorSpace {
+        /// Unsupported color-space name.
+        color_space: Vec<u8>,
+    },
+    /// Image filter is unsupported by this milestone.
+    UnsupportedImageFilter {
+        /// Unsupported filter name.
+        filter: Vec<u8>,
+    },
+    /// Decoded image data length does not match metadata.
+    InvalidImageDataLength {
+        /// Expected decoded byte length.
+        expected: usize,
+        /// Actual decoded byte length.
+        actual: usize,
+    },
+    /// Decoded image data exceeds the configured limit.
+    ImageBytesOverflow {
+        /// Configured decoded image byte limit.
+        limit: usize,
+    },
+    /// Lower object model error surfaced during resource resolution.
+    ObjectModel {
+        /// Stable object-model error message.
+        message: String,
+    },
 }
 
 impl fmt::Display for GraphicsErrorKind {
@@ -1773,6 +2368,43 @@ impl fmt::Display for GraphicsErrorKind {
             Self::TextRunOverflow { limit } => {
                 write!(f, "decoded text run exceeds byte limit {limit}")
             }
+            Self::MissingImage { name } => {
+                write!(
+                    f,
+                    "missing image resource {}",
+                    String::from_utf8_lossy(name)
+                )
+            }
+            Self::MissingImageObject { name } => write!(
+                f,
+                "missing image object for resource {}",
+                String::from_utf8_lossy(name)
+            ),
+            Self::InvalidImageResource { name } => write!(
+                f,
+                "invalid image resource {}",
+                String::from_utf8_lossy(name)
+            ),
+            Self::UnsupportedImageColorSpace { color_space } => write!(
+                f,
+                "unsupported image color space {}",
+                String::from_utf8_lossy(color_space)
+            ),
+            Self::UnsupportedImageFilter { filter } => {
+                write!(
+                    f,
+                    "unsupported image filter {}",
+                    String::from_utf8_lossy(filter)
+                )
+            }
+            Self::InvalidImageDataLength { expected, actual } => write!(
+                f,
+                "invalid decoded image length: expected {expected} bytes but got {actual}"
+            ),
+            Self::ImageBytesOverflow { limit } => {
+                write!(f, "decoded image exceeds byte limit {limit}")
+            }
+            Self::ObjectModel { message } => write!(f, "object model error: {message}"),
         }
     }
 }
@@ -2221,6 +2853,143 @@ mod tests {
         );
     }
 
+    #[test]
+    fn image_resources_should_decode_flate_rgb_xobject() {
+        let document = load_image_xobject_pdf(
+            b"q 64 0 0 64 28 28 cm /Im1 Do Q",
+            b"<< /Type /XObject /Subtype /Image /Width 2 /Height 2 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode /Length 16 >>",
+            &[120, 156, 251, 207, 192, 192, 240, 31, 132, 129, 0, 0, 29, 238, 5, 251],
+        );
+        let resources = image_resources_from_document(&document).expect("valid image resources");
+        let image = resources.get(PdfName::new(b"Im1")).expect("image resource");
+
+        assert_eq!(image.width, 2);
+        assert_eq!(image.height, 2);
+        assert_eq!(image.color_space, ImageColorSpace::DeviceRgb);
+        assert_eq!(image.samples.len(), 12);
+    }
+
+    #[test]
+    fn image_resources_should_decode_device_gray_xobject() {
+        let document = load_image_xobject_pdf(
+            b"q 10 0 0 10 0 0 cm /Im1 Do Q",
+            b"<< /Type /XObject /Subtype /Image /Width 2 /Height 1 /ColorSpace /DeviceGray /BitsPerComponent 8 /Length 2 >>",
+            &[0, 255],
+        );
+        let resources = image_resources_from_document(&document).expect("valid image resources");
+        let image = resources.get(PdfName::new(b"Im1")).expect("image resource");
+
+        assert_eq!(image.color_space, ImageColorSpace::DeviceGray);
+        assert_eq!(&*image.samples, &[0, 255]);
+    }
+
+    #[test]
+    fn image_display_list_should_place_image_with_ctm_bounds() {
+        let document = load_image_xobject_pdf(
+            b"q 64 0 0 64 28 28 cm /Im1 Do Q",
+            b"<< /Type /XObject /Subtype /Image /Width 2 /Height 2 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode /Length 16 >>",
+            &[120, 156, 251, 207, 192, 192, 240, 31, 132, 129, 0, 0, 29, 238, 5, 251],
+        );
+        let resources = image_resources_from_document(&document).expect("valid image resources");
+        let content = content_stream_from_document(&document);
+        let list = build_image_display_list(
+            tokenize_content(PdfBytes::new(&content)),
+            &resources,
+            DisplayListOptions::default(),
+        )
+        .expect("valid image placement");
+
+        let DisplayItem::Image(image) = &list.items()[0] else {
+            panic!("expected image item");
+        };
+        assert_eq!(
+            image.bounds,
+            PathBounds {
+                min_x: 28.0,
+                min_y: 28.0,
+                max_x: 92.0,
+                max_y: 92.0,
+            }
+        );
+        assert_eq!(image.image.resource_name, b"Im1");
+    }
+
+    #[test]
+    fn image_display_list_should_share_decoded_samples_across_placements() {
+        let document = load_image_xobject_pdf(
+            b"q 10 0 0 10 0 0 cm /Im1 Do Q q 10 0 0 10 20 0 cm /Im1 Do Q",
+            b"<< /Type /XObject /Subtype /Image /Width 2 /Height 1 /ColorSpace /DeviceGray /BitsPerComponent 8 /Length 2 >>",
+            &[0, 255],
+        );
+        let resources = image_resources_from_document(&document).expect("valid image resources");
+        let content = content_stream_from_document(&document);
+        let list = build_image_display_list(
+            tokenize_content(PdfBytes::new(&content)),
+            &resources,
+            DisplayListOptions::default(),
+        )
+        .expect("valid image placements");
+
+        let (DisplayItem::Image(first), DisplayItem::Image(second)) =
+            (&list.items()[0], &list.items()[1])
+        else {
+            panic!("expected two image items");
+        };
+        assert!(Arc::ptr_eq(&first.image.samples, &second.image.samples));
+    }
+
+    #[test]
+    fn image_resources_should_report_unsupported_dct_filter() {
+        let document = load_image_xobject_pdf(
+            b"q 10 0 0 10 0 0 cm /Im1 Do Q",
+            b"<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length 3 >>",
+            &[0, 0, 0],
+        );
+        let error = image_resources_from_document(&document).expect_err("DCT is not decoded yet");
+
+        assert_eq!(
+            error.kind(),
+            &GraphicsErrorKind::UnsupportedImageFilter {
+                filter: b"DCTDecode".to_vec(),
+            }
+        );
+    }
+
+    #[test]
+    fn image_resources_should_report_unsupported_color_space() {
+        let document = load_image_xobject_pdf(
+            b"q 10 0 0 10 0 0 cm /Im1 Do Q",
+            b"<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceCMYK /BitsPerComponent 8 /Length 4 >>",
+            &[0, 0, 0, 0],
+        );
+        let error =
+            image_resources_from_document(&document).expect_err("CMYK is not supported yet");
+
+        assert_eq!(
+            error.kind(),
+            &GraphicsErrorKind::UnsupportedImageColorSpace {
+                color_space: b"DeviceCMYK".to_vec(),
+            }
+        );
+    }
+
+    #[test]
+    fn image_display_list_should_report_missing_image_resource() {
+        let error = build_image_display_list(
+            tokenize_content(PdfBytes::new(b"/Missing Do")),
+            &ImageResources::empty(),
+            DisplayListOptions::default(),
+        )
+        .expect_err("missing image resource should fail");
+
+        assert_eq!(
+            error.kind(),
+            &GraphicsErrorKind::MissingImage {
+                name: b"Missing".to_vec(),
+            }
+        );
+    }
+
     fn generated_fixture_content(file_name: &str) -> Vec<u8> {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join(format!("../../fixtures/generated/{file_name}"));
@@ -2236,6 +3005,91 @@ mod tests {
             panic!("content object should be a stream");
         };
         stream.decode().expect("content stream should decode")
+    }
+
+    fn image_resources_from_document(
+        document: &ClassicDocument<'_>,
+    ) -> GraphicsResult<ImageResources> {
+        let xobjects = vec![(
+            PdfName::new(b"Im1"),
+            PdfPrimitive::Reference(pdfrust_syntax::PdfReference::new(4, 0)),
+        )];
+        ImageResources::from_xobject_dictionary(&xobjects, document, DisplayListOptions::default())
+    }
+
+    fn content_stream_from_document(document: &ClassicDocument<'_>) -> Vec<u8> {
+        let content_id = ObjectId::new(
+            ObjectNumber::new(1).expect("object number"),
+            GenerationNumber::new(0),
+        );
+        let content = document.objects.get(content_id).expect("content stream");
+        let ObjectValue::Stream(stream) = &content.value else {
+            panic!("content object should be a stream");
+        };
+        stream.decode().expect("content stream should decode")
+    }
+
+    fn load_image_xobject_pdf(
+        content_stream: &[u8],
+        image_dictionary: &[u8],
+        image_stream: &[u8],
+    ) -> ClassicDocument<'static> {
+        let content_dictionary = format!("<< /Length {} >>", content_stream.len());
+        let objects = vec![
+            stream_object_bytes(1, content_dictionary.as_bytes(), content_stream),
+            indirect_object_bytes(
+                2,
+                b"<< /Type /Page /Parent 3 0 R /MediaBox [0 0 120 120] /Resources << /XObject << /Im1 4 0 R >> >> /Contents 1 0 R >>",
+            ),
+            indirect_object_bytes(3, b"<< /Type /Pages /Kids [2 0 R] /Count 1 >>"),
+            stream_object_bytes(4, image_dictionary, image_stream),
+            indirect_object_bytes(5, b"<< /Type /Catalog /Pages 3 0 R >>"),
+        ];
+        let pdf = build_classic_pdf_from_objects(&objects);
+        let leaked = Box::leak(pdf.into_boxed_slice());
+        load_classic_document(PdfBytes::new(leaked)).expect("image XObject PDF should load")
+    }
+
+    fn indirect_object_bytes(number: u32, body: &[u8]) -> Vec<u8> {
+        let mut object = Vec::new();
+        object.extend_from_slice(number.to_string().as_bytes());
+        object.extend_from_slice(b" 0 obj\n");
+        object.extend_from_slice(body);
+        object.extend_from_slice(b"\nendobj\n");
+        object
+    }
+
+    fn stream_object_bytes(number: u32, dictionary: &[u8], stream: &[u8]) -> Vec<u8> {
+        let mut object = Vec::new();
+        object.extend_from_slice(number.to_string().as_bytes());
+        object.extend_from_slice(b" 0 obj\n");
+        object.extend_from_slice(dictionary);
+        object.extend_from_slice(b"\nstream\n");
+        object.extend_from_slice(stream);
+        object.extend_from_slice(b"\nendstream\nendobj\n");
+        object
+    }
+
+    fn build_classic_pdf_from_objects(objects: &[Vec<u8>]) -> Vec<u8> {
+        let mut pdf = b"%PDF-1.4\n".to_vec();
+        let mut offsets = Vec::new();
+        for object in objects {
+            offsets.push(pdf.len());
+            pdf.extend_from_slice(object);
+        }
+        let xref_offset = pdf.len();
+        pdf.extend_from_slice(b"xref\n0 ");
+        pdf.extend_from_slice((objects.len() + 1).to_string().as_bytes());
+        pdf.extend_from_slice(b"\n0000000000 65535 f \n");
+        for offset in offsets {
+            pdf.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
+        }
+        pdf.extend_from_slice(b"trailer\n<< /Size ");
+        pdf.extend_from_slice((objects.len() + 1).to_string().as_bytes());
+        pdf.extend_from_slice(b" /Root 5 0 R >>\nstartxref\n");
+        pdf.extend_from_slice(xref_offset.to_string().as_bytes());
+        pdf.extend_from_slice(b"\n%%EOF\n");
+        pdf
     }
 
     fn test_font_resources() -> FontResources {
