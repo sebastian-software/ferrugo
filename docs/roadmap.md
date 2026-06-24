@@ -3,6 +3,10 @@
 Status: exploratory roadmap, not an approved implementation plan.
 Date: 2026-06-24.
 
+Operational progress is tracked in small milestone documents under
+`docs/milestones/`. The roadmap describes the broad phase direction; milestone
+files are the working log for status, validation, and completion notes.
+
 ## Phase 0: Thumbnail Probe Definition
 
 Goal: make thumbnail generation measurable before implementation choices become

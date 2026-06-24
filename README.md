@@ -61,6 +61,7 @@ full-renderer parity until after those measurements exist.
 - [Rendering landscape](docs/research/2026-06-24-rendering-landscape.md)
 - [Porting decision](docs/decisions/0001-rust-first-pdfium-guided-porting.md)
 - [Phase 0 decisions](docs/plans/phase-0-decisions.md)
+- [Milestones](docs/milestones/README.md)
 - [PDFium port strategy](docs/concepts/2026-06-24-pdfium-port-strategy.md)
 - [Node API surface](docs/concepts/2026-06-24-node-api-surface.md)
 - [Thumbnail generation plan](docs/plans/2026-06-24-thumbnail-generation-plan.md)
