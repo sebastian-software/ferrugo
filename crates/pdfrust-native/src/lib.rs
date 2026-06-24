@@ -427,7 +427,7 @@ fn page_annotation_appearance_resources(
     let annotations = annotation_array(document, annots)?;
     let mut names = Vec::new();
     let mut references = Vec::new();
-    let mut content = Vec::new();
+    let mut rects = Vec::new();
 
     for annotation in annotations {
         let Some(dictionary) = annotation_dictionary(document, annotation)? else {
@@ -443,9 +443,9 @@ fn page_annotation_appearance_resources(
             continue;
         }
         let name = format!("Ann{}", names.len()).into_bytes();
-        append_annotation_form_invocation(&mut content, &name, rect);
         names.push(name);
         references.push(reference);
+        rects.push(rect);
     }
 
     if names.is_empty() {
@@ -462,9 +462,16 @@ fn page_annotation_appearance_resources(
             )
         })
         .collect::<Vec<_>>();
-    FormResources::from_xobject_dictionary(&xobjects, document)
-        .map(|resources| (resources, content))
-        .map_err(map_graphics_error)
+    let resources =
+        FormResources::from_xobject_dictionary(&xobjects, document).map_err(map_graphics_error)?;
+    let mut content = Vec::new();
+    for (name, rect) in names.iter().zip(rects) {
+        let Some(form) = resources.get(PdfName::new(name.as_slice())) else {
+            continue;
+        };
+        append_annotation_form_invocation(&mut content, name, rect, form.bbox);
+    }
+    Ok((resources, content))
 }
 
 fn page_font_resources(
@@ -598,12 +605,28 @@ fn primitive_number(value: &PdfPrimitive<'_>) -> Option<f64> {
     }
 }
 
-fn append_annotation_form_invocation(content: &mut Vec<u8>, name: &[u8], rect: PathBounds) {
+fn append_annotation_form_invocation(
+    content: &mut Vec<u8>,
+    name: &[u8],
+    rect: PathBounds,
+    bbox: PathBounds,
+) {
+    let bbox_width = bbox.max_x - bbox.min_x;
+    let bbox_height = bbox.max_y - bbox.min_y;
+    if bbox_width <= f64::EPSILON || bbox_height <= f64::EPSILON {
+        return;
+    }
+    let scale_x = (rect.max_x - rect.min_x) / bbox_width;
+    let scale_y = (rect.max_y - rect.min_y) / bbox_height;
+    let translate_x = rect.min_x - bbox.min_x * scale_x;
+    let translate_y = rect.min_y - bbox.min_y * scale_y;
     content.extend_from_slice(
         format!(
-            "q 1 0 0 1 {} {} cm /{} Do Q\n",
-            format_pdf_number(rect.min_x),
-            format_pdf_number(rect.min_y),
+            "q {} 0 0 {} {} {} cm /{} Do Q\n",
+            format_pdf_number(scale_x),
+            format_pdf_number(scale_y),
+            format_pdf_number(translate_x),
+            format_pdf_number(translate_y),
             String::from_utf8_lossy(name)
         )
         .as_bytes(),

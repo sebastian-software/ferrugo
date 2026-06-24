@@ -58,6 +58,9 @@ In progress:
   `fixtures/generated/annotation-appearance.pdf` through
   `scripts/generate_fixtures.py`, covering a `/Subtype /Stamp` annotation with
   a normal appearance stream.
+- Second implementation slice maps each appearance Form XObject `/BBox` onto
+  the annotation `/Rect` before invocation, so appearances with smaller local
+  coordinate systems scale to their page annotation bounds.
 - PDFium/native comparison for `annotation-appearance.pdf` at `max-edge 120`:
   `120x120`, changed RGB pixels `0`, RGB MAE `0.0000`, p95 RGB delta `0`,
   max channel delta `0`, native non-white pixels `800`. Filled and outside

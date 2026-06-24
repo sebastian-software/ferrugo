@@ -499,7 +499,7 @@ def clipped_paths_pdf() -> bytes:
 def annotation_appearance_pdf() -> bytes:
     pdf = Pdf()
     content = b""
-    appearance = b"0 0 0 rg 0 0 40 20 re f"
+    appearance = b"0 0 0 rg 0 0 20 10 re f"
     contents = pdf.add(
         f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
         + content
@@ -511,7 +511,7 @@ def annotation_appearance_pdf() -> bytes:
     )
     pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
     appearance_object = pdf.add(
-        b"<< /Type /XObject /Subtype /Form /BBox [0 0 40 20] /Length "
+        b"<< /Type /XObject /Subtype /Form /BBox [0 0 20 10] /Length "
         + str(len(appearance)).encode("ascii")
         + b" >>\nstream\n"
         + appearance
