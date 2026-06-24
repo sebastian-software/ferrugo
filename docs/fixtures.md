@@ -24,6 +24,7 @@ The initial seed set covers:
 - vector path drawing
 - image placement through an inline image stream
 - image placement through an Image XObject
+- CMYK and Indexed image color spaces
 - Form XObject invocation
 - embedded TrueType font resource resolution
 - ToUnicode text character-code mapping

@@ -1,6 +1,6 @@
 # 0046: Color Spaces And Decode Arrays
 
-Status: in-progress
+Status: done
 Phase: 6
 Size: medium
 Depends on: 0045
@@ -47,7 +47,23 @@ typical thumbnails.
 
 ## Completion Notes
 
-Empty until done.
+- Implemented DeviceGray, DeviceRGB, DeviceCMYK, Indexed DeviceGray/RGB, and
+  CalGray/CalRGB fallback handling for image resources.
+- Added stack-backed image Decode array parsing for supported process and
+  Indexed color spaces, applying ranges in-place after stream decoding.
+- ICCBased and non-process color spaces remain explicit typed unsupported
+  cases; full color management remains a non-goal.
+- Added deterministic `cmyk-image.pdf` and `indexed-image.pdf` fixtures with
+  native backend coverage.
+- Validation: `cargo fmt --check`, `cargo check`, `cargo test`,
+  `cargo test -p pdfrust-render -p pdfrust-native`,
+  `cargo clippy --all-targets --all-features -- -D warnings`, native CLI
+  smokes for `cmyk-image.pdf` and `indexed-image.pdf`, and PDFium/native pixel
+  comparisons:
+  - `cmyk-image.pdf`: `120x120`, MAE `15.306`, max `109`,
+    `native_nonwhite_pixels=6400`.
+  - `indexed-image.pdf`: `120x120`, MAE `0.000`, max `0`,
+    `native_nonwhite_pixels=4800`.
 
 ## Progress Notes
 

@@ -4719,7 +4719,7 @@ fn image_color_space(
         PdfPrimitive::Name(name) if name.as_bytes() == b"G" => {
             Ok(ImageColorSpaceInfo::new(ImageColorSpace::DeviceGray))
         }
-        PdfPrimitive::Array(values) => indexed_color_space(values),
+        PdfPrimitive::Array(values) => array_color_space(values),
         PdfPrimitive::Name(name) => Err(GraphicsError::new(
             None,
             GraphicsErrorKind::UnsupportedImageColorSpace {
@@ -4732,6 +4732,19 @@ fn image_color_space(
                 color_space: b"malformed".to_vec(),
             },
         )),
+    }
+}
+
+fn array_color_space(values: &[PdfPrimitive<'_>]) -> GraphicsResult<ImageColorSpaceInfo> {
+    let Some(PdfPrimitive::Name(kind)) = values.first() else {
+        return Err(unsupported_color_space(b"array"));
+    };
+    match kind.as_bytes() {
+        b"Indexed" | b"I" => indexed_color_space(values),
+        b"CalRGB" => Ok(ImageColorSpaceInfo::new(ImageColorSpace::DeviceRgb)),
+        b"CalGray" => Ok(ImageColorSpaceInfo::new(ImageColorSpace::DeviceGray)),
+        b"ICCBased" => Err(unsupported_color_space(b"ICCBased")),
+        other => Err(unsupported_color_space(other)),
     }
 }
 
@@ -7348,6 +7361,39 @@ mod tests {
         assert_eq!(
             image.indexed_lookup.as_deref(),
             Some([255, 0, 0, 0, 0, 255].as_slice())
+        );
+    }
+
+    #[test]
+    fn image_resources_should_treat_calibrated_rgb_as_device_rgb_fallback() {
+        let document = load_image_xobject_pdf(
+            b"q 10 0 0 10 0 0 cm /Im1 Do Q",
+            b"<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace [/CalRGB << /WhitePoint [1 1 1] >>] /BitsPerComponent 8 /Length 3 >>",
+            &[10, 20, 30],
+        );
+        let resources =
+            image_resources_from_document(&document).expect("CalRGB should use RGB fallback");
+        let image = resources.get(PdfName::new(b"Im1")).expect("image resource");
+
+        assert_eq!(image.color_space, ImageColorSpace::DeviceRgb);
+        assert_eq!(&*image.samples, &[10, 20, 30]);
+    }
+
+    #[test]
+    fn image_resources_should_report_unsupported_icc_based_color_space() {
+        let document = load_image_xobject_pdf(
+            b"q 10 0 0 10 0 0 cm /Im1 Do Q",
+            b"<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace [/ICCBased 9 0 R] /BitsPerComponent 8 /Length 3 >>",
+            &[10, 20, 30],
+        );
+        let error =
+            image_resources_from_document(&document).expect_err("ICCBased policy is unsupported");
+
+        assert_eq!(
+            error.kind(),
+            &GraphicsErrorKind::UnsupportedImageColorSpace {
+                color_space: b"ICCBased".to_vec(),
+            }
         );
     }
 
