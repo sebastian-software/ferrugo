@@ -63,9 +63,17 @@ In progress:
 - PDFium/native comparison for `soft-mask-image.pdf` at `max-edge 120`:
   dimensions `120x120`, changed pixels `0`, MAE `0.000`, p95 `0`, max channel
   delta `0`, native non-white pixels `4800`.
+- Third implementation slice adds path-only Form XObject transparency groups:
+  `/Group << /S /Transparency >>` is parsed into metadata, the form invocation
+  becomes a `TransparencyGroup` display item, and paths render into a
+  bbox-bounded transparent intermediate raster before source-over compositing
+  back into the page.
+- Added a transparency-group intermediate pixel budget with
+  `TransparencyGroupPixelsOverflow` coverage.
 - Validation so far: `cargo fmt --check`, `git diff --check`,
   `cargo test -p pdfrust-render soft_mask -- --nocapture`,
   `cargo test -p pdfrust-render generated_soft_mask -- --nocapture`,
+  `cargo test -p pdfrust-render transparency_group -- --nocapture`,
   `cargo test -p pdfrust-native soft_mask -- --nocapture`, `cargo check`,
   `cargo test --quiet`, native/PDFium fixture rendering and PNG comparison,
   `cargo clippy --all-targets --all-features -- -D warnings`.

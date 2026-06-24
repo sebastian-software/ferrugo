@@ -61,6 +61,9 @@ pub const DEFAULT_FORM_RECURSION_DEPTH_LIMIT: usize = 16;
 /// Default maximum flattened path line segments for one rasterization pass.
 pub const DEFAULT_FLATTENED_PATH_SEGMENT_LIMIT: usize = 65_536;
 
+/// Default maximum pixels in one transparency group intermediate raster.
+pub const DEFAULT_TRANSPARENCY_GROUP_PIXELS_LIMIT: usize = 16 * 1024 * 1024;
+
 /// Result alias for graphics-state interpretation.
 pub type GraphicsResult<T> = Result<T, GraphicsError>;
 
@@ -245,6 +248,8 @@ pub struct PathRasterOptions {
     pub supersample: u8,
     /// Maximum flattened line segments accepted in one rasterization pass.
     pub max_flattened_segments: usize,
+    /// Maximum pixels accepted in one transparency group intermediate raster.
+    pub max_transparency_group_pixels: usize,
 }
 
 impl Default for PathRasterOptions {
@@ -252,6 +257,7 @@ impl Default for PathRasterOptions {
         Self {
             supersample: 2,
             max_flattened_segments: DEFAULT_FLATTENED_PATH_SEGMENT_LIMIT,
+            max_transparency_group_pixels: DEFAULT_TRANSPARENCY_GROUP_PIXELS_LIMIT,
         }
     }
 }
@@ -656,6 +662,19 @@ pub struct ImageDisplayItem {
     pub state: GraphicsState,
 }
 
+/// One path-only transparency group captured before rasterization.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TransparencyGroupDisplayItem {
+    /// Nested display-list items captured from the group Form XObject.
+    pub items: DisplayList,
+    /// Group bounding box transformed into caller user space.
+    pub bounds: PathBounds,
+    /// Transparency group metadata.
+    pub group: TransparencyGroup,
+    /// Graphics state snapshot at group invocation time.
+    pub state: GraphicsState,
+}
+
 /// Decoded Form XObject resource.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FormXObject {
@@ -673,6 +692,17 @@ pub struct FormXObject {
     pub xobject_references: Vec<XObjectReference>,
     /// Whether omitted form resources inherit the caller resource scope.
     pub inherits_parent_resources: bool,
+    /// Optional transparency-group metadata.
+    pub transparency_group: Option<TransparencyGroup>,
+}
+
+/// Transparency group metadata supported by the current renderer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TransparencyGroup {
+    /// Whether the group is isolated from the backdrop.
+    pub isolated: bool,
+    /// Whether later group elements knock out earlier elements.
+    pub knockout: bool,
 }
 
 /// Owned XObject resource reference.
@@ -702,6 +732,8 @@ pub enum DisplayItem {
     Text(TextDisplayItem),
     /// Placed image XObject.
     Image(ImageDisplayItem),
+    /// Path-only transparency group.
+    TransparencyGroup(TransparencyGroupDisplayItem),
 }
 
 /// Display list produced from content streams before rasterization.
@@ -752,6 +784,7 @@ impl DisplayList {
                     max_y: text.origin.y,
                 }),
                 DisplayItem::Image(image) => Some(image.bounds),
+                DisplayItem::TransparencyGroup(group) => Some(group.bounds),
             };
             if let Some(item_bounds) = item_bounds {
                 bounds = Some(match bounds {
@@ -2266,40 +2299,135 @@ pub fn rasterize_paths_into(
         return Err(RasterError::new(RasterErrorKind::InvalidSupersampling));
     }
     for item in display_list.items() {
-        let DisplayItem::Path(path) = item else {
-            continue;
-        };
-        let flattened = flatten_path_segments(
-            &path.segments,
-            transform.matrix,
-            options.max_flattened_segments,
-        )?;
-        match path.paint {
-            PaintMode::Fill { rule } => {
-                fill_path(device, &flattened, rule, path.state.fill_color, options)?;
+        match item {
+            DisplayItem::Path(path) => rasterize_path_item(path, device, transform, options)?,
+            DisplayItem::TransparencyGroup(group) => {
+                rasterize_transparency_group(group, device, transform, options)?;
             }
-            PaintMode::Stroke => {
-                stroke_path(
-                    device,
-                    &flattened,
-                    path.state.line_width * transform.scale,
-                    path.state.stroke_color,
-                    options,
-                )?;
-            }
-            PaintMode::FillStroke { rule } => {
-                fill_path(device, &flattened, rule, path.state.fill_color, options)?;
-                stroke_path(
-                    device,
-                    &flattened,
-                    path.state.line_width * transform.scale,
-                    path.state.stroke_color,
-                    options,
-                )?;
-            }
+            DisplayItem::ClipPlaceholder { .. } | DisplayItem::Text(_) | DisplayItem::Image(_) => {}
         }
     }
     Ok(())
+}
+
+fn rasterize_path_item(
+    path: &PathDisplayItem,
+    device: &mut RasterDevice,
+    transform: PageTransform,
+    options: PathRasterOptions,
+) -> RasterResult<()> {
+    let flattened = flatten_path_segments(
+        &path.segments,
+        transform.matrix,
+        options.max_flattened_segments,
+    )?;
+    match path.paint {
+        PaintMode::Fill { rule } => {
+            fill_path(device, &flattened, rule, path.state.fill_color, options)?;
+        }
+        PaintMode::Stroke => {
+            stroke_path(
+                device,
+                &flattened,
+                path.state.line_width * transform.scale,
+                path.state.stroke_color,
+                options,
+            )?;
+        }
+        PaintMode::FillStroke { rule } => {
+            fill_path(device, &flattened, rule, path.state.fill_color, options)?;
+            stroke_path(
+                device,
+                &flattened,
+                path.state.line_width * transform.scale,
+                path.state.stroke_color,
+                options,
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn rasterize_transparency_group(
+    group: &TransparencyGroupDisplayItem,
+    device: &mut RasterDevice,
+    transform: PageTransform,
+    options: PathRasterOptions,
+) -> RasterResult<()> {
+    let Some(bounds) = transparency_group_device_bounds(group.bounds, transform) else {
+        return Ok(());
+    };
+    let pixels = (bounds.width as usize)
+        .checked_mul(bounds.height as usize)
+        .ok_or_else(|| RasterError::new(RasterErrorKind::BufferOverflow))?;
+    if pixels > options.max_transparency_group_pixels {
+        return Err(RasterError::new(
+            RasterErrorKind::TransparencyGroupPixelsOverflow {
+                limit: options.max_transparency_group_pixels,
+            },
+        ));
+    }
+    let mut group_matrix = transform.matrix;
+    group_matrix.e -= f64::from(bounds.min_x);
+    group_matrix.f -= f64::from(bounds.min_y);
+    let group_dimensions = RasterDimensions::new(bounds.width, bounds.height)?;
+    let group_transform = PageTransform {
+        source_box: group.bounds,
+        rotation: transform.rotation,
+        scale: transform.scale,
+        dimensions: group_dimensions,
+        matrix: group_matrix,
+    };
+    let mut group_device = RasterDevice::new(
+        bounds.width,
+        bounds.height,
+        Rgba {
+            r: 0,
+            g: 0,
+            b: 0,
+            a: 0,
+        },
+    )?;
+    rasterize_paths_into(&group.items, &mut group_device, group_transform, options)?;
+    for y in 0..bounds.height {
+        for x in 0..bounds.width {
+            let source = group_device.pixel(x, y)?;
+            if source.a == 0 {
+                continue;
+            }
+            composite_image_pixel(device, bounds.min_x + x, bounds.min_y + y, source)?;
+        }
+    }
+    Ok(())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct DeviceBounds {
+    min_x: u32,
+    min_y: u32,
+    width: u32,
+    height: u32,
+}
+
+fn transparency_group_device_bounds(
+    bounds: PathBounds,
+    transform: PageTransform,
+) -> Option<DeviceBounds> {
+    let bounds = transform_bounds(bounds, transform.matrix);
+    let dimensions = transform.dimensions;
+    let min_x = bounds.min_x.floor().max(0.0) as u32;
+    let min_y = bounds.min_y.floor().max(0.0) as u32;
+    let max_x = bounds.max_x.ceil().min(f64::from(dimensions.width)) as u32;
+    let max_y = bounds.max_y.ceil().min(f64::from(dimensions.height)) as u32;
+    if min_x >= max_x || min_y >= max_y {
+        return None;
+    }
+    Some(DeviceBounds {
+        min_x,
+        min_y,
+        width: max_x - min_x,
+        height: max_y - min_y,
+    })
 }
 
 /// Rasterizes image display-list items into an existing RGBA raster device.
@@ -2560,8 +2688,23 @@ impl<'r> DisplayListInterpreter<'r> {
             FormResourceScope::for_form(form),
             context.recursion_depth + 1,
         );
-        nested.push_form_bbox_clip(form, offset)?;
+        if form.transparency_group.is_none() {
+            nested.push_form_bbox_clip(form, offset)?;
+        }
         nested.interpret(tokenize_content(PdfBytes::new(&form.content)))?;
+        if let Some(group) = form.transparency_group {
+            let bounds = transform_bounds(form.bbox, nested_state.ctm);
+            return self.display_list.push(
+                DisplayItem::TransparencyGroup(TransparencyGroupDisplayItem {
+                    items: nested.display_list,
+                    bounds,
+                    group,
+                    state: self.current,
+                }),
+                self.options.max_display_items,
+                offset,
+            );
+        }
         for item in nested.display_list.items {
             self.display_list
                 .push(item, self.options.max_display_items, offset)?;
@@ -3842,6 +3985,7 @@ fn decode_form_xobject(
             },
         )
     })?;
+    let transparency_group = form_transparency_group(stream.dictionary())?;
     let (xobject_references, inherits_parent_resources) =
         form_xobject_references(stream.dictionary());
     let content = stream.decode().map_err(|error| {
@@ -3860,7 +4004,52 @@ fn decode_form_xobject(
         bbox,
         xobject_references,
         inherits_parent_resources,
+        transparency_group,
     })
+}
+
+fn form_transparency_group(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+) -> GraphicsResult<Option<TransparencyGroup>> {
+    let Some(value) = dictionary_value(dictionary, b"Group") else {
+        return Ok(None);
+    };
+    let PdfPrimitive::Dictionary(group) = value else {
+        return Err(GraphicsError::new(
+            None,
+            GraphicsErrorKind::InvalidFormResource {
+                name: b"Group".to_vec(),
+            },
+        ));
+    };
+    if !dictionary_name_is(group, b"S", b"Transparency") {
+        return Err(GraphicsError::new(
+            None,
+            GraphicsErrorKind::UnsupportedTransparencyGroup {
+                feature: b"S".to_vec(),
+            },
+        ));
+    }
+    Ok(Some(TransparencyGroup {
+        isolated: optional_bool(group, b"I")?.unwrap_or(false),
+        knockout: optional_bool(group, b"K")?.unwrap_or(false),
+    }))
+}
+
+fn optional_bool(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    key: &[u8],
+) -> GraphicsResult<Option<bool>> {
+    let Some(value) = dictionary_value(dictionary, key) else {
+        return Ok(None);
+    };
+    let PdfPrimitive::Boolean(value) = value else {
+        return Err(GraphicsError::new(
+            None,
+            GraphicsErrorKind::InvalidFormResource { name: key.to_vec() },
+        ));
+    };
+    Ok(Some(*value))
 }
 
 fn decode_image_xobject<'a, R>(
@@ -4855,10 +5044,22 @@ fn draw_image(
 }
 
 fn transformed_image_bounds(transform: Matrix) -> PathBounds {
-    let p0 = transform.transform_point(0.0, 0.0);
-    let p1 = transform.transform_point(1.0, 0.0);
-    let p2 = transform.transform_point(1.0, 1.0);
-    let p3 = transform.transform_point(0.0, 1.0);
+    transform_bounds(
+        PathBounds {
+            min_x: 0.0,
+            min_y: 0.0,
+            max_x: 1.0,
+            max_y: 1.0,
+        },
+        transform,
+    )
+}
+
+fn transform_bounds(bounds: PathBounds, transform: Matrix) -> PathBounds {
+    let p0 = transform.transform_point(bounds.min_x, bounds.min_y);
+    let p1 = transform.transform_point(bounds.max_x, bounds.min_y);
+    let p2 = transform.transform_point(bounds.max_x, bounds.max_y);
+    let p3 = transform.transform_point(bounds.min_x, bounds.max_y);
     let bounds = include_point(None, p0);
     let bounds = include_point(Some(bounds), p1);
     let bounds = include_point(Some(bounds), p2);
@@ -6236,6 +6437,11 @@ pub enum RasterErrorKind {
         /// Configured flattened line segment limit.
         limit: usize,
     },
+    /// Transparency group intermediate raster exceeds the configured limit.
+    TransparencyGroupPixelsOverflow {
+        /// Configured transparency group pixel limit.
+        limit: usize,
+    },
     /// Image transform could not be inverted for sampling.
     SingularImageTransform,
     /// Row or pixel coordinate was outside the raster.
@@ -6254,6 +6460,9 @@ impl fmt::Display for RasterErrorKind {
             Self::BufferOverflow => f.write_str("raster buffer size overflow"),
             Self::PathComplexityOverflow { limit } => {
                 write!(f, "flattened path exceeds segment limit {limit}")
+            }
+            Self::TransparencyGroupPixelsOverflow { limit } => {
+                write!(f, "transparency group exceeds pixel limit {limit}")
             }
             Self::SingularImageTransform => f.write_str("image transform is singular"),
             Self::OutOfBounds => f.write_str("raster coordinate is out of bounds"),
@@ -6489,6 +6698,11 @@ pub enum GraphicsErrorKind {
         /// Unsupported soft-mask feature name.
         feature: Vec<u8>,
     },
+    /// Transparency group metadata uses a feature outside the current support.
+    UnsupportedTransparencyGroup {
+        /// Unsupported transparency-group feature name.
+        feature: Vec<u8>,
+    },
     /// Form resource name was not present in the resource map.
     MissingForm {
         /// Missing form resource name.
@@ -6663,6 +6877,11 @@ impl fmt::Display for GraphicsErrorKind {
             Self::UnsupportedSoftMask { feature } => write!(
                 f,
                 "unsupported soft-mask feature {}",
+                String::from_utf8_lossy(feature)
+            ),
+            Self::UnsupportedTransparencyGroup { feature } => write!(
+                f,
+                "unsupported transparency-group feature {}",
                 String::from_utf8_lossy(feature)
             ),
             Self::MissingForm { name } => {
@@ -8658,6 +8877,146 @@ mod tests {
                 max_x: 40.0,
                 max_y: 52.0,
             }
+        );
+    }
+
+    #[test]
+    fn form_display_list_should_capture_transparency_group_item() {
+        let document = load_form_xobject_pdf(
+            b"q 1 0 0 1 10 10 cm /Fm1 Do Q",
+            b"1 0 0 rg 0 0 20 20 re f",
+            b"<< /Type /XObject /Subtype /Form /BBox [0 0 20 20] /Group << /S /Transparency /I true /K false >> /Length 23 >>",
+            None,
+        );
+        let resources =
+            form_resources_from_document(&document, &[("Fm1", 4)]).expect("valid form resources");
+        let form = resources.get(PdfName::new(b"Fm1")).expect("form resource");
+
+        assert_eq!(
+            form.transparency_group,
+            Some(TransparencyGroup {
+                isolated: true,
+                knockout: false,
+            })
+        );
+
+        let content = content_stream_from_document(&document);
+        let list = build_form_display_list(
+            tokenize_content(PdfBytes::new(&content)),
+            &resources,
+            DisplayListOptions::default(),
+        )
+        .expect("valid transparency group form invocation");
+
+        assert_eq!(list.len(), 1);
+        let DisplayItem::TransparencyGroup(group) = &list.items()[0] else {
+            panic!("expected transparency group item");
+        };
+        assert_eq!(
+            group.bounds,
+            PathBounds {
+                min_x: 10.0,
+                min_y: 10.0,
+                max_x: 30.0,
+                max_y: 30.0,
+            }
+        );
+        assert_eq!(group.items.len(), 1);
+    }
+
+    #[test]
+    fn form_transparency_group_should_rasterize_through_bounded_intermediate() {
+        let document = load_form_xobject_pdf(
+            b"q 1 0 0 1 10 10 cm /Fm1 Do Q",
+            b"1 0 0 rg 0 0 20 20 re f",
+            b"<< /Type /XObject /Subtype /Form /BBox [0 0 20 20] /Group << /S /Transparency /I true >> /Length 23 >>",
+            None,
+        );
+        let resources =
+            form_resources_from_document(&document, &[("Fm1", 4)]).expect("valid form resources");
+        let content = content_stream_from_document(&document);
+        let list = build_form_display_list(
+            tokenize_content(PdfBytes::new(&content)),
+            &resources,
+            DisplayListOptions::default(),
+        )
+        .expect("valid transparency group form invocation");
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 120.0,
+                    max_y: 120.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            120,
+        )
+        .expect("group transform");
+        let mut device = transform.create_device(Rgba::WHITE).expect("raster device");
+
+        rasterize_paths_into(&list, &mut device, transform, PathRasterOptions::default())
+            .expect("transparency group should rasterize");
+
+        assert_eq!(
+            device.pixel(20, 100).expect("group fill pixel"),
+            Rgba {
+                r: 255,
+                g: 0,
+                b: 0,
+                a: 255,
+            }
+        );
+    }
+
+    #[test]
+    fn form_transparency_group_should_enforce_intermediate_pixel_budget() {
+        let document = load_form_xobject_pdf(
+            b"q 1 0 0 1 10 10 cm /Fm1 Do Q",
+            b"1 0 0 rg 0 0 20 20 re f",
+            b"<< /Type /XObject /Subtype /Form /BBox [0 0 20 20] /Group << /S /Transparency >> /Length 23 >>",
+            None,
+        );
+        let resources =
+            form_resources_from_document(&document, &[("Fm1", 4)]).expect("valid form resources");
+        let content = content_stream_from_document(&document);
+        let list = build_form_display_list(
+            tokenize_content(PdfBytes::new(&content)),
+            &resources,
+            DisplayListOptions::default(),
+        )
+        .expect("valid transparency group form invocation");
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 120.0,
+                    max_y: 120.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            120,
+        )
+        .expect("group transform");
+        let mut device = transform.create_device(Rgba::WHITE).expect("raster device");
+        let error = rasterize_paths_into(
+            &list,
+            &mut device,
+            transform,
+            PathRasterOptions {
+                max_transparency_group_pixels: 1,
+                ..PathRasterOptions::default()
+            },
+        )
+        .expect_err("group should exceed intermediate pixel budget");
+
+        assert_eq!(
+            error.kind(),
+            &RasterErrorKind::TransparencyGroupPixelsOverflow { limit: 1 }
         );
     }
 
