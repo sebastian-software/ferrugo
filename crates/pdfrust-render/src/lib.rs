@@ -1742,6 +1742,16 @@ pub struct CidFontMetrics {
     pub default_width: Option<i32>,
 }
 
+/// Text writing mode selected by font encoding or CMap metadata.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum TextWritingMode {
+    /// Horizontal writing advances along the text X axis.
+    #[default]
+    Horizontal,
+    /// Vertical writing advances along the negative text Y axis.
+    Vertical,
+}
+
 /// Font descriptor used by text display-list construction.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FontDescriptor {
@@ -1761,6 +1771,8 @@ pub struct FontDescriptor {
     pub to_unicode: Option<ToUnicodeMap>,
     /// Optional CID descendant font metrics for Type 0 composite fonts.
     pub cid_metrics: Option<CidFontMetrics>,
+    /// Writing mode selected for text advance.
+    pub writing_mode: TextWritingMode,
 }
 
 impl FontDescriptor {
@@ -1776,6 +1788,7 @@ impl FontDescriptor {
             encoding: FontEncoding::new(),
             to_unicode: None,
             cid_metrics: None,
+            writing_mode: TextWritingMode::Horizontal,
         }
     }
 
@@ -1976,6 +1989,7 @@ where
     let (descriptor_reference, program) =
         load_font_descriptor_program(dictionary, resolver, cache, options.max_font_program_bytes)?;
     let encoding = font_encoding(dictionary)?;
+    let writing_mode = font_writing_mode(dictionary);
     let to_unicode = load_to_unicode_map(dictionary, resolver, options)?;
     let cid_metrics = load_cid_font_metrics(dictionary, resolver)?;
     Ok(FontDescriptor {
@@ -1987,6 +2001,7 @@ where
         encoding,
         to_unicode,
         cid_metrics,
+        writing_mode,
     })
 }
 
@@ -4405,10 +4420,18 @@ impl<'r> TextDisplayListInterpreter<'r> {
     }
 
     fn advance_text(&mut self, advance: f64) {
-        self.text.text_matrix = self
-            .text
-            .text_matrix
-            .multiply(Matrix::translate(advance, 0.0));
+        let translation = match self.current_writing_mode() {
+            TextWritingMode::Horizontal => Matrix::translate(advance, 0.0),
+            TextWritingMode::Vertical => Matrix::translate(0.0, -advance),
+        };
+        self.text.text_matrix = self.text.text_matrix.multiply(translation);
+    }
+
+    fn current_writing_mode(&self) -> TextWritingMode {
+        self.text
+            .font
+            .as_ref()
+            .map_or(TextWritingMode::Horizontal, |font| font.writing_mode)
     }
 
     fn glyph_advance(&self, glyph: &TextGlyph) -> f64 {
@@ -7837,7 +7860,11 @@ fn font_encoding(dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)]) -> GraphicsResu
         PdfPrimitive::Name(name)
             if matches!(
                 name.as_bytes(),
-                b"WinAnsiEncoding" | b"MacRomanEncoding" | b"MacExpertEncoding" | b"Identity-H"
+                b"WinAnsiEncoding"
+                    | b"MacRomanEncoding"
+                    | b"MacExpertEncoding"
+                    | b"Identity-H"
+                    | b"Identity-V"
             ) =>
         {
             Ok(FontEncoding::new())
@@ -7849,6 +7876,15 @@ fn font_encoding(dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)]) -> GraphicsResu
                 feature: b"font Encoding".to_vec(),
             },
         )),
+    }
+}
+
+fn font_writing_mode(dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)]) -> TextWritingMode {
+    match dictionary_value(dictionary, b"Encoding") {
+        Some(PdfPrimitive::Name(name)) if name.as_bytes() == b"Identity-V" => {
+            TextWritingMode::Vertical
+        }
+        _ => TextWritingMode::Horizontal,
     }
 }
 
@@ -10702,6 +10738,36 @@ mod tests {
         );
         assert_eq!(text.glyph_origins[0], Point { x: 0.0, y: 0.0 });
         assert_eq!(text.glyph_origins[1], Point { x: 6.0, y: 0.0 });
+    }
+
+    #[test]
+    fn text_display_list_should_advance_identity_v_text_vertically() {
+        let document = load_tounicode_text_pdf(
+            b"BT /F1 10 Tf <00010002> Tj ET",
+            b"<< /Type /Font /Subtype /Type0 /BaseFont /ABCDEE+VerticalFixture /Encoding /Identity-V /DescendantFonts [<< /Type /Font /Subtype /CIDFontType2 /BaseFont /ABCDEE+VerticalFixture /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /DW 1000 >>] /ToUnicode 6 0 R >>",
+            b"/CIDInit /ProcSet findresource begin\n2 beginbfchar\n<0001> <65e5>\n<0002> <672c>\nendbfchar\nend",
+        );
+        let resources =
+            font_resources_from_document(&document, &[("F1", 4)]).expect("valid font resources");
+        let font = resources
+            .get(PdfName::new(b"F1"))
+            .expect("vertical Type0 font should resolve");
+        assert_eq!(font.writing_mode, TextWritingMode::Vertical);
+
+        let content = content_stream_from_document(&document);
+        let list = build_text_display_list(
+            tokenize_content(PdfBytes::new(&content)),
+            &resources,
+            DisplayListOptions::default(),
+        )
+        .expect("vertical Type0 CID text should decode");
+
+        let DisplayItem::Text(text) = &list.items()[0] else {
+            panic!("expected text display item");
+        };
+        assert_eq!(text.text, "日本");
+        assert_eq!(text.glyph_origins[0], Point { x: 0.0, y: 0.0 });
+        assert_eq!(text.glyph_origins[1], Point { x: 0.0, y: -10.0 });
     }
 
     #[test]

@@ -41,4 +41,5 @@ fixtures/generated/tiling-pattern.pdf	report	scripts/generate_fixtures.py	MIT OR
 fixtures/generated/tounicode-text.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,tounicode	Generated ToUnicode character-code mapping fixture.
 fixtures/generated/transparency-group.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	transparency,form-xobject	Generated path-only transparency group fixture.
 fixtures/generated/vector-paths.pdf	browser-print	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	vector,path	Generated vector path drawing fixture.
+fixtures/generated/vertical-cjk-text.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,type0,cid,cjk,vertical	Generated vertical CJK Type0 CID font fixture.
 fixtures/generated/widget-annotation-appearance.pdf	form	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	annotation,widget,appearance	Generated widget annotation appearance fixture.

@@ -51,6 +51,7 @@ The initial seed set covers:
 - AcroForm checkbox widget appearance state dictionaries
 - AcroForm signature placeholder widget appearance streams
 - Type0 CID font with Identity-H and ToUnicode mapping
+- vertical CJK Type0 CID font with Identity-V and ToUnicode mapping
 - optional content group default-visible and default-hidden layers
 - unsupported optional content membership dictionaries
 - classic incremental update object revisions
