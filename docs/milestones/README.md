@@ -21,7 +21,6 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
-| 0035 | [Form XObject Recursion And Budgets](0035-form-xobject-recursion-and-budgets.md) | 2 | medium | 0034 |
 | 0036 | [Raster Device And Page Transform](0036-raster-device-and-page-transform.md) | 3 | medium | 0035 |
 | 0037 | [Path Rasterization](0037-path-rasterization.md) | 3 | medium | 0036 |
 | 0038 | [Image Rasterization And Alpha](0038-image-rasterization-and-alpha.md) | 3 | medium | 0037 |
@@ -90,6 +89,7 @@ No milestones are currently in progress.
 | 0032 | [Path Display List](0032-path-display-list.md) | 2 | medium | 2026-06-24 |
 | 0033 | [Text State And Font Stubs](0033-text-state-and-font-stubs.md) | 2 | medium | 2026-06-24 |
 | 0034 | [Image XObject Decoding And Placement](0034-image-xobject-decoding-and-placement.md) | 2 | medium | 2026-06-24 |
+| 0035 | [Form XObject Recursion And Budgets](0035-form-xobject-recursion-and-budgets.md) | 2 | medium | 2026-06-24 |
 
 ## Update Rules
 

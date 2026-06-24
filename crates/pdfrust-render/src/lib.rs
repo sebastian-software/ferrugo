@@ -5,12 +5,14 @@
 use std::fmt;
 use std::sync::Arc;
 
-use pdfrust_content::{ContentErrorKind, ContentResult, ContentToken, OperatorName};
+use pdfrust_content::{
+    tokenize_content, ContentErrorKind, ContentResult, ContentToken, OperatorName,
+};
 use pdfrust_object::{
     ClassicDocument, GenerationNumber, IndirectObject, ModernDocument, ObjectId, ObjectNumber,
     ObjectValue, Reference, StreamObject,
 };
-use pdfrust_syntax::{ByteOffset, PdfName, PdfNumber, PdfPrimitive, PdfString};
+use pdfrust_syntax::{ByteOffset, PdfBytes, PdfName, PdfNumber, PdfPrimitive, PdfString};
 
 /// Stable crate role used by architecture smoke tests and documentation.
 pub const CRATE_ROLE: &str = "render";
@@ -29,6 +31,9 @@ pub const DEFAULT_TEXT_RUN_BYTES_LIMIT: usize = 64 * 1024;
 
 /// Default maximum decoded bytes for one image XObject.
 pub const DEFAULT_IMAGE_BYTES_LIMIT: usize = 32 * 1024 * 1024;
+
+/// Default maximum Form XObject recursion depth.
+pub const DEFAULT_FORM_RECURSION_DEPTH_LIMIT: usize = 16;
 
 /// Result alias for graphics-state interpretation.
 pub type GraphicsResult<T> = Result<T, GraphicsError>;
@@ -350,6 +355,34 @@ pub struct ImageDisplayItem {
     pub state: GraphicsState,
 }
 
+/// Decoded Form XObject resource.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FormXObject {
+    /// Primary resource name used by content streams, without the leading slash.
+    pub resource_name: Vec<u8>,
+    /// Indirect reference for identity-based nested resource resolution.
+    pub reference: Reference,
+    /// Decoded form content stream bytes.
+    pub content: Arc<[u8]>,
+    /// Form matrix applied before executing the form content.
+    pub matrix: Matrix,
+    /// Form bounding box in form coordinates.
+    pub bbox: PathBounds,
+    /// Local `/XObject` resource references declared by the form.
+    pub xobject_references: Vec<XObjectReference>,
+    /// Whether omitted form resources inherit the caller resource scope.
+    pub inherits_parent_resources: bool,
+}
+
+/// Owned XObject resource reference.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct XObjectReference {
+    /// Resource name without the leading slash.
+    pub name: Vec<u8>,
+    /// Indirect object reference.
+    pub reference: Reference,
+}
+
 /// Display-list item.
 #[derive(Debug, Clone, PartialEq)]
 pub enum DisplayItem {
@@ -509,6 +542,147 @@ impl ImageResources {
         self.images
             .iter()
             .find(|image| image.resource_name.as_slice() == name.as_bytes())
+    }
+}
+
+/// Form XObject resource map.
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct FormResources {
+    forms: Vec<FormXObject>,
+    aliases: Vec<XObjectReference>,
+}
+
+impl FormResources {
+    /// Creates an empty form resource map.
+    #[must_use]
+    pub const fn empty() -> Self {
+        Self {
+            forms: Vec::new(),
+            aliases: Vec::new(),
+        }
+    }
+
+    /// Creates a form resource map from decoded forms.
+    #[must_use]
+    pub fn new(forms: Vec<FormXObject>, aliases: Vec<XObjectReference>) -> Self {
+        Self { forms, aliases }
+    }
+
+    /// Resolves Form XObjects from a PDF `/XObject` resource dictionary.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`GraphicsError`] when a form resource is malformed, references a
+    /// missing object, or its content stream cannot be decoded.
+    pub fn from_xobject_dictionary<'a, R>(
+        dictionary: &[(PdfName<'a>, PdfPrimitive<'a>)],
+        resolver: &'a R,
+    ) -> GraphicsResult<Self>
+    where
+        R: FormObjectResolver<'a> + ?Sized,
+    {
+        let mut forms = Vec::new();
+        let mut aliases = Vec::new();
+        let mut queue = xobject_references(dictionary);
+
+        while let Some(alias) = queue.pop() {
+            if !aliases.iter().any(|existing| existing == &alias) {
+                aliases.push(alias.clone());
+            }
+            if forms
+                .iter()
+                .any(|form: &FormXObject| form.reference == alias.reference)
+            {
+                continue;
+            }
+            let Some(object) = resolver.resolve_form_object(alias.reference)? else {
+                return Err(GraphicsError::new(
+                    None,
+                    GraphicsErrorKind::MissingFormObject { name: alias.name },
+                ));
+            };
+            let ObjectValue::Stream(stream) = &object.value else {
+                continue;
+            };
+            if !dictionary_name_is(stream.dictionary(), b"Subtype", b"Form") {
+                continue;
+            }
+            let form = decode_form_xobject(alias.name, alias.reference, stream)?;
+            queue.extend(form.xobject_references.iter().cloned());
+            forms.push(form);
+        }
+
+        Ok(Self { forms, aliases })
+    }
+
+    /// Returns the form matching a page-level PDF resource name.
+    #[must_use]
+    pub fn get(&self, name: PdfName<'_>) -> Option<&FormXObject> {
+        let reference = self.aliases.iter().find_map(|alias| {
+            (alias.name.as_slice() == name.as_bytes()).then_some(alias.reference)
+        })?;
+        self.get_by_reference(reference)
+    }
+
+    fn get_by_reference(&self, reference: Reference) -> Option<&FormXObject> {
+        self.forms.iter().find(|form| form.reference == reference)
+    }
+
+    fn resolve_invocation(
+        &self,
+        name: PdfName<'_>,
+        local_xobjects: Option<&[XObjectReference]>,
+        inherits_parent_resources: bool,
+    ) -> Option<&FormXObject> {
+        if let Some(local_xobjects) = local_xobjects {
+            if let Some(reference) = local_xobjects.iter().find_map(|resource| {
+                (resource.name.as_slice() == name.as_bytes()).then_some(resource.reference)
+            }) {
+                return self.get_by_reference(reference);
+            }
+            if !inherits_parent_resources {
+                return None;
+            }
+        }
+        self.get(name)
+    }
+}
+
+/// Resolves Form XObject references from a loaded PDF document.
+pub trait FormObjectResolver<'a> {
+    /// Resolves an indirect object reference.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`GraphicsError`] when object-stream parsing fails.
+    fn resolve_form_object(
+        &'a self,
+        reference: Reference,
+    ) -> GraphicsResult<Option<IndirectObject<'a>>>;
+}
+
+impl<'a> FormObjectResolver<'a> for ClassicDocument<'a> {
+    fn resolve_form_object(
+        &'a self,
+        reference: Reference,
+    ) -> GraphicsResult<Option<IndirectObject<'a>>> {
+        Ok(self.objects.get(reference.id).cloned())
+    }
+}
+
+impl<'a> FormObjectResolver<'a> for ModernDocument<'a> {
+    fn resolve_form_object(
+        &'a self,
+        reference: Reference,
+    ) -> GraphicsResult<Option<IndirectObject<'a>>> {
+        self.get_object(reference.id).map_err(|error| {
+            GraphicsError::new(
+                error.offset(),
+                GraphicsErrorKind::ObjectModel {
+                    message: error.to_string(),
+                },
+            )
+        })
     }
 }
 
@@ -680,6 +854,8 @@ pub struct DisplayListOptions {
     pub max_text_run_bytes: usize,
     /// Maximum decoded bytes accepted for one image XObject.
     pub max_image_bytes: usize,
+    /// Maximum allowed Form XObject recursion depth.
+    pub max_form_recursion_depth: usize,
 }
 
 impl Default for DisplayListOptions {
@@ -690,6 +866,7 @@ impl Default for DisplayListOptions {
             max_display_items: DEFAULT_DISPLAY_ITEM_LIMIT,
             max_text_run_bytes: DEFAULT_TEXT_RUN_BYTES_LIMIT,
             max_image_bytes: DEFAULT_IMAGE_BYTES_LIMIT,
+            max_form_recursion_depth: DEFAULT_FORM_RECURSION_DEPTH_LIMIT,
         }
     }
 }
@@ -763,21 +940,73 @@ pub fn build_image_display_list<'a>(
     Ok(interpreter.display_list)
 }
 
+/// Builds display-list items from Form XObject invocations and nested paths.
+///
+/// # Errors
+///
+/// Returns [`GraphicsError`] when tokenization fails, a named form is missing,
+/// form recursion exceeds the configured limit, or display limits are exceeded.
+pub fn build_form_display_list<'a>(
+    tokens: impl IntoIterator<Item = ContentResult<ContentToken<'a>>>,
+    forms: &FormResources,
+    options: DisplayListOptions,
+) -> GraphicsResult<DisplayList> {
+    let mut interpreter = DisplayListInterpreter::new_with_forms(
+        GraphicsState::default(),
+        options,
+        forms,
+        FormResourceScope::page(),
+        0,
+    );
+    interpreter.interpret(tokens)?;
+    Ok(interpreter.display_list)
+}
+
 struct GraphicsStateInterpreter {
     current: GraphicsState,
     stack: Vec<GraphicsState>,
     max_stack_depth: usize,
 }
 
-struct DisplayListInterpreter {
+struct DisplayListInterpreter<'r> {
     current: GraphicsState,
     stack: Vec<GraphicsState>,
     current_path: CurrentPath,
     display_list: DisplayList,
     options: DisplayListOptions,
+    forms: Option<FormInterpreterContext<'r>>,
 }
 
-impl DisplayListInterpreter {
+#[derive(Debug, Clone, Copy)]
+struct FormInterpreterContext<'r> {
+    resources: &'r FormResources,
+    scope: FormResourceScope<'r>,
+    recursion_depth: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct FormResourceScope<'r> {
+    local_xobjects: Option<&'r [XObjectReference]>,
+    inherits_parent_resources: bool,
+}
+
+impl<'r> FormResourceScope<'r> {
+    const fn page() -> Self {
+        Self {
+            local_xobjects: None,
+            inherits_parent_resources: true,
+        }
+    }
+
+    fn for_form(form: &'r FormXObject) -> Self {
+        Self {
+            local_xobjects: Some(form.xobject_references.as_slice()),
+            inherits_parent_resources: form.inherits_parent_resources,
+        }
+    }
+}
+
+impl<'r> DisplayListInterpreter<'r> {
     fn new(options: DisplayListOptions) -> Self {
         Self {
             current: GraphicsState::default(),
@@ -785,6 +1014,28 @@ impl DisplayListInterpreter {
             current_path: CurrentPath::default(),
             display_list: DisplayList::new(),
             options,
+            forms: None,
+        }
+    }
+
+    fn new_with_forms(
+        current: GraphicsState,
+        options: DisplayListOptions,
+        forms: &'r FormResources,
+        scope: FormResourceScope<'r>,
+        recursion_depth: usize,
+    ) -> Self {
+        Self {
+            current,
+            stack: Vec::new(),
+            current_path: CurrentPath::default(),
+            display_list: DisplayList::new(),
+            options,
+            forms: Some(FormInterpreterContext {
+                resources: forms,
+                scope,
+                recursion_depth,
+            }),
         }
     }
 
@@ -861,6 +1112,7 @@ impl DisplayListInterpreter {
             ),
             b"W" => self.clip_placeholder(offset, operands, FillRule::Nonzero),
             b"W*" => self.clip_placeholder(offset, operands, FillRule::EvenOdd),
+            b"Do" if self.forms.is_some() => self.invoke_form(offset, operands),
             b"n" => {
                 expect_operand_count(offset, b"n", operands, 0)?;
                 self.current_path.clear();
@@ -877,6 +1129,75 @@ impl DisplayListInterpreter {
             )),
             _ => Ok(()),
         }
+    }
+
+    fn invoke_form(
+        &mut self,
+        offset: ByteOffset,
+        operands: &[PdfPrimitive<'_>],
+    ) -> GraphicsResult<()> {
+        expect_operand_count(offset, b"Do", operands, 1)?;
+        let name = name_operand(offset, b"Do", operands, 0)?;
+        let Some(context) = self.forms else {
+            return Ok(());
+        };
+        let form = context
+            .resources
+            .resolve_invocation(
+                name,
+                context.scope.local_xobjects,
+                context.scope.inherits_parent_resources,
+            )
+            .ok_or_else(|| {
+                GraphicsError::new(
+                    Some(offset),
+                    GraphicsErrorKind::MissingForm {
+                        name: name.as_bytes().to_vec(),
+                    },
+                )
+            })?;
+        if context.recursion_depth >= self.options.max_form_recursion_depth {
+            return Err(GraphicsError::new(
+                Some(offset),
+                GraphicsErrorKind::FormRecursionOverflow {
+                    limit: self.options.max_form_recursion_depth,
+                },
+            ));
+        }
+
+        let mut nested_state = self.current;
+        nested_state.ctm = nested_state.ctm.multiply(form.matrix);
+        let mut nested = Self::new_with_forms(
+            nested_state,
+            self.options,
+            context.resources,
+            FormResourceScope::for_form(form),
+            context.recursion_depth + 1,
+        );
+        nested.push_form_bbox_clip(form, offset)?;
+        nested.interpret(tokenize_content(PdfBytes::new(&form.content)))?;
+        for item in nested.display_list.items {
+            self.display_list
+                .push(item, self.options.max_display_items, offset)?;
+        }
+        Ok(())
+    }
+
+    fn push_form_bbox_clip(
+        &mut self,
+        form: &FormXObject,
+        offset: ByteOffset,
+    ) -> GraphicsResult<()> {
+        let segments = transformed_box_segments(form.bbox, self.current.ctm);
+        self.display_list.push(
+            DisplayItem::ClipPlaceholder {
+                segments,
+                rule: FillRule::Nonzero,
+                state: self.current,
+            },
+            self.options.max_display_items,
+            offset,
+        )
     }
 
     fn save_state(
@@ -1897,6 +2218,41 @@ fn decode_pdf_text_string(
         .map_err(|_| GraphicsError::new(Some(offset), GraphicsErrorKind::UnsupportedTextEncoding))
 }
 
+fn decode_form_xobject(
+    resource_name: Vec<u8>,
+    reference: Reference,
+    stream: &StreamObject<'_>,
+) -> GraphicsResult<FormXObject> {
+    let matrix = optional_matrix(stream.dictionary(), b"Matrix")?.unwrap_or(Matrix::IDENTITY);
+    let bbox = required_bbox(stream.dictionary(), b"BBox").map_err(|_| {
+        GraphicsError::new(
+            None,
+            GraphicsErrorKind::InvalidFormResource {
+                name: resource_name.clone(),
+            },
+        )
+    })?;
+    let (xobject_references, inherits_parent_resources) =
+        form_xobject_references(stream.dictionary());
+    let content = stream.decode().map_err(|error| {
+        GraphicsError::new(
+            error.offset(),
+            GraphicsErrorKind::ObjectModel {
+                message: error.to_string(),
+            },
+        )
+    })?;
+    Ok(FormXObject {
+        resource_name,
+        reference,
+        content: Arc::from(content),
+        matrix,
+        bbox,
+        xobject_references,
+        inherits_parent_resources,
+    })
+}
+
 fn decode_image_xobject(
     resource_name: PdfName<'_>,
     stream: &StreamObject<'_>,
@@ -2083,6 +2439,123 @@ fn required_u8(dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)], key: &[u8]) -> Gr
     })
 }
 
+fn optional_matrix(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    key: &[u8],
+) -> GraphicsResult<Option<Matrix>> {
+    let Some(value) = dictionary_value(dictionary, key) else {
+        return Ok(None);
+    };
+    Ok(Some(matrix_from_array(value)?))
+}
+
+fn required_bbox(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    key: &[u8],
+) -> GraphicsResult<PathBounds> {
+    let Some(value) = dictionary_value(dictionary, key) else {
+        return Err(GraphicsError::new(
+            None,
+            GraphicsErrorKind::InvalidFormResource { name: key.to_vec() },
+        ));
+    };
+    bounds_from_array(value)
+}
+
+fn matrix_from_array(value: &PdfPrimitive<'_>) -> GraphicsResult<Matrix> {
+    let PdfPrimitive::Array(values) = value else {
+        return Err(GraphicsError::new(
+            None,
+            GraphicsErrorKind::InvalidFormResource {
+                name: b"Matrix".to_vec(),
+            },
+        ));
+    };
+    if values.len() != 6 {
+        return Err(GraphicsError::new(
+            None,
+            GraphicsErrorKind::InvalidFormResource {
+                name: b"Matrix".to_vec(),
+            },
+        ));
+    }
+    Ok(Matrix::new(
+        number_primitive(&values[0], b"Matrix")?,
+        number_primitive(&values[1], b"Matrix")?,
+        number_primitive(&values[2], b"Matrix")?,
+        number_primitive(&values[3], b"Matrix")?,
+        number_primitive(&values[4], b"Matrix")?,
+        number_primitive(&values[5], b"Matrix")?,
+    ))
+}
+
+fn bounds_from_array(value: &PdfPrimitive<'_>) -> GraphicsResult<PathBounds> {
+    let PdfPrimitive::Array(values) = value else {
+        return Err(GraphicsError::new(
+            None,
+            GraphicsErrorKind::InvalidFormResource {
+                name: b"BBox".to_vec(),
+            },
+        ));
+    };
+    if values.len() != 4 {
+        return Err(GraphicsError::new(
+            None,
+            GraphicsErrorKind::InvalidFormResource {
+                name: b"BBox".to_vec(),
+            },
+        ));
+    }
+    let x0 = number_primitive(&values[0], b"BBox")?;
+    let y0 = number_primitive(&values[1], b"BBox")?;
+    let x1 = number_primitive(&values[2], b"BBox")?;
+    let y1 = number_primitive(&values[3], b"BBox")?;
+    Ok(PathBounds {
+        min_x: x0.min(x1),
+        min_y: y0.min(y1),
+        max_x: x0.max(x1),
+        max_y: y0.max(y1),
+    })
+}
+
+fn number_primitive(value: &PdfPrimitive<'_>, field: &'static [u8]) -> GraphicsResult<f64> {
+    match value {
+        PdfPrimitive::Number(PdfNumber::Integer(value)) => Ok(*value as f64),
+        PdfPrimitive::Number(PdfNumber::Real(value)) if value.is_finite() => Ok(*value),
+        _ => Err(GraphicsError::new(
+            None,
+            GraphicsErrorKind::InvalidFormResource {
+                name: field.to_vec(),
+            },
+        )),
+    }
+}
+
+fn form_xobject_references(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+) -> (Vec<XObjectReference>, bool) {
+    let Some(PdfPrimitive::Dictionary(resources)) = dictionary_value(dictionary, b"Resources")
+    else {
+        return (Vec::new(), true);
+    };
+    let Some(PdfPrimitive::Dictionary(xobjects)) = dictionary_value(resources, b"XObject") else {
+        return (Vec::new(), false);
+    };
+    (xobject_references(xobjects), false)
+}
+
+fn xobject_references(dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)]) -> Vec<XObjectReference> {
+    dictionary
+        .iter()
+        .filter_map(|(name, value)| {
+            Some(XObjectReference {
+                name: name.as_bytes().to_vec(),
+                reference: reference_from_primitive(value)?,
+            })
+        })
+        .collect()
+}
+
 fn dictionary_value<'a>(
     dictionary: &'a [(PdfName<'a>, PdfPrimitive<'a>)],
     key: &[u8],
@@ -2121,6 +2594,20 @@ fn unit_square_bounds(transform: Matrix) -> PathBounds {
     let bounds = include_point(Some(bounds), p1);
     let bounds = include_point(Some(bounds), p2);
     include_point(Some(bounds), p3)
+}
+
+fn transformed_box_segments(bounds: PathBounds, transform: Matrix) -> Vec<PathSegment> {
+    let p0 = transform.transform_point(bounds.min_x, bounds.min_y);
+    let p1 = transform.transform_point(bounds.max_x, bounds.min_y);
+    let p2 = transform.transform_point(bounds.max_x, bounds.max_y);
+    let p3 = transform.transform_point(bounds.min_x, bounds.max_y);
+    vec![
+        PathSegment::MoveTo(p0),
+        PathSegment::LineTo(p1),
+        PathSegment::LineTo(p2),
+        PathSegment::LineTo(p3),
+        PathSegment::Close,
+    ]
 }
 
 fn invalid_operand(offset: ByteOffset, operator: &'static [u8]) -> GraphicsError {
@@ -2309,6 +2796,26 @@ pub enum GraphicsErrorKind {
         /// Configured decoded image byte limit.
         limit: usize,
     },
+    /// Form resource name was not present in the resource map.
+    MissingForm {
+        /// Missing form resource name.
+        name: Vec<u8>,
+    },
+    /// Referenced form object was not present in the loaded document.
+    MissingFormObject {
+        /// Missing form resource name.
+        name: Vec<u8>,
+    },
+    /// Form resource dictionary or stream metadata is malformed.
+    InvalidFormResource {
+        /// Resource or field name related to the failure.
+        name: Vec<u8>,
+    },
+    /// Form XObject recursion exceeds the configured limit.
+    FormRecursionOverflow {
+        /// Configured form recursion depth limit.
+        limit: usize,
+    },
     /// Lower object model error surfaced during resource resolution.
     ObjectModel {
         /// Stable object-model error message.
@@ -2404,6 +2911,20 @@ impl fmt::Display for GraphicsErrorKind {
             Self::ImageBytesOverflow { limit } => {
                 write!(f, "decoded image exceeds byte limit {limit}")
             }
+            Self::MissingForm { name } => {
+                write!(f, "missing form resource {}", String::from_utf8_lossy(name))
+            }
+            Self::MissingFormObject { name } => write!(
+                f,
+                "missing form object for resource {}",
+                String::from_utf8_lossy(name)
+            ),
+            Self::InvalidFormResource { name } => {
+                write!(f, "invalid form resource {}", String::from_utf8_lossy(name))
+            }
+            Self::FormRecursionOverflow { limit } => {
+                write!(f, "form recursion exceeds depth limit {limit}")
+            }
             Self::ObjectModel { message } => write!(f, "object model error: {message}"),
         }
     }
@@ -2412,11 +2933,9 @@ impl fmt::Display for GraphicsErrorKind {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pdfrust_content::tokenize_content;
     use pdfrust_object::{
         load_classic_document, GenerationNumber, ObjectId, ObjectNumber, ObjectValue,
     };
-    use pdfrust_syntax::PdfBytes;
 
     #[test]
     fn crate_role_should_be_stable() {
@@ -2990,21 +3509,232 @@ mod tests {
         );
     }
 
+    #[test]
+    fn form_resources_should_decode_matrix_bbox_and_local_resources() {
+        let document = load_form_xobject_pdf(
+            b"/Fm1 Do",
+            b"0 0 10 10 re f",
+            b"<< /Type /XObject /Subtype /Form /BBox [0 0 20 30] /Matrix [1 0 0 1 5 6] /Resources << /XObject << /Nested 6 0 R >> >> /Length 14 >>",
+            Some((
+                b"0 0 5 5 re f".as_slice(),
+                b"<< /Type /XObject /Subtype /Form /BBox [0 0 5 5] /Length 12 >>".as_slice(),
+            )),
+        );
+        let resources =
+            form_resources_from_document(&document, &[("Fm1", 4)]).expect("valid form resources");
+        let form = resources.get(PdfName::new(b"Fm1")).expect("form resource");
+
+        assert_eq!(form.matrix, Matrix::translate(5.0, 6.0));
+        assert_eq!(
+            form.bbox,
+            PathBounds {
+                min_x: 0.0,
+                min_y: 0.0,
+                max_x: 20.0,
+                max_y: 30.0,
+            }
+        );
+        assert_eq!(form.xobject_references[0].name, b"Nested");
+    }
+
+    #[test]
+    fn form_display_list_should_apply_form_matrix_and_bbox_clip() {
+        let document = load_form_xobject_pdf(
+            b"q 2 0 0 2 10 20 cm /Fm1 Do Q",
+            b"0 0 10 10 re f",
+            b"<< /Type /XObject /Subtype /Form /BBox [0 0 20 20] /Matrix [1 0 0 1 5 6] /Length 14 >>",
+            None,
+        );
+        let resources =
+            form_resources_from_document(&document, &[("Fm1", 4)]).expect("valid form resources");
+        let content = content_stream_from_document(&document);
+        let list = build_form_display_list(
+            tokenize_content(PdfBytes::new(&content)),
+            &resources,
+            DisplayListOptions::default(),
+        )
+        .expect("valid form invocation");
+
+        assert_eq!(list.len(), 2);
+        let DisplayItem::ClipPlaceholder { segments, .. } = &list.items()[0] else {
+            panic!("expected form bbox clip placeholder");
+        };
+        assert_eq!(
+            PathBounds::from_segments(segments).expect("clip bounds"),
+            PathBounds {
+                min_x: 20.0,
+                min_y: 32.0,
+                max_x: 60.0,
+                max_y: 72.0,
+            }
+        );
+        let DisplayItem::Path(path) = &list.items()[1] else {
+            panic!("expected form path");
+        };
+        assert_eq!(
+            path.bounds().expect("path bounds"),
+            PathBounds {
+                min_x: 20.0,
+                min_y: 32.0,
+                max_x: 40.0,
+                max_y: 52.0,
+            }
+        );
+    }
+
+    #[test]
+    fn form_display_list_should_use_local_form_xobject_resources() {
+        let document = load_form_xobject_pdf(
+            b"/Outer Do",
+            b"/Inner Do",
+            b"<< /Type /XObject /Subtype /Form /BBox [0 0 20 20] /Resources << /XObject << /Inner 6 0 R >> >> /Length 9 >>",
+            Some((
+                b"0 0 5 5 re f".as_slice(),
+                b"<< /Type /XObject /Subtype /Form /BBox [0 0 5 5] /Length 12 >>".as_slice(),
+            )),
+        );
+        let resources =
+            form_resources_from_document(&document, &[("Outer", 4)]).expect("valid form resources");
+        let content = content_stream_from_document(&document);
+        let list = build_form_display_list(
+            tokenize_content(PdfBytes::new(&content)),
+            &resources,
+            DisplayListOptions::default(),
+        )
+        .expect("valid nested form invocation");
+
+        assert_eq!(list.len(), 3);
+        let DisplayItem::Path(path) = &list.items()[2] else {
+            panic!("expected nested form path");
+        };
+        assert_eq!(
+            path.bounds().expect("nested path bounds"),
+            PathBounds {
+                min_x: 0.0,
+                min_y: 0.0,
+                max_x: 5.0,
+                max_y: 5.0,
+            }
+        );
+    }
+
+    #[test]
+    fn form_display_list_should_inherit_page_xobjects_when_resources_are_omitted() {
+        let document = load_form_xobject_pdf(
+            b"/Outer Do",
+            b"/Inner Do",
+            b"<< /Type /XObject /Subtype /Form /BBox [0 0 20 20] /Length 9 >>",
+            Some((
+                b"0 0 5 5 re f".as_slice(),
+                b"<< /Type /XObject /Subtype /Form /BBox [0 0 5 5] /Length 12 >>".as_slice(),
+            )),
+        );
+        let resources = form_resources_from_document(&document, &[("Outer", 4), ("Inner", 6)])
+            .expect("valid form resources");
+        let content = content_stream_from_document(&document);
+        let list = build_form_display_list(
+            tokenize_content(PdfBytes::new(&content)),
+            &resources,
+            DisplayListOptions::default(),
+        )
+        .expect("valid inherited form invocation");
+
+        assert_eq!(list.len(), 3);
+        let DisplayItem::Path(path) = &list.items()[2] else {
+            panic!("expected inherited nested form path");
+        };
+        assert_eq!(
+            path.bounds().expect("nested path bounds"),
+            PathBounds {
+                min_x: 0.0,
+                min_y: 0.0,
+                max_x: 5.0,
+                max_y: 5.0,
+            }
+        );
+    }
+
+    #[test]
+    fn form_display_list_should_parse_generated_form_fixture() {
+        let document = generated_fixture_document("form-xobject.pdf");
+        let resources = form_resources_from_document(&document, &[("Fm1", 4)])
+            .expect("generated form resources");
+        let content = content_stream_from_document(&document);
+        let list = build_form_display_list(
+            tokenize_content(PdfBytes::new(&content)),
+            &resources,
+            DisplayListOptions::default(),
+        )
+        .expect("generated form fixture should build display list");
+
+        assert_eq!(list.len(), 2);
+        let bounds = list.bounds().expect("generated form bounds");
+        assert_eq!(
+            bounds,
+            PathBounds {
+                min_x: 20.0,
+                min_y: 32.0,
+                max_x: 100.0,
+                max_y: 112.0,
+            }
+        );
+    }
+
+    #[test]
+    fn form_display_list_should_report_missing_form_resource() {
+        let error = build_form_display_list(
+            tokenize_content(PdfBytes::new(b"/Missing Do")),
+            &FormResources::empty(),
+            DisplayListOptions::default(),
+        )
+        .expect_err("missing form resource should fail");
+
+        assert_eq!(
+            error.kind(),
+            &GraphicsErrorKind::MissingForm {
+                name: b"Missing".to_vec(),
+            }
+        );
+    }
+
+    #[test]
+    fn form_display_list_should_enforce_recursion_limit() {
+        let document = load_form_xobject_pdf(
+            b"/Self Do",
+            b"/Self Do",
+            b"<< /Type /XObject /Subtype /Form /BBox [0 0 10 10] /Resources << /XObject << /Self 4 0 R >> >> /Length 8 >>",
+            None,
+        );
+        let resources = form_resources_from_document(&document, &[("Self", 4)])
+            .expect("valid recursive form resources");
+        let content = content_stream_from_document(&document);
+        let error = build_form_display_list(
+            tokenize_content(PdfBytes::new(&content)),
+            &resources,
+            DisplayListOptions {
+                max_form_recursion_depth: 1,
+                ..DisplayListOptions::default()
+            },
+        )
+        .expect_err("recursive form should exceed depth limit");
+
+        assert_eq!(
+            error.kind(),
+            &GraphicsErrorKind::FormRecursionOverflow { limit: 1 }
+        );
+    }
+
     fn generated_fixture_content(file_name: &str) -> Vec<u8> {
+        let document = generated_fixture_document(file_name);
+        content_stream_from_document(&document)
+    }
+
+    fn generated_fixture_document(file_name: &str) -> ClassicDocument<'static> {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join(format!("../../fixtures/generated/{file_name}"));
         let bytes = std::fs::read(path).expect("fixture should be readable");
-        let document =
-            load_classic_document(PdfBytes::new(&bytes)).expect("fixture should load as PDF");
-        let content_id = ObjectId::new(
-            ObjectNumber::new(1).expect("object number"),
-            GenerationNumber::new(0),
-        );
-        let content = document.objects.get(content_id).expect("content stream");
-        let ObjectValue::Stream(stream) = &content.value else {
-            panic!("content object should be a stream");
-        };
-        stream.decode().expect("content stream should decode")
+        let leaked = Box::leak(bytes.into_boxed_slice());
+        load_classic_document(PdfBytes::new(leaked)).expect("fixture should load as PDF")
     }
 
     fn image_resources_from_document(
@@ -3015,6 +3745,22 @@ mod tests {
             PdfPrimitive::Reference(pdfrust_syntax::PdfReference::new(4, 0)),
         )];
         ImageResources::from_xobject_dictionary(&xobjects, document, DisplayListOptions::default())
+    }
+
+    fn form_resources_from_document(
+        document: &ClassicDocument<'_>,
+        resources: &[(&str, u32)],
+    ) -> GraphicsResult<FormResources> {
+        let xobjects = resources
+            .iter()
+            .map(|(name, object)| {
+                (
+                    PdfName::new(name.as_bytes()),
+                    PdfPrimitive::Reference(pdfrust_syntax::PdfReference::new(*object, 0)),
+                )
+            })
+            .collect::<Vec<_>>();
+        FormResources::from_xobject_dictionary(&xobjects, document)
     }
 
     fn content_stream_from_document(document: &ClassicDocument<'_>) -> Vec<u8> {
@@ -3048,6 +3794,31 @@ mod tests {
         let pdf = build_classic_pdf_from_objects(&objects);
         let leaked = Box::leak(pdf.into_boxed_slice());
         load_classic_document(PdfBytes::new(leaked)).expect("image XObject PDF should load")
+    }
+
+    fn load_form_xobject_pdf(
+        content_stream: &[u8],
+        form_stream: &[u8],
+        form_dictionary: &[u8],
+        nested_form: Option<(&[u8], &[u8])>,
+    ) -> ClassicDocument<'static> {
+        let content_dictionary = format!("<< /Length {} >>", content_stream.len());
+        let mut objects = vec![
+            stream_object_bytes(1, content_dictionary.as_bytes(), content_stream),
+            indirect_object_bytes(
+                2,
+                b"<< /Type /Page /Parent 3 0 R /MediaBox [0 0 120 120] /Resources << /XObject << /Fm1 4 0 R /Outer 4 0 R /Self 4 0 R >> >> /Contents 1 0 R >>",
+            ),
+            indirect_object_bytes(3, b"<< /Type /Pages /Kids [2 0 R] /Count 1 >>"),
+            stream_object_bytes(4, form_dictionary, form_stream),
+            indirect_object_bytes(5, b"<< /Type /Catalog /Pages 3 0 R >>"),
+        ];
+        if let Some((nested_stream, nested_dictionary)) = nested_form {
+            objects.push(stream_object_bytes(6, nested_dictionary, nested_stream));
+        }
+        let pdf = build_classic_pdf_from_objects(&objects);
+        let leaked = Box::leak(pdf.into_boxed_slice());
+        load_classic_document(PdfBytes::new(leaked)).expect("form XObject PDF should load")
     }
 
     fn indirect_object_bytes(number: u32, body: &[u8]) -> Vec<u8> {

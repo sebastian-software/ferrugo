@@ -63,6 +63,34 @@ def page_pdf(media_box: str, content: str | bytes) -> bytes:
     return pdf.render(catalog)
 
 
+def form_xobject_pdf() -> bytes:
+    pdf = Pdf()
+    content = b"q 2 0 0 2 10 20 cm /Fm1 Do Q"
+    form = b"0.2 0.7 0.3 rg 0 0 40 40 re f"
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 120 120] "
+        "/Resources << /XObject << /Fm1 4 0 R >> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    form_object = pdf.add(
+        b"<< /Type /XObject /Subtype /Form /BBox [0 0 40 40] "
+        b"/Matrix [1 0 0 1 5 6] /Length "
+        + str(len(form)).encode("ascii")
+        + b" >>\nstream\n"
+        + form
+        + b"\nendstream"
+    )
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert form_object == 4
+    return pdf.render(catalog)
+
+
 def write(name: str, data: bytes) -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     (OUT / name).write_bytes(data)
@@ -96,6 +124,7 @@ def main() -> None:
             b"\xff\x00\x00\x00\xff\x00\x00\x00\xff\xff\xff\x00 EI Q",
         ),
     )
+    write("form-xobject.pdf", form_xobject_pdf())
 
 
 if __name__ == "__main__":

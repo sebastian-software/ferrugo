@@ -117,3 +117,11 @@ the active CTM. Decoded image samples are reference-counted so repeated `Do`
 placements share sample bytes. `DCTDecode`, broader filter chains, and full
 color management return typed unsupported errors until the image-filter and
 color-space milestones.
+Form XObject support resolves form streams from `/XObject` resource
+dictionaries, decodes form content, applies form matrices, emits bounding-box
+clip placeholders, and recursively reuses the path display-list interpreter
+with explicit recursion-depth and display-item budgets. Form streams without a
+`/Resources` dictionary inherit the caller's XObject scope; form streams with a
+local `/Resources /XObject` dictionary use those local names for nested Form
+XObjects. Image and text execution inside forms will be wired into the combined
+renderer in later rasterization milestones.

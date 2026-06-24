@@ -1,6 +1,6 @@
 # 0035: Form XObject Recursion And Budgets
 
-Status: todo
+Status: done
 Phase: 2
 Size: medium
 Depends on: 0034
@@ -45,4 +45,29 @@ Interpret Form XObjects with explicit recursion and resource budgets.
 
 ## Completion Notes
 
-Empty until done.
+- Added `FormResources`, `FormXObject`, and `build_form_display_list` in
+  `pdfrust-render`.
+- Form resolution now walks page-level `/XObject` dictionaries and nested local
+  form `/Resources /XObject` dictionaries by indirect reference, so local names
+  can resolve nested forms that are not exposed on the page.
+- Form execution applies the caller CTM plus the form `/Matrix`, emits a
+  bounding-box clip placeholder from `/BBox`, and recursively reuses the path
+  display-list interpreter.
+- Resource inheritance policy: forms without `/Resources` inherit the caller
+  XObject scope; forms with local `/Resources /XObject` use local form
+  references for nested `Do` invocations.
+- Added `max_form_recursion_depth` to `DisplayListOptions` with a default depth
+  limit of 16 and typed `FormRecursionOverflow`, `MissingForm`,
+  `MissingFormObject`, and `InvalidFormResource` failures.
+- Added generated `fixtures/generated/form-xobject.pdf` through
+  `scripts/generate_fixtures.py`.
+- Added tests for generated form fixtures, form matrix and BBox handling, local
+  nested form resources, missing form resources, and recursion-limit failures.
+- Validation:
+  - `cargo fmt --check`
+  - `cargo check`
+  - `cargo test`
+  - `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- compare-metadata fixtures/generated/form-xobject.pdf --output target/pdfrust-thumbnails/form-xobject-metadata-comparison.json`
+    produced `status: match` with one 120x120 page for both PDFium and
+    Rust-native.
+  - `cargo clippy --all-targets --all-features -- -D warnings`
