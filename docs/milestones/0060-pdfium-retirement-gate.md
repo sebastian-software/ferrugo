@@ -1,6 +1,6 @@
 # 0060: PDFium Retirement Gate
 
-Status: todo
+Status: done
 Phase: 8
 Size: medium
 Depends on: 0059
@@ -48,4 +48,10 @@ fallback, optional dependency, or removal candidate.
 
 ## Completion Notes
 
-Empty until done.
+- Added `docs/reports/pdfium-retirement-gate-2026-06-24.md`.
+- Decision: no-go for PDFium retirement; PDFium remains fallback and oracle.
+- Evidence: generated fixture render pass against native and local PDFium
+  showed one valid PDFium-success fixture still unsupported natively
+  (`optional-content-ocmd.pdf`) and no available real local-corpus manifest.
+- Follow-up: 0061 may proceed only as native-default fallback experiment; 0062
+  should add fallback telemetry; 0063 should expand local corpus coverage.
