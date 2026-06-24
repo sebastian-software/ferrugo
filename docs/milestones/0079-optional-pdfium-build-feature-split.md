@@ -1,6 +1,6 @@
 # 0079: Optional PDFium Build Feature Split
 
-Status: todo
+Status: done
 Phase: 13
 Size: medium
 Depends on: 0078
@@ -45,4 +45,28 @@ native renderer use.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-24.
+
+- Made `pdfrust-pdfium` an optional `pdfrust-cli` dependency behind the
+  `pdfium` feature.
+- Added workspace `default-members` so root-level builds focus on the
+  native-only stack by default.
+- Gated PDFium CLI paths while preserving command names with clear native-only
+  usage errors.
+- Preserved PDFium-enabled fallback, direct render, isolated render,
+  comparison, and benchmark workflows under `--features pdfium`.
+- Documented native-only and PDFium-enabled packaging in `docs/packaging.md`.
+- Validation passed:
+  `cargo fmt --check`,
+  `cargo check --no-default-features`,
+  `cargo test --no-default-features`,
+  `cargo test -p pdfrust-cli --features pdfium`,
+  `cargo clippy --workspace --all-targets --all-features -- -D warnings`.
+- Runtime probes passed:
+  PDFium-enabled `compare-metadata`,
+  PDFium-enabled `render-auto` fallback,
+  native-only `render-pdfium` disabled-path check.
+
+Implementation commit:
+
+- `387822a feat: make pdfium cli support optional`

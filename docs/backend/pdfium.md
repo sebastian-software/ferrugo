@@ -7,6 +7,10 @@ The PDFium backend is isolated in `crates/pdfrust-pdfium`. Public consumers use
 the backend-neutral types from `pdfrust-thumbnail`; PDFium handles and symbols
 do not appear in the facade API.
 
+PDFium support is optional for `pdfrust-cli`. Default CLI builds are
+native-only. Use `--features pdfium` when running PDFium commands, fallback
+renders, metadata comparisons, or PDFium benchmarks.
+
 ## Runtime Configuration
 
 Set `PDFRUST_PDFIUM_LIBRARY` to a local dynamic library built from the pinned
@@ -57,7 +61,7 @@ initialized=true last_error=0 library=/private/tmp/pdfrust-tools/pdfium-work/pdf
 After `PDFRUST_PDFIUM_LIBRARY` points at a local PDFium build:
 
 ```sh
-cargo run -p pdfrust-cli -- render-pdfium fixtures/generated/text-page.pdf \
+cargo run -p pdfrust-cli --features pdfium -- render-pdfium fixtures/generated/text-page.pdf \
   --output target/pdfrust-thumbnails/text-page.png \
   --page-index 0 \
   --max-edge 1024 \
@@ -69,7 +73,7 @@ For product-facing timeout behavior, use the isolated runner. It spawns a
 single-use worker process and kills it if the wall-clock timeout expires:
 
 ```sh
-cargo run -p pdfrust-cli -- render-isolated fixtures/generated/text-page.pdf \
+cargo run -p pdfrust-cli --features pdfium -- render-isolated fixtures/generated/text-page.pdf \
   --output target/pdfrust-thumbnails/text-page.png \
   --page-index 0 \
   --max-edge 1024 \

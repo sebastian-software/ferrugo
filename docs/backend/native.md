@@ -62,11 +62,13 @@ cargo run -p pdfrust-cli -- render fixtures/generated/text-page.pdf \
   --timeout 5
 ```
 
-`render` and `render-auto` try the Rust-native backend first. If native returns
-the public `unsupported` class, it retries through PDFium using
-`PDFRUST_PDFIUM_LIBRARY`. `encrypted`, `malformed`, and `internal` failures are
-not silently retried. The selected backend is printed as a render diagnostic.
-Fallback diagnostics include `fallback_reason=<bucket>` and
+`render` and `render-auto` try the Rust-native backend first. In a
+PDFium-enabled CLI build, if native returns the public `unsupported` class, the
+command retries through PDFium using `PDFRUST_PDFIUM_LIBRARY`. In the default
+native-only CLI build, the same case fails with a usage-oriented diagnostic that
+asks for `--features pdfium`. `encrypted`, `malformed`, and `internal` failures
+are not silently retried. The selected backend is printed as a render
+diagnostic. Fallback diagnostics include `fallback_reason=<bucket>` and
 `fallback_category=<bucket>` so corpus runs can count the remaining PDFium
 surface.
 
@@ -77,7 +79,8 @@ PDFium. Use `--deny-fallback-reason <bucket>` for targeted experiments, or set
 for environment-driven runs.
 
 Use `render-native` to force native without fallback. Use `render-pdfium` or
-`render-isolated` to force PDFium.
+`render-isolated` to force PDFium in a CLI build compiled with
+`--features pdfium`.
 
 Summarize a local corpus without rendering PDFium output:
 
@@ -104,7 +107,7 @@ cargo run -p pdfrust-cli -- extract-corpus-metadata fixtures/generated \
 Compare metadata with PDFium when the local PDFium environment is available:
 
 ```sh
-cargo run -p pdfrust-cli -- compare-metadata fixtures/generated/text-page.pdf \
+cargo run -p pdfrust-cli --features pdfium -- compare-metadata fixtures/generated/text-page.pdf \
   --output target/pdfrust-thumbnails/text-page-metadata-comparison.json
 ```
 
