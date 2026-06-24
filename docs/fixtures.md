@@ -36,6 +36,7 @@ The initial seed set covers:
 - stroke line-join styles
 - even-odd path clipping
 - normal annotation appearance streams
+- annotations without usable appearance streams
 - axial DeviceRGB shading gradients
 - radial DeviceRGB shading gradients
 - colored tiling patterns

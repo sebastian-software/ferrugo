@@ -1196,6 +1196,25 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_ignore_annotation_without_appearance() {
+        let bytes = include_bytes!("../../../fixtures/generated/annotation-missing-appearance.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 120,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("missing annotation appearance should not abort native rendering");
+
+        assert_eq!(thumbnail.width, 120);
+        assert_eq!(thumbnail.height, 120);
+        assert_eq!(rgba_at(&thumbnail, 15, 95), [0, 0, 0, 255]);
+        assert_eq!(rgba_at(&thumbnail, 70, 45), [255, 255, 255, 255]);
+    }
+
+    #[test]
     fn native_backend_should_render_generated_text_fixture() {
         let bytes = include_bytes!("../../../fixtures/generated/text-page.pdf");
         let thumbnail = ThumbnailBackend::render(

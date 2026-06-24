@@ -526,6 +526,25 @@ def annotation_appearance_pdf() -> bytes:
     return pdf.render(catalog)
 
 
+def annotation_missing_appearance_pdf() -> bytes:
+    pdf = Pdf()
+    content = b"0 0 0 rg 10 10 20 20 re f"
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 120 120] "
+        f"/Contents {contents} 0 R /Annots [4 0 R] >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    annotation = pdf.add("<< /Type /Annot /Subtype /Stamp /Rect [60 60 90 90] >>")
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert annotation == 4
+    return pdf.render(catalog)
+
+
 def embedded_font_pdf() -> bytes:
     pdf = Pdf()
     content = b"BT /F1 18 Tf 20 60 Td (embedded font fixture) Tj ET"
@@ -688,6 +707,7 @@ def main() -> None:
     write("line-joins.pdf", line_joins_pdf())
     write("clipped-paths.pdf", clipped_paths_pdf())
     write("annotation-appearance.pdf", annotation_appearance_pdf())
+    write("annotation-missing-appearance.pdf", annotation_missing_appearance_pdf())
     write("embedded-font.pdf", embedded_font_pdf())
     write("tounicode-text.pdf", tounicode_text_pdf())
     write("encoding-differences.pdf", encoding_differences_pdf())

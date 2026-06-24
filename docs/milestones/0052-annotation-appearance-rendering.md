@@ -64,11 +64,16 @@ In progress:
 - Third implementation slice resolves normal appearance state dictionaries by
   selecting the `/AP /N` entry named by `/AS`; annotations without `/AS` fall
   back to the first referenced normal appearance.
+- Fourth fallback slice adds generated
+  `fixtures/generated/annotation-missing-appearance.pdf` and verifies that an
+  annotation without usable `/AP` does not abort otherwise renderable page
+  content.
 - PDFium/native comparison for `annotation-appearance.pdf` at `max-edge 120`:
   `120x120`, changed RGB pixels `0`, RGB MAE `0.0000`, p95 RGB delta `0`,
   max channel delta `0`, native non-white pixels `800`. Filled and outside
   sample pixels match PDFium exactly.
 - Current validation:
   - `cargo test -p pdfrust-native annotation_appearance -- --nocapture`
+  - `cargo test -p pdfrust-native annotation_without_appearance -- --nocapture`
   - `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render fixtures/generated/annotation-appearance.pdf --max-edge 120 --output target/pdfrust-thumbnails/annotation-appearance-pdfium-0052.png`
   - `cargo run -p pdfrust-cli -- render-native fixtures/generated/annotation-appearance.pdf --max-edge 120 --output target/pdfrust-thumbnails/annotation-appearance-native-0052.png`
