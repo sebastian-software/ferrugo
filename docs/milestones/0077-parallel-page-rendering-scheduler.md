@@ -1,6 +1,6 @@
 # 0077: Parallel Page Rendering Scheduler
 
-Status: todo
+Status: done
 Phase: 12
 Size: medium
 Depends on: 0076
@@ -45,4 +45,17 @@ memory budgets or deterministic errors.
 
 ## Completion Notes
 
-Empty until done.
+Completed with the `feat: add bounded parallel page scheduler` implementation,
+the `test: compare parallel scheduler output` stability test, and the
+`docs: complete parallel scheduler coverage` report update.
+
+- Added `ParallelRenderOptions`, `ParallelRenderResult`, and
+  `render_pages_parallel` to the native backend.
+- Shared input bytes across scoped page workers while preserving per-page render
+  state and requested result order.
+- Added memory-budget backoff and deterministic memory-budget failure through
+  the existing `renderer.memory-budget` unsupported bucket.
+- Added tests for ordered results, byte-for-byte parity with sequential renders,
+  worker backoff, too-small budgets, and deterministic page errors.
+- Recorded validation and timing evidence in
+  `docs/reports/parallel-page-scheduler-coverage-2026-06-24.md`.
