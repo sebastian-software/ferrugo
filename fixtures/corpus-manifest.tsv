@@ -6,6 +6,7 @@ fixtures/generated/annotation-appearance.pdf	mixed-layout	scripts/generate_fixtu
 fixtures/generated/annotation-missing-appearance.pdf	mixed-layout	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	annotation,missing-appearance	Generated annotation without usable appearance stream.
 fixtures/generated/axial-gradient.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	shading,axial-gradient	Generated DeviceRGB axial shading fixture.
 fixtures/generated/blend-modes.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	blend-mode,transparency	Generated Multiply and Screen blend-mode fixture.
+fixtures/generated/cid-font-text.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,type0,cid,tounicode	Generated Type0 CID font ToUnicode fixture.
 fixtures/generated/clipped-paths.pdf	browser-print	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	vector,clipping	Generated even-odd clipping path fixture.
 fixtures/generated/cmyk-image.pdf	scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,cmyk	Generated CMYK image color-space fixture.
 fixtures/generated/dashed-stroke.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	vector,stroke,dash	Generated dashed stroke fixture.

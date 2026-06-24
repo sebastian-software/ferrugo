@@ -1733,6 +1733,15 @@ struct ToUnicodeEntry {
     text: String,
 }
 
+/// CID descendant font metadata used by composite fonts.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CidFontMetrics {
+    /// Descendant CID font subtype.
+    pub subtype: FontSubtype,
+    /// Default glyph width in glyph space units from `/DW`.
+    pub default_width: Option<i32>,
+}
+
 /// Font descriptor used by text display-list construction.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FontDescriptor {
@@ -1750,6 +1759,8 @@ pub struct FontDescriptor {
     pub encoding: FontEncoding,
     /// Optional ToUnicode character-code mapping.
     pub to_unicode: Option<ToUnicodeMap>,
+    /// Optional CID descendant font metrics for Type 0 composite fonts.
+    pub cid_metrics: Option<CidFontMetrics>,
 }
 
 impl FontDescriptor {
@@ -1764,27 +1775,14 @@ impl FontDescriptor {
             program: None,
             encoding: FontEncoding::new(),
             to_unicode: None,
+            cid_metrics: None,
         }
     }
 
-    fn loaded(
-        resource_name: impl Into<Vec<u8>>,
-        base_font: Option<Vec<u8>>,
-        subtype: Option<FontSubtype>,
-        descriptor_reference: Option<Reference>,
-        program: Option<FontProgram>,
-        encoding: FontEncoding,
-        to_unicode: Option<ToUnicodeMap>,
-    ) -> Self {
-        Self {
-            resource_name: resource_name.into(),
-            base_font,
-            subtype,
-            descriptor_reference,
-            program,
-            encoding,
-            to_unicode,
-        }
+    fn fallback_advance_width(&self) -> f64 {
+        self.cid_metrics.as_ref().map_or(500.0, |metrics| {
+            f64::from(metrics.default_width.unwrap_or(1000))
+        })
     }
 }
 
@@ -1979,15 +1977,74 @@ where
         load_font_descriptor_program(dictionary, resolver, cache, options.max_font_program_bytes)?;
     let encoding = font_encoding(dictionary)?;
     let to_unicode = load_to_unicode_map(dictionary, resolver, options)?;
-    Ok(FontDescriptor::loaded(
-        resource_name.as_bytes().to_vec(),
+    let cid_metrics = load_cid_font_metrics(dictionary, resolver)?;
+    Ok(FontDescriptor {
+        resource_name: resource_name.as_bytes().to_vec(),
         base_font,
         subtype,
         descriptor_reference,
         program,
         encoding,
         to_unicode,
-    ))
+        cid_metrics,
+    })
+}
+
+fn load_cid_font_metrics<'a, R>(
+    dictionary: &[(PdfName<'a>, PdfPrimitive<'a>)],
+    resolver: &'a R,
+) -> GraphicsResult<Option<CidFontMetrics>>
+where
+    R: FontObjectResolver<'a> + ?Sized,
+{
+    let Some(PdfPrimitive::Array(descendants)) = dictionary_value(dictionary, b"DescendantFonts")
+    else {
+        return Ok(None);
+    };
+    let Some(descendant) = descendants.first() else {
+        return Err(invalid_font_resource(b"DescendantFonts"));
+    };
+    match descendant {
+        PdfPrimitive::Dictionary(descendant_dictionary) => {
+            decode_cid_font_metrics(descendant_dictionary).map(Some)
+        }
+        PdfPrimitive::Reference(_) => {
+            let reference = reference_from_primitive(descendant)
+                .ok_or_else(|| invalid_font_resource(b"DescendantFonts"))?;
+            let object = resolver.resolve_font_object(reference)?.ok_or_else(|| {
+                GraphicsError::new(
+                    None,
+                    GraphicsErrorKind::MissingFontObject {
+                        name: b"DescendantFonts".to_vec(),
+                    },
+                )
+            })?;
+            let ObjectValue::Primitive(PdfPrimitive::Dictionary(descendant_dictionary)) =
+                object.value
+            else {
+                return Err(invalid_font_resource(b"DescendantFonts"));
+            };
+            decode_cid_font_metrics(&descendant_dictionary).map(Some)
+        }
+        _ => Err(invalid_font_resource(b"DescendantFonts")),
+    }
+}
+
+fn decode_cid_font_metrics(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+) -> GraphicsResult<CidFontMetrics> {
+    let subtype =
+        optional_font_subtype(dictionary).ok_or_else(|| invalid_font_resource(b"Subtype"))?;
+    if !matches!(
+        subtype,
+        FontSubtype::CidFontType0 | FontSubtype::CidFontType2
+    ) {
+        return Err(invalid_font_resource(b"DescendantFonts"));
+    }
+    Ok(CidFontMetrics {
+        subtype,
+        default_width: optional_i32(dictionary, b"DW")?,
+    })
 }
 
 fn load_font_descriptor_program<'a, R>(
@@ -4360,7 +4417,12 @@ impl<'r> TextDisplayListInterpreter<'r> {
         } else {
             0.0
         };
-        (self.text.font_size * 0.5 + self.text.character_spacing + word_spacing)
+        let font_width = self
+            .text
+            .font
+            .as_ref()
+            .map_or(500.0, FontDescriptor::fallback_advance_width);
+        (self.text.font_size * font_width / 1000.0 + self.text.character_spacing + word_spacing)
             * self.text.horizontal_scaling
     }
 
@@ -7605,6 +7667,21 @@ fn primitive_number(value: &PdfPrimitive<'_>) -> Option<f64> {
     }
 }
 
+fn optional_i32(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    key: &[u8],
+) -> GraphicsResult<Option<i32>> {
+    let Some(value) = dictionary_value(dictionary, key) else {
+        return Ok(None);
+    };
+    match value {
+        PdfPrimitive::Number(PdfNumber::Integer(value)) => Ok(Some(
+            i32::try_from(*value).map_err(|_| invalid_font_resource(key))?,
+        )),
+        _ => Err(invalid_font_resource(key)),
+    }
+}
+
 fn required_u32(dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)], key: &[u8]) -> GraphicsResult<u32> {
     match dictionary_value(dictionary, key) {
         Some(PdfPrimitive::Number(PdfNumber::Integer(value))) => {
@@ -7760,7 +7837,7 @@ fn font_encoding(dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)]) -> GraphicsResu
         PdfPrimitive::Name(name)
             if matches!(
                 name.as_bytes(),
-                b"WinAnsiEncoding" | b"MacRomanEncoding" | b"MacExpertEncoding"
+                b"WinAnsiEncoding" | b"MacRomanEncoding" | b"MacExpertEncoding" | b"Identity-H"
             ) =>
         {
             Ok(FontEncoding::new())
@@ -10575,6 +10652,56 @@ mod tests {
                 unicode: "Z".to_string(),
             }]
         );
+    }
+
+    #[test]
+    fn text_display_list_should_decode_type0_cid_font_with_descendant_metrics() {
+        let document = load_tounicode_text_pdf(
+            b"BT /F1 10 Tf <00010002> Tj ET",
+            b"<< /Type /Font /Subtype /Type0 /BaseFont /ABCDEE+CIDFixture /Encoding /Identity-H /DescendantFonts [<< /Type /Font /Subtype /CIDFontType2 /BaseFont /ABCDEE+CIDFixture /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /DW 600 >>] /ToUnicode 6 0 R >>",
+            b"/CIDInit /ProcSet findresource begin\n2 beginbfchar\n<0001> <0041>\n<0002> <005a>\nendbfchar\nend",
+        );
+        let resources =
+            font_resources_from_document(&document, &[("F1", 4)]).expect("valid font resources");
+        let font = resources
+            .get(PdfName::new(b"F1"))
+            .expect("Type0 font should resolve");
+        assert_eq!(font.subtype, Some(FontSubtype::Type0));
+        assert_eq!(
+            font.cid_metrics,
+            Some(CidFontMetrics {
+                subtype: FontSubtype::CidFontType2,
+                default_width: Some(600),
+            })
+        );
+
+        let content = content_stream_from_document(&document);
+        let list = build_text_display_list(
+            tokenize_content(PdfBytes::new(&content)),
+            &resources,
+            DisplayListOptions::default(),
+        )
+        .expect("Type0 CID text should decode");
+
+        let DisplayItem::Text(text) = &list.items()[0] else {
+            panic!("expected text display item");
+        };
+        assert_eq!(text.text, "AZ");
+        assert_eq!(
+            text.glyphs,
+            vec![
+                TextGlyph {
+                    character_code: 1,
+                    unicode: "A".to_string(),
+                },
+                TextGlyph {
+                    character_code: 2,
+                    unicode: "Z".to_string(),
+                },
+            ]
+        );
+        assert_eq!(text.glyph_origins[0], Point { x: 0.0, y: 0.0 });
+        assert_eq!(text.glyph_origins[1], Point { x: 6.0, y: 0.0 });
     }
 
     #[test]
