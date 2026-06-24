@@ -65,13 +65,17 @@ structure use `parse_primitive_prefix` to keep the first consumed byte offset.
 
 `pdfrust-object` owns typed indirect object IDs and references. Its first loader
 can parse contiguous `obj ... endobj` slices into `IndirectObject<'a>` values
-and store them in an `ObjectTable<'a>` with duplicate detection. Xref lookup and
-object-stream loading remain later milestones.
+and store them in an `ObjectTable<'a>` with duplicate detection.
 
 The classic document loader locates `startxref`, parses classic `xref`
 subsections, reads the trailer dictionary, and resolves all in-use xref entries
 into the object table. It verifies that each xref offset points at the expected
 object ID. Stream objects are represented as `ObjectValue::Stream` with borrowed
 raw bytes, dictionary entries, and a bounded decode path for `FlateDecode`,
-`ASCIIHexDecode`, and `ASCII85Decode` filter chains. Xref streams, object
-streams, indirect stream lengths, and repair mode remain separate milestones.
+`ASCIIHexDecode`, and `ASCII85Decode` filter chains.
+
+The modern document loader handles `startxref` values that point at `/XRef`
+stream objects. It decodes `/W` and `/Index` entries, loads direct objects from
+offset entries, and stores decoded `/ObjStm` buffers separately so compressed
+objects can be parsed on demand without self-referential borrows. Hybrid xref
+files, indirect stream lengths, and repair mode remain separate milestones.

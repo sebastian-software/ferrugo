@@ -1,6 +1,6 @@
 # 0027: Xref Streams And Object Streams
 
-Status: todo
+Status: done
 Phase: 1
 Size: medium
 Depends on: 0026
@@ -44,4 +44,20 @@ Load modern PDFs that use xref streams and object streams.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-24.
+
+- Added `XrefStreamEntry`, `XrefStreamTable`, and `ModernDocument`.
+- Added `load_modern_document` for PDFs whose `startxref` points at an `/XRef`
+  stream object.
+- Implemented `/W` and `/Index` xref stream entry decoding with checked
+  big-endian field parsing.
+- Added direct object loading for xref stream type-1 entries.
+- Added object stream loading for type-2 compressed entries, with owned decoded
+  `/ObjStm` buffers and on-demand object parsing through
+  `ModernDocument::get_object`.
+- Added validation that xref compressed-entry object IDs match the referenced
+  object stream index.
+- Added generated tests for a Flate-compressed xref stream, a Flate-compressed
+  object stream containing a page dictionary, direct stream resolution, and an
+  object-stream index mismatch.
+- Hybrid-reference files and repair mode remain later milestones.

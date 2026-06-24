@@ -274,6 +274,58 @@ impl ClassicXrefTable {
     }
 }
 
+/// Parsed xref-stream entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum XrefStreamEntry {
+    /// In-use object stored at a byte offset.
+    InUse {
+        /// Object ID described by the xref stream entry.
+        id: ObjectId,
+        /// Byte offset to the indirect object.
+        offset: ByteOffset,
+    },
+    /// Object stored inside an object stream.
+    Compressed {
+        /// Object ID described by the xref stream entry.
+        id: ObjectId,
+        /// Object stream containing the object.
+        object_stream: ObjectId,
+        /// Zero-based object index inside the object stream.
+        index: usize,
+    },
+}
+
+impl XrefStreamEntry {
+    /// Returns the object ID described by this entry.
+    #[must_use]
+    pub const fn id(self) -> ObjectId {
+        match self {
+            Self::InUse { id, .. } | Self::Compressed { id, .. } => id,
+        }
+    }
+}
+
+/// Parsed xref stream table.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct XrefStreamTable {
+    startxref: ByteOffset,
+    entries: Vec<XrefStreamEntry>,
+}
+
+impl XrefStreamTable {
+    /// Returns the `startxref` byte offset.
+    #[must_use]
+    pub const fn startxref(&self) -> ByteOffset {
+        self.startxref
+    }
+
+    /// Returns in-use and compressed entries from the xref stream.
+    #[must_use]
+    pub fn entries(&self) -> &[XrefStreamEntry] {
+        &self.entries
+    }
+}
+
 /// Parsed trailer dictionary.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Trailer<'a> {
@@ -297,6 +349,37 @@ pub struct ClassicDocument<'a> {
     pub trailer: Trailer<'a>,
     /// Indirect objects resolved through in-use xref entries.
     pub objects: ObjectTable<'a>,
+}
+
+/// Loaded xref-stream PDF document.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ModernDocument<'a> {
+    /// Parsed xref stream table.
+    pub xref: XrefStreamTable,
+    /// Trailer data carried by the xref stream dictionary.
+    pub trailer: Trailer<'a>,
+    /// Direct indirect objects resolved through in-use xref entries.
+    pub objects: ObjectTable<'a>,
+    object_streams: Vec<LoadedObjectStream>,
+}
+
+impl<'a> ModernDocument<'a> {
+    /// Resolves an object from direct xref entries or decoded object streams.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ObjectError`] when a compressed object body is malformed.
+    pub fn get_object(&self, id: ObjectId) -> ObjectResult<Option<IndirectObject<'_>>> {
+        if let Some(object) = self.objects.get(id) {
+            return Ok(Some(object.clone()));
+        }
+        for object_stream in &self.object_streams {
+            if let Some(object) = object_stream.parse_object(id)? {
+                return Ok(Some(object));
+            }
+        }
+        Ok(None)
+    }
 }
 
 /// Parses one indirect reference such as `12 0 R`.
@@ -454,6 +537,36 @@ pub fn load_classic_document(input: PdfBytes<'_>) -> ObjectResult<ClassicDocumen
     })
 }
 
+/// Loads a PDF whose `startxref` points at an xref stream.
+///
+/// # Errors
+///
+/// Returns [`ObjectError`] when the xref stream, direct objects, or referenced
+/// object streams are malformed.
+pub fn load_modern_document(input: PdfBytes<'_>) -> ObjectResult<ModernDocument<'_>> {
+    let bytes = input.as_bytes();
+    let startxref = locate_startxref(bytes)?;
+    let (xref, trailer) = parse_xref_stream_and_trailer(bytes, startxref)?;
+    let mut objects = ObjectTable::new();
+
+    for entry in xref.entries() {
+        if let XrefStreamEntry::InUse { id, offset } = *entry {
+            let object = parse_object_at_offset(bytes, ClassicXrefEntry { id, offset })?;
+            objects.insert(object)?;
+        }
+    }
+
+    let object_streams = load_referenced_object_streams(&objects, xref.entries())?;
+    validate_compressed_entries(&object_streams, xref.entries())?;
+
+    Ok(ModernDocument {
+        xref,
+        trailer,
+        objects,
+        object_streams,
+    })
+}
+
 fn parse_object_at_offset<'a>(
     bytes: &'a [u8],
     entry: ClassicXrefEntry,
@@ -474,6 +587,32 @@ fn parse_object_at_offset<'a>(
         });
     }
     Ok(object)
+}
+
+fn parse_xref_stream_and_trailer<'a>(
+    bytes: &'a [u8],
+    startxref: ByteOffset,
+) -> ObjectResult<(XrefStreamTable, Trailer<'a>)> {
+    let (object, _) = parse_indirect_object_prefix(&bytes[startxref.get()..], startxref)?;
+    let ObjectValue::Stream(stream) = object.value else {
+        return Err(ObjectError::malformed(
+            startxref,
+            "startxref object must be a stream",
+        ));
+    };
+    if !dictionary_name_is(stream.dictionary(), b"Type", b"XRef") {
+        return Err(ObjectError::malformed(
+            startxref,
+            "startxref stream must have /Type /XRef",
+        ));
+    }
+    let entries = parse_xref_stream_entries(&stream)?;
+    Ok((
+        XrefStreamTable { startxref, entries },
+        Trailer {
+            dictionary: stream.dictionary,
+        },
+    ))
 }
 
 fn locate_startxref(bytes: &[u8]) -> ObjectResult<ByteOffset> {
@@ -663,6 +802,10 @@ impl<'a> RawParser<'a> {
         parse_u16(self.parse_unsigned_decimal()?, self.offset())
     }
 
+    fn parse_usize(&mut self) -> ObjectResult<usize> {
+        parse_usize(self.parse_unsigned_decimal()?, self.offset())
+    }
+
     fn parse_unsigned_decimal(&mut self) -> ObjectResult<&'a [u8]> {
         let start = self.offset;
         while matches!(self.bytes.get(self.offset), Some(byte) if byte.is_ascii_digit()) {
@@ -737,6 +880,36 @@ impl<'a> ObjectParser<'a> {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LoadedObjectStream {
+    id: ObjectId,
+    decoded: Vec<u8>,
+    objects: Vec<ObjectStreamObject>,
+}
+
+impl LoadedObjectStream {
+    fn parse_object(&self, id: ObjectId) -> ObjectResult<Option<IndirectObject<'_>>> {
+        let Some(object) = self.objects.iter().find(|object| object.id == id) else {
+            return Ok(None);
+        };
+        let value = parse_primitive(PdfBytes::new(
+            &self.decoded[object.value_start..object.value_end],
+        ))?;
+        Ok(Some(IndirectObject {
+            id,
+            value: ObjectValue::Primitive(value),
+        }))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ObjectStreamObject {
+    id: ObjectId,
+    index: usize,
+    value_start: usize,
+    value_end: usize,
+}
+
 fn parse_u32(raw: &[u8], offset: ByteOffset) -> ObjectResult<u32> {
     let text = std::str::from_utf8(raw)
         .map_err(|_| ObjectError::malformed(offset, "number is not valid UTF-8"))?;
@@ -751,6 +924,13 @@ fn parse_u16(raw: &[u8], offset: ByteOffset) -> ObjectResult<u16> {
         .map_err(|_| ObjectError::malformed(offset, "generation is out of range"))
 }
 
+fn parse_usize(raw: &[u8], offset: ByteOffset) -> ObjectResult<usize> {
+    let text = std::str::from_utf8(raw)
+        .map_err(|_| ObjectError::malformed(offset, "number is not valid UTF-8"))?;
+    text.parse::<usize>()
+        .map_err(|_| ObjectError::malformed(offset, "number is out of range"))
+}
+
 fn direct_stream_length(dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)]) -> ObjectResult<usize> {
     let value = dictionary_value(dictionary, b"Length")
         .ok_or_else(|| ObjectError::malformed(ByteOffset::new(0), "stream is missing /Length"))?;
@@ -760,6 +940,336 @@ fn direct_stream_length(dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)]) -> Objec
     usize::try_from(*length).map_err(|_| {
         ObjectError::malformed(ByteOffset::new(0), "stream length must be non-negative")
     })
+}
+
+fn required_usize(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    key: &'static [u8],
+) -> ObjectResult<usize> {
+    let value = dictionary_value(dictionary, key).ok_or_else(|| {
+        ObjectError::malformed(ByteOffset::new(0), "required dictionary number is missing")
+    })?;
+    primitive_usize(value)
+}
+
+fn primitive_usize(value: &PdfPrimitive<'_>) -> ObjectResult<usize> {
+    let PdfPrimitive::Number(PdfNumber::Integer(raw)) = value else {
+        return Err(ObjectError::malformed(
+            ByteOffset::new(0),
+            "expected integer number",
+        ));
+    };
+    usize::try_from(*raw)
+        .map_err(|_| ObjectError::malformed(ByteOffset::new(0), "integer number is out of range"))
+}
+
+fn required_number_array(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    key: &'static [u8],
+) -> ObjectResult<Vec<usize>> {
+    let value = dictionary_value(dictionary, key).ok_or_else(|| {
+        ObjectError::malformed(ByteOffset::new(0), "required dictionary array is missing")
+    })?;
+    let PdfPrimitive::Array(values) = value else {
+        return Err(ObjectError::malformed(
+            ByteOffset::new(0),
+            "expected integer array",
+        ));
+    };
+    values.iter().map(primitive_usize).collect()
+}
+
+fn optional_number_array(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    key: &'static [u8],
+) -> ObjectResult<Option<Vec<usize>>> {
+    dictionary_value(dictionary, key)
+        .map(|value| {
+            let PdfPrimitive::Array(values) = value else {
+                return Err(ObjectError::malformed(
+                    ByteOffset::new(0),
+                    "expected integer array",
+                ));
+            };
+            values.iter().map(primitive_usize).collect()
+        })
+        .transpose()
+}
+
+fn dictionary_name_is(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    key: &[u8],
+    expected: &[u8],
+) -> bool {
+    matches!(
+        dictionary_value(dictionary, key),
+        Some(PdfPrimitive::Name(name)) if name.as_bytes() == expected
+    )
+}
+
+fn parse_xref_stream_entries(stream: &StreamObject<'_>) -> ObjectResult<Vec<XrefStreamEntry>> {
+    let widths = required_number_array(stream.dictionary(), b"W")?;
+    if widths.len() != 3 {
+        return Err(ObjectError::malformed(
+            ByteOffset::new(0),
+            "xref stream /W must have three numbers",
+        ));
+    }
+    let size = required_usize(stream.dictionary(), b"Size")?;
+    let index =
+        optional_number_array(stream.dictionary(), b"Index")?.unwrap_or_else(|| vec![0, size]);
+    if index.len() % 2 != 0 {
+        return Err(ObjectError::malformed(
+            ByteOffset::new(0),
+            "xref stream /Index must contain pairs",
+        ));
+    }
+    let entry_width = widths.iter().try_fold(0_usize, |sum, width| {
+        sum.checked_add(*width)
+            .ok_or_else(|| ObjectError::malformed(ByteOffset::new(0), "xref entry width overflow"))
+    })?;
+    if entry_width == 0 {
+        return Err(ObjectError::malformed(
+            ByteOffset::new(0),
+            "xref stream entry width must be non-zero",
+        ));
+    }
+
+    let decoded = stream.decode()?;
+    let expected_entries = index.chunks_exact(2).try_fold(0_usize, |sum, pair| {
+        sum.checked_add(pair[1]).ok_or_else(|| {
+            ObjectError::malformed(ByteOffset::new(0), "xref stream entry count overflow")
+        })
+    })?;
+    let expected_len = expected_entries.checked_mul(entry_width).ok_or_else(|| {
+        ObjectError::malformed(ByteOffset::new(0), "xref stream decoded length overflow")
+    })?;
+    if decoded.len() < expected_len {
+        return Err(ObjectError::malformed(
+            ByteOffset::new(0),
+            "xref stream decoded data is shorter than declared entries",
+        ));
+    }
+
+    let mut entries = Vec::new();
+    let mut cursor = 0_usize;
+    for pair in index.chunks_exact(2) {
+        let first_object = pair[0];
+        let count = pair[1];
+        for relative_index in 0..count {
+            let fields = read_xref_fields(&decoded[cursor..cursor + entry_width], &widths)?;
+            cursor += entry_width;
+            let object_number = first_object.checked_add(relative_index).ok_or_else(|| {
+                ObjectError::malformed(ByteOffset::new(0), "xref stream object number overflow")
+            })?;
+            match fields[0] {
+                0 => {}
+                1 => {
+                    if object_number == 0 {
+                        continue;
+                    }
+                    let id = ObjectId::new(
+                        ObjectNumber::new(u32::try_from(object_number).map_err(|_| {
+                            ObjectError::malformed(
+                                ByteOffset::new(0),
+                                "xref stream object number is out of range",
+                            )
+                        })?)?,
+                        GenerationNumber::new(u16::try_from(fields[2]).map_err(|_| {
+                            ObjectError::malformed(
+                                ByteOffset::new(0),
+                                "xref stream generation is out of range",
+                            )
+                        })?),
+                    );
+                    entries.push(XrefStreamEntry::InUse {
+                        id,
+                        offset: ByteOffset::new(fields[1]),
+                    });
+                }
+                2 => {
+                    let id = ObjectId::new(
+                        ObjectNumber::new(u32::try_from(object_number).map_err(|_| {
+                            ObjectError::malformed(
+                                ByteOffset::new(0),
+                                "xref stream object number is out of range",
+                            )
+                        })?)?,
+                        GenerationNumber::new(0),
+                    );
+                    let object_stream = ObjectId::new(
+                        ObjectNumber::new(u32::try_from(fields[1]).map_err(|_| {
+                            ObjectError::malformed(
+                                ByteOffset::new(0),
+                                "object stream number is out of range",
+                            )
+                        })?)?,
+                        GenerationNumber::new(0),
+                    );
+                    entries.push(XrefStreamEntry::Compressed {
+                        id,
+                        object_stream,
+                        index: fields[2],
+                    });
+                }
+                _ => {
+                    return Err(ObjectError::malformed(
+                        ByteOffset::new(0),
+                        "unsupported xref stream entry type",
+                    ));
+                }
+            }
+        }
+    }
+    Ok(entries)
+}
+
+fn read_xref_fields(raw: &[u8], widths: &[usize]) -> ObjectResult<[usize; 3]> {
+    let mut offset = 0_usize;
+    let mut fields = [0_usize; 3];
+    for (index, width) in widths.iter().copied().enumerate() {
+        let end = offset.checked_add(width).ok_or_else(|| {
+            ObjectError::malformed(ByteOffset::new(0), "xref field width overflow")
+        })?;
+        let value = if width == 0 && index == 0 {
+            1
+        } else {
+            read_big_endian_usize(&raw[offset..end])?
+        };
+        fields[index] = value;
+        offset = end;
+    }
+    Ok(fields)
+}
+
+fn read_big_endian_usize(raw: &[u8]) -> ObjectResult<usize> {
+    raw.iter().try_fold(0_usize, |value, byte| {
+        value
+            .checked_mul(256)
+            .and_then(|value| value.checked_add(usize::from(*byte)))
+            .ok_or_else(|| ObjectError::malformed(ByteOffset::new(0), "xref field overflow"))
+    })
+}
+
+fn load_referenced_object_streams(
+    objects: &ObjectTable<'_>,
+    entries: &[XrefStreamEntry],
+) -> ObjectResult<Vec<LoadedObjectStream>> {
+    let mut loaded = Vec::new();
+    for entry in entries {
+        let XrefStreamEntry::Compressed { object_stream, .. } = *entry else {
+            continue;
+        };
+        if loaded
+            .iter()
+            .any(|loaded_stream: &LoadedObjectStream| loaded_stream.id == object_stream)
+        {
+            continue;
+        }
+        let object = objects
+            .get(object_stream)
+            .ok_or(ObjectError::MissingObjectStream { id: object_stream })?;
+        loaded.push(load_object_stream(object)?);
+    }
+    Ok(loaded)
+}
+
+fn load_object_stream(object: &IndirectObject<'_>) -> ObjectResult<LoadedObjectStream> {
+    let ObjectValue::Stream(stream) = &object.value else {
+        return Err(ObjectError::MissingObjectStream { id: object.id });
+    };
+    if !dictionary_name_is(stream.dictionary(), b"Type", b"ObjStm") {
+        return Err(ObjectError::MissingObjectStream { id: object.id });
+    }
+    let count = required_usize(stream.dictionary(), b"N")?;
+    let first = required_usize(stream.dictionary(), b"First")?;
+    let decoded = stream.decode()?;
+    if first > decoded.len() {
+        return Err(ObjectError::malformed(
+            ByteOffset::new(0),
+            "object stream /First exceeds decoded length",
+        ));
+    }
+
+    let header = &decoded[..first];
+    let mut parser = RawParser::new(header, 0);
+    let mut pairs = Vec::with_capacity(count);
+    for index in 0..count {
+        parser.skip_whitespace()?;
+        let object_number = parser.parse_u32()?;
+        parser.skip_whitespace()?;
+        let relative_offset = parser.parse_usize()?;
+        let id = ObjectId::new(ObjectNumber::new(object_number)?, GenerationNumber::new(0));
+        pairs.push((index, id, relative_offset));
+    }
+
+    let mut stream_objects = Vec::with_capacity(pairs.len());
+    for (position, (index, id, relative_offset)) in pairs.iter().copied().enumerate() {
+        let value_start = first.checked_add(relative_offset).ok_or_else(|| {
+            ObjectError::malformed(ByteOffset::new(0), "object stream object offset overflow")
+        })?;
+        let value_end = pairs
+            .get(position + 1)
+            .map_or(decoded.len(), |(_, _, next_offset)| {
+                first.saturating_add(*next_offset)
+            });
+        if value_start > value_end || value_end > decoded.len() {
+            return Err(ObjectError::malformed(
+                ByteOffset::new(0),
+                "object stream object range is invalid",
+            ));
+        }
+        parse_primitive(PdfBytes::new(&decoded[value_start..value_end]))?;
+        stream_objects.push(ObjectStreamObject {
+            id,
+            index,
+            value_start,
+            value_end,
+        });
+    }
+
+    Ok(LoadedObjectStream {
+        id: object.id,
+        decoded,
+        objects: stream_objects,
+    })
+}
+
+fn validate_compressed_entries(
+    object_streams: &[LoadedObjectStream],
+    entries: &[XrefStreamEntry],
+) -> ObjectResult<()> {
+    for entry in entries {
+        let XrefStreamEntry::Compressed {
+            id,
+            object_stream,
+            index,
+        } = *entry
+        else {
+            continue;
+        };
+        let loaded = object_streams
+            .iter()
+            .find(|loaded| loaded.id == object_stream)
+            .ok_or(ObjectError::MissingObjectStream { id: object_stream })?;
+        let Some(object) = loaded.objects.iter().find(|object| object.index == index) else {
+            return Err(ObjectError::ObjectStreamMismatch {
+                expected: id,
+                actual: None,
+                object_stream,
+                index,
+            });
+        };
+        if object.id != id {
+            return Err(ObjectError::ObjectStreamMismatch {
+                expected: id,
+                actual: Some(object.id),
+                object_stream,
+                index,
+            });
+        }
+    }
+    Ok(())
 }
 
 fn stream_filters(
@@ -1041,6 +1551,22 @@ pub enum ObjectError {
         /// Configured decoded byte limit.
         limit: usize,
     },
+    /// Xref stream references an object stream that is missing or invalid.
+    MissingObjectStream {
+        /// Missing object stream ID.
+        id: ObjectId,
+    },
+    /// Object stream header does not match the xref stream compressed entry.
+    ObjectStreamMismatch {
+        /// Object ID expected by the xref stream.
+        expected: ObjectId,
+        /// Object ID found at the object-stream index, if present.
+        actual: Option<ObjectId>,
+        /// Object stream ID.
+        object_stream: ObjectId,
+        /// Zero-based index inside the object stream.
+        index: usize,
+    },
     /// Duplicate indirect object ID.
     DuplicateObject {
         /// Duplicated object ID.
@@ -1071,7 +1597,9 @@ impl ObjectError {
             Self::UnsupportedStreamLength
             | Self::UnsupportedFilter { .. }
             | Self::Decode { .. }
-            | Self::StreamLimitExceeded { .. } => None,
+            | Self::StreamLimitExceeded { .. }
+            | Self::MissingObjectStream { .. }
+            | Self::ObjectStreamMismatch { .. } => None,
             Self::DuplicateObject { .. } => None,
             Self::XrefOffsetMismatch { offset, .. } => Some(*offset),
         }
@@ -1100,6 +1628,36 @@ impl fmt::Display for ObjectError {
             Self::Decode { filter, message } => write!(f, "{filter} decode error: {message}"),
             Self::StreamLimitExceeded { limit } => {
                 write!(f, "decoded stream exceeds limit of {limit} bytes")
+            }
+            Self::MissingObjectStream { id } => write!(
+                f,
+                "missing object stream {} {}",
+                id.number.get(),
+                id.generation.get()
+            ),
+            Self::ObjectStreamMismatch {
+                expected,
+                actual,
+                object_stream,
+                index,
+            } => {
+                write!(
+                    f,
+                    "object stream {} {} index {index} mismatch: expected {} {}",
+                    object_stream.number.get(),
+                    object_stream.generation.get(),
+                    expected.number.get(),
+                    expected.generation.get()
+                )?;
+                if let Some(actual) = actual {
+                    write!(
+                        f,
+                        ", got {} {}",
+                        actual.number.get(),
+                        actual.generation.get()
+                    )?;
+                }
+                Ok(())
             }
             Self::DuplicateObject { id } => write!(
                 f,
@@ -1360,6 +1918,54 @@ mod tests {
         assert_eq!(error.offset(), Some(ByteOffset::new(0)));
     }
 
+    #[test]
+    fn load_modern_document_should_load_xref_stream_and_object_stream() {
+        let pdf = build_modern_pdf(false);
+
+        let document = load_modern_document(PdfBytes::new(&pdf)).expect("modern document");
+
+        assert_eq!(document.xref.entries().len(), 6);
+        assert_eq!(document.objects.len(), 5);
+        assert!(document
+            .objects
+            .get(ObjectId::new(
+                ObjectNumber::new(3).expect("object number"),
+                GenerationNumber::new(0)
+            ))
+            .is_none());
+        let page = document
+            .get_object(ObjectId::new(
+                ObjectNumber::new(3).expect("object number"),
+                GenerationNumber::new(0),
+            ))
+            .expect("resolve compressed object")
+            .expect("compressed page object");
+        assert!(matches!(
+            page.value,
+            ObjectValue::Primitive(PdfPrimitive::Dictionary(_))
+        ));
+        let contents = document
+            .get_object(ObjectId::new(
+                ObjectNumber::new(4).expect("object number"),
+                GenerationNumber::new(0),
+            ))
+            .expect("resolve direct object")
+            .expect("direct content object");
+        let ObjectValue::Stream(stream) = contents.value else {
+            panic!("expected content stream");
+        };
+        assert_eq!(stream.decode().expect("decoded content stream"), b"q");
+    }
+
+    #[test]
+    fn load_modern_document_should_reject_bad_object_stream_index() {
+        let pdf = build_modern_pdf(true);
+
+        let error = load_modern_document(PdfBytes::new(&pdf)).expect_err("bad object stream index");
+
+        assert!(matches!(error, ObjectError::ObjectStreamMismatch { .. }));
+    }
+
     fn build_classic_pdf(use_wrong_first_offset: bool) -> Vec<u8> {
         let mut pdf = b"%PDF-1.7\n".to_vec();
         let object_1 = append_object(
@@ -1440,6 +2046,70 @@ mod tests {
             .as_bytes(),
         );
         pdf
+    }
+
+    fn build_modern_pdf(use_bad_compressed_index: bool) -> Vec<u8> {
+        let mut pdf = b"%PDF-1.7\n".to_vec();
+        let object_1 = append_object(
+            &mut pdf,
+            b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n",
+        );
+        let object_2 = append_object(
+            &mut pdf,
+            b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n",
+        );
+        let object_4 = append_object(
+            &mut pdf,
+            b"4 0 obj\n<< /Length 1 >>\nstream\nq\nendstream\nendobj\n",
+        );
+        let object_stream_payload = b"3 0 << /Type /Page /Parent 2 0 R /Contents 4 0 R >>";
+        let compressed_object_stream = zlib_compress(object_stream_payload);
+        let object_5 = pdf.len();
+        pdf.extend_from_slice(
+            format!(
+                "5 0 obj\n<< /Type /ObjStm /N 1 /First 4 /Length {} /Filter /FlateDecode >>\nstream\n",
+                compressed_object_stream.len()
+            )
+            .as_bytes(),
+        );
+        pdf.extend_from_slice(&compressed_object_stream);
+        pdf.extend_from_slice(b"\nendstream\nendobj\n");
+
+        let xref_offset = pdf.len();
+        let compressed_index = if use_bad_compressed_index { 1 } else { 0 };
+        let mut xref_data = Vec::new();
+        push_xref_entry(&mut xref_data, 0, 0, 65_535);
+        push_xref_entry(&mut xref_data, 1, object_1, 0);
+        push_xref_entry(&mut xref_data, 1, object_2, 0);
+        push_xref_entry(&mut xref_data, 2, 5, compressed_index);
+        push_xref_entry(&mut xref_data, 1, object_4, 0);
+        push_xref_entry(&mut xref_data, 1, object_5, 0);
+        push_xref_entry(&mut xref_data, 1, xref_offset, 0);
+        let compressed_xref = zlib_compress(&xref_data);
+        pdf.extend_from_slice(
+            format!(
+                "6 0 obj\n<< /Type /XRef /Size 7 /Root 1 0 R /W [1 4 2] /Index [0 7] /Length {} /Filter /FlateDecode >>\nstream\n",
+                compressed_xref.len()
+            )
+            .as_bytes(),
+        );
+        pdf.extend_from_slice(&compressed_xref);
+        pdf.extend_from_slice(
+            format!("\nendstream\nendobj\nstartxref\n{xref_offset}\n%%EOF\n").as_bytes(),
+        );
+        pdf
+    }
+
+    fn push_xref_entry(output: &mut Vec<u8>, entry_type: u8, field_2: usize, field_3: usize) {
+        output.push(entry_type);
+        push_big_endian(output, field_2, 4);
+        push_big_endian(output, field_3, 2);
+    }
+
+    fn push_big_endian(output: &mut Vec<u8>, value: usize, width: usize) {
+        for shift in (0..width).rev() {
+            output.push(((value >> (shift * 8)) & 0xff) as u8);
+        }
     }
 
     fn zlib_compress(input: &[u8]) -> Vec<u8> {
