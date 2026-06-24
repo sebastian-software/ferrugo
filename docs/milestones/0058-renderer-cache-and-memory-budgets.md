@@ -1,6 +1,6 @@
 # 0058: Renderer Cache And Memory Budgets
 
-Status: in-progress
+Status: done
 Phase: 8
 Size: medium
 Depends on: 0057
@@ -55,3 +55,5 @@ and PDFium fallback reduction.
 - Third slice changed the glyph-outline cache from fail-when-full behavior to
   bounded oldest-entry eviction and documented `max_cache_entries == 0` as an
   uncached lookup mode.
+- Final documentation slice added `docs/policies/renderer-memory-budgets.md`
+  with default budgets, cache behavior, diagnostics, and non-goals.
