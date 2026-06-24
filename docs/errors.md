@@ -22,3 +22,7 @@ render error [malformed]: PDF is malformed
 PDFium exposes coarse error codes, so mappings are intentionally approximate.
 The stable class is for callers and baselines; detailed backend diagnostics can
 still include local context.
+
+Direct in-process PDFium rendering cannot safely stop a running native call.
+Hard timeout behavior is provided by the isolated render parent, which
+terminates the worker process and returns the `timeout` class.

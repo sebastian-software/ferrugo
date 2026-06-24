@@ -4,15 +4,19 @@ use std::env;
 use std::ffi::OsString;
 use std::fmt;
 use std::fs;
-use std::path::PathBuf;
-use std::process::ExitCode;
-use std::time::Duration;
+use std::io::Read;
+use std::path::{Path, PathBuf};
+use std::process::{Child, Command, ExitCode, Stdio};
+use std::thread;
+use std::time::{Duration, Instant};
 
 use pdfrust_pdfium::PdfiumBackend;
 use pdfrust_thumbnail::{
-    PdfSource, Rgba, ThumbnailBackend, ThumbnailOptions, DEFAULT_MAX_EDGE, DEFAULT_PAGE_INDEX,
-    DEFAULT_TIMEOUT,
+    PdfSource, Rgba, ThumbnailBackend, ThumbnailError, ThumbnailOptions, DEFAULT_MAX_EDGE,
+    DEFAULT_PAGE_INDEX, DEFAULT_TIMEOUT,
 };
+
+const WORKER_POLL_INTERVAL: Duration = Duration::from_millis(10);
 
 fn main() -> ExitCode {
     match run(env::args_os().skip(1).collect()) {
@@ -27,7 +31,8 @@ fn main() -> ExitCode {
 fn run(args: Vec<OsString>) -> Result<(), CliError> {
     let command = args.first().and_then(|arg| arg.to_str());
     match command {
-        Some("render") => render_command(&args[1..]),
+        Some("render") | Some("render-worker") => render_direct_command(&args[1..]),
+        Some("render-isolated") => render_isolated_command(&args[1..]),
         Some("--version" | "-V") => {
             println!("pdfrust-cli {}", env!("CARGO_PKG_VERSION"));
             Ok(())
@@ -40,8 +45,12 @@ fn run(args: Vec<OsString>) -> Result<(), CliError> {
     }
 }
 
-fn render_command(args: &[OsString]) -> Result<(), CliError> {
+fn render_direct_command(args: &[OsString]) -> Result<(), CliError> {
     let config = RenderConfig::parse(args)?;
+    render_direct(config)
+}
+
+fn render_direct(config: RenderConfig) -> Result<(), CliError> {
     let backend = PdfiumBackend::from_env().map_err(|err| CliError::Backend(err.to_string()))?;
     let options = ThumbnailOptions {
         page_index: config.page_index,
@@ -63,6 +72,149 @@ fn render_command(args: &[OsString]) -> Result<(), CliError> {
         source,
     })?;
     Ok(())
+}
+
+fn render_isolated_command(args: &[OsString]) -> Result<(), CliError> {
+    let config = RenderConfig::parse(args)?;
+    render_isolated(config)
+}
+
+fn render_isolated(config: RenderConfig) -> Result<(), CliError> {
+    let executable = env::current_exe().map_err(|source| {
+        CliError::Process(format!("failed to locate current executable: {source}"))
+    })?;
+    let temp_output = temporary_output_path(&config.output);
+    let _ = fs::remove_file(&temp_output);
+
+    let mut child = Command::new(executable)
+        .arg("render-worker")
+        .args(worker_args(&config, &temp_output))
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|source| CliError::Process(format!("failed to spawn render worker: {source}")))?;
+
+    match wait_for_worker(&mut child, config.timeout) {
+        Ok(()) => {
+            fs::rename(&temp_output, &config.output).map_err(|source| CliError::Io {
+                path: config.output,
+                source,
+            })?;
+            Ok(())
+        }
+        Err(error) => {
+            let _ = fs::remove_file(&temp_output);
+            Err(error)
+        }
+    }
+}
+
+fn worker_args(config: &RenderConfig, output: &Path) -> Vec<OsString> {
+    vec![
+        config.input.as_os_str().to_owned(),
+        OsString::from("--output"),
+        output.as_os_str().to_owned(),
+        OsString::from("--page-index"),
+        OsString::from(config.page_index.to_string()),
+        OsString::from("--max-edge"),
+        OsString::from(config.max_edge.to_string()),
+        OsString::from("--background"),
+        OsString::from(format_background(config.background)),
+        OsString::from("--timeout"),
+        OsString::from(config.timeout.as_secs().to_string()),
+    ]
+}
+
+fn wait_for_worker(child: &mut Child, timeout: Duration) -> Result<(), CliError> {
+    if timeout.is_zero() {
+        terminate_worker(child);
+        return Err(timeout_error());
+    }
+
+    let deadline = Instant::now()
+        .checked_add(timeout)
+        .ok_or_else(|| CliError::Process("timeout deadline overflow".to_string()))?;
+
+    loop {
+        if let Some(status) = child.try_wait().map_err(|source| {
+            CliError::Process(format!("failed to poll render worker: {source}"))
+        })? {
+            let stderr = read_worker_stderr(child);
+            return if status.success() {
+                Ok(())
+            } else {
+                Err(worker_failure(stderr, status.to_string()))
+            };
+        }
+
+        let now = Instant::now();
+        if now >= deadline {
+            terminate_worker(child);
+            return Err(timeout_error());
+        }
+
+        thread::sleep((deadline - now).min(WORKER_POLL_INTERVAL));
+    }
+}
+
+fn terminate_worker(child: &mut Child) {
+    let _ = child.kill();
+    let _ = child.wait();
+    let _ = read_worker_stderr(child);
+}
+
+fn read_worker_stderr(child: &mut Child) -> String {
+    let mut stderr = String::new();
+    if let Some(mut pipe) = child.stderr.take() {
+        let _ = pipe.read_to_string(&mut stderr);
+    }
+    stderr.trim().to_string()
+}
+
+fn worker_failure(stderr: String, fallback: String) -> CliError {
+    parse_worker_render_error(&stderr).unwrap_or_else(|| {
+        let message = if stderr.is_empty() { fallback } else { stderr };
+        CliError::Render {
+            class: "internal",
+            message,
+        }
+    })
+}
+
+fn parse_worker_render_error(stderr: &str) -> Option<CliError> {
+    let rest = stderr.strip_prefix("render error [")?;
+    let (class, message) = rest.split_once("]: ")?;
+    Some(CliError::Render {
+        class: stable_error_class(class),
+        message: message.to_string(),
+    })
+}
+
+fn stable_error_class(class: &str) -> &'static str {
+    match class {
+        "encrypted" => "encrypted",
+        "malformed" => "malformed",
+        "unsupported" => "unsupported",
+        "timeout" => "timeout",
+        _ => "internal",
+    }
+}
+
+fn timeout_error() -> CliError {
+    CliError::Render {
+        class: ThumbnailError::Timeout.class().as_str(),
+        message: ThumbnailError::Timeout.to_string(),
+    }
+}
+
+fn temporary_output_path(output: &Path) -> PathBuf {
+    let parent = output.parent().unwrap_or_else(|| Path::new("."));
+    let file_name = output
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("thumbnail.png");
+    parent.join(format!(".{file_name}.{}.tmp", std::process::id()))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -146,6 +298,7 @@ impl RenderConfig {
 enum CliError {
     Usage(String),
     Backend(String),
+    Process(String),
     Render {
         class: &'static str,
         message: String,
@@ -162,6 +315,7 @@ impl fmt::Display for CliError {
         match self {
             Self::Usage(message) => write!(f, "usage error: {message}"),
             Self::Backend(message) => write!(f, "backend error: {message}"),
+            Self::Process(message) => write!(f, "process error: {message}"),
             Self::Render { class, message } => write!(f, "render error [{class}]: {message}"),
             Self::Encode(message) => write!(f, "PNG encode error: {message}"),
             Self::Io { path, source } => {
@@ -221,6 +375,13 @@ fn parse_background(value: &str) -> Result<Rgba, CliError> {
             "--background must be #RRGGBB or #RRGGBBAA".to_string(),
         )),
     }
+}
+
+fn format_background(color: Rgba) -> String {
+    format!(
+        "#{:02x}{:02x}{:02x}{:02x}",
+        color.r, color.g, color.b, color.a
+    )
 }
 
 fn encode_rgba_png(thumbnail: &pdfrust_thumbnail::Thumbnail) -> Result<Vec<u8>, CliError> {
@@ -310,7 +471,7 @@ fn crc32(bytes: impl IntoIterator<Item = u8>) -> u32 {
 
 fn print_usage() {
     println!(
-        "Usage: pdfrust-cli render <input.pdf> --output <output.png> \
+        "Usage: pdfrust-cli <render|render-isolated> <input.pdf> --output <output.png> \
          [--page-index N] [--max-edge N] [--background #RRGGBB] [--timeout SECONDS]"
     );
 }
@@ -347,6 +508,45 @@ mod tests {
                 b: 0x30,
                 a: 0xff,
             }
+        );
+    }
+
+    #[test]
+    fn format_background_should_emit_rgba_hex() {
+        let color = Rgba {
+            r: 0x10,
+            g: 0x20,
+            b: 0x30,
+            a: 0x40,
+        };
+
+        assert_eq!(format_background(color), "#10203040");
+    }
+
+    #[test]
+    fn temporary_output_path_should_stay_next_to_target() {
+        let output = Path::new("target/pdfrust-thumbnails/text-page.png");
+
+        let temporary = temporary_output_path(output);
+
+        assert_eq!(temporary.parent(), output.parent());
+        assert!(temporary
+            .file_name()
+            .and_then(|name| name.to_str())
+            .expect("file name")
+            .starts_with(".text-page.png."));
+    }
+
+    #[test]
+    fn worker_failure_should_preserve_render_error_class() {
+        let error = worker_failure(
+            "render error [malformed]: PDF is malformed".to_string(),
+            "fallback".to_string(),
+        );
+
+        assert_eq!(
+            error.to_string(),
+            "render error [malformed]: PDF is malformed"
         );
     }
 

@@ -19,9 +19,7 @@ Allowed statuses:
 
 ## Todo
 
-| ID | Milestone | Phase | Size | Depends On |
-| --- | --- | --- | --- | --- |
-| 0020 | [Child Process Render Runner](0020-child-process-render-runner.md) | 1 | medium | 0019 |
+No milestones are currently todo.
 
 ## In Progress
 
@@ -50,6 +48,7 @@ No milestones are currently in progress.
 | 0017 | [Run Local PDFium Build](0017-run-local-pdfium-build.md) | 1 | medium | 2026-06-24 |
 | 0018 | [Live Thumbnail Fixture Render](0018-live-thumbnail-fixture-render.md) | 1 | small | 2026-06-24 |
 | 0019 | [Timeout And Isolation Decision](0019-timeout-and-isolation-decision.md) | 1 | small | 2026-06-24 |
+| 0020 | [Child Process Render Runner](0020-child-process-render-runner.md) | 1 | medium | 2026-06-24 |
 
 ## Update Rules
 

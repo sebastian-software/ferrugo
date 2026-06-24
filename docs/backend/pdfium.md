@@ -64,3 +64,19 @@ cargo run -p pdfrust-cli -- render fixtures/generated/text-page.pdf \
   --background '#ffffff' \
   --timeout 5
 ```
+
+For product-facing timeout behavior, use the isolated runner. It spawns a
+single-use worker process and kills it if the wall-clock timeout expires:
+
+```sh
+cargo run -p pdfrust-cli -- render-isolated fixtures/generated/text-page.pdf \
+  --output target/pdfrust-thumbnails/text-page.png \
+  --page-index 0 \
+  --max-edge 1024 \
+  --background '#ffffff' \
+  --timeout 5
+```
+
+`render-worker` is a private child-process entry point. Callers should use
+`render` for direct trusted probes or `render-isolated` for hard timeout
+semantics.
