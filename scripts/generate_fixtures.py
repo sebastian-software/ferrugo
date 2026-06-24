@@ -134,6 +134,42 @@ def image_xobject_pdf() -> bytes:
     return pdf.render(catalog)
 
 
+def embedded_font_pdf() -> bytes:
+    pdf = Pdf()
+    content = b"BT /F1 18 Tf 20 60 Td (embedded font fixture) Tj ET"
+    font_program = b"fake-truetype-font-program"
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 180 100] "
+        "/Resources << /Font << /F1 4 0 R >> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    font = pdf.add(
+        "<< /Type /Font /Subtype /TrueType /BaseFont /EmbeddedFixture "
+        "/FontDescriptor 6 0 R >>"
+    )
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    descriptor = pdf.add(
+        "<< /Type /FontDescriptor /FontName /EmbeddedFixture /FontFile2 7 0 R >>"
+    )
+    font_file = pdf.add(
+        b"<< /Length "
+        + str(len(font_program)).encode("ascii")
+        + b" >>\nstream\n"
+        + font_program
+        + b"\nendstream"
+    )
+    assert font == 4
+    assert descriptor == 6
+    assert font_file == 7
+    return pdf.render(catalog)
+
+
 def write(name: str, data: bytes) -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     (OUT / name).write_bytes(data)
@@ -169,6 +205,7 @@ def main() -> None:
     )
     write("form-xobject.pdf", form_xobject_pdf())
     write("image-xobject.pdf", image_xobject_pdf())
+    write("embedded-font.pdf", embedded_font_pdf())
 
 
 if __name__ == "__main__":

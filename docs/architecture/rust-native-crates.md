@@ -158,8 +158,9 @@ XObjects. Filtered inline images remain explicit unsupported cases until the
 image-filter milestone.
 Basic text rasterization uses an internal 5x7 ASCII fallback font for the first
 visible text milestone. It renders positioned text display-list runs using the
-captured text origin, font size, and fill color, and `pdfrust-native` resolves
-simple page `/Resources /Font` entries into lightweight font descriptors. This
-is intentionally a visible fallback rather than true Base14/embedded-font
-rasterization; full font program loading, CMaps, and glyph outlines remain
-later milestones.
+captured text origin, font size, and fill color. `pdfrust-native` resolves page
+`/Resources /Font` entries into font descriptors, and the render layer loads
+bounded embedded Type1, TrueType, and CFF font program streams behind a small
+object-identity cache. The current rasterizer still uses the visible fallback
+font; CMaps, glyph outlines, and true font-backed rasterization remain later
+milestones.

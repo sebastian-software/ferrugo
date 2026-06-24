@@ -1,6 +1,6 @@
 # 0042: Font Program Loading
 
-Status: todo
+Status: done
 Phase: 5
 Size: medium
 Depends on: 0041b
@@ -45,4 +45,13 @@ office-like PDFs.
 
 ## Completion Notes
 
-Empty until done.
+- Implemented bounded font-program loading for Type1, TrueType, and CFF
+  streams, including descriptor resolution, typed fallback/unsupported errors,
+  and a per-resource-build cache keyed by stream object identity and program
+  kind.
+- Added deterministic `embedded-font.pdf` fixture coverage and native backend
+  smoke coverage for embedded font resources.
+- Validation: `cargo fmt --check`, `cargo check`, `cargo test`,
+  native CLI render smoke for `fixtures/generated/embedded-font.pdf`,
+  `cargo clippy --all-targets --all-features -- -D warnings`, and
+  `git diff --check`.

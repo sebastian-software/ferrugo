@@ -25,6 +25,7 @@ The initial seed set covers:
 - image placement through an inline image stream
 - image placement through an Image XObject
 - Form XObject invocation
+- embedded TrueType font resource resolution
 
 ## Local Corpora
 

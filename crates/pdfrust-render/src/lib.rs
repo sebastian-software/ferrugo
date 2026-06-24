@@ -10,7 +10,7 @@ use pdfrust_content::{
 };
 use pdfrust_object::{
     ClassicDocument, GenerationNumber, IndirectObject, ModernDocument, ObjectId, ObjectNumber,
-    ObjectValue, Reference, StreamObject,
+    ObjectValue, Reference, StreamDecodeOptions, StreamObject,
 };
 use pdfrust_syntax::{ByteOffset, PdfBytes, PdfName, PdfNumber, PdfPrimitive, PdfString};
 use pdfrust_thumbnail::{PixelFormat, Rgba};
@@ -29,6 +29,9 @@ pub const DEFAULT_DISPLAY_ITEM_LIMIT: usize = 8_192;
 
 /// Default maximum bytes in one decoded text run.
 pub const DEFAULT_TEXT_RUN_BYTES_LIMIT: usize = 64 * 1024;
+
+/// Default maximum decoded bytes for one embedded font program.
+pub const DEFAULT_FONT_PROGRAM_BYTES_LIMIT: usize = 16 * 1024 * 1024;
 
 /// Default maximum decoded bytes for one image XObject.
 pub const DEFAULT_IMAGE_BYTES_LIMIT: usize = 32 * 1024 * 1024;
@@ -990,22 +993,93 @@ impl<'a> ImageObjectResolver<'a> for ModernDocument<'a> {
     }
 }
 
-/// Lightweight font descriptor used before full font loading lands.
+/// Supported high-level PDF font subtype metadata.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FontSubtype {
+    /// Simple Type 1 font.
+    Type1,
+    /// Simple TrueType font.
+    TrueType,
+    /// Type 0 composite font.
+    Type0,
+    /// Type 3 PDF content font.
+    Type3,
+    /// CIDFontType0 descendant font.
+    CidFontType0,
+    /// CIDFontType2 descendant font.
+    CidFontType2,
+}
+
+/// Loaded embedded font program kind.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum FontProgramKind {
+    /// Type 1 font program from `/FontFile`.
+    Type1,
+    /// TrueType font program from `/FontFile2`.
+    TrueType,
+    /// Compact Font Format program from `/FontFile3`.
+    Cff,
+}
+
+/// Cache key for an embedded font program.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct FontProgramKey {
+    /// Indirect object reference containing the font program stream.
+    pub reference: Reference,
+    /// Decoded font program kind.
+    pub kind: FontProgramKind,
+}
+
+/// Loaded embedded font program bytes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FontProgram {
+    /// Cache key identifying this program.
+    pub key: FontProgramKey,
+    /// Decoded font program bytes.
+    pub bytes: Arc<[u8]>,
+}
+
+/// Font descriptor used by text display-list construction.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FontDescriptor {
     /// Resource name used by content streams, without the leading slash.
     pub resource_name: Vec<u8>,
     /// Optional base font name from page resources.
     pub base_font: Option<Vec<u8>>,
+    /// Optional PDF font subtype.
+    pub subtype: Option<FontSubtype>,
+    /// Optional indirect `/FontDescriptor` object reference.
+    pub descriptor_reference: Option<Reference>,
+    /// Optional loaded embedded font program.
+    pub program: Option<FontProgram>,
 }
 
 impl FontDescriptor {
-    /// Creates a lightweight font descriptor.
+    /// Creates a lightweight fallback font descriptor.
     #[must_use]
     pub fn new(resource_name: impl Into<Vec<u8>>, base_font: Option<impl Into<Vec<u8>>>) -> Self {
         Self {
             resource_name: resource_name.into(),
             base_font: base_font.map(Into::into),
+            subtype: None,
+            descriptor_reference: None,
+            program: None,
+        }
+    }
+
+    fn loaded(
+        resource_name: impl Into<Vec<u8>>,
+        base_font: Option<Vec<u8>>,
+        subtype: Option<FontSubtype>,
+        descriptor_reference: Option<Reference>,
+        program: Option<FontProgram>,
+    ) -> Self {
+        Self {
+            resource_name: resource_name.into(),
+            base_font,
+            subtype,
+            descriptor_reference,
+            program,
         }
     }
 }
@@ -1029,6 +1103,35 @@ impl FontResources {
         Self { fonts }
     }
 
+    /// Resolves font resources from a PDF `/Font` resource dictionary.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`GraphicsError`] when a font resource is malformed, references a
+    /// missing object, uses an unsupported embedded program kind, or decodes
+    /// beyond the configured font byte budget.
+    pub fn from_font_dictionary<'a, R>(
+        dictionary: &[(PdfName<'a>, PdfPrimitive<'a>)],
+        resolver: &'a R,
+        options: DisplayListOptions,
+    ) -> GraphicsResult<Self>
+    where
+        R: FontObjectResolver<'a> + ?Sized,
+    {
+        let mut cache = FontProgramCache::default();
+        let mut fonts = Vec::new();
+        for (name, value) in dictionary {
+            fonts.push(decode_font_resource(
+                *name,
+                value,
+                resolver,
+                &mut cache,
+                options.max_font_program_bytes,
+            )?);
+        }
+        Ok(Self { fonts })
+    }
+
     /// Returns the font matching a PDF resource name.
     #[must_use]
     pub fn get(&self, name: PdfName<'_>) -> Option<&FontDescriptor> {
@@ -1036,6 +1139,243 @@ impl FontResources {
             .iter()
             .find(|font| font.resource_name.as_slice() == name.as_bytes())
     }
+}
+
+/// Resolves font and font descriptor references from a loaded PDF document.
+pub trait FontObjectResolver<'a> {
+    /// Resolves an indirect object reference.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`GraphicsError`] when object-stream parsing fails.
+    fn resolve_font_object(
+        &'a self,
+        reference: Reference,
+    ) -> GraphicsResult<Option<IndirectObject<'a>>>;
+}
+
+impl<'a> FontObjectResolver<'a> for ClassicDocument<'a> {
+    fn resolve_font_object(
+        &'a self,
+        reference: Reference,
+    ) -> GraphicsResult<Option<IndirectObject<'a>>> {
+        Ok(self.objects.get(reference.id).cloned())
+    }
+}
+
+impl<'a> FontObjectResolver<'a> for ModernDocument<'a> {
+    fn resolve_font_object(
+        &'a self,
+        reference: Reference,
+    ) -> GraphicsResult<Option<IndirectObject<'a>>> {
+        self.get_object(reference.id).map_err(|error| {
+            GraphicsError::new(
+                error.offset(),
+                GraphicsErrorKind::ObjectModel {
+                    message: error.to_string(),
+                },
+            )
+        })
+    }
+}
+
+#[derive(Debug, Default)]
+struct FontProgramCache {
+    programs: Vec<FontProgram>,
+}
+
+impl FontProgramCache {
+    fn load(
+        &mut self,
+        key: FontProgramKey,
+        stream: &StreamObject<'_>,
+        max_font_program_bytes: usize,
+    ) -> GraphicsResult<FontProgram> {
+        if let Some(program) = self.programs.iter().find(|program| program.key == key) {
+            return Ok(program.clone());
+        }
+        let decoded = stream
+            .decode_with_options(StreamDecodeOptions {
+                max_decoded_len: max_font_program_bytes,
+            })
+            .map_err(|error| match error {
+                pdfrust_object::ObjectError::StreamLimitExceeded { .. } => GraphicsError::new(
+                    error.offset(),
+                    GraphicsErrorKind::FontProgramBytesOverflow {
+                        limit: max_font_program_bytes,
+                    },
+                ),
+                _ => GraphicsError::new(
+                    error.offset(),
+                    GraphicsErrorKind::ObjectModel {
+                        message: error.to_string(),
+                    },
+                ),
+            })?;
+        if decoded.len() > max_font_program_bytes {
+            return Err(GraphicsError::new(
+                None,
+                GraphicsErrorKind::FontProgramBytesOverflow {
+                    limit: max_font_program_bytes,
+                },
+            ));
+        }
+        let program = FontProgram {
+            key,
+            bytes: Arc::from(decoded),
+        };
+        self.programs.push(program.clone());
+        Ok(program)
+    }
+}
+
+fn decode_font_resource<'a, R>(
+    resource_name: PdfName<'a>,
+    value: &PdfPrimitive<'a>,
+    resolver: &'a R,
+    cache: &mut FontProgramCache,
+    max_font_program_bytes: usize,
+) -> GraphicsResult<FontDescriptor>
+where
+    R: FontObjectResolver<'a> + ?Sized,
+{
+    match value {
+        PdfPrimitive::Reference(_) => {
+            let reference = reference_from_primitive(value)
+                .ok_or_else(|| invalid_font_resource(resource_name.as_bytes()))?;
+            let object = resolver.resolve_font_object(reference)?.ok_or_else(|| {
+                GraphicsError::new(
+                    None,
+                    GraphicsErrorKind::MissingFontObject {
+                        name: resource_name.as_bytes().to_vec(),
+                    },
+                )
+            })?;
+            let ObjectValue::Primitive(PdfPrimitive::Dictionary(dictionary)) = object.value else {
+                return Err(invalid_font_resource(resource_name.as_bytes()));
+            };
+            decode_font_dictionary(
+                resource_name,
+                &dictionary,
+                resolver,
+                cache,
+                max_font_program_bytes,
+            )
+        }
+        PdfPrimitive::Dictionary(dictionary) => decode_font_dictionary(
+            resource_name,
+            dictionary,
+            resolver,
+            cache,
+            max_font_program_bytes,
+        ),
+        _ => Err(invalid_font_resource(resource_name.as_bytes())),
+    }
+}
+
+fn decode_font_dictionary<'a, R>(
+    resource_name: PdfName<'a>,
+    dictionary: &[(PdfName<'a>, PdfPrimitive<'a>)],
+    resolver: &'a R,
+    cache: &mut FontProgramCache,
+    max_font_program_bytes: usize,
+) -> GraphicsResult<FontDescriptor>
+where
+    R: FontObjectResolver<'a> + ?Sized,
+{
+    let base_font = optional_name(dictionary, b"BaseFont");
+    let subtype = optional_font_subtype(dictionary);
+    let (descriptor_reference, program) =
+        load_font_descriptor_program(dictionary, resolver, cache, max_font_program_bytes)?;
+    Ok(FontDescriptor::loaded(
+        resource_name.as_bytes().to_vec(),
+        base_font,
+        subtype,
+        descriptor_reference,
+        program,
+    ))
+}
+
+fn load_font_descriptor_program<'a, R>(
+    dictionary: &[(PdfName<'a>, PdfPrimitive<'a>)],
+    resolver: &'a R,
+    cache: &mut FontProgramCache,
+    max_font_program_bytes: usize,
+) -> GraphicsResult<(Option<Reference>, Option<FontProgram>)>
+where
+    R: FontObjectResolver<'a> + ?Sized,
+{
+    let Some(descriptor) = dictionary_value(dictionary, b"FontDescriptor") else {
+        return Ok((None, None));
+    };
+    match descriptor {
+        PdfPrimitive::Reference(_) => {
+            let reference = reference_from_primitive(descriptor)
+                .ok_or_else(|| invalid_font_resource(b"FontDescriptor"))?;
+            let object = resolver.resolve_font_object(reference)?.ok_or_else(|| {
+                GraphicsError::new(
+                    None,
+                    GraphicsErrorKind::MissingFontObject {
+                        name: b"FontDescriptor".to_vec(),
+                    },
+                )
+            })?;
+            let ObjectValue::Primitive(PdfPrimitive::Dictionary(descriptor_dictionary)) =
+                object.value
+            else {
+                return Err(invalid_font_resource(b"FontDescriptor"));
+            };
+            let program = load_font_program_from_descriptor(
+                &descriptor_dictionary,
+                resolver,
+                cache,
+                max_font_program_bytes,
+            )?;
+            Ok((Some(reference), program))
+        }
+        PdfPrimitive::Dictionary(descriptor_dictionary) => {
+            let program = load_font_program_from_descriptor(
+                descriptor_dictionary,
+                resolver,
+                cache,
+                max_font_program_bytes,
+            )?;
+            Ok((None, program))
+        }
+        _ => Err(invalid_font_resource(b"FontDescriptor")),
+    }
+}
+
+fn load_font_program_from_descriptor<'a, R>(
+    descriptor: &[(PdfName<'a>, PdfPrimitive<'a>)],
+    resolver: &'a R,
+    cache: &mut FontProgramCache,
+    max_font_program_bytes: usize,
+) -> GraphicsResult<Option<FontProgram>>
+where
+    R: FontObjectResolver<'a> + ?Sized,
+{
+    let Some((field, value, fixed_kind)) = embedded_font_program_entry(descriptor) else {
+        return Ok(None);
+    };
+    let reference = reference_from_primitive(value).ok_or_else(|| invalid_font_resource(field))?;
+    let object = resolver.resolve_font_object(reference)?.ok_or_else(|| {
+        GraphicsError::new(
+            None,
+            GraphicsErrorKind::MissingFontObject {
+                name: field.to_vec(),
+            },
+        )
+    })?;
+    let ObjectValue::Stream(stream) = object.value else {
+        return Err(invalid_font_resource(field));
+    };
+    let kind = match fixed_kind {
+        Some(kind) => kind,
+        None => font_file3_program_kind(stream.dictionary())?,
+    };
+    let key = FontProgramKey { reference, kind };
+    cache.load(key, &stream, max_font_program_bytes).map(Some)
 }
 
 /// Approximate axis-aligned path bounds.
@@ -1230,6 +1570,8 @@ pub struct DisplayListOptions {
     pub max_display_items: usize,
     /// Maximum bytes accepted in one decoded text run.
     pub max_text_run_bytes: usize,
+    /// Maximum decoded bytes accepted for one embedded font program.
+    pub max_font_program_bytes: usize,
     /// Maximum decoded bytes accepted for one image XObject.
     pub max_image_bytes: usize,
     /// Maximum allowed Form XObject recursion depth.
@@ -1243,6 +1585,7 @@ impl Default for DisplayListOptions {
             max_path_segments: DEFAULT_PATH_SEGMENT_LIMIT,
             max_display_items: DEFAULT_DISPLAY_ITEM_LIMIT,
             max_text_run_bytes: DEFAULT_TEXT_RUN_BYTES_LIMIT,
+            max_font_program_bytes: DEFAULT_FONT_PROGRAM_BYTES_LIMIT,
             max_image_bytes: DEFAULT_IMAGE_BYTES_LIMIT,
             max_form_recursion_depth: DEFAULT_FORM_RECURSION_DEPTH_LIMIT,
         }
@@ -3731,10 +4074,76 @@ fn xobject_references(dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)]) -> Vec<XOb
         .collect()
 }
 
-fn dictionary_value<'a>(
-    dictionary: &'a [(PdfName<'a>, PdfPrimitive<'a>)],
+type EmbeddedFontEntry<'a> = (&'static [u8], &'a PdfPrimitive<'a>, Option<FontProgramKind>);
+
+fn embedded_font_program_entry<'a>(
+    descriptor: &'a [(PdfName<'a>, PdfPrimitive<'a>)],
+) -> Option<EmbeddedFontEntry<'a>> {
+    dictionary_value(descriptor, b"FontFile")
+        .map(|value| (b"FontFile".as_slice(), value, Some(FontProgramKind::Type1)))
+        .or_else(|| {
+            dictionary_value(descriptor, b"FontFile2").map(|value| {
+                (
+                    b"FontFile2".as_slice(),
+                    value,
+                    Some(FontProgramKind::TrueType),
+                )
+            })
+        })
+        .or_else(|| {
+            dictionary_value(descriptor, b"FontFile3")
+                .map(|value| (b"FontFile3".as_slice(), value, None))
+        })
+}
+
+fn optional_name(dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)], key: &[u8]) -> Option<Vec<u8>> {
+    match dictionary_value(dictionary, key) {
+        Some(PdfPrimitive::Name(name)) => Some(name.as_bytes().to_vec()),
+        _ => None,
+    }
+}
+
+fn optional_font_subtype(dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)]) -> Option<FontSubtype> {
+    let Some(PdfPrimitive::Name(name)) = dictionary_value(dictionary, b"Subtype") else {
+        return None;
+    };
+    match name.as_bytes() {
+        b"Type1" => Some(FontSubtype::Type1),
+        b"TrueType" => Some(FontSubtype::TrueType),
+        b"Type0" => Some(FontSubtype::Type0),
+        b"Type3" => Some(FontSubtype::Type3),
+        b"CIDFontType0" => Some(FontSubtype::CidFontType0),
+        b"CIDFontType2" => Some(FontSubtype::CidFontType2),
+        _ => None,
+    }
+}
+
+fn font_file3_program_kind(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+) -> GraphicsResult<FontProgramKind> {
+    let Some(PdfPrimitive::Name(name)) = dictionary_value(dictionary, b"Subtype") else {
+        return Err(GraphicsError::new(
+            None,
+            GraphicsErrorKind::UnsupportedFontProgram {
+                name: b"FontFile3".to_vec(),
+            },
+        ));
+    };
+    match name.as_bytes() {
+        b"Type1C" | b"CIDFontType0C" => Ok(FontProgramKind::Cff),
+        _ => Err(GraphicsError::new(
+            None,
+            GraphicsErrorKind::UnsupportedFontProgram {
+                name: name.as_bytes().to_vec(),
+            },
+        )),
+    }
+}
+
+fn dictionary_value<'d, 'a>(
+    dictionary: &'d [(PdfName<'a>, PdfPrimitive<'a>)],
     key: &[u8],
-) -> Option<&'a PdfPrimitive<'a>> {
+) -> Option<&'d PdfPrimitive<'a>> {
     dictionary
         .iter()
         .find_map(|(name, value)| (name.as_bytes() == key).then_some(value))
@@ -3838,6 +4247,15 @@ fn invalid_image_resource(name: &[u8]) -> GraphicsError {
     GraphicsError::new(
         None,
         GraphicsErrorKind::InvalidImageResource {
+            name: name.to_vec(),
+        },
+    )
+}
+
+fn invalid_font_resource(name: &[u8]) -> GraphicsError {
+    GraphicsError::new(
+        None,
+        GraphicsErrorKind::InvalidFontResource {
             name: name.to_vec(),
         },
     )
@@ -4047,6 +4465,26 @@ pub enum GraphicsErrorKind {
         /// Missing PDF font resource name.
         name: Vec<u8>,
     },
+    /// Referenced font object was not present in the loaded document.
+    MissingFontObject {
+        /// Missing font resource name.
+        name: Vec<u8>,
+    },
+    /// Font resource dictionary or descriptor metadata is malformed.
+    InvalidFontResource {
+        /// Resource or field name related to the failure.
+        name: Vec<u8>,
+    },
+    /// Embedded font program kind is unsupported by this milestone.
+    UnsupportedFontProgram {
+        /// Unsupported font program subtype or field name.
+        name: Vec<u8>,
+    },
+    /// Decoded embedded font program exceeds the configured limit.
+    FontProgramBytesOverflow {
+        /// Configured decoded font program byte limit.
+        limit: usize,
+    },
     /// Text string uses an encoding outside the current ASCII stub policy.
     UnsupportedTextEncoding,
     /// Decoded text run exceeds the configured limit.
@@ -4165,6 +4603,22 @@ impl fmt::Display for GraphicsErrorKind {
             Self::FontNotSelected => f.write_str("text font has not been selected"),
             Self::MissingFont { name } => {
                 write!(f, "missing font resource {}", String::from_utf8_lossy(name))
+            }
+            Self::MissingFontObject { name } => write!(
+                f,
+                "missing font object for resource {}",
+                String::from_utf8_lossy(name)
+            ),
+            Self::InvalidFontResource { name } => {
+                write!(f, "invalid font resource {}", String::from_utf8_lossy(name))
+            }
+            Self::UnsupportedFontProgram { name } => write!(
+                f,
+                "unsupported font program {}",
+                String::from_utf8_lossy(name)
+            ),
+            Self::FontProgramBytesOverflow { limit } => {
+                write!(f, "decoded font program exceeds byte limit {limit}")
             }
             Self::UnsupportedTextEncoding => f.write_str("unsupported text encoding"),
             Self::TextRunOverflow { limit } => {
@@ -5045,6 +5499,122 @@ mod tests {
     }
 
     #[test]
+    fn font_resources_should_load_truetype_program() {
+        let document = load_font_program_pdf(
+            b"<< /Type /Font /Subtype /TrueType /BaseFont /TestFont /FontDescriptor 6 0 R >>",
+            b"<< /Type /FontDescriptor /FontName /TestFont /FontFile2 7 0 R >>",
+            b"<< /Length 4 >>",
+            b"font",
+        );
+        let resources =
+            font_resources_from_document(&document, &[("F1", 4)]).expect("valid font resources");
+        let font = resources.get(PdfName::new(b"F1")).expect("font resource");
+
+        assert_eq!(font.subtype, Some(FontSubtype::TrueType));
+        assert_eq!(font.base_font.as_deref(), Some(b"TestFont".as_slice()));
+        assert_eq!(
+            font.program.as_ref().map(|program| program.key.kind),
+            Some(FontProgramKind::TrueType)
+        );
+        assert_eq!(
+            font.program.as_ref().map(|program| &*program.bytes),
+            Some(b"font".as_slice())
+        );
+    }
+
+    #[test]
+    fn font_resources_should_share_program_cache_for_repeated_references() {
+        let document = load_font_program_pdf(
+            b"<< /Type /Font /Subtype /TrueType /BaseFont /TestFont /FontDescriptor 6 0 R >>",
+            b"<< /Type /FontDescriptor /FontName /TestFont /FontFile2 7 0 R >>",
+            b"<< /Length 4 >>",
+            b"font",
+        );
+        let resources = font_resources_from_document(&document, &[("F1", 4), ("F2", 4)])
+            .expect("valid font resources");
+        let first = resources
+            .get(PdfName::new(b"F1"))
+            .and_then(|font| font.program.as_ref())
+            .expect("first program");
+        let second = resources
+            .get(PdfName::new(b"F2"))
+            .and_then(|font| font.program.as_ref())
+            .expect("second program");
+
+        assert!(Arc::ptr_eq(&first.bytes, &second.bytes));
+    }
+
+    #[test]
+    fn font_resources_should_load_cff_fontfile3_program() {
+        let document = load_font_program_pdf(
+            b"<< /Type /Font /Subtype /Type1 /BaseFont /CffFont /FontDescriptor 6 0 R >>",
+            b"<< /Type /FontDescriptor /FontName /CffFont /FontFile3 7 0 R >>",
+            b"<< /Subtype /Type1C /Length 3 >>",
+            b"cff",
+        );
+        let resources =
+            font_resources_from_document(&document, &[("F1", 4)]).expect("valid font resources");
+        let font = resources.get(PdfName::new(b"F1")).expect("font resource");
+
+        assert_eq!(
+            font.program.as_ref().map(|program| program.key.kind),
+            Some(FontProgramKind::Cff)
+        );
+    }
+
+    #[test]
+    fn font_resources_should_enforce_program_byte_budget() {
+        let document = load_font_program_pdf(
+            b"<< /Type /Font /Subtype /TrueType /BaseFont /TestFont /FontDescriptor 6 0 R >>",
+            b"<< /Type /FontDescriptor /FontName /TestFont /FontFile2 7 0 R >>",
+            b"<< /Length 4 >>",
+            b"font",
+        );
+        let error = font_resources_from_document_with_options(
+            &document,
+            &[("F1", 4)],
+            DisplayListOptions {
+                max_font_program_bytes: 3,
+                ..DisplayListOptions::default()
+            },
+        )
+        .expect_err("font program should exceed configured budget");
+
+        assert_eq!(
+            error.kind(),
+            &GraphicsErrorKind::FontProgramBytesOverflow { limit: 3 }
+        );
+    }
+
+    #[test]
+    fn font_resources_should_keep_base_font_without_embedded_program() {
+        let document = generated_fixture_document("text-page.pdf");
+        let resources = FontResources::from_font_dictionary(
+            &[(
+                PdfName::new(b"F1"),
+                PdfPrimitive::Dictionary(vec![
+                    (
+                        PdfName::new(b"Subtype"),
+                        PdfPrimitive::Name(PdfName::new(b"Type1")),
+                    ),
+                    (
+                        PdfName::new(b"BaseFont"),
+                        PdfPrimitive::Name(PdfName::new(b"Helvetica")),
+                    ),
+                ]),
+            )],
+            &document,
+            DisplayListOptions::default(),
+        )
+        .expect("base font should be accepted as fallback");
+        let font = resources.get(PdfName::new(b"F1")).expect("font resource");
+
+        assert_eq!(font.subtype, Some(FontSubtype::Type1));
+        assert_eq!(font.base_font.as_deref(), Some(b"Helvetica".as_slice()));
+        assert!(font.program.is_none());
+    }
+
+    #[test]
     fn image_resources_should_decode_flate_rgb_xobject() {
         let document = load_image_xobject_pdf(
             b"q 64 0 0 64 28 28 cm /Im1 Do Q",
@@ -5547,6 +6117,34 @@ mod tests {
         FormResources::from_xobject_dictionary(&xobjects, document)
     }
 
+    fn font_resources_from_document(
+        document: &ClassicDocument<'_>,
+        resources: &[(&str, u32)],
+    ) -> GraphicsResult<FontResources> {
+        font_resources_from_document_with_options(
+            document,
+            resources,
+            DisplayListOptions::default(),
+        )
+    }
+
+    fn font_resources_from_document_with_options(
+        document: &ClassicDocument<'_>,
+        resources: &[(&str, u32)],
+        options: DisplayListOptions,
+    ) -> GraphicsResult<FontResources> {
+        let fonts = resources
+            .iter()
+            .map(|(name, object)| {
+                (
+                    PdfName::new(name.as_bytes()),
+                    PdfPrimitive::Reference(pdfrust_syntax::PdfReference::new(*object, 0)),
+                )
+            })
+            .collect::<Vec<_>>();
+        FontResources::from_font_dictionary(&fonts, document, options)
+    }
+
     fn content_stream_from_document(document: &ClassicDocument<'_>) -> Vec<u8> {
         let content_id = ObjectId::new(
             ObjectNumber::new(1).expect("object number"),
@@ -5603,6 +6201,31 @@ mod tests {
         let pdf = build_classic_pdf_from_objects(&objects);
         let leaked = Box::leak(pdf.into_boxed_slice());
         load_classic_document(PdfBytes::new(leaked)).expect("form XObject PDF should load")
+    }
+
+    fn load_font_program_pdf(
+        font_dictionary: &[u8],
+        descriptor_dictionary: &[u8],
+        font_stream_dictionary: &[u8],
+        font_stream: &[u8],
+    ) -> ClassicDocument<'static> {
+        let content_stream = b"BT /F1 12 Tf 10 20 Td (Hi) Tj ET";
+        let content_dictionary = format!("<< /Length {} >>", content_stream.len());
+        let objects = vec![
+            stream_object_bytes(1, content_dictionary.as_bytes(), content_stream),
+            indirect_object_bytes(
+                2,
+                b"<< /Type /Page /Parent 3 0 R /MediaBox [0 0 120 120] /Resources << /Font << /F1 4 0 R /F2 4 0 R >> >> /Contents 1 0 R >>",
+            ),
+            indirect_object_bytes(3, b"<< /Type /Pages /Kids [2 0 R] /Count 1 >>"),
+            indirect_object_bytes(4, font_dictionary),
+            indirect_object_bytes(5, b"<< /Type /Catalog /Pages 3 0 R >>"),
+            indirect_object_bytes(6, descriptor_dictionary),
+            stream_object_bytes(7, font_stream_dictionary, font_stream),
+        ];
+        let pdf = build_classic_pdf_from_objects(&objects);
+        let leaked = Box::leak(pdf.into_boxed_slice());
+        load_classic_document(PdfBytes::new(leaked)).expect("font program PDF should load")
     }
 
     fn indirect_object_bytes(number: u32, body: &[u8]) -> Vec<u8> {

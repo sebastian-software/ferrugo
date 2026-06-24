@@ -13,9 +13,9 @@ use pdfrust_object::{
 use pdfrust_render::{
     build_form_display_list, build_image_display_list, build_path_display_list,
     build_text_display_list, rasterize_images, rasterize_paths, rasterize_paths_into,
-    rasterize_text, DisplayListOptions, FontDescriptor, FontResources, FormResources,
-    GraphicsError, GraphicsErrorKind, ImageResources, PageGeometry, PageRotation, PageTransform,
-    PathBounds, PathRasterOptions, RasterError,
+    rasterize_text, DisplayListOptions, FontResources, FormResources, GraphicsError,
+    GraphicsErrorKind, ImageResources, PageGeometry, PageRotation, PageTransform, PathBounds,
+    PathRasterOptions, RasterError,
 };
 use pdfrust_syntax::{PdfBytes, PdfName, PdfPrimitive};
 use pdfrust_thumbnail::{
@@ -253,47 +253,27 @@ fn page_font_resources(
     };
     let resource_dictionary = match resources {
         PdfPrimitive::Dictionary(dictionary) => dictionary.as_slice(),
-        _ => return Ok(FontResources::empty()),
+        PdfPrimitive::Reference(reference) => {
+            let object_number =
+                ObjectNumber::new(reference.object).map_err(|_| ThumbnailError::Malformed)?;
+            let reference = Reference::new(ObjectId::new(
+                object_number,
+                GenerationNumber::new(reference.generation),
+            ));
+            let object = document
+                .objects
+                .get(reference.id)
+                .ok_or(ThumbnailError::Malformed)?;
+            object_dictionary(&object.value)?
+        }
+        _ => return Err(ThumbnailError::Malformed),
     };
     let Some(PdfPrimitive::Dictionary(fonts)) = dictionary_value(resource_dictionary, b"Font")
     else {
         return Ok(FontResources::empty());
     };
-    let mut descriptors = Vec::new();
-    for (name, value) in fonts {
-        let base_font = match value {
-            PdfPrimitive::Reference(reference) => {
-                let object_number =
-                    ObjectNumber::new(reference.object).map_err(|_| ThumbnailError::Malformed)?;
-                let reference = Reference::new(ObjectId::new(
-                    object_number,
-                    GenerationNumber::new(reference.generation),
-                ));
-                document
-                    .objects
-                    .get(reference.id)
-                    .and_then(|object| font_base_name(&object.value))
-            }
-            PdfPrimitive::Dictionary(dictionary) => dictionary_value(dictionary, b"BaseFont")
-                .and_then(|value| match value {
-                    PdfPrimitive::Name(name) => Some(name.as_bytes().to_vec()),
-                    _ => None,
-                }),
-            _ => None,
-        };
-        descriptors.push(FontDescriptor::new(name.as_bytes().to_vec(), base_font));
-    }
-    Ok(FontResources::new(descriptors))
-}
-
-fn font_base_name(value: &ObjectValue<'_>) -> Option<Vec<u8>> {
-    let ObjectValue::Primitive(PdfPrimitive::Dictionary(dictionary)) = value else {
-        return None;
-    };
-    match dictionary_value(dictionary, b"BaseFont") {
-        Some(PdfPrimitive::Name(name)) => Some(name.as_bytes().to_vec()),
-        _ => None,
-    }
+    FontResources::from_font_dictionary(fonts, document, DisplayListOptions::default())
+        .map_err(map_graphics_error)
 }
 
 fn decode_contents(
@@ -533,6 +513,27 @@ mod tests {
 
         assert_eq!(thumbnail.width, 300);
         assert_eq!(thumbnail.height, 160);
+        assert!(thumbnail
+            .bytes
+            .chunks_exact(4)
+            .any(|pixel| pixel != [255, 255, 255, 255]));
+    }
+
+    #[test]
+    fn native_backend_should_render_generated_embedded_font_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/embedded-font.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 180,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated embedded-font fixture should render through native backend");
+
+        assert_eq!(thumbnail.width, 180);
+        assert_eq!(thumbnail.height, 100);
         assert!(thumbnail
             .bytes
             .chunks_exact(4)
