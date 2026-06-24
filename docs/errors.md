@@ -44,6 +44,7 @@ preserving the public `unsupported` class:
 | `graphics.transparency` | Page requires unsupported soft-mask forms, transparency groups, or blend modes. | 0048-0049 |
 | `graphics.pattern-shading` | Page requires tiling patterns or shadings. | 0050 |
 | `graphics.stroke-clip` | Page depends on stroke joins, caps, dashes, or clipping fidelity. | 0051 |
+| `annotation.appearance` | Annotation appearance is missing, malformed, dynamically generated, or requires unsupported form/interaction behavior. | 0052 |
 
 These buckets are not API classes. They make support matrices and corpus
 reports stable without forcing downstream callers to depend on milestone-level

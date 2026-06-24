@@ -93,6 +93,13 @@ In progress:
   `FPDF_RenderPageBitmap` path, while native renders `900` non-white pixels.
   Keep this as native regression coverage until a form-fill-aware PDFium oracle
   path exists.
+- Unsupported and fallback policy is recorded under the
+  `annotation.appearance` bucket in `docs/errors.md`. The current native
+  renderer skips annotations without usable normal appearances, missing
+  annotation dictionaries, missing `/Rect`, missing `/AP`, missing `/N`, and
+  missing referenced appearance objects without aborting page rendering.
+  Dynamic appearance generation, JavaScript actions, and interactive form
+  behavior stay out of scope for this milestone.
 - PDFium/native comparison for `annotation-appearance.pdf` at `max-edge 120`:
   `120x120`, changed RGB pixels `0`, RGB MAE `0.0000`, p95 RGB delta `0`,
   max channel delta `0`, native non-white pixels `800`. Filled and outside
