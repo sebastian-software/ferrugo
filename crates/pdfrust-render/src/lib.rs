@@ -5028,6 +5028,9 @@ fn image_filter(dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)]) -> GraphicsResul
             Ok(ImageFilter::StreamDecoded)
         }
         PdfPrimitive::Name(name) if name.as_bytes() == b"DCTDecode" => Ok(ImageFilter::DctDecode),
+        PdfPrimitive::Name(name) if is_deferred_image_codec(name.as_bytes()) => {
+            Err(unsupported_image_filter(name.as_bytes()))
+        }
         PdfPrimitive::Name(name) => Err(GraphicsError::new(
             None,
             GraphicsErrorKind::UnsupportedImageFilter {
@@ -5042,6 +5045,9 @@ fn image_filter(dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)]) -> GraphicsResul
                     }
                     if name.as_bytes() == b"DCTDecode" {
                         return Ok(ImageFilter::DctDecode);
+                    }
+                    if is_deferred_image_codec(name.as_bytes()) {
+                        return Err(unsupported_image_filter(name.as_bytes()));
                     }
                     return Err(GraphicsError::new(
                         None,
@@ -5065,6 +5071,13 @@ fn image_filter(dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)]) -> GraphicsResul
             },
         )),
     }
+}
+
+fn is_deferred_image_codec(filter: &[u8]) -> bool {
+    matches!(
+        filter,
+        b"CCITTFaxDecode" | b"CCF" | b"JPXDecode" | b"JBIG2Decode"
+    )
 }
 
 fn require_unfiltered_inline_image(
@@ -5954,6 +5967,15 @@ fn invalid_image_resource(name: &[u8]) -> GraphicsError {
         None,
         GraphicsErrorKind::InvalidImageResource {
             name: name.to_vec(),
+        },
+    )
+}
+
+fn unsupported_image_filter(filter: &[u8]) -> GraphicsError {
+    GraphicsError::new(
+        None,
+        GraphicsErrorKind::UnsupportedImageFilter {
+            filter: filter.to_vec(),
         },
     )
 }
@@ -7745,6 +7767,28 @@ mod tests {
     }
 
     #[test]
+    fn image_resources_should_enforce_image_byte_budget() {
+        let document = load_image_xobject_pdf(
+            b"q 10 0 0 10 0 0 cm /Im1 Do Q",
+            b"<< /Type /XObject /Subtype /Image /Width 2 /Height 2 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Length 12 >>",
+            &[255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 0],
+        );
+        let error = image_resources_from_document_with_options(
+            &document,
+            DisplayListOptions {
+                max_image_bytes: 4,
+                ..DisplayListOptions::default()
+            },
+        )
+        .expect_err("image samples should exceed configured budget");
+
+        assert_eq!(
+            error.kind(),
+            &GraphicsErrorKind::ImageBytesOverflow { limit: 4 }
+        );
+    }
+
+    #[test]
     fn image_resources_should_apply_device_gray_decode_array() {
         let document = load_image_xobject_pdf(
             b"q 10 0 0 10 0 0 cm /Im1 Do Q",
@@ -8112,6 +8156,30 @@ mod tests {
     }
 
     #[test]
+    fn image_resources_should_report_unsupported_deferred_image_codecs() {
+        for filter in [b"CCITTFaxDecode".as_slice(), b"JPXDecode", b"JBIG2Decode"] {
+            let dictionary = format!(
+                "<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /{} /Length 1 >>",
+                String::from_utf8_lossy(filter)
+            );
+            let document = load_image_xobject_pdf(
+                b"q 10 0 0 10 0 0 cm /Im1 Do Q",
+                dictionary.as_bytes(),
+                &[0],
+            );
+            let error = image_resources_from_document(&document)
+                .expect_err("deferred codec should stay unsupported");
+
+            assert_eq!(
+                error.kind(),
+                &GraphicsErrorKind::UnsupportedImageFilter {
+                    filter: filter.to_vec(),
+                }
+            );
+        }
+    }
+
+    #[test]
     fn image_resources_should_report_unsupported_color_space() {
         let document = load_image_xobject_pdf(
             b"q 10 0 0 10 0 0 cm /Im1 Do Q",
@@ -8406,11 +8474,18 @@ mod tests {
     fn image_resources_from_document(
         document: &ClassicDocument<'_>,
     ) -> GraphicsResult<ImageResources> {
+        image_resources_from_document_with_options(document, DisplayListOptions::default())
+    }
+
+    fn image_resources_from_document_with_options(
+        document: &ClassicDocument<'_>,
+        options: DisplayListOptions,
+    ) -> GraphicsResult<ImageResources> {
         let xobjects = vec![(
             PdfName::new(b"Im1"),
             PdfPrimitive::Reference(pdfrust_syntax::PdfReference::new(4, 0)),
         )];
-        ImageResources::from_xobject_dictionary(&xobjects, document, DisplayListOptions::default())
+        ImageResources::from_xobject_dictionary(&xobjects, document, options)
     }
 
     fn form_resources_from_document(

@@ -119,8 +119,8 @@ samples are reference-counted so repeated `Do` placements share sample bytes.
 `FlateDecode` image streams also apply PNG-style `/DecodeParms /Predictor`
 values `10..=15` when the predictor metadata matches the image dimensions and
 8-bit component layout. Broader filter chains, CCITT/JPX, unsupported
-predictors, and full color management return typed unsupported errors until
-later image-filter and color-space milestones.
+predictors, JBIG2, and full color management return typed unsupported errors
+until later corpus-driven image-filter and color-space milestones.
 Form XObject support resolves form streams from `/XObject` resource
 dictionaries, decodes form content, applies form matrices, emits bounding-box
 clip placeholders, and recursively reuses the path display-list interpreter
