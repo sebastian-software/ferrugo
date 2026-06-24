@@ -1,6 +1,6 @@
 # 0041: Renderer Gap Triage And Support Matrix
 
-Status: todo
+Status: done
 Phase: 5
 Size: small
 Depends on: 0040
@@ -47,4 +47,29 @@ support matrix.
 
 ## Completion Notes
 
-Empty until done.
+- Added `docs/reports/native-renderer-support-matrix-2026-06-24.md` with
+  support levels, seed fixture status, local corpus categories, PDFium fallback
+  requirements, and ranked renderer gaps.
+- Updated `docs/errors.md` with internal native unsupported-feature buckets
+  while keeping the public thumbnail error taxonomy unchanged.
+- Classified 0040 failures:
+  - `form-xobject.pdf` is `unsupported` under
+    `renderer.form-xobject-composition`; it should be pulled forward before
+    the font pipeline, with final facade parity still covered by 0059.
+  - `inline-image.pdf` is `unsupported` under
+    `renderer.inline-image-stream`; it should be pulled forward before 0047
+    image filter coverage.
+- Confirmed PDFium remains required for faithful text, Form XObject
+  composition, inline images, real-world image filters, transparency, encrypted
+  files, and malformed recovery until the later milestones land.
+- Validation:
+  - `cargo fmt --check`
+  - `cargo check`
+  - `cargo test`
+  - `cargo run -p pdfrust-cli -- render-native fixtures/generated/page-size-letter.pdf --max-edge 256 --output target/pdfrust-thumbnails/coverage-page-size-letter-native.png`
+  - `cargo run -p pdfrust-cli -- render-native fixtures/generated/vector-paths.pdf --max-edge 256 --output target/pdfrust-thumbnails/coverage-vector-native.png`
+  - `cargo run -p pdfrust-cli -- render-native fixtures/generated/text-page.pdf --max-edge 256 --output target/pdfrust-thumbnails/coverage-text-native.png`
+  - `cargo run -p pdfrust-cli -- render-native fixtures/generated/image-xobject.pdf --max-edge 256 --output target/pdfrust-thumbnails/coverage-image-xobject-native.png`
+  - `cargo run -p pdfrust-cli -- render-native fixtures/generated/form-xobject.pdf --max-edge 256 --output target/pdfrust-thumbnails/coverage-form-native.png` returned `render error [unsupported]`.
+  - `cargo run -p pdfrust-cli -- render-native fixtures/generated/inline-image.pdf --max-edge 256 --output target/pdfrust-thumbnails/coverage-inline-image-native.png` produced a blank native image with `nonwhite=0`.
+  - `cargo clippy --all-targets --all-features -- -D warnings`
