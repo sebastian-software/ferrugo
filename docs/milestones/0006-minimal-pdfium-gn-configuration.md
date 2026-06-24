@@ -1,6 +1,6 @@
 # 0006: Minimal PDFium GN Configuration
 
-Status: todo
+Status: done
 Phase: 0
 Size: small
 Depends on: 0005
@@ -44,5 +44,9 @@ Create and document the minimal PDFium GN configuration for thumbnail rendering.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-24.
 
+- Added `docs/build/pdfium-gn-args.md`.
+- Documented the cut-down AGG, no-V8, no-XFA, no-Skia configuration.
+- Local `gn gen` could not be executed because `depot_tools` is not installed
+  in this environment.

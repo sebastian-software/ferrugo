@@ -21,7 +21,6 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
-| 0006 | [Minimal PDFium GN Configuration](0006-minimal-pdfium-gn-configuration.md) | 0 | small | 0005 |
 | 0007 | [PDFium Build Measurement Baseline](0007-pdfium-build-measurement-baseline.md) | 0 | medium | 0006 |
 | 0008 | [Fixture Policy And Seed Fixtures](0008-fixture-policy-and-seed-fixtures.md) | 0 | small | 0003 |
 | 0009 | [Rust Workspace Skeleton](0009-rust-workspace-skeleton.md) | 0 | small | 0003 |
@@ -46,6 +45,7 @@ No milestones are currently in progress.
 | 0003 | [Phase 0 Decision Baseline](0003-phase-0-decision-baseline.md) | 0 | small | 2026-06-24 |
 | 0004 | [License Files And Attribution Policy](0004-license-files-and-attribution-policy.md) | 0 | small | 2026-06-24 |
 | 0005 | [PDFium Source Checkout Recipe](0005-pdfium-source-checkout-recipe.md) | 0 | small | 2026-06-24 |
+| 0006 | [Minimal PDFium GN Configuration](0006-minimal-pdfium-gn-configuration.md) | 0 | small | 2026-06-24 |
 
 ## Update Rules
 
