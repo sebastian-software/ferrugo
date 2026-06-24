@@ -1,6 +1,6 @@
 # 0024: Indirect Objects And References
 
-Status: todo
+Status: done
 Phase: 1
 Size: medium
 Depends on: 0023
@@ -44,4 +44,12 @@ Load indirect PDF objects and references into a safe object model.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-24.
+
+- Added typed `ObjectNumber`, `GenerationNumber`, `ObjectId`, and `Reference`.
+- Added `IndirectObject<'a>` and `ObjectTable<'a>` with duplicate detection.
+- Added `parse_reference` for `12 0 R` style references.
+- Added `parse_indirect_object` for contiguous `obj ... endobj` slices.
+- Added typed `ObjectError` diagnostics with offsets where available.
+- Added tests for references, invalid IDs, indirect object parsing, missing
+  `endobj`, lookup, and duplicate rejection.

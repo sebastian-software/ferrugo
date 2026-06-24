@@ -95,6 +95,12 @@ impl<'a> ByteCursor<'a> {
         self.offset
     }
 
+    /// Returns the original input bytes behind the cursor.
+    #[must_use]
+    pub const fn input(self) -> &'a [u8] {
+        self.bytes
+    }
+
     /// Returns the unread bytes from the current offset.
     #[must_use]
     pub fn remaining(self) -> &'a [u8] {
@@ -531,6 +537,7 @@ mod tests {
     fn cursor_should_track_offsets_while_reading() {
         let mut cursor = PdfBytes::new(b"abc").cursor();
 
+        assert_eq!(cursor.input(), b"abc");
         assert_eq!(cursor.offset(), ByteOffset::new(0));
         assert_eq!(cursor.read_byte().expect("byte"), b'a');
         assert_eq!(cursor.offset(), ByteOffset::new(1));

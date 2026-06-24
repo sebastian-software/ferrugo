@@ -61,3 +61,8 @@ booleans, numbers, names, literal strings, hexadecimal strings, arrays, and
 dictionaries. Names and string contents are borrowed from the original input.
 Literal string escapes and hexadecimal string bytes are preserved raw for later
 semantic decoding.
+
+`pdfrust-object` owns typed indirect object IDs and references. Its first loader
+can parse contiguous `obj ... endobj` slices into `IndirectObject<'a>` values
+and store them in an `ObjectTable<'a>` with duplicate detection. Xref lookup and
+object-stream loading remain later milestones.
