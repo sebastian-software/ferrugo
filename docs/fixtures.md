@@ -61,6 +61,7 @@ The initial seed set covers:
 - ToUnicode text character-code mapping
 - Encoding Differences array mapping
 - text spacing, `TJ` fragmentation, and invisible text rendering mode
+- office-style ruled table layout with header fill and text cells
 
 ## Local Corpora
 

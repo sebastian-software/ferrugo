@@ -2079,6 +2079,27 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_render_generated_office_table_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/office-table.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 260,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated office table fixture should render through native backend");
+
+        assert_eq!(thumbnail.width, 260);
+        assert_eq!(thumbnail.height, 160);
+        assert!(thumbnail
+            .bytes
+            .chunks_exact(4)
+            .any(|pixel| pixel != [255, 255, 255, 255]));
+    }
+
+    #[test]
     fn native_backend_should_report_unsupported_missing_page() {
         let bytes = include_bytes!("../../../fixtures/generated/vector-paths.pdf");
         let error = NativeBackend::new()

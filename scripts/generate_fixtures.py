@@ -1082,6 +1082,28 @@ def text_spacing_pdf() -> bytes:
     )
 
 
+def office_table_pdf() -> bytes:
+    return page_pdf(
+        "[0 0 260 160]",
+        (
+            "q 0.94 0.96 1 rg 20 112 220 24 re f Q "
+            "q 0.15 0.22 0.36 RG 1 w "
+            "20 40 m 240 40 l 240 136 l 20 136 l h S "
+            "20 112 m 240 112 l S "
+            "20 88 m 240 88 l S "
+            "20 64 m 240 64 l S "
+            "90 40 m 90 136 l S "
+            "160 40 m 160 136 l S Q "
+            "BT /F1 11 Tf 28 122 Td (Item) Tj "
+            "70 0 Td (Q1) Tj "
+            "70 0 Td (Q2) Tj "
+            "-140 -24 Td (Alpha) Tj 70 0 Td (42) Tj 70 0 Td (55) Tj "
+            "-140 -24 Td (Beta) Tj 70 0 Td (37) Tj 70 0 Td (49) Tj "
+            "-140 -24 Td (Total) Tj 70 0 Td (79) Tj 70 0 Td (104) Tj ET"
+        ),
+    )
+
+
 def write(name: str, data: bytes) -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     (OUT / name).write_bytes(data)
@@ -1150,6 +1172,7 @@ def main() -> None:
     write("tounicode-text.pdf", tounicode_text_pdf())
     write("encoding-differences.pdf", encoding_differences_pdf())
     write("text-spacing.pdf", text_spacing_pdf())
+    write("office-table.pdf", office_table_pdf())
 
 
 if __name__ == "__main__":

@@ -27,6 +27,7 @@ fixtures/generated/malformed-xref-offset-drift.pdf	mixed-layout	scripts/generate
 fixtures/generated/optional-content-layer-off.pdf	presentation	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	optional-content,layer-off	Generated default-hidden optional content layer fixture.
 fixtures/generated/optional-content-layer-on.pdf	presentation	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	optional-content,layer-on	Generated default-visible optional content layer fixture.
 fixtures/generated/optional-content-ocmd.pdf	presentation	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	optional-content,ocmd	Generated optional content membership dictionary fixture.
+fixtures/generated/office-table.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,table,vector	Generated office-style table with header fill, ruled cells, and text.
 fixtures/generated/page-size-letter.pdf	browser-print	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	page-size,letter	Generated letter page geometry fixture.
 fixtures/generated/predictor-image.pdf	scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,flate,predictor	Generated Flate image PNG predictor fixture.
 fixtures/generated/radial-gradient.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	shading,radial-gradient	Generated DeviceRGB radial shading fixture.
