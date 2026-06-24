@@ -33,6 +33,7 @@ The initial seed set covers:
 - ExtGState Multiply and Screen path blend modes
 - axial DeviceRGB shading gradients
 - radial DeviceRGB shading gradients
+- colored tiling patterns
 - embedded TrueType font resource resolution
 - ToUnicode text character-code mapping
 - Encoding Differences array mapping

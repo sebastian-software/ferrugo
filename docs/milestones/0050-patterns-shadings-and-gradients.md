@@ -84,12 +84,21 @@ In progress:
   `/PatternType 1`, `/PaintType 1` stream resources, fill color-space
   selection through `cs /Pattern`, pattern selection through `/Name scn`, and
   bounded repeated sampling in path fills.
+- Sixth fixture slice adds generated `fixtures/generated/tiling-pattern.pdf`
+  through `scripts/generate_fixtures.py`, covering repeated red/blue colored
+  tiling-pattern fills.
+- PDFium/native comparison for `tiling-pattern.pdf` at `max-edge 120`:
+  `120x120`, exact pixel match with no changed pixels. Sample pixels at x
+  `5/15/25/35/115`, y `60` match PDFium and native:
+  `(255,0,0,255)`, `(0,0,255,255)`, `(255,0,0,255)`,
+  `(0,0,255,255)`, `(0,0,255,255)`.
 - Current validation:
   - `cargo fmt --check`
   - `git diff --check`
   - `cargo check`
   - `cargo test --quiet`
   - `cargo test -p pdfrust-render pattern -- --nocapture`
+  - `cargo test -p pdfrust-native tiling_pattern -- --nocapture`
   - `cargo test -p pdfrust-native axial_gradient -- --nocapture`
   - `cargo test -p pdfrust-native radial_gradient -- --nocapture`
   - `cargo test -p pdfrust-render shading -- --nocapture`
@@ -97,4 +106,6 @@ In progress:
   - `cargo run -p pdfrust-cli -- render-native fixtures/generated/axial-gradient.pdf --max-edge 120 --output target/pdfrust-thumbnails/axial-gradient-native-0050.png`
   - `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render fixtures/generated/radial-gradient.pdf --max-edge 120 --output target/pdfrust-thumbnails/radial-gradient-pdfium-0050.png`
   - `cargo run -p pdfrust-cli -- render-native fixtures/generated/radial-gradient.pdf --max-edge 120 --output target/pdfrust-thumbnails/radial-gradient-native-0050.png`
+  - `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render fixtures/generated/tiling-pattern.pdf --max-edge 120 --output target/pdfrust-thumbnails/tiling-pattern-pdfium-0050.png`
+  - `cargo run -p pdfrust-cli -- render-native fixtures/generated/tiling-pattern.pdf --max-edge 120 --output target/pdfrust-thumbnails/tiling-pattern-native-0050.png`
   - `cargo clippy --all-targets --all-features -- -D warnings`
