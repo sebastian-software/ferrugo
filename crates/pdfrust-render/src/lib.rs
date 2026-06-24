@@ -3879,6 +3879,12 @@ fn decode_image_xobject(
             },
         ));
     }
+    let mut decoded = decoded;
+    apply_image_decode(
+        &mut decoded,
+        color_space,
+        image_decode_ranges(stream.dictionary())?,
+    )?;
     Ok(ImageXObject {
         resource_name: resource_name.as_bytes().to_vec(),
         width,
@@ -3927,13 +3933,15 @@ fn decode_inline_image(
             },
         ));
     }
+    let mut samples = data.to_vec();
+    apply_image_decode(&mut samples, color_space, image_decode_ranges(attributes)?)?;
     Ok(ImageXObject {
         resource_name: b"inline-image".to_vec(),
         width,
         height,
         bits_per_component,
         color_space,
-        samples: Arc::from(data),
+        samples: Arc::from(samples),
     })
 }
 
@@ -4655,6 +4663,105 @@ fn image_color_space(
                 color_space: b"malformed".to_vec(),
             },
         )),
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ImageDecode {
+    ranges: [(f64, f64); 4],
+    len: usize,
+}
+
+fn image_decode_ranges(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+) -> GraphicsResult<Option<ImageDecode>> {
+    let Some(value) =
+        dictionary_value(dictionary, b"Decode").or_else(|| dictionary_value(dictionary, b"D"))
+    else {
+        return Ok(None);
+    };
+    let PdfPrimitive::Array(values) = value else {
+        return Err(GraphicsError::new(
+            None,
+            GraphicsErrorKind::InvalidImageResource {
+                name: b"Decode".to_vec(),
+            },
+        ));
+    };
+    let mut ranges = [(0.0, 1.0); 4];
+    let mut len = 0;
+    let mut pairs = values.chunks_exact(2);
+    for pair in &mut pairs {
+        if len >= ranges.len() {
+            return Err(GraphicsError::new(
+                None,
+                GraphicsErrorKind::InvalidImageResource {
+                    name: b"Decode".to_vec(),
+                },
+            ));
+        }
+        let min = primitive_number(&pair[0]).ok_or_else(|| {
+            GraphicsError::new(
+                None,
+                GraphicsErrorKind::InvalidImageResource {
+                    name: b"Decode".to_vec(),
+                },
+            )
+        })?;
+        let max = primitive_number(&pair[1]).ok_or_else(|| {
+            GraphicsError::new(
+                None,
+                GraphicsErrorKind::InvalidImageResource {
+                    name: b"Decode".to_vec(),
+                },
+            )
+        })?;
+        ranges[len] = (min, max);
+        len += 1;
+    }
+    if !pairs.remainder().is_empty() {
+        return Err(GraphicsError::new(
+            None,
+            GraphicsErrorKind::InvalidImageResource {
+                name: b"Decode".to_vec(),
+            },
+        ));
+    }
+    Ok(Some(ImageDecode { ranges, len }))
+}
+
+fn apply_image_decode(
+    samples: &mut [u8],
+    color_space: ImageColorSpace,
+    decode: Option<ImageDecode>,
+) -> GraphicsResult<()> {
+    let Some(decode) = decode else {
+        return Ok(());
+    };
+    let components = color_space.bytes_per_pixel();
+    if decode.len != components {
+        return Err(GraphicsError::new(
+            None,
+            GraphicsErrorKind::InvalidImageResource {
+                name: b"Decode".to_vec(),
+            },
+        ));
+    }
+    for pixel in samples.chunks_exact_mut(components) {
+        for (sample, (min, max)) in pixel.iter_mut().zip(decode.ranges[..decode.len].iter()) {
+            let normalized = f64::from(*sample) / 255.0;
+            let decoded = (min + normalized * (max - min)).clamp(0.0, 1.0);
+            *sample = (decoded * 255.0).round() as u8;
+        }
+    }
+    Ok(())
+}
+
+fn primitive_number(value: &PdfPrimitive<'_>) -> Option<f64> {
+    match value {
+        PdfPrimitive::Number(PdfNumber::Integer(value)) => Some(*value as f64),
+        PdfPrimitive::Number(PdfNumber::Real(value)) if value.is_finite() => Some(*value),
+        _ => None,
     }
 }
 
@@ -7042,11 +7149,40 @@ mod tests {
     }
 
     #[test]
+    fn image_resources_should_apply_device_gray_decode_array() {
+        let document = load_image_xobject_pdf(
+            b"q 10 0 0 10 0 0 cm /Im1 Do Q",
+            b"<< /Type /XObject /Subtype /Image /Width 2 /Height 1 /ColorSpace /DeviceGray /BitsPerComponent 8 /Decode [1 0] /Length 2 >>",
+            &[0, 255],
+        );
+        let resources = image_resources_from_document(&document).expect("valid image resources");
+        let image = resources.get(PdfName::new(b"Im1")).expect("image resource");
+
+        assert_eq!(image.color_space, ImageColorSpace::DeviceGray);
+        assert_eq!(&*image.samples, &[255, 0]);
+    }
+
+    #[test]
     fn image_resources_should_decode_device_cmyk_xobject() {
         let document = load_image_xobject_pdf(
             b"q 10 0 0 10 0 0 cm /Im1 Do Q",
             b"<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceCMYK /BitsPerComponent 8 /Length 4 >>",
             &[0, 255, 255, 0],
+        );
+        let resources =
+            image_resources_from_document(&document).expect("valid CMYK image resource");
+        let image = resources.get(PdfName::new(b"Im1")).expect("image resource");
+
+        assert_eq!(image.color_space, ImageColorSpace::DeviceCmyk);
+        assert_eq!(&*image.samples, &[0, 255, 255, 0]);
+    }
+
+    #[test]
+    fn image_resources_should_apply_device_cmyk_decode_array() {
+        let document = load_image_xobject_pdf(
+            b"q 10 0 0 10 0 0 cm /Im1 Do Q",
+            b"<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceCMYK /BitsPerComponent 8 /Decode [1 0 1 0 1 0 0 1] /Length 4 >>",
+            &[255, 0, 0, 0],
         );
         let resources =
             image_resources_from_document(&document).expect("valid CMYK image resource");

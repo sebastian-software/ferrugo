@@ -53,5 +53,8 @@ Empty until done.
 
 - Added DeviceCMYK image color-space recognition and allocation-light
   subtractive CMYK-to-RGB sampling in the rasterizer.
+- Added stack-backed image Decode array parsing for DeviceGray, DeviceRGB, and
+  DeviceCMYK samples, applying supported decode ranges in-place after stream
+  decoding.
 - Kept unsupported non-process color spaces typed; `Separation` remains an
   explicit unsupported color-space error.
