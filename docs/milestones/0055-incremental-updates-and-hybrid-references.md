@@ -61,8 +61,13 @@ In progress:
 - PDFium/native comparison for `incremental-update.pdf` at `max-edge 120`
   renders `1600` non-white pixels in both backends, with the later red content
   visible.
+- Hybrid-reference slice resolves classic trailer `/XRefStm` streams and adds
+  direct in-use xref-stream entries that are not already present in the
+  newest-first classic/incremental xref set. Existing classic entries keep
+  precedence; compressed xref-stream entries remain modern-loader territory.
 - Current validation:
   - `cargo test -p pdfrust-object incremental -- --nocapture`
+  - `cargo test -p pdfrust-object hybrid -- --nocapture`
   - `cargo test -p pdfrust-native incremental_update -- --nocapture`
   - `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render fixtures/generated/incremental-update.pdf --max-edge 120 --output target/pdfrust-thumbnails/incremental-update-pdfium-0055.png`
   - `cargo run -p pdfrust-cli -- render-native fixtures/generated/incremental-update.pdf --max-edge 120 --output target/pdfrust-thumbnails/incremental-update-native-0055.png`

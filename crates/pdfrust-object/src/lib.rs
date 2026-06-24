@@ -635,7 +635,8 @@ impl<'a> ObjectParser<'a> {
 pub fn load_classic_document(input: PdfBytes<'_>) -> ObjectResult<ClassicDocument<'_>> {
     let bytes = input.as_bytes();
     let startxref = locate_startxref(bytes)?;
-    let (xref, trailer) = parse_classic_xref_chain(bytes, startxref)?;
+    let (mut xref, trailer) = parse_classic_xref_chain(bytes, startxref)?;
+    extend_classic_xref_with_hybrid_stream(bytes, &mut xref, &trailer)?;
     let mut objects = ObjectTable::new();
 
     for entry in xref.entries() {
@@ -1061,6 +1062,33 @@ fn parse_classic_xref_chain<'a>(
 
 fn trailer_prev_offset(trailer: &Trailer<'_>) -> ObjectResult<Option<ByteOffset>> {
     dictionary_value(trailer.entries(), b"Prev")
+        .map(primitive_usize)
+        .transpose()
+        .map(|offset| offset.map(ByteOffset::new))
+}
+
+fn extend_classic_xref_with_hybrid_stream(
+    bytes: &[u8],
+    xref: &mut ClassicXrefTable,
+    trailer: &Trailer<'_>,
+) -> ObjectResult<()> {
+    let Some(offset) = trailer_xref_stream_offset(trailer)? else {
+        return Ok(());
+    };
+    let (hybrid_xref, _) = parse_xref_stream_and_trailer(bytes, offset)?;
+    for entry in hybrid_xref.entries() {
+        let XrefStreamEntry::InUse { id, offset } = *entry else {
+            continue;
+        };
+        if !xref.entries.iter().any(|existing| existing.id == id) {
+            xref.entries.push(ClassicXrefEntry { id, offset });
+        }
+    }
+    Ok(())
+}
+
+fn trailer_xref_stream_offset(trailer: &Trailer<'_>) -> ObjectResult<Option<ByteOffset>> {
+    dictionary_value(trailer.entries(), b"XRefStm")
         .map(primitive_usize)
         .transpose()
         .map(|offset| offset.map(ByteOffset::new))
@@ -2387,6 +2415,23 @@ mod tests {
     }
 
     #[test]
+    fn load_classic_document_should_include_hybrid_xref_stream_entries() {
+        let pdf = build_hybrid_reference_pdf();
+
+        let document = load_classic_document(PdfBytes::new(&pdf)).expect("hybrid document");
+
+        assert_eq!(document.objects.len(), 4);
+        assert_eq!(document.xref.entries().len(), 4);
+        assert!(document
+            .objects
+            .get(ObjectId::new(
+                ObjectNumber::new(4).expect("object number"),
+                GenerationNumber::new(0),
+            ))
+            .is_some());
+    }
+
+    #[test]
     fn load_classic_document_should_require_startxref() {
         let error =
             load_classic_document(PdfBytes::new(b"%PDF-1.7\n")).expect_err("missing startxref");
@@ -2571,6 +2616,47 @@ mod tests {
         pdf.extend_from_slice(
             format!(
                 "xref\n3 1\n{updated_object_3:010} 00000 n \ntrailer\n<< /Size 4 /Root 1 0 R /Prev {first_xref} >>\nstartxref\n{update_xref}\n%%EOF\n"
+            )
+            .as_bytes(),
+        );
+        pdf
+    }
+
+    fn build_hybrid_reference_pdf() -> Vec<u8> {
+        let mut pdf = b"%PDF-1.7\n".to_vec();
+        let object_1 = append_object(
+            &mut pdf,
+            b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n",
+        );
+        let object_2 = append_object(
+            &mut pdf,
+            b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n",
+        );
+        let object_3 = append_object(
+            &mut pdf,
+            b"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 160] /Contents 4 0 R >>\nendobj\n",
+        );
+        let object_4 = append_object(
+            &mut pdf,
+            b"4 0 obj\n<< /Length 1 >>\nstream\nq\nendstream\nendobj\n",
+        );
+        let xref_stream_offset = pdf.len();
+        let mut xref_data = Vec::new();
+        push_xref_entry(&mut xref_data, 1, object_4, 0);
+        let compressed_xref = zlib_compress(&xref_data);
+        pdf.extend_from_slice(
+            format!(
+                "5 0 obj\n<< /Type /XRef /Size 5 /W [1 4 2] /Index [4 1] /Length {} /Filter /FlateDecode >>\nstream\n",
+                compressed_xref.len()
+            )
+            .as_bytes(),
+        );
+        pdf.extend_from_slice(&compressed_xref);
+        pdf.extend_from_slice(b"\nendstream\nendobj\n");
+        let classic_xref = pdf.len();
+        pdf.extend_from_slice(
+            format!(
+                "xref\n0 4\n0000000000 65535 f \n{object_1:010} 00000 n \n{object_2:010} 00000 n \n{object_3:010} 00000 n \ntrailer\n<< /Size 5 /Root 1 0 R /XRefStm {xref_stream_offset} >>\nstartxref\n{classic_xref}\n%%EOF\n"
             )
             .as_bytes(),
         );
