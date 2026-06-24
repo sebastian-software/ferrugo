@@ -1,0 +1,10 @@
+# Copy this file to fixtures/local-corpus/metadata.toml for local-only PDFs.
+#
+# Do not commit files under fixtures/local-corpus/.
+
+[[document]]
+id = "example-public-or-private-id"
+path = "fixtures/local-corpus/example.pdf"
+source = "Describe where the file came from without copying private details."
+license = "local-only"
+notes = "What behavior this file is meant to probe."

@@ -1,6 +1,6 @@
 # 0008: Fixture Policy And Seed Fixtures
 
-Status: todo
+Status: done
 Phase: 0
 Size: small
 Depends on: 0003
@@ -42,5 +42,9 @@ Create the first fixture policy and seed a small, license-safe fixture set.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-24.
 
+- Added `docs/fixtures.md`.
+- Added local-only corpus ignore rules and metadata template.
+- Added `scripts/generate_fixtures.py`.
+- Generated the initial seed PDFs under `fixtures/generated/`.
