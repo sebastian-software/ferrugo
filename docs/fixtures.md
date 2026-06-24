@@ -44,6 +44,7 @@ The initial seed set covers:
 - AcroForm checkbox widget appearance state dictionaries
 - AcroForm signature placeholder widget appearance streams
 - optional content group default-visible and default-hidden layers
+- unsupported optional content membership dictionaries
 - axial DeviceRGB shading gradients
 - radial DeviceRGB shading gradients
 - colored tiling patterns

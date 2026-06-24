@@ -57,8 +57,13 @@ In progress:
   renders `3200` non-white pixels in both backends, with the optional red
   rectangle visible; `optional-content-layer-off.pdf` renders `1600` non-white
   pixels in both backends, with the optional rectangle hidden.
+- Unsupported-policy slice adds generated
+  `fixtures/generated/optional-content-ocmd.pdf` and verifies that `/OCMD`
+  membership dictionaries return `unsupported` instead of silently rendering a
+  potentially misleading thumbnail.
 - Current validation:
   - `cargo test -p pdfrust-native optional_content_layer -- --nocapture`
+  - `cargo test -p pdfrust-native optional_content_membership -- --nocapture`
   - `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render fixtures/generated/optional-content-layer-on.pdf --max-edge 120 --output target/pdfrust-thumbnails/optional-content-layer-on-pdfium-0054.png`
   - `cargo run -p pdfrust-cli -- render-native fixtures/generated/optional-content-layer-on.pdf --max-edge 120 --output target/pdfrust-thumbnails/optional-content-layer-on-native-0054.png`
   - `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render fixtures/generated/optional-content-layer-off.pdf --max-edge 120 --output target/pdfrust-thumbnails/optional-content-layer-off-pdfium-0054.png`

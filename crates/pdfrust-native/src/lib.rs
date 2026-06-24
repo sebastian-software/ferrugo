@@ -1698,6 +1698,22 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_report_unsupported_optional_content_membership_policy() {
+        let bytes = include_bytes!("../../../fixtures/generated/optional-content-ocmd.pdf");
+        let error = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 100,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect_err("OCMD policy should not render silently");
+
+        assert_eq!(error, ThumbnailError::Unsupported);
+    }
+
+    #[test]
     fn native_backend_should_render_generated_text_fixture() {
         let bytes = include_bytes!("../../../fixtures/generated/text-page.pdf");
         let thumbnail = ThumbnailBackend::render(

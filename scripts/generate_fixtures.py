@@ -774,6 +774,30 @@ def optional_content_layer_pdf(visible: bool) -> bytes:
     return pdf.render(catalog)
 
 
+def optional_content_ocmd_pdf() -> bytes:
+    pdf = Pdf()
+    content = b"/OC /Policy BDC 0.9 0 0 rg 20 20 40 40 re f EMC"
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 100 80] "
+        "/Resources << /Properties << /Policy 4 0 R >> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    policy = pdf.add("<< /Type /OCMD /OCGs [5 0 R] /P /AllOn >>")
+    group = pdf.add("<< /Type /OCG /Name (Unsupported Policy Layer) >>")
+    catalog = pdf.add(
+        f"<< /Type /Catalog /Pages {pages} 0 R "
+        f"/OCProperties << /OCGs [{group} 0 R] /D << /BaseState /ON >> >> >>"
+    )
+    assert policy == 4
+    return pdf.render(catalog)
+
+
 def embedded_font_pdf() -> bytes:
     pdf = Pdf()
     content = b"BT /F1 18 Tf 20 60 Td (embedded font fixture) Tj ET"
@@ -945,6 +969,7 @@ def main() -> None:
     write("acroform-signature-placeholder.pdf", acroform_signature_placeholder_pdf())
     write("optional-content-layer-on.pdf", optional_content_layer_pdf(visible=True))
     write("optional-content-layer-off.pdf", optional_content_layer_pdf(visible=False))
+    write("optional-content-ocmd.pdf", optional_content_ocmd_pdf())
     write("embedded-font.pdf", embedded_font_pdf())
     write("tounicode-text.pdf", tounicode_text_pdf())
     write("encoding-differences.pdf", encoding_differences_pdf())
