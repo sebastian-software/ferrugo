@@ -576,6 +576,36 @@ def link_annotation_appearance_pdf() -> bytes:
     return pdf.render(catalog)
 
 
+def highlight_annotation_appearance_pdf() -> bytes:
+    pdf = Pdf()
+    content = b""
+    appearance = b"1 1 0 rg 0 0 50 12 re f"
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 120 120] "
+        f"/Contents {contents} 0 R /Annots [5 0 R] >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    appearance_object = pdf.add(
+        b"<< /Type /XObject /Subtype /Form /BBox [0 0 50 12] /Length "
+        + str(len(appearance)).encode("ascii")
+        + b" >>\nstream\n"
+        + appearance
+        + b"\nendstream"
+    )
+    annotation = pdf.add(
+        "<< /Type /Annot /Subtype /Highlight /Rect [20 60 70 72] "
+        f"/QuadPoints [20 72 70 72 20 60 70 60] /AP << /N {appearance_object} 0 R >> >>"
+    )
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert annotation == 5
+    return pdf.render(catalog)
+
+
 def embedded_font_pdf() -> bytes:
     pdf = Pdf()
     content = b"BT /F1 18 Tf 20 60 Td (embedded font fixture) Tj ET"
@@ -740,6 +770,7 @@ def main() -> None:
     write("annotation-appearance.pdf", annotation_appearance_pdf())
     write("annotation-missing-appearance.pdf", annotation_missing_appearance_pdf())
     write("link-annotation-appearance.pdf", link_annotation_appearance_pdf())
+    write("highlight-annotation-appearance.pdf", highlight_annotation_appearance_pdf())
     write("embedded-font.pdf", embedded_font_pdf())
     write("tounicode-text.pdf", tounicode_text_pdf())
     write("encoding-differences.pdf", encoding_differences_pdf())
