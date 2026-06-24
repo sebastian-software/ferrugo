@@ -1,6 +1,6 @@
 # 0059: Native Backend Facade Parity
 
-Status: todo
+Status: in-progress
 Phase: 8
 Size: medium
 Depends on: 0058
@@ -47,4 +47,6 @@ PDFium backend for supported documents.
 
 ## Completion Notes
 
-Empty until done.
+- First slice maps native raster memory-budget exhaustion to the public
+  `unsupported` class instead of `internal`, preserving `internal` for backend
+  defects such as invalid options or allocation invariants.

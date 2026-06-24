@@ -50,6 +50,7 @@ preserving the public `unsupported` class:
 | `xref.incremental-hybrid` | Incremental or hybrid-reference structure is cyclic, over budget, malformed, or requires unsupported compressed hybrid entries. | 0055 |
 | `security.encryption` | Document declares encryption metadata and cannot be interpreted without an explicit password/decryption policy. | 0056 |
 | `parser.recovery` | Malformed structure requires bounded parser recovery, such as small xref object-offset drift. | 0057 |
+| `renderer.memory-budget` | Rendering exceeded a configured native memory or cache budget and should not be treated as an internal crash. | 0058-0059 |
 
 These buckets are not API classes. They make support matrices and corpus
 reports stable without forcing downstream callers to depend on milestone-level

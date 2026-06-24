@@ -17,8 +17,8 @@ use pdfrust_render::{
     decode_tiling_pattern, rasterize_images, rasterize_paths, rasterize_paths_into, rasterize_text,
     DisplayListOptions, ExtGraphicsStateResources, FontResources, FormResources, GraphicsError,
     GraphicsErrorKind, ImageResources, PageGeometry, PageRotation, PageTransform,
-    PageTransformOptions, PathBounds, PathRasterOptions, RasterError, ShadingResources,
-    TilingPatternResources,
+    PageTransformOptions, PathBounds, PathRasterOptions, RasterError, RasterErrorKind,
+    ShadingResources, TilingPatternResources,
 };
 use pdfrust_syntax::{PdfBytes, PdfName, PdfNumber, PdfPrimitive, PdfReference};
 use pdfrust_thumbnail::{
@@ -1107,7 +1107,13 @@ fn map_graphics_error(error: GraphicsError) -> ThumbnailError {
 }
 
 fn map_raster_error(error: RasterError) -> ThumbnailError {
-    ThumbnailError::internal(error.to_string())
+    match error.kind() {
+        RasterErrorKind::PageRasterPixelsOverflow { .. }
+        | RasterErrorKind::PathComplexityOverflow { .. }
+        | RasterErrorKind::TransparencyGroupPixelsOverflow { .. }
+        | RasterErrorKind::PatternTileOverflow { .. } => ThumbnailError::Unsupported,
+        _ => ThumbnailError::internal(error.to_string()),
+    }
 }
 
 fn map_object_error(error: ObjectError) -> ThumbnailError {
@@ -1177,6 +1183,15 @@ mod tests {
         assert_eq!(diagnostics.max_page_pixels, 16 * 1024 * 1024);
         assert_eq!(diagnostics.max_image_bytes, 32 * 1024 * 1024);
         assert_eq!(diagnostics.max_display_items, 8_192);
+    }
+
+    #[test]
+    fn raster_budget_errors_should_map_to_unsupported() {
+        let error = map_raster_error(RasterError::new(
+            RasterErrorKind::PageRasterPixelsOverflow { limit: 1 },
+        ));
+
+        assert_eq!(error, ThumbnailError::Unsupported);
     }
 
     #[test]
