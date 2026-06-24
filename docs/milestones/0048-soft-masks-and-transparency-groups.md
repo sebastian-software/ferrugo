@@ -1,6 +1,6 @@
 # 0048: Soft Masks And Transparency Groups
 
-Status: todo
+Status: in-progress
 Phase: 6
 Size: medium
 Depends on: 0047
@@ -45,4 +45,19 @@ PDF thumbnails.
 
 ## Completion Notes
 
-Empty until done.
+In progress:
+
+- First implementation slice adds `/SMask` image support for referenced 8-bit
+  DeviceGray Image XObjects with dimensions matching the parent image.
+- Soft-mask sample data is stored beside the decoded image samples as
+  `Arc<[u8]>`, so repeated image placements share both color and alpha buffers.
+- Added a dedicated soft-mask depth budget. Nested soft masks now fail with
+  `SoftMaskDepthOverflow`, while unsupported mask forms fail with
+  `UnsupportedSoftMask`.
+- The image raster path keeps the direct overwrite fast path for opaque pixels
+  and uses source-over compositing only for pixels whose soft-mask alpha is
+  below `255`.
+- Validation so far: `cargo fmt --check`, `git diff --check`,
+  `cargo test -p pdfrust-render soft_mask -- --nocapture`, `cargo check`,
+  `cargo test --quiet`,
+  `cargo clippy --all-targets --all-features -- -D warnings`.

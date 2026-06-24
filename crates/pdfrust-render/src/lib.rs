@@ -52,6 +52,9 @@ pub const DEFAULT_FONT_PROGRAM_BYTES_LIMIT: usize = 16 * 1024 * 1024;
 /// Default maximum decoded bytes for one image XObject.
 pub const DEFAULT_IMAGE_BYTES_LIMIT: usize = 32 * 1024 * 1024;
 
+/// Default maximum nested soft-mask image depth.
+pub const DEFAULT_SOFT_MASK_DEPTH_LIMIT: usize = 1;
+
 /// Default maximum Form XObject recursion depth.
 pub const DEFAULT_FORM_RECURSION_DEPTH_LIMIT: usize = 16;
 
@@ -636,6 +639,8 @@ pub struct ImageXObject {
     pub samples: Arc<[u8]>,
     /// Indexed color lookup bytes for Indexed images.
     pub indexed_lookup: Option<Arc<[u8]>>,
+    /// Optional 8-bit alpha mask samples matching the image dimensions.
+    pub soft_mask: Option<Arc<[u8]>>,
 }
 
 /// One placed image item captured before rasterization.
@@ -835,7 +840,9 @@ impl ImageResources {
             images.push(decode_image_xobject(
                 *name,
                 stream,
+                resolver,
                 options.max_image_bytes,
+                options.max_soft_mask_depth,
             )?);
         }
         Ok(Self {
@@ -2112,6 +2119,8 @@ pub struct DisplayListOptions {
     pub max_font_program_bytes: usize,
     /// Maximum decoded bytes accepted for one image XObject.
     pub max_image_bytes: usize,
+    /// Maximum nested soft-mask image depth.
+    pub max_soft_mask_depth: usize,
     /// Maximum allowed Form XObject recursion depth.
     pub max_form_recursion_depth: usize,
 }
@@ -2127,6 +2136,7 @@ impl Default for DisplayListOptions {
             max_cmap_entries: DEFAULT_CMAP_ENTRIES_LIMIT,
             max_font_program_bytes: DEFAULT_FONT_PROGRAM_BYTES_LIMIT,
             max_image_bytes: DEFAULT_IMAGE_BYTES_LIMIT,
+            max_soft_mask_depth: DEFAULT_SOFT_MASK_DEPTH_LIMIT,
             max_form_recursion_depth: DEFAULT_FORM_RECURSION_DEPTH_LIMIT,
         }
     }
@@ -3853,11 +3863,37 @@ fn decode_form_xobject(
     })
 }
 
-fn decode_image_xobject(
+fn decode_image_xobject<'a, R>(
     resource_name: PdfName<'_>,
-    stream: &StreamObject<'_>,
+    stream: &StreamObject<'a>,
+    resolver: &'a R,
     max_image_bytes: usize,
-) -> GraphicsResult<ImageXObject> {
+    max_soft_mask_depth: usize,
+) -> GraphicsResult<ImageXObject>
+where
+    R: ImageObjectResolver<'a> + ?Sized,
+{
+    decode_image_xobject_at_depth(
+        resource_name,
+        stream,
+        resolver,
+        max_image_bytes,
+        max_soft_mask_depth,
+        0,
+    )
+}
+
+fn decode_image_xobject_at_depth<'a, R>(
+    resource_name: PdfName<'_>,
+    stream: &StreamObject<'a>,
+    resolver: &'a R,
+    max_image_bytes: usize,
+    max_soft_mask_depth: usize,
+    soft_mask_depth: usize,
+) -> GraphicsResult<ImageXObject>
+where
+    R: ImageObjectResolver<'a> + ?Sized,
+{
     let width = required_u32(stream.dictionary(), b"Width")
         .or_else(|_| required_u32(stream.dictionary(), b"W"))
         .map_err(|_| invalid_image_resource(resource_name.as_bytes()))?;
@@ -3905,6 +3941,15 @@ fn decode_image_xobject(
         color_space.kind,
         image_decode_ranges(stream.dictionary())?,
     )?;
+    let soft_mask = soft_mask_samples(
+        stream.dictionary(),
+        resolver,
+        width,
+        height,
+        max_image_bytes,
+        max_soft_mask_depth,
+        soft_mask_depth,
+    )?;
     Ok(ImageXObject {
         resource_name: resource_name.as_bytes().to_vec(),
         width,
@@ -3913,7 +3958,83 @@ fn decode_image_xobject(
         color_space: color_space.kind,
         samples: Arc::from(decoded),
         indexed_lookup: color_space.indexed_lookup,
+        soft_mask,
     })
+}
+
+fn soft_mask_samples<'a, R>(
+    dictionary: &[(PdfName<'a>, PdfPrimitive<'a>)],
+    resolver: &'a R,
+    width: u32,
+    height: u32,
+    max_image_bytes: usize,
+    max_soft_mask_depth: usize,
+    soft_mask_depth: usize,
+) -> GraphicsResult<Option<Arc<[u8]>>>
+where
+    R: ImageObjectResolver<'a> + ?Sized,
+{
+    let Some(value) = dictionary_value(dictionary, b"SMask") else {
+        return Ok(None);
+    };
+    if matches!(value, PdfPrimitive::Name(name) if name.as_bytes() == b"None") {
+        return Ok(None);
+    }
+    if soft_mask_depth >= max_soft_mask_depth {
+        return Err(GraphicsError::new(
+            None,
+            GraphicsErrorKind::SoftMaskDepthOverflow {
+                limit: max_soft_mask_depth,
+            },
+        ));
+    }
+    let reference = reference_from_primitive(value).ok_or_else(|| {
+        GraphicsError::new(
+            None,
+            GraphicsErrorKind::UnsupportedSoftMask {
+                feature: b"SMask".to_vec(),
+            },
+        )
+    })?;
+    let object = resolver.resolve_image_object(reference)?.ok_or_else(|| {
+        GraphicsError::new(
+            None,
+            GraphicsErrorKind::MissingImageObject {
+                name: b"SMask".to_vec(),
+            },
+        )
+    })?;
+    let ObjectValue::Stream(stream) = &object.value else {
+        return Err(invalid_image_resource(b"SMask"));
+    };
+    if !dictionary_name_is(stream.dictionary(), b"Subtype", b"Image") {
+        return Err(GraphicsError::new(
+            None,
+            GraphicsErrorKind::UnsupportedSoftMask {
+                feature: b"Subtype".to_vec(),
+            },
+        ));
+    }
+    let mask = decode_image_xobject_at_depth(
+        PdfName::new(b"SMask"),
+        stream,
+        resolver,
+        max_image_bytes,
+        max_soft_mask_depth,
+        soft_mask_depth + 1,
+    )?;
+    if mask.width != width || mask.height != height {
+        return Err(invalid_image_resource(b"SMask"));
+    }
+    if mask.color_space != ImageColorSpace::DeviceGray {
+        return Err(GraphicsError::new(
+            None,
+            GraphicsErrorKind::UnsupportedSoftMask {
+                feature: b"ColorSpace".to_vec(),
+            },
+        ));
+    }
+    Ok(Some(mask.samples))
 }
 
 fn decode_inline_image(
@@ -3968,6 +4089,7 @@ fn decode_inline_image(
         color_space: color_space.kind,
         samples: Arc::from(samples),
         indexed_lookup: color_space.indexed_lookup,
+        soft_mask: None,
     })
 }
 
@@ -4726,7 +4848,7 @@ fn draw_image(
                 continue;
             }
             let pixel = sample_image(&image.image, sample.x, sample.y);
-            device.set_pixel(x, y, pixel)?;
+            composite_image_pixel(device, x, y, pixel)?;
         }
     }
     Ok(())
@@ -4748,6 +4870,7 @@ fn sample_image(image: &ImageXObject, x: f64, y: f64) -> Rgba {
     let sample_y = (((1.0 - y) * f64::from(image.height)).floor() as u32).min(image.height - 1);
     let index = (sample_y as usize * image.width as usize + sample_x as usize)
         * image.color_space.bytes_per_pixel();
+    let alpha = sample_soft_mask(image, sample_x, sample_y);
     match image.color_space {
         ImageColorSpace::DeviceGray => {
             let channel = image.samples[index];
@@ -4755,21 +4878,25 @@ fn sample_image(image: &ImageXObject, x: f64, y: f64) -> Rgba {
                 r: channel,
                 g: channel,
                 b: channel,
-                a: 255,
+                a: alpha,
             }
         }
         ImageColorSpace::DeviceRgb => Rgba {
             r: image.samples[index],
             g: image.samples[index + 1],
             b: image.samples[index + 2],
-            a: 255,
+            a: alpha,
         },
-        ImageColorSpace::DeviceCmyk => cmyk_to_rgba(
-            image.samples[index],
-            image.samples[index + 1],
-            image.samples[index + 2],
-            image.samples[index + 3],
-        ),
+        ImageColorSpace::DeviceCmyk => {
+            let mut rgba = cmyk_to_rgba(
+                image.samples[index],
+                image.samples[index + 1],
+                image.samples[index + 2],
+                image.samples[index + 3],
+            );
+            rgba.a = alpha;
+            rgba
+        }
         ImageColorSpace::IndexedGray => {
             let lookup = image.indexed_lookup.as_deref().unwrap_or_default();
             let index = usize::from(image.samples[index]).min(lookup.len().saturating_sub(1));
@@ -4778,7 +4905,7 @@ fn sample_image(image: &ImageXObject, x: f64, y: f64) -> Rgba {
                 r: channel,
                 g: channel,
                 b: channel,
-                a: 255,
+                a: alpha,
             }
         }
         ImageColorSpace::IndexedRgb => {
@@ -4793,10 +4920,48 @@ fn sample_image(image: &ImageXObject, x: f64, y: f64) -> Rgba {
                 r: rgb[0],
                 g: rgb[1],
                 b: rgb[2],
-                a: 255,
+                a: alpha,
             }
         }
     }
+}
+
+fn sample_soft_mask(image: &ImageXObject, sample_x: u32, sample_y: u32) -> u8 {
+    let Some(mask) = &image.soft_mask else {
+        return 255;
+    };
+    let index = sample_y as usize * image.width as usize + sample_x as usize;
+    mask.get(index).copied().unwrap_or(255)
+}
+
+fn composite_image_pixel(
+    device: &mut RasterDevice,
+    x: u32,
+    y: u32,
+    source: Rgba,
+) -> RasterResult<()> {
+    if source.a == 255 {
+        return device.set_pixel(x, y, source);
+    }
+    if source.a == 0 {
+        return Ok(());
+    }
+    let dest = device.pixel(x, y)?;
+    let coverage = f64::from(source.a) / 255.0;
+    let inv = 1.0 - coverage;
+    device.set_pixel(
+        x,
+        y,
+        Rgba {
+            r: blend_channel(source.r, dest.r, coverage, inv),
+            g: blend_channel(source.g, dest.g, coverage, inv),
+            b: blend_channel(source.b, dest.b, coverage, inv),
+            a: f64::from(source.a)
+                .mul_add(1.0, f64::from(dest.a) * inv)
+                .round()
+                .min(255.0) as u8,
+        },
+    )
 }
 
 fn cmyk_to_rgba(cyan: u8, magenta: u8, yellow: u8, key: u8) -> Rgba {
@@ -6314,6 +6479,16 @@ pub enum GraphicsErrorKind {
         /// Configured decoded image byte limit.
         limit: usize,
     },
+    /// Soft-mask recursion exceeds the configured limit.
+    SoftMaskDepthOverflow {
+        /// Configured soft-mask depth limit.
+        limit: usize,
+    },
+    /// Soft-mask metadata uses a feature outside the current support.
+    UnsupportedSoftMask {
+        /// Unsupported soft-mask feature name.
+        feature: Vec<u8>,
+    },
     /// Form resource name was not present in the resource map.
     MissingForm {
         /// Missing form resource name.
@@ -6482,6 +6657,14 @@ impl fmt::Display for GraphicsErrorKind {
             Self::ImageBytesOverflow { limit } => {
                 write!(f, "decoded image exceeds byte limit {limit}")
             }
+            Self::SoftMaskDepthOverflow { limit } => {
+                write!(f, "soft-mask recursion exceeds depth limit {limit}")
+            }
+            Self::UnsupportedSoftMask { feature } => write!(
+                f,
+                "unsupported soft-mask feature {}",
+                String::from_utf8_lossy(feature)
+            ),
             Self::MissingForm { name } => {
                 write!(f, "missing form resource {}", String::from_utf8_lossy(name))
             }
@@ -7789,6 +7972,114 @@ mod tests {
     }
 
     #[test]
+    fn image_resources_should_decode_device_gray_soft_mask() {
+        let document = load_image_xobject_pdf_with_soft_mask(
+            b"q 10 0 0 10 0 0 cm /Im1 Do Q",
+            b"<< /Type /XObject /Subtype /Image /Width 2 /Height 1 /ColorSpace /DeviceRGB /BitsPerComponent 8 /SMask 6 0 R /Length 6 >>",
+            &[255, 0, 0, 0, 0, 255],
+            b"<< /Type /XObject /Subtype /Image /Width 2 /Height 1 /ColorSpace /DeviceGray /BitsPerComponent 8 /Length 2 >>",
+            &[0, 128],
+        );
+        let resources = image_resources_from_document(&document).expect("image with soft mask");
+        let image = resources
+            .get(PdfName::new(b"Im1"))
+            .expect("decoded image resource");
+
+        assert_eq!(image.soft_mask.as_deref(), Some([0, 128].as_slice()));
+    }
+
+    #[test]
+    fn image_resources_should_enforce_soft_mask_depth_budget() {
+        let document = load_image_xobject_pdf_with_soft_mask(
+            b"q 10 0 0 10 0 0 cm /Im1 Do Q",
+            b"<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceRGB /BitsPerComponent 8 /SMask 6 0 R /Length 3 >>",
+            &[255, 0, 0],
+            b"<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceGray /BitsPerComponent 8 /Length 1 >>",
+            &[128],
+        );
+        let error = image_resources_from_document_with_options(
+            &document,
+            DisplayListOptions {
+                max_soft_mask_depth: 0,
+                ..DisplayListOptions::default()
+            },
+        )
+        .expect_err("soft mask should exceed configured depth budget");
+
+        assert_eq!(
+            error.kind(),
+            &GraphicsErrorKind::SoftMaskDepthOverflow { limit: 0 }
+        );
+    }
+
+    #[test]
+    fn rasterize_images_should_apply_soft_mask_alpha() {
+        let image = ImageDisplayItem {
+            image: ImageXObject {
+                resource_name: b"Im1".to_vec(),
+                width: 2,
+                height: 1,
+                bits_per_component: 8,
+                color_space: ImageColorSpace::DeviceRgb,
+                samples: Arc::from([255, 0, 0, 0, 0, 255].as_slice()),
+                indexed_lookup: None,
+                soft_mask: Some(Arc::from([0, 128].as_slice())),
+            },
+            transform: Matrix::scale(2.0, 1.0),
+            bounds: unit_square_bounds(Matrix::scale(2.0, 1.0)),
+            state: GraphicsState::default(),
+        };
+        let mut device = RasterDevice::new(
+            2,
+            1,
+            Rgba {
+                r: 255,
+                g: 255,
+                b: 255,
+                a: 255,
+            },
+        )
+        .expect("raster device");
+        let dimensions = device.dimensions();
+        draw_image(
+            &mut device,
+            &image,
+            PageTransform {
+                source_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 2.0,
+                    max_y: 1.0,
+                },
+                rotation: PageRotation::Deg0,
+                scale: 1.0,
+                dimensions,
+                matrix: Matrix::IDENTITY,
+            },
+        )
+        .expect("masked image draw");
+
+        assert_eq!(
+            device.pixel(0, 0).expect("left pixel"),
+            Rgba {
+                r: 255,
+                g: 255,
+                b: 255,
+                a: 255,
+            }
+        );
+        assert_eq!(
+            device.pixel(1, 0).expect("right pixel"),
+            Rgba {
+                r: 127,
+                g: 127,
+                b: 255,
+                a: 255,
+            }
+        );
+    }
+
+    #[test]
     fn image_resources_should_apply_device_gray_decode_array() {
         let document = load_image_xobject_pdf(
             b"q 10 0 0 10 0 0 cm /Im1 Do Q",
@@ -8563,6 +8854,31 @@ mod tests {
         let pdf = build_classic_pdf_from_objects(&objects);
         let leaked = Box::leak(pdf.into_boxed_slice());
         load_classic_document(PdfBytes::new(leaked)).expect("image XObject PDF should load")
+    }
+
+    fn load_image_xobject_pdf_with_soft_mask(
+        content_stream: &[u8],
+        image_dictionary: &[u8],
+        image_stream: &[u8],
+        mask_dictionary: &[u8],
+        mask_stream: &[u8],
+    ) -> ClassicDocument<'static> {
+        let content_dictionary = format!("<< /Length {} >>", content_stream.len());
+        let objects = vec![
+            stream_object_bytes(1, content_dictionary.as_bytes(), content_stream),
+            indirect_object_bytes(
+                2,
+                b"<< /Type /Page /Parent 3 0 R /MediaBox [0 0 120 120] /Resources << /XObject << /Im1 4 0 R >> >> /Contents 1 0 R >>",
+            ),
+            indirect_object_bytes(3, b"<< /Type /Pages /Kids [2 0 R] /Count 1 >>"),
+            stream_object_bytes(4, image_dictionary, image_stream),
+            indirect_object_bytes(5, b"<< /Type /Catalog /Pages 3 0 R >>"),
+            stream_object_bytes(6, mask_dictionary, mask_stream),
+        ];
+        let pdf = build_classic_pdf_from_objects(&objects);
+        let leaked = Box::leak(pdf.into_boxed_slice());
+        load_classic_document(PdfBytes::new(leaked))
+            .expect("image XObject PDF with soft mask should load")
     }
 
     fn load_form_xobject_pdf(

@@ -59,6 +59,7 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
+| 0048 | [Soft Masks And Transparency Groups](0048-soft-masks-and-transparency-groups.md) | 6 | medium | 0047 |
 
 ## Done
 
