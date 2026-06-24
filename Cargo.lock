@@ -6,6 +6,7 @@ version = 3
 name = "pdfrust-cli"
 version = "0.1.0"
 dependencies = [
+ "pdfrust-pdfium",
  "pdfrust-thumbnail",
 ]
 

@@ -43,3 +43,16 @@ hold the global backend lock.
 In this environment the probe was not run because no local PDFium library is
 available yet. The code path is covered by unit tests for configuration and by
 `cargo check`.
+
+## CLI Example
+
+After `PDFRUST_PDFIUM_LIBRARY` points at a local PDFium build:
+
+```sh
+cargo run -p pdfrust-cli -- render fixtures/generated/text-page.pdf \
+  --output target/pdfrust-thumbnails/text-page.png \
+  --page-index 0 \
+  --max-edge 1024 \
+  --background '#ffffff' \
+  --timeout 5
+```
