@@ -10,10 +10,11 @@ use std::process::{Child, Command, ExitCode, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use pdfrust_native::NativeBackend;
 use pdfrust_pdfium::PdfiumBackend;
 use pdfrust_thumbnail::{
-    PdfSource, Rgba, ThumbnailBackend, ThumbnailError, ThumbnailOptions, DEFAULT_MAX_EDGE,
-    DEFAULT_PAGE_INDEX, DEFAULT_TIMEOUT,
+    DocumentMetadata, DocumentMetadataBackend, PageSize, PdfSource, Rgba, ThumbnailBackend,
+    ThumbnailError, ThumbnailOptions, DEFAULT_MAX_EDGE, DEFAULT_PAGE_INDEX, DEFAULT_TIMEOUT,
 };
 
 const WORKER_POLL_INTERVAL: Duration = Duration::from_millis(10);
@@ -33,6 +34,7 @@ fn run(args: Vec<OsString>) -> Result<(), CliError> {
     match command {
         Some("render") | Some("render-worker") => render_direct_command(&args[1..]),
         Some("render-isolated") => render_isolated_command(&args[1..]),
+        Some("compare-metadata") => compare_metadata_command(&args[1..]),
         Some("--version" | "-V") => {
             println!("pdfrust-cli {}", env!("CARGO_PKG_VERSION"));
             Ok(())
@@ -77,6 +79,34 @@ fn render_direct(config: RenderConfig) -> Result<(), CliError> {
 fn render_isolated_command(args: &[OsString]) -> Result<(), CliError> {
     let config = RenderConfig::parse(args)?;
     render_isolated(config)
+}
+
+fn compare_metadata_command(args: &[OsString]) -> Result<(), CliError> {
+    let config = CompareMetadataConfig::parse(args)?;
+    let pdfium = PdfiumBackend::from_env().map_err(|err| CliError::Backend(err.to_string()))?;
+    let native = NativeBackend::new();
+    let pdfium_result = pdfium.inspect(PdfSource::from_path(&config.input));
+    let native_result = native.inspect(PdfSource::from_path(&config.input));
+    let comparison = compare_metadata_results(
+        MetadataOutcome::from_result(pdfium_result),
+        MetadataOutcome::from_result(native_result),
+    );
+    let json = comparison_json(&config.input, &comparison);
+
+    if let Some(output) = config.output {
+        fs::write(&output, &json).map_err(|source| CliError::Io {
+            path: output,
+            source,
+        })?;
+    } else {
+        println!("{json}");
+    }
+
+    if comparison.matches {
+        Ok(())
+    } else {
+        Err(CliError::Compare(comparison.mismatches.join("; ")))
+    }
 }
 
 fn render_isolated(config: RenderConfig) -> Result<(), CliError> {
@@ -294,6 +324,144 @@ impl RenderConfig {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CompareMetadataConfig {
+    input: PathBuf,
+    output: Option<PathBuf>,
+}
+
+impl CompareMetadataConfig {
+    fn parse(args: &[OsString]) -> Result<Self, CliError> {
+        let mut input = None;
+        let mut output = None;
+
+        let mut index = 0;
+        while index < args.len() {
+            let arg = args[index]
+                .to_str()
+                .ok_or_else(|| CliError::Usage("arguments must be valid UTF-8".to_string()))?;
+            match arg {
+                "--output" | "-o" => {
+                    index += 1;
+                    output = Some(required_path(args, index, "--output")?);
+                }
+                value if value.starts_with('-') => {
+                    return Err(CliError::Usage(format!("unknown option `{value}`")));
+                }
+                value => {
+                    if input.replace(PathBuf::from(value)).is_some() {
+                        return Err(CliError::Usage(
+                            "only one input PDF is supported".to_string(),
+                        ));
+                    }
+                }
+            }
+            index += 1;
+        }
+
+        Ok(Self {
+            input: input.ok_or_else(|| CliError::Usage("missing input PDF".to_string()))?,
+            output,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum MetadataOutcome {
+    Success(DocumentMetadata),
+    Error {
+        class: &'static str,
+        message: String,
+    },
+}
+
+impl MetadataOutcome {
+    fn from_result(result: Result<DocumentMetadata, ThumbnailError>) -> Self {
+        match result {
+            Ok(metadata) => Self::Success(metadata),
+            Err(error) => Self::Error {
+                class: error.class().as_str(),
+                message: error.to_string(),
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct MetadataComparison {
+    matches: bool,
+    pdfium: MetadataOutcome,
+    native: MetadataOutcome,
+    mismatches: Vec<String>,
+}
+
+fn compare_metadata_results(
+    pdfium: MetadataOutcome,
+    native: MetadataOutcome,
+) -> MetadataComparison {
+    let mut mismatches = Vec::new();
+    match (&pdfium, &native) {
+        (MetadataOutcome::Success(expected), MetadataOutcome::Success(actual)) => {
+            if expected.page_count() != actual.page_count() {
+                mismatches.push(format!(
+                    "page_count expected {} from pdfium but rust-native returned {}",
+                    expected.page_count(),
+                    actual.page_count()
+                ));
+            }
+            let shared_pages = expected.pages.len().min(actual.pages.len());
+            for index in 0..shared_pages {
+                let expected_size = expected.pages[index].size;
+                let actual_size = actual.pages[index].size;
+                if !page_sizes_match(expected_size, actual_size) {
+                    mismatches.push(format!(
+                        "page {index} size expected {:.3}x{:.3} from pdfium but rust-native returned {:.3}x{:.3}",
+                        expected_size.width,
+                        expected_size.height,
+                        actual_size.width,
+                        actual_size.height
+                    ));
+                }
+            }
+        }
+        (
+            MetadataOutcome::Error {
+                class: expected, ..
+            },
+            MetadataOutcome::Error { class: actual, .. },
+        ) => {
+            if expected != actual {
+                mismatches.push(format!(
+                    "error_class expected {expected} from pdfium but rust-native returned {actual}"
+                ));
+            }
+        }
+        (MetadataOutcome::Success(_), MetadataOutcome::Error { class, message }) => {
+            mismatches.push(format!(
+                "pdfium inspected metadata but rust-native returned {class}: {message}"
+            ));
+        }
+        (MetadataOutcome::Error { class, message }, MetadataOutcome::Success(_)) => {
+            mismatches.push(format!(
+                "pdfium returned {class}: {message} but rust-native inspected metadata"
+            ));
+        }
+    }
+
+    MetadataComparison {
+        matches: mismatches.is_empty(),
+        pdfium,
+        native,
+        mismatches,
+    }
+}
+
+fn page_sizes_match(expected: PageSize, actual: PageSize) -> bool {
+    const EPSILON: f64 = 0.01;
+    (expected.width - actual.width).abs() <= EPSILON
+        && (expected.height - actual.height).abs() <= EPSILON
+}
+
 #[derive(Debug)]
 enum CliError {
     Usage(String),
@@ -303,6 +471,7 @@ enum CliError {
         class: &'static str,
         message: String,
     },
+    Compare(String),
     Encode(String),
     Io {
         path: PathBuf,
@@ -317,6 +486,7 @@ impl fmt::Display for CliError {
             Self::Backend(message) => write!(f, "backend error: {message}"),
             Self::Process(message) => write!(f, "process error: {message}"),
             Self::Render { class, message } => write!(f, "render error [{class}]: {message}"),
+            Self::Compare(message) => write!(f, "metadata comparison mismatch: {message}"),
             Self::Encode(message) => write!(f, "PNG encode error: {message}"),
             Self::Io { path, source } => {
                 write!(f, "failed to write `{}`: {source}", path.display())
@@ -382,6 +552,94 @@ fn format_background(color: Rgba) -> String {
         "#{:02x}{:02x}{:02x}{:02x}",
         color.r, color.g, color.b, color.a
     )
+}
+
+fn comparison_json(input: &Path, comparison: &MetadataComparison) -> String {
+    let status = if comparison.matches {
+        "match"
+    } else {
+        "mismatch"
+    };
+    format!(
+        concat!(
+            "{{\n",
+            "  \"schema_version\": 1,\n",
+            "  \"fixture\": {{\n",
+            "    \"path\": {}\n",
+            "  }},\n",
+            "  \"comparison\": {{\n",
+            "    \"oracle\": \"pdfium\",\n",
+            "    \"candidate\": \"rust-native\",\n",
+            "    \"status\": {},\n",
+            "    \"mismatches\": {}\n",
+            "  }},\n",
+            "  \"pdfium\": {},\n",
+            "  \"rust_native\": {}\n",
+            "}}\n"
+        ),
+        json_string(&input.to_string_lossy()),
+        json_string(status),
+        json_string_array(&comparison.mismatches),
+        metadata_outcome_json(&comparison.pdfium),
+        metadata_outcome_json(&comparison.native)
+    )
+}
+
+fn metadata_outcome_json(outcome: &MetadataOutcome) -> String {
+    match outcome {
+        MetadataOutcome::Success(metadata) => {
+            let pages = metadata
+                .pages
+                .iter()
+                .map(|page| {
+                    format!(
+                        "{{\"index\":{},\"width\":{:.3},\"height\":{:.3}}}",
+                        page.index, page.size.width, page.size.height
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(",");
+            format!(
+                "{{\"status\":\"success\",\"page_count\":{},\"pages\":[{}]}}",
+                metadata.page_count(),
+                pages
+            )
+        }
+        MetadataOutcome::Error { class, message } => format!(
+            "{{\"status\":\"error\",\"error_class\":{},\"message\":{}}}",
+            json_string(class),
+            json_string(message)
+        ),
+    }
+}
+
+fn json_string_array(values: &[String]) -> String {
+    let values = values
+        .iter()
+        .map(|value| json_string(value))
+        .collect::<Vec<_>>()
+        .join(",");
+    format!("[{values}]")
+}
+
+fn json_string(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len() + 2);
+    escaped.push('"');
+    for character in value.chars() {
+        match character {
+            '"' => escaped.push_str("\\\""),
+            '\\' => escaped.push_str("\\\\"),
+            '\n' => escaped.push_str("\\n"),
+            '\r' => escaped.push_str("\\r"),
+            '\t' => escaped.push_str("\\t"),
+            character if character.is_control() => {
+                escaped.push_str(&format!("\\u{:04x}", character as u32));
+            }
+            character => escaped.push(character),
+        }
+    }
+    escaped.push('"');
+    escaped
 }
 
 fn encode_rgba_png(thumbnail: &pdfrust_thumbnail::Thumbnail) -> Result<Vec<u8>, CliError> {
@@ -471,14 +729,15 @@ fn crc32(bytes: impl IntoIterator<Item = u8>) -> u32 {
 
 fn print_usage() {
     println!(
-        "Usage: pdfrust-cli <render|render-isolated> <input.pdf> --output <output.png> \
-         [--page-index N] [--max-edge N] [--background #RRGGBB] [--timeout SECONDS]"
+        "Usage: pdfrust-cli <render|render-isolated|compare-metadata> <input.pdf> \
+         [--output PATH] [--page-index N] [--max-edge N] [--background #RRGGBB] \
+         [--timeout SECONDS]"
     );
 }
 
 #[cfg(test)]
 mod tests {
-    use pdfrust_thumbnail::{PixelFormat, Thumbnail};
+    use pdfrust_thumbnail::{PageMetadata, PixelFormat, Thumbnail};
 
     use super::*;
 
@@ -494,6 +753,104 @@ mod tests {
         assert_eq!(config.page_index, 0);
         assert_eq!(config.max_edge, 1024);
         assert_eq!(config.timeout, Duration::from_secs(5));
+    }
+
+    #[test]
+    fn compare_metadata_config_should_accept_optional_output() {
+        let config = CompareMetadataConfig::parse(&[
+            OsString::from("fixtures/generated/text-page.pdf"),
+            OsString::from("--output"),
+            OsString::from("target/metadata.json"),
+        ])
+        .expect("valid config");
+
+        assert_eq!(
+            config.input,
+            PathBuf::from("fixtures/generated/text-page.pdf")
+        );
+        assert_eq!(config.output, Some(PathBuf::from("target/metadata.json")));
+    }
+
+    #[test]
+    fn metadata_comparison_should_match_equal_page_metadata() {
+        let metadata = DocumentMetadata::new(vec![PageMetadata {
+            index: 0,
+            size: PageSize {
+                width: 300.0,
+                height: 160.0,
+            },
+        }]);
+
+        let comparison = compare_metadata_results(
+            MetadataOutcome::Success(metadata.clone()),
+            MetadataOutcome::Success(metadata),
+        );
+
+        assert!(comparison.matches);
+        assert!(comparison.mismatches.is_empty());
+    }
+
+    #[test]
+    fn metadata_comparison_should_report_page_size_mismatch() {
+        let pdfium = DocumentMetadata::new(vec![PageMetadata {
+            index: 0,
+            size: PageSize {
+                width: 300.0,
+                height: 160.0,
+            },
+        }]);
+        let native = DocumentMetadata::new(vec![PageMetadata {
+            index: 0,
+            size: PageSize {
+                width: 301.0,
+                height: 160.0,
+            },
+        }]);
+
+        let comparison = compare_metadata_results(
+            MetadataOutcome::Success(pdfium),
+            MetadataOutcome::Success(native),
+        );
+
+        assert!(!comparison.matches);
+        assert_eq!(comparison.mismatches.len(), 1);
+        assert!(comparison.mismatches[0].contains("page 0 size expected"));
+    }
+
+    #[test]
+    fn metadata_comparison_should_match_equal_error_classes() {
+        let comparison = compare_metadata_results(
+            MetadataOutcome::Error {
+                class: "malformed",
+                message: "PDF is malformed".to_string(),
+            },
+            MetadataOutcome::Error {
+                class: "malformed",
+                message: "different backend text".to_string(),
+            },
+        );
+
+        assert!(comparison.matches);
+    }
+
+    #[test]
+    fn comparison_json_should_include_match_status() {
+        let metadata = DocumentMetadata::new(vec![PageMetadata {
+            index: 0,
+            size: PageSize {
+                width: 300.0,
+                height: 160.0,
+            },
+        }]);
+        let comparison = compare_metadata_results(
+            MetadataOutcome::Success(metadata.clone()),
+            MetadataOutcome::Success(metadata),
+        );
+
+        let json = comparison_json(Path::new("fixtures/generated/text-page.pdf"), &comparison);
+
+        assert!(json.contains("\"status\": \"match\""));
+        assert!(json.contains("\"page_count\":1"));
     }
 
     #[test]

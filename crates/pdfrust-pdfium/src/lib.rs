@@ -8,7 +8,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use pdfrust_thumbnail::{PdfSource, Thumbnail, ThumbnailBackend, ThumbnailError, ThumbnailOptions};
+use pdfrust_thumbnail::{
+    DocumentMetadata, DocumentMetadataBackend, PdfSource, Thumbnail, ThumbnailBackend,
+    ThumbnailError, ThumbnailOptions,
+};
 
 static PDFIUM_LOCK: Mutex<()> = Mutex::new(());
 
@@ -59,6 +62,12 @@ impl PdfiumBackend {
         &self.library_path
     }
 
+    /// Returns the stable backend name.
+    #[must_use]
+    pub const fn backend_name(&self) -> &'static str {
+        "pdfium"
+    }
+
     /// Loads PDFium, initializes it, reads the initial error code, and shuts it down.
     ///
     /// # Errors
@@ -83,7 +92,7 @@ impl PdfiumBackend {
 
 impl ThumbnailBackend for PdfiumBackend {
     fn backend_name(&self) -> &'static str {
-        "pdfium"
+        Self::backend_name(self)
     }
 
     fn render(
@@ -99,6 +108,25 @@ impl ThumbnailBackend for PdfiumBackend {
             .map_err(|err| ThumbnailError::internal(err.to_string()))?;
         unsafe { library.init() };
         let result = unsafe { library.render_first_page_rgba(&bytes, options) };
+        unsafe { library.destroy() };
+        result
+    }
+}
+
+impl DocumentMetadataBackend for PdfiumBackend {
+    fn backend_name(&self) -> &'static str {
+        Self::backend_name(self)
+    }
+
+    fn inspect(&self, source: PdfSource<'_>) -> Result<DocumentMetadata, ThumbnailError> {
+        let bytes = load_source(source)?;
+        let _guard = PDFIUM_LOCK.lock().map_err(|_| {
+            ThumbnailError::internal("PDFium backend serialization lock is poisoned")
+        })?;
+        let library = unsafe { sys::PdfiumLibrary::open(&self.library_path) }
+            .map_err(|err| ThumbnailError::internal(err.to_string()))?;
+        unsafe { library.init() };
+        let result = unsafe { library.inspect_document_metadata(&bytes) };
         unsafe { library.destroy() };
         result
     }
@@ -189,7 +217,10 @@ mod sys {
 
     use super::PdfiumBackendError;
     use crate::map_pdfium_error_code;
-    use pdfrust_thumbnail::{PixelFormat, Rgba, Thumbnail, ThumbnailError, ThumbnailOptions};
+    use pdfrust_thumbnail::{
+        DocumentMetadata, PageMetadata, PageSize, PixelFormat, Rgba, Thumbnail, ThumbnailError,
+        ThumbnailOptions,
+    };
 
     const RTLD_NOW: c_int = 2;
     const NO_PASSWORD: *const c_char = std::ptr::null();
@@ -209,6 +240,7 @@ mod sys {
     type FpdfLoadMemDocument64 =
         unsafe extern "C" fn(*const c_void, usize, *const c_char) -> *mut c_void;
     type FpdfCloseDocument = unsafe extern "C" fn(*mut c_void);
+    type FpdfGetPageCount = unsafe extern "C" fn(*mut c_void) -> c_int;
     type FpdfLoadPage = unsafe extern "C" fn(*mut c_void, c_int) -> *mut c_void;
     type FpdfClosePage = unsafe extern "C" fn(*mut c_void);
     type FpdfGetPageWidthF = unsafe extern "C" fn(*mut c_void) -> c_float;
@@ -229,6 +261,7 @@ mod sys {
         get_last_error: FpdfGetLastError,
         load_mem_document64: FpdfLoadMemDocument64,
         close_document: FpdfCloseDocument,
+        get_page_count: FpdfGetPageCount,
         load_page: FpdfLoadPage,
         close_page: FpdfClosePage,
         get_page_width_f: FpdfGetPageWidthF,
@@ -263,6 +296,7 @@ mod sys {
                 get_last_error: unsafe { load_symbol(handle, "FPDF_GetLastError") }?,
                 load_mem_document64: unsafe { load_symbol(handle, "FPDF_LoadMemDocument64") }?,
                 close_document: unsafe { load_symbol(handle, "FPDF_CloseDocument") }?,
+                get_page_count: unsafe { load_symbol(handle, "FPDF_GetPageCount") }?,
                 load_page: unsafe { load_symbol(handle, "FPDF_LoadPage") }?,
                 close_page: unsafe { load_symbol(handle, "FPDF_ClosePage") }?,
                 get_page_width_f: unsafe { load_symbol(handle, "FPDF_GetPageWidthF") }?,
@@ -367,6 +401,57 @@ mod sys {
                 unsafe { std::slice::from_raw_parts(buffer.as_ptr().cast::<u8>(), source_len) };
             let rgba = bgra_to_rgba(source, stride as usize, width, height)?;
             Thumbnail::rgba(width, height, rgba)
+        }
+
+        pub(super) unsafe fn inspect_document_metadata(
+            &self,
+            bytes: &[u8],
+        ) -> Result<DocumentMetadata, ThumbnailError> {
+            let document = unsafe {
+                (self.load_mem_document64)(
+                    bytes.as_ptr().cast::<c_void>(),
+                    bytes.len(),
+                    NO_PASSWORD,
+                )
+            };
+            let document = NonNull::new(document)
+                .ok_or_else(|| map_pdfium_error_code(unsafe { self.get_last_error() }))?;
+            let document = PdfDocument {
+                library: self,
+                document,
+            };
+            let page_count = unsafe { (self.get_page_count)(document.document.as_ptr()) };
+            if page_count < 0 {
+                return Err(ThumbnailError::Malformed);
+            }
+            let page_count = usize::try_from(page_count)
+                .map_err(|_| ThumbnailError::internal("PDFium page count exceeds usize"))?;
+            let mut pages = Vec::with_capacity(page_count);
+            for page_index in 0..page_count {
+                let page_index_u32 = u32::try_from(page_index)
+                    .map_err(|_| ThumbnailError::internal("PDFium page index exceeds u32"))?;
+                let page =
+                    unsafe { (self.load_page)(document.document.as_ptr(), page_index as c_int) };
+                let page = NonNull::new(page)
+                    .ok_or_else(|| map_pdfium_error_code(unsafe { self.get_last_error() }))?;
+                let page = PdfPage {
+                    library: self,
+                    page,
+                };
+                let width = unsafe { (self.get_page_width_f)(page.page.as_ptr()) };
+                let height = unsafe { (self.get_page_height_f)(page.page.as_ptr()) };
+                if !width.is_finite() || !height.is_finite() || width <= 0.0 || height <= 0.0 {
+                    return Err(ThumbnailError::Malformed);
+                }
+                pages.push(PageMetadata {
+                    index: page_index_u32,
+                    size: PageSize {
+                        width: f64::from(width),
+                        height: f64::from(height),
+                    },
+                });
+            }
+            Ok(DocumentMetadata::new(pages))
         }
     }
 
@@ -517,6 +602,7 @@ mod sys {
     use std::path::Path;
 
     use super::PdfiumBackendError;
+    use pdfrust_thumbnail::DocumentMetadata;
 
     pub(super) struct PdfiumLibrary;
 
@@ -538,6 +624,13 @@ mod sys {
             _bytes: &[u8],
             _options: &ThumbnailOptions,
         ) -> Result<Thumbnail, ThumbnailError> {
+            Err(ThumbnailError::Unsupported)
+        }
+
+        pub(super) unsafe fn inspect_document_metadata(
+            &self,
+            _bytes: &[u8],
+        ) -> Result<DocumentMetadata, ThumbnailError> {
             Err(ThumbnailError::Unsupported)
         }
     }

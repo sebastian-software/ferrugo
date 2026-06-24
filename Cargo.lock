@@ -47,6 +47,7 @@ dependencies = [
 name = "pdfrust-cli"
 version = "0.1.0"
 dependencies = [
+ "pdfrust-native",
  "pdfrust-pdfium",
  "pdfrust-thumbnail",
 ]
@@ -64,6 +65,7 @@ version = "0.1.0"
 dependencies = [
  "pdfrust-object",
  "pdfrust-render",
+ "pdfrust-syntax",
  "pdfrust-thumbnail",
 ]
 

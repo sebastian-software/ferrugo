@@ -85,3 +85,10 @@ the trailer `/Root`, catalog `/Pages`, page tree `Kids`, inherited page boxes,
 and inherited resource references into `PageTree` and `PageMetadata` values.
 Content streams, rendering, and full metadata extraction remain later
 milestones.
+
+`pdfrust-thumbnail` now also owns the backend-neutral `DocumentMetadataBackend`
+contract used by the differential harness. `pdfrust-pdfium` implements it by
+loading a document through PDFium and reading page count plus page sizes.
+`pdfrust-native` implements it through the Rust object model and page tree
+without rendering pixels. The CLI `compare-metadata` command records the PDFium
+oracle and Rust-native candidate results in the baseline format.

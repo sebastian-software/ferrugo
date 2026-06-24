@@ -7,6 +7,7 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+pdfrust-native = { path = "../pdfrust-native" }
 pdfrust-pdfium = { path = "../pdfrust-pdfium" }
 pdfrust-thumbnail = { path = "../pdfrust-thumbnail" }
 

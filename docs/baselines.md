@@ -73,3 +73,59 @@ Failure records use the same fixture, backend, and request sections but replace
 
 The format is backend-neutral: `backend.id` may later be `rust-native`,
 `poppler-reference`, or another comparison renderer.
+
+## Metadata Comparisons
+
+Rust-native renderer milestones start with metadata-only comparisons before
+pixel output exists. These records use the same small JSON artifact policy but
+compare the PDFium oracle against the Rust-native backend in one object:
+
+```json
+{
+  "schema_version": 1,
+  "fixture": {
+    "path": "fixtures/generated/text-page.pdf"
+  },
+  "comparison": {
+    "oracle": "pdfium",
+    "candidate": "rust-native",
+    "status": "match",
+    "mismatches": []
+  },
+  "pdfium": {
+    "status": "success",
+    "page_count": 1,
+    "pages": [
+      {
+        "index": 0,
+        "width": 300.000,
+        "height": 160.000
+      }
+    ]
+  },
+  "rust_native": {
+    "status": "success",
+    "page_count": 1,
+    "pages": [
+      {
+        "index": 0,
+        "width": 300.000,
+        "height": 160.000
+      }
+    ]
+  }
+}
+```
+
+`comparison.mismatches` must name the field and backend values, for example a
+page count mismatch or a specific `page N size` mismatch. Error comparisons use
+`status: "error"` with a stable `error_class`.
+
+Run a local metadata comparison with:
+
+```sh
+PDFRUST_PDFIUM_LIBRARY=/path/to/libpdfium.dylib \
+DYLD_LIBRARY_PATH=/path/to/pdfium/out \
+cargo run -p pdfrust-cli -- compare-metadata fixtures/generated/text-page.pdf \
+  --output target/pdfrust-thumbnails/text-page-metadata-comparison.json
+```

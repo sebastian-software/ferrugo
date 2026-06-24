@@ -174,6 +174,65 @@ pub trait ThumbnailBackend {
     ) -> ThumbnailResult<Thumbnail>;
 }
 
+/// Backend abstraction for document-level metadata inspection.
+pub trait DocumentMetadataBackend {
+    /// Stable backend name used in diagnostics and baseline metadata.
+    fn backend_name(&self) -> &'static str;
+
+    /// Inspects document metadata without rendering pixels.
+    ///
+    /// # Errors
+    ///
+    /// Implementations return [`ThumbnailError`] for stable caller-facing
+    /// failure classes.
+    fn inspect(&self, source: PdfSource<'_>) -> ThumbnailResult<DocumentMetadata>;
+}
+
+/// Document metadata shared by backend comparison harnesses.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DocumentMetadata {
+    /// Per-page metadata in document order.
+    pub pages: Vec<PageMetadata>,
+}
+
+impl DocumentMetadata {
+    /// Creates document metadata from resolved page metadata.
+    #[must_use]
+    pub fn new(pages: Vec<PageMetadata>) -> Self {
+        Self { pages }
+    }
+
+    /// Returns the number of pages in the document.
+    #[must_use]
+    pub fn page_count(&self) -> usize {
+        self.pages.len()
+    }
+
+    /// Returns the first page size when the document has pages.
+    #[must_use]
+    pub fn first_page_size(&self) -> Option<PageSize> {
+        self.pages.first().map(|page| page.size)
+    }
+}
+
+/// Page metadata shared by backend comparison harnesses.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PageMetadata {
+    /// Zero-based page index.
+    pub index: u32,
+    /// Page size in PDF user-space units.
+    pub size: PageSize,
+}
+
+/// Page size in PDF user-space units.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PageSize {
+    /// Page width.
+    pub width: f64,
+    /// Page height.
+    pub height: f64,
+}
+
 /// Stable thumbnail error taxonomy.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ThumbnailError {
