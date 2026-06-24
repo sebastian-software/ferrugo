@@ -1,6 +1,6 @@
 # 0030: Content Stream Tokenizer
 
-Status: todo
+Status: done
 Phase: 2
 Size: medium
 Depends on: 0029
@@ -43,4 +43,18 @@ Tokenize page content streams into operands and operators.
 
 ## Completion Notes
 
-Empty until done.
+Completed with the `feat: tokenize content streams` change.
+
+- Added `pdfrust-content` tokenizer APIs:
+  `tokenize_content`, `ContentTokenizer`, `ContentToken`, `OperatorName`,
+  `ContentError`, and `ContentErrorKind`.
+- Reused `pdfrust-syntax::parse_primitive_prefix` for operands while keeping
+  operator names borrowed and allocation-free.
+- Preserved absolute source offsets for operands, operators, syntax failures,
+  comments, and invalid delimiter-started operators.
+- Added tests for simple graphics/text operators, comments, boolean/null
+  keyword disambiguation, malformed operands, invalid operator delimiters, and
+  end-to-end tokenization of `fixtures/generated/text-page.pdf`.
+- Validation:
+  - `cargo fmt --check`
+  - `cargo test -p pdfrust-content`

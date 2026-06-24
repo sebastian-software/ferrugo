@@ -57,6 +57,7 @@ name = "pdfrust-content"
 version = "0.1.0"
 dependencies = [
  "pdfrust-object",
+ "pdfrust-syntax",
 ]
 
 [[package]]

@@ -8,6 +8,7 @@ rust-version.workspace = true
 
 [dependencies]
 pdfrust-object = { path = "../pdfrust-object" }
+pdfrust-syntax = { path = "../pdfrust-syntax" }
 
 [lints]
 workspace = true

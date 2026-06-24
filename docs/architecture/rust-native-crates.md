@@ -92,3 +92,9 @@ loading a document through PDFium and reading page count plus page sizes.
 `pdfrust-native` implements it through the Rust object model and page tree
 without rendering pixels. The CLI `compare-metadata` command records the PDFium
 oracle and Rust-native candidate results in the baseline format.
+
+`pdfrust-content` starts with a borrowed content-stream tokenizer. It reuses
+`pdfrust-syntax` primitives for operands, represents operators as borrowed byte
+slices, skips content comments, and preserves byte offsets in `ContentError`.
+It deliberately does not execute graphics state, resolve resources, or build a
+display list yet.
