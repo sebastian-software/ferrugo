@@ -1,6 +1,6 @@
 # 0055: Incremental Updates And Hybrid References
 
-Status: in-progress
+Status: done
 Phase: 7
 Size: medium
 Depends on: 0054
@@ -46,7 +46,7 @@ trailers as common producer output.
 
 ## Completion Notes
 
-In progress:
+Completed:
 
 - First implementation slice follows classic trailer `/Prev` chains with a
   `16`-revision depth limit and cycle detection.
@@ -73,11 +73,19 @@ In progress:
   with the blue content stream loaded through `/XRefStm`. Keep this as native
   regression coverage until the PDFium oracle path is refreshed for this
   synthetic hybrid fixture shape.
+- Incremental and hybrid reference behavior is documented in
+  `docs/policies/incremental-and-hybrid-references.md`; native unsupported
+  diagnostics can use the `xref.incremental-hybrid` bucket recorded in
+  `docs/errors.md`.
 - Current validation:
   - `cargo test -p pdfrust-object incremental -- --nocapture`
   - `cargo test -p pdfrust-object hybrid -- --nocapture`
   - `cargo test -p pdfrust-native incremental_update -- --nocapture`
   - `cargo test -p pdfrust-native hybrid_reference -- --nocapture`
+  - `cargo fmt --check`
+  - `cargo check`
+  - `cargo clippy --all-targets --all-features -- -D warnings`
+  - `cargo test --quiet`
   - `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render fixtures/generated/incremental-update.pdf --max-edge 120 --output target/pdfrust-thumbnails/incremental-update-pdfium-0055.png`
   - `cargo run -p pdfrust-cli -- render-native fixtures/generated/incremental-update.pdf --max-edge 120 --output target/pdfrust-thumbnails/incremental-update-native-0055.png`
   - `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render fixtures/generated/hybrid-reference.pdf --max-edge 120 --output target/pdfrust-thumbnails/hybrid-reference-pdfium-0055.png`

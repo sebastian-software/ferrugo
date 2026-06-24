@@ -47,6 +47,7 @@ preserving the public `unsupported` class:
 | `annotation.appearance` | Annotation appearance is missing, malformed, dynamically generated, or requires unsupported form/interaction behavior. | 0052 |
 | `form.acroform` | AcroForm widget appearance is missing, dynamic, XFA-backed, script-backed, or requires validation/editing behavior. | 0053 |
 | `graphics.optional-content` | Optional content uses unsupported membership, usage application, intent, or viewer-state policy. | 0054 |
+| `xref.incremental-hybrid` | Incremental or hybrid-reference structure is cyclic, over budget, malformed, or requires unsupported compressed hybrid entries. | 0055 |
 
 These buckets are not API classes. They make support matrices and corpus
 reports stable without forcing downstream callers to depend on milestone-level
