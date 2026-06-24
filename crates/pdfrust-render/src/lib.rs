@@ -13,6 +13,7 @@ use pdfrust_object::{
     ObjectValue, Reference, StreamObject,
 };
 use pdfrust_syntax::{ByteOffset, PdfBytes, PdfName, PdfNumber, PdfPrimitive, PdfString};
+use pdfrust_thumbnail::{PixelFormat, Rgba};
 
 /// Stable crate role used by architecture smoke tests and documentation.
 pub const CRATE_ROLE: &str = "render";
@@ -38,6 +39,9 @@ pub const DEFAULT_FORM_RECURSION_DEPTH_LIMIT: usize = 16;
 /// Result alias for graphics-state interpretation.
 pub type GraphicsResult<T> = Result<T, GraphicsError>;
 
+/// Result alias for raster-device setup.
+pub type RasterResult<T> = Result<T, RasterError>;
+
 /// Returns the stable role for this crate.
 #[must_use]
 pub const fn crate_role() -> &'static str {
@@ -54,6 +58,153 @@ pub fn content_role() -> &'static str {
 #[must_use]
 pub const fn facade_rgba_bytes_per_pixel() -> usize {
     pdfrust_thumbnail::PixelFormat::Rgba8.bytes_per_pixel()
+}
+
+/// Raster output dimensions and row layout.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RasterDimensions {
+    /// Width in pixels.
+    pub width: u32,
+    /// Height in pixels.
+    pub height: u32,
+    /// Bytes between adjacent rows.
+    pub stride: usize,
+}
+
+impl RasterDimensions {
+    /// Creates checked RGBA raster dimensions.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RasterError`] when dimensions are empty or byte counts
+    /// overflow.
+    pub fn new(width: u32, height: u32) -> RasterResult<Self> {
+        if width == 0 || height == 0 {
+            return Err(RasterError::new(RasterErrorKind::InvalidDimensions));
+        }
+        let stride = (width as usize)
+            .checked_mul(PixelFormat::Rgba8.bytes_per_pixel())
+            .ok_or_else(|| RasterError::new(RasterErrorKind::StrideOverflow))?;
+        stride
+            .checked_mul(height as usize)
+            .ok_or_else(|| RasterError::new(RasterErrorKind::BufferOverflow))?;
+        Ok(Self {
+            width,
+            height,
+            stride,
+        })
+    }
+
+    fn buffer_len(self) -> RasterResult<usize> {
+        self.stride
+            .checked_mul(self.height as usize)
+            .ok_or_else(|| RasterError::new(RasterErrorKind::BufferOverflow))
+    }
+}
+
+/// Owned RGBA raster buffer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RasterDevice {
+    dimensions: RasterDimensions,
+    pixels: Vec<u8>,
+}
+
+impl RasterDevice {
+    /// Allocates a checked RGBA raster and fills it with `background`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RasterError`] when dimensions or buffer size overflow.
+    pub fn new(width: u32, height: u32, background: Rgba) -> RasterResult<Self> {
+        let dimensions = RasterDimensions::new(width, height)?;
+        let mut pixels = vec![0; dimensions.buffer_len()?];
+        for pixel in pixels.chunks_exact_mut(PixelFormat::Rgba8.bytes_per_pixel()) {
+            pixel.copy_from_slice(&[background.r, background.g, background.b, background.a]);
+        }
+        Ok(Self { dimensions, pixels })
+    }
+
+    /// Returns raster dimensions and stride.
+    #[must_use]
+    pub const fn dimensions(&self) -> RasterDimensions {
+        self.dimensions
+    }
+
+    /// Returns immutable raw RGBA bytes.
+    #[must_use]
+    pub fn pixels(&self) -> &[u8] {
+        &self.pixels
+    }
+
+    /// Returns mutable raw RGBA bytes.
+    #[must_use]
+    pub fn pixels_mut(&mut self) -> &mut [u8] {
+        &mut self.pixels
+    }
+
+    /// Returns one immutable row by y coordinate.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RasterErrorKind::OutOfBounds`] when `y` is outside the raster.
+    pub fn row(&self, y: u32) -> RasterResult<&[u8]> {
+        let range = self.row_range(y)?;
+        Ok(&self.pixels[range])
+    }
+
+    /// Returns one mutable row by y coordinate.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RasterErrorKind::OutOfBounds`] when `y` is outside the raster.
+    pub fn row_mut(&mut self, y: u32) -> RasterResult<&mut [u8]> {
+        let range = self.row_range(y)?;
+        Ok(&mut self.pixels[range])
+    }
+
+    /// Returns one RGBA pixel by coordinate.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RasterErrorKind::OutOfBounds`] when the coordinate is outside
+    /// the raster.
+    pub fn pixel(&self, x: u32, y: u32) -> RasterResult<Rgba> {
+        let offset = self.pixel_offset(x, y)?;
+        Ok(Rgba {
+            r: self.pixels[offset],
+            g: self.pixels[offset + 1],
+            b: self.pixels[offset + 2],
+            a: self.pixels[offset + 3],
+        })
+    }
+
+    /// Writes one RGBA pixel by coordinate.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RasterErrorKind::OutOfBounds`] when the coordinate is outside
+    /// the raster.
+    pub fn set_pixel(&mut self, x: u32, y: u32, color: Rgba) -> RasterResult<()> {
+        let offset = self.pixel_offset(x, y)?;
+        self.pixels[offset..offset + PixelFormat::Rgba8.bytes_per_pixel()]
+            .copy_from_slice(&[color.r, color.g, color.b, color.a]);
+        Ok(())
+    }
+
+    fn row_range(&self, y: u32) -> RasterResult<std::ops::Range<usize>> {
+        if y >= self.dimensions.height {
+            return Err(RasterError::new(RasterErrorKind::OutOfBounds));
+        }
+        let start = y as usize * self.dimensions.stride;
+        Ok(start..start + self.dimensions.stride)
+    }
+
+    fn pixel_offset(&self, x: u32, y: u32) -> RasterResult<usize> {
+        if x >= self.dimensions.width || y >= self.dimensions.height {
+            return Err(RasterError::new(RasterErrorKind::OutOfBounds));
+        }
+        Ok(y as usize * self.dimensions.stride + x as usize * PixelFormat::Rgba8.bytes_per_pixel())
+    }
 }
 
 /// PDF affine transform matrix.
@@ -823,6 +974,118 @@ impl PathBounds {
             max_x: self.max_x.max(other.max_x),
             max_y: self.max_y.max(other.max_y),
         }
+    }
+}
+
+/// Supported page rotation values.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PageRotation {
+    /// No rotation.
+    Deg0,
+    /// 90 degrees clockwise.
+    Deg90,
+    /// 180 degrees.
+    Deg180,
+    /// 270 degrees clockwise.
+    Deg270,
+}
+
+impl PageRotation {
+    /// Returns true when output dimensions are swapped.
+    #[must_use]
+    pub const fn swaps_axes(self) -> bool {
+        matches!(self, Self::Deg90 | Self::Deg270)
+    }
+}
+
+/// Page boxes and rotation used for raster target setup.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PageGeometry {
+    /// Media box in PDF user-space coordinates.
+    pub media_box: PathBounds,
+    /// Optional crop box in PDF user-space coordinates.
+    pub crop_box: Option<PathBounds>,
+    /// Page rotation.
+    pub rotation: PageRotation,
+}
+
+impl PageGeometry {
+    /// Returns the visible page box using `CropBox` when present.
+    #[must_use]
+    pub fn visible_box(self) -> PathBounds {
+        self.crop_box.unwrap_or(self.media_box)
+    }
+}
+
+/// Page-to-raster transform and checked target dimensions.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PageTransform {
+    /// Visible source box used for rendering.
+    pub source_box: PathBounds,
+    /// Page rotation used by the transform.
+    pub rotation: PageRotation,
+    /// User-space to pixel scale.
+    pub scale: f64,
+    /// Target raster dimensions.
+    pub dimensions: RasterDimensions,
+    /// Matrix mapping PDF user-space points to pixel-space points.
+    pub matrix: Matrix,
+}
+
+impl PageTransform {
+    /// Builds a page-to-raster transform using the same `max_edge` scaling
+    /// policy as the PDFium backend.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RasterError`] for invalid page boxes, zero `max_edge`, or
+    /// overflowing output dimensions.
+    pub fn new(geometry: PageGeometry, max_edge: u32) -> RasterResult<Self> {
+        if max_edge == 0 {
+            return Err(RasterError::new(RasterErrorKind::InvalidMaxEdge));
+        }
+        let source_box = geometry.visible_box();
+        let page_width = source_box.width();
+        let page_height = source_box.height();
+        if !page_width.is_finite()
+            || !page_height.is_finite()
+            || page_width <= 0.0
+            || page_height <= 0.0
+        {
+            return Err(RasterError::new(RasterErrorKind::InvalidPageBox));
+        }
+
+        let (rotated_width, rotated_height) = if geometry.rotation.swaps_axes() {
+            (page_height, page_width)
+        } else {
+            (page_width, page_height)
+        };
+        let page_max = rotated_width.max(rotated_height);
+        let scale = if page_max > f64::from(max_edge) {
+            f64::from(max_edge) / page_max
+        } else {
+            1.0
+        };
+        let width = scaled_dimension(rotated_width, scale, max_edge)?;
+        let height = scaled_dimension(rotated_height, scale, max_edge)?;
+        let dimensions = RasterDimensions::new(width, height)?;
+        let matrix = page_to_pixel_matrix(source_box, geometry.rotation, scale);
+        Ok(Self {
+            source_box,
+            rotation: geometry.rotation,
+            scale,
+            dimensions,
+            matrix,
+        })
+    }
+
+    /// Allocates a raster device matching this transform.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RasterError`] when the target buffer cannot be allocated.
+    pub fn create_device(self, background: Rgba) -> RasterResult<RasterDevice> {
+        RasterDevice::new(self.dimensions.width, self.dimensions.height, background)
     }
 }
 
@@ -2596,6 +2859,51 @@ fn unit_square_bounds(transform: Matrix) -> PathBounds {
     include_point(Some(bounds), p3)
 }
 
+fn scaled_dimension(value: f64, scale: f64, max_edge: u32) -> RasterResult<u32> {
+    let scaled = value * scale;
+    if !scaled.is_finite() || scaled <= 0.0 || scaled > f64::from(u32::MAX) {
+        return Err(RasterError::new(RasterErrorKind::DimensionOverflow));
+    }
+    Ok((scaled.round() as u32).clamp(1, max_edge))
+}
+
+fn page_to_pixel_matrix(bounds: PathBounds, rotation: PageRotation, scale: f64) -> Matrix {
+    match rotation {
+        PageRotation::Deg0 => Matrix::new(
+            scale,
+            0.0,
+            0.0,
+            -scale,
+            -bounds.min_x * scale,
+            bounds.max_y * scale,
+        ),
+        PageRotation::Deg90 => Matrix::new(
+            0.0,
+            scale,
+            scale,
+            0.0,
+            -bounds.min_y * scale,
+            -bounds.min_x * scale,
+        ),
+        PageRotation::Deg180 => Matrix::new(
+            -scale,
+            0.0,
+            0.0,
+            scale,
+            bounds.max_x * scale,
+            -bounds.min_y * scale,
+        ),
+        PageRotation::Deg270 => Matrix::new(
+            0.0,
+            -scale,
+            -scale,
+            0.0,
+            bounds.max_y * scale,
+            bounds.max_x * scale,
+        ),
+    }
+}
+
 fn transformed_box_segments(bounds: PathBounds, transform: Matrix) -> Vec<PathSegment> {
     let p0 = transform.transform_point(bounds.min_x, bounds.min_y);
     let p1 = transform.transform_point(bounds.max_x, bounds.min_y);
@@ -2644,6 +2952,67 @@ fn include_point(bounds: Option<PathBounds>, point: Point) -> PathBounds {
             max_x: point.x,
             max_y: point.y,
         },
+    }
+}
+
+/// Raster-device setup error.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RasterError {
+    kind: RasterErrorKind,
+}
+
+impl RasterError {
+    /// Creates a raster error.
+    #[must_use]
+    pub const fn new(kind: RasterErrorKind) -> Self {
+        Self { kind }
+    }
+
+    /// Returns the error kind.
+    #[must_use]
+    pub const fn kind(&self) -> &RasterErrorKind {
+        &self.kind
+    }
+}
+
+impl fmt::Display for RasterError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.kind.fmt(f)
+    }
+}
+
+impl std::error::Error for RasterError {}
+
+/// Raster-device setup error category.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RasterErrorKind {
+    /// Width or height was zero.
+    InvalidDimensions,
+    /// `max_edge` was zero.
+    InvalidMaxEdge,
+    /// Page box dimensions are non-finite, empty, or inverted.
+    InvalidPageBox,
+    /// Rounded output dimension overflowed `u32`.
+    DimensionOverflow,
+    /// Row stride overflowed `usize`.
+    StrideOverflow,
+    /// Pixel buffer length overflowed `usize`.
+    BufferOverflow,
+    /// Row or pixel coordinate was outside the raster.
+    OutOfBounds,
+}
+
+impl fmt::Display for RasterErrorKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidDimensions => f.write_str("raster dimensions must be non-zero"),
+            Self::InvalidMaxEdge => f.write_str("max_edge must be greater than zero"),
+            Self::InvalidPageBox => f.write_str("page box is invalid"),
+            Self::DimensionOverflow => f.write_str("raster dimension overflow"),
+            Self::StrideOverflow => f.write_str("raster stride overflow"),
+            Self::BufferOverflow => f.write_str("raster buffer size overflow"),
+            Self::OutOfBounds => f.write_str("raster coordinate is out of bounds"),
+        }
     }
 }
 
@@ -2950,6 +3319,196 @@ mod tests {
     #[test]
     fn render_should_use_thumbnail_facade_pixel_layout() {
         assert_eq!(facade_rgba_bytes_per_pixel(), 4);
+    }
+
+    #[test]
+    fn raster_dimensions_should_compute_stride_and_reject_empty_dimensions() {
+        let dimensions = RasterDimensions::new(300, 160).expect("valid dimensions");
+
+        assert_eq!(
+            dimensions,
+            RasterDimensions {
+                width: 300,
+                height: 160,
+                stride: 1200,
+            }
+        );
+        let error = RasterDimensions::new(0, 160).expect_err("zero width should fail");
+        assert_eq!(error.kind(), &RasterErrorKind::InvalidDimensions);
+    }
+
+    #[test]
+    fn raster_dimensions_should_report_buffer_overflow_without_allocating() {
+        let error = RasterDimensions::new(u32::MAX, u32::MAX)
+            .expect_err("huge dimensions should overflow buffer length");
+
+        assert_eq!(error.kind(), &RasterErrorKind::BufferOverflow);
+    }
+
+    #[test]
+    fn raster_device_should_fill_background_and_expose_safe_accessors() {
+        let background = Rgba {
+            r: 10,
+            g: 20,
+            b: 30,
+            a: 255,
+        };
+        let mut device = RasterDevice::new(2, 2, background).expect("valid raster");
+
+        assert_eq!(device.dimensions().stride, 8);
+        assert_eq!(
+            device.row(1).expect("second row"),
+            &[10, 20, 30, 255, 10, 20, 30, 255]
+        );
+        device
+            .set_pixel(
+                1,
+                0,
+                Rgba {
+                    r: 1,
+                    g: 2,
+                    b: 3,
+                    a: 4,
+                },
+            )
+            .expect("in-bounds pixel write");
+        assert_eq!(
+            device.pixel(1, 0).expect("in-bounds pixel read"),
+            Rgba {
+                r: 1,
+                g: 2,
+                b: 3,
+                a: 4,
+            }
+        );
+        let error = device
+            .pixel(2, 0)
+            .expect_err("x outside raster should fail");
+        assert_eq!(error.kind(), &RasterErrorKind::OutOfBounds);
+    }
+
+    #[test]
+    fn page_transform_should_match_pdfium_max_edge_scaling() {
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 300.0,
+                    max_y: 160.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            256,
+        )
+        .expect("valid page transform");
+
+        assert_eq!(transform.dimensions.width, 256);
+        assert_eq!(transform.dimensions.height, 137);
+        assert!((transform.scale - (256.0 / 300.0)).abs() < 0.000_001);
+    }
+
+    #[test]
+    fn page_transform_should_apply_crop_box_to_device_mapping() {
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 300.0,
+                    max_y: 160.0,
+                },
+                crop_box: Some(PathBounds {
+                    min_x: 10.0,
+                    min_y: 20.0,
+                    max_x: 110.0,
+                    max_y: 120.0,
+                }),
+                rotation: PageRotation::Deg0,
+            },
+            100,
+        )
+        .expect("valid cropped page transform");
+
+        assert_eq!(transform.dimensions.width, 100);
+        assert_eq!(transform.dimensions.height, 100);
+        assert_eq!(
+            transform.matrix.transform_point(10.0, 120.0),
+            Point { x: 0.0, y: 0.0 }
+        );
+        assert_eq!(
+            transform.matrix.transform_point(110.0, 20.0),
+            Point { x: 100.0, y: 100.0 }
+        );
+    }
+
+    #[test]
+    fn page_transform_should_swap_dimensions_for_quarter_turn_rotation() {
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 200.0,
+                    max_y: 100.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg90,
+            },
+            200,
+        )
+        .expect("valid rotated page transform");
+
+        assert_eq!(transform.dimensions.width, 100);
+        assert_eq!(transform.dimensions.height, 200);
+        assert_eq!(
+            transform.matrix.transform_point(0.0, 0.0),
+            Point { x: 0.0, y: 0.0 }
+        );
+        assert_eq!(
+            transform.matrix.transform_point(200.0, 100.0),
+            Point { x: 100.0, y: 200.0 }
+        );
+    }
+
+    #[test]
+    fn page_transform_should_reject_invalid_inputs() {
+        let geometry = PageGeometry {
+            media_box: PathBounds {
+                min_x: 0.0,
+                min_y: 0.0,
+                max_x: 0.0,
+                max_y: 160.0,
+            },
+            crop_box: None,
+            rotation: PageRotation::Deg0,
+        };
+
+        assert_eq!(
+            PageTransform::new(geometry, 256)
+                .expect_err("empty page box should fail")
+                .kind(),
+            &RasterErrorKind::InvalidPageBox
+        );
+        assert_eq!(
+            PageTransform::new(
+                PageGeometry {
+                    media_box: PathBounds {
+                        min_x: 0.0,
+                        min_y: 0.0,
+                        max_x: 300.0,
+                        max_y: 160.0,
+                    },
+                    crop_box: None,
+                    rotation: PageRotation::Deg0,
+                },
+                0,
+            )
+            .expect_err("zero max_edge should fail")
+            .kind(),
+            &RasterErrorKind::InvalidMaxEdge
+        );
     }
 
     #[test]

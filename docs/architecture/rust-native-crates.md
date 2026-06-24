@@ -125,3 +125,10 @@ with explicit recursion-depth and display-item budgets. Form streams without a
 local `/Resources /XObject` dictionary use those local names for nested Form
 XObjects. Image and text execution inside forms will be wired into the combined
 renderer in later rasterization milestones.
+The first raster setup layer defines checked RGBA raster dimensions, an owned
+`RasterDevice` with safe row and pixel accessors, and `PageTransform` for
+mapping media/crop boxes, rotation, and `max_edge` into device pixels. The
+dimension policy intentionally matches the PDFium backend's thumbnail scaling:
+scale down only when the rotated page's largest edge exceeds `max_edge`, then
+round each target dimension and clamp it to `1..=max_edge`. Actual path, image,
+and text rasterization remain later milestones.
