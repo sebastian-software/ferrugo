@@ -4,6 +4,7 @@
 
 use std::borrow::Cow;
 use std::fs;
+use std::thread;
 
 use pdfrust_content::{tokenize_content, ContentToken};
 use pdfrust_object::{
@@ -86,6 +87,36 @@ pub struct NativeMemoryDiagnostics {
     pub max_display_items: usize,
 }
 
+/// Bounded multi-page native render scheduler configuration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ParallelRenderOptions {
+    /// Maximum number of page render workers to run at once.
+    pub max_workers: usize,
+    /// Maximum estimated output pixels allowed across simultaneously rendered
+    /// pages.
+    pub max_in_flight_pixels: usize,
+}
+
+impl Default for ParallelRenderOptions {
+    fn default() -> Self {
+        Self {
+            max_workers: thread::available_parallelism()
+                .map(usize::from)
+                .unwrap_or(1),
+            max_in_flight_pixels: NativeMemoryDiagnostics::default().max_page_pixels,
+        }
+    }
+}
+
+/// Ordered thumbnails rendered by the bounded parallel scheduler.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParallelRenderResult {
+    /// Rendered pages in the same order as requested page indices.
+    pub pages: Vec<Thumbnail>,
+    /// Effective worker count after applying worker and memory budgets.
+    pub workers: usize,
+}
+
 impl Default for NativeMemoryDiagnostics {
     fn default() -> Self {
         let display = DisplayListOptions::default();
@@ -99,6 +130,83 @@ impl Default for NativeMemoryDiagnostics {
             max_display_items: display.max_display_items,
         }
     }
+}
+
+/// Renders multiple pages with a bounded native worker scheduler.
+///
+/// Results preserve the requested page order. When a batch contains failures,
+/// the error for the earliest requested page in that batch is returned after
+/// all already-started workers have joined.
+///
+/// # Errors
+///
+/// Returns [`ThumbnailError`] when the input cannot be loaded, the scheduler
+/// configuration is invalid, a memory budget prevents even one page from being
+/// scheduled, or any requested page fails to render.
+pub fn render_pages_parallel(
+    source: PdfSource<'_>,
+    page_indices: &[u32],
+    options: &ThumbnailOptions,
+    parallel_options: ParallelRenderOptions,
+) -> Result<ParallelRenderResult, ThumbnailError> {
+    let source_bytes = load_source(source)?;
+    let bytes = source_bytes.as_ref();
+    let worker_count = effective_worker_count(options, parallel_options)?;
+    let mut pages = Vec::with_capacity(page_indices.len());
+
+    for chunk in page_indices.chunks(worker_count) {
+        let batch = thread::scope(|scope| {
+            let handles = chunk
+                .iter()
+                .copied()
+                .map(|page_index| {
+                    scope.spawn(move || {
+                        let mut page_options = *options;
+                        page_options.page_index = page_index;
+                        render_bytes(bytes, &page_options)
+                    })
+                })
+                .collect::<Vec<_>>();
+
+            handles
+                .into_iter()
+                .map(|handle| {
+                    handle
+                        .join()
+                        .map_err(|_| ThumbnailError::internal("parallel render worker panicked"))?
+                })
+                .collect::<Result<Vec<_>, _>>()
+        })?;
+        pages.extend(batch);
+    }
+
+    Ok(ParallelRenderResult {
+        pages,
+        workers: worker_count,
+    })
+}
+
+fn effective_worker_count(
+    options: &ThumbnailOptions,
+    parallel_options: ParallelRenderOptions,
+) -> Result<usize, ThumbnailError> {
+    if parallel_options.max_workers == 0 {
+        return Err(unsupported_feature(BUCKET_RENDERER_MEMORY_BUDGET));
+    }
+    let pixels_per_page = (options.max_edge as usize)
+        .checked_mul(options.max_edge as usize)
+        .ok_or_else(|| unsupported_feature(BUCKET_RENDERER_MEMORY_BUDGET))?;
+    if pixels_per_page == 0 {
+        return Err(unsupported_feature(BUCKET_RENDERER_MEMORY_BUDGET));
+    }
+    let memory_limited_workers = parallel_options.max_in_flight_pixels / pixels_per_page;
+    if memory_limited_workers == 0 {
+        return Err(unsupported_feature(BUCKET_RENDERER_MEMORY_BUDGET));
+    }
+    Ok(parallel_options
+        .max_workers
+        .min(memory_limited_workers)
+        .max(1))
 }
 
 impl ThumbnailBackend for NativeBackend {
@@ -2596,6 +2704,99 @@ mod tests {
                 height: 180.0,
             }
         );
+    }
+
+    #[test]
+    fn native_parallel_renderer_should_preserve_requested_page_order() {
+        let bytes = include_bytes!("../../../fixtures/generated/multi-page-report.pdf");
+        let result = render_pages_parallel(
+            PdfSource::from_bytes(bytes),
+            &[1, 0],
+            &ThumbnailOptions {
+                max_edge: 260,
+                ..ThumbnailOptions::default()
+            },
+            ParallelRenderOptions {
+                max_workers: 2,
+                ..ParallelRenderOptions::default()
+            },
+        )
+        .expect("multi-page report should render through parallel scheduler");
+
+        assert_eq!(result.workers, 2);
+        assert_eq!(result.pages.len(), 2);
+        assert_eq!(result.pages[0].width, 240);
+        assert_eq!(result.pages[0].height, 180);
+        assert_eq!(result.pages[1].width, 260);
+        assert_eq!(result.pages[1].height, 160);
+    }
+
+    #[test]
+    fn native_parallel_renderer_should_back_off_workers_for_pixel_budget() {
+        let bytes = include_bytes!("../../../fixtures/generated/multi-page-report.pdf");
+        let result = render_pages_parallel(
+            PdfSource::from_bytes(bytes),
+            &[0, 1],
+            &ThumbnailOptions {
+                max_edge: 120,
+                ..ThumbnailOptions::default()
+            },
+            ParallelRenderOptions {
+                max_workers: 4,
+                max_in_flight_pixels: 120 * 120,
+            },
+        )
+        .expect("scheduler should fall back to one worker under tight pixel budget");
+
+        assert_eq!(result.workers, 1);
+        assert_eq!(result.pages.len(), 2);
+    }
+
+    #[test]
+    fn native_parallel_renderer_should_fail_when_budget_cannot_schedule_one_page() {
+        let bytes = include_bytes!("../../../fixtures/generated/multi-page-report.pdf");
+        let error = render_pages_parallel(
+            PdfSource::from_bytes(bytes),
+            &[0],
+            &ThumbnailOptions {
+                max_edge: 120,
+                ..ThumbnailOptions::default()
+            },
+            ParallelRenderOptions {
+                max_workers: 2,
+                max_in_flight_pixels: 1,
+            },
+        )
+        .expect_err("budget too small for one page should fail predictably");
+
+        assert_eq!(
+            error.class(),
+            pdfrust_thumbnail::ThumbnailErrorClass::Unsupported
+        );
+        assert_eq!(
+            error.unsupported_feature_bucket(),
+            Some(BUCKET_RENDERER_MEMORY_BUDGET)
+        );
+    }
+
+    #[test]
+    fn native_parallel_renderer_should_report_first_requested_page_error() {
+        let bytes = include_bytes!("../../../fixtures/generated/page-targeted-stream.pdf");
+        let error = render_pages_parallel(
+            PdfSource::from_bytes(bytes),
+            &[1, 0],
+            &ThumbnailOptions {
+                max_edge: 120,
+                ..ThumbnailOptions::default()
+            },
+            ParallelRenderOptions {
+                max_workers: 2,
+                ..ParallelRenderOptions::default()
+            },
+        )
+        .expect_err("first requested page should fail deterministically");
+
+        assert_eq!(error, ThumbnailError::Malformed);
     }
 
     #[test]
