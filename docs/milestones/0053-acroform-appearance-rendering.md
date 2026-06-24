@@ -56,7 +56,18 @@ In progress:
   blank through the plain `FPDF_RenderPageBitmap` path, while native renders
   `1200` non-white pixels. Keep this as native regression coverage until a
   form-fill-aware PDFium oracle path exists.
+- Checkbox fixture slice adds generated `fixtures/generated/acroform-checkbox.pdf`
+  with a `/Btn` widget field, `/V /Yes`, `/AS /Yes`, and a normal appearance
+  state dictionary containing `/Yes` and `/Off` form XObjects. Native rendering
+  verifies that the checked-state appearance is selected without evaluating
+  form values or scripts.
+- PDFium bridge probe for `acroform-checkbox.pdf` at `max-edge 80` also stays
+  blank through the plain `FPDF_RenderPageBitmap` path, while native renders
+  `140` non-white pixels.
 - Current validation:
   - `cargo test -p pdfrust-native acroform_text_field -- --nocapture`
+  - `cargo test -p pdfrust-native acroform_checkbox -- --nocapture`
   - `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render fixtures/generated/acroform-text-field.pdf --max-edge 140 --output target/pdfrust-thumbnails/acroform-text-field-pdfium-0053.png`
   - `cargo run -p pdfrust-cli -- render-native fixtures/generated/acroform-text-field.pdf --max-edge 140 --output target/pdfrust-thumbnails/acroform-text-field-native-0053.png`
+  - `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render fixtures/generated/acroform-checkbox.pdf --max-edge 80 --output target/pdfrust-thumbnails/acroform-checkbox-pdfium-0053.png`
+  - `cargo run -p pdfrust-cli -- render-native fixtures/generated/acroform-checkbox.pdf --max-edge 80 --output target/pdfrust-thumbnails/acroform-checkbox-native-0053.png`

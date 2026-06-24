@@ -41,6 +41,7 @@ The initial seed set covers:
 - text-markup highlight annotation appearance streams
 - widget annotation appearance streams
 - AcroForm text-field widget appearance streams
+- AcroForm checkbox widget appearance state dictionaries
 - axial DeviceRGB shading gradients
 - radial DeviceRGB shading gradients
 - colored tiling patterns

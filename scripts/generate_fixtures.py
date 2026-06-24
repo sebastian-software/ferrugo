@@ -667,6 +667,49 @@ def acroform_text_field_pdf() -> bytes:
     return pdf.render(catalog)
 
 
+def acroform_checkbox_pdf() -> bytes:
+    pdf = Pdf()
+    content = b""
+    yes_appearance = (
+        b"1 1 1 rg 0 0 20 20 re f "
+        b"0 0 0 RG 1 w 0.5 0.5 19 19 re S "
+        b"0 0 0 rg 6 6 8 8 re f"
+    )
+    off_appearance = b"1 1 1 rg 0 0 20 20 re f 0 0 0 RG 1 w 0.5 0.5 19 19 re S"
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 80 80] "
+        f"/Contents {contents} 0 R /Annots [6 0 R] >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    yes_appearance_object = pdf.add(
+        b"<< /Type /XObject /Subtype /Form /BBox [0 0 20 20] /Length "
+        + str(len(yes_appearance)).encode("ascii")
+        + b" >>\nstream\n"
+        + yes_appearance
+        + b"\nendstream"
+    )
+    off_appearance_object = pdf.add(
+        b"<< /Type /XObject /Subtype /Form /BBox [0 0 20 20] /Length "
+        + str(len(off_appearance)).encode("ascii")
+        + b" >>\nstream\n"
+        + off_appearance
+        + b"\nendstream"
+    )
+    field = pdf.add(
+        "<< /Type /Annot /Subtype /Widget /FT /Btn /T (Agree) /V /Yes /AS /Yes "
+        "/Rect [20 30 40 50] "
+        f"/AP << /N << /Yes {yes_appearance_object} 0 R /Off {off_appearance_object} 0 R >> >> >>"
+    )
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R /AcroForm << /Fields [{field} 0 R] >> >>")
+    assert field == 6
+    return pdf.render(catalog)
+
+
 def embedded_font_pdf() -> bytes:
     pdf = Pdf()
     content = b"BT /F1 18 Tf 20 60 Td (embedded font fixture) Tj ET"
@@ -834,6 +877,7 @@ def main() -> None:
     write("highlight-annotation-appearance.pdf", highlight_annotation_appearance_pdf())
     write("widget-annotation-appearance.pdf", widget_annotation_appearance_pdf())
     write("acroform-text-field.pdf", acroform_text_field_pdf())
+    write("acroform-checkbox.pdf", acroform_checkbox_pdf())
     write("embedded-font.pdf", embedded_font_pdf())
     write("tounicode-text.pdf", tounicode_text_pdf())
     write("encoding-differences.pdf", encoding_differences_pdf())

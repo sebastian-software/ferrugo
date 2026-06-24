@@ -1296,6 +1296,26 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_render_generated_acroform_checkbox_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/acroform-checkbox.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 80,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated AcroForm checkbox fixture should render");
+
+        assert_eq!(thumbnail.width, 80);
+        assert_eq!(thumbnail.height, 80);
+        assert_low_intensity(rgba_at(&thumbnail, 30, 40), 96);
+        assert_low_intensity(rgba_at(&thumbnail, 20, 30), 96);
+        assert_eq!(rgba_at(&thumbnail, 45, 40), [255, 255, 255, 255]);
+    }
+
+    #[test]
     fn native_backend_should_render_generated_text_fixture() {
         let bytes = include_bytes!("../../../fixtures/generated/text-page.pdf");
         let thumbnail = ThumbnailBackend::render(
