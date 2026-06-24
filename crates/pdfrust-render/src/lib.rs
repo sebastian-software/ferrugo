@@ -429,6 +429,8 @@ pub struct GraphicsState {
     pub fill_color: DeviceColor,
     /// Current stroke color.
     pub stroke_color: DeviceColor,
+    /// Current blend mode for path painting.
+    pub blend_mode: BlendMode,
     /// Placeholder flag set by `W` or `W*` until clipping is modeled fully.
     pub clip_path_pending: bool,
 }
@@ -442,7 +444,34 @@ impl Default for GraphicsState {
             stroke_gray: DeviceGray::BLACK,
             fill_color: DeviceColor::BLACK,
             stroke_color: DeviceColor::BLACK,
+            blend_mode: BlendMode::Normal,
             clip_path_pending: false,
+        }
+    }
+}
+
+/// Supported PDF blend modes for thumbnail rasterization.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlendMode {
+    /// PDF `Normal` blend mode.
+    Normal,
+    /// PDF `Multiply` blend mode.
+    Multiply,
+    /// PDF `Screen` blend mode.
+    Screen,
+}
+
+/// Parsed external graphics state subset.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ExtGraphicsState {
+    /// Blend mode applied by `gs`.
+    pub blend_mode: BlendMode,
+}
+
+impl Default for ExtGraphicsState {
+    fn default() -> Self {
+        Self {
+            blend_mode: BlendMode::Normal,
         }
     }
 }
@@ -896,6 +925,50 @@ impl ImageResources {
         self.non_image_names
             .iter()
             .any(|non_image| non_image.as_slice() == name.as_bytes())
+    }
+}
+
+/// External graphics state resource map.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct ExtGraphicsStateResources {
+    states: Vec<(Vec<u8>, ExtGraphicsState)>,
+}
+
+impl ExtGraphicsStateResources {
+    /// Creates an empty external graphics state resource map.
+    #[must_use]
+    pub const fn empty() -> Self {
+        Self { states: Vec::new() }
+    }
+
+    /// Resolves external graphics states from a PDF `/ExtGState` resource dictionary.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`GraphicsError`] when a graphics state dictionary uses an
+    /// unsupported blend mode or enabled overprint policy.
+    pub fn from_extgstate_dictionary(
+        dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    ) -> GraphicsResult<Self> {
+        let mut states = Vec::new();
+        for (name, value) in dictionary {
+            let PdfPrimitive::Dictionary(state_dictionary) = value else {
+                return Err(invalid_ext_graphics_state(name.as_bytes()));
+            };
+            states.push((
+                name.as_bytes().to_vec(),
+                decode_ext_graphics_state(state_dictionary)?,
+            ));
+        }
+        Ok(Self { states })
+    }
+
+    /// Returns the external graphics state matching a PDF resource name.
+    #[must_use]
+    pub fn get(&self, name: PdfName<'_>) -> Option<ExtGraphicsState> {
+        self.states.iter().find_map(|(resource, state)| {
+            (resource.as_slice() == name.as_bytes()).then_some(*state)
+        })
     }
 }
 
@@ -2210,6 +2283,24 @@ pub fn build_path_display_list<'a>(
     Ok(interpreter.display_list)
 }
 
+/// Builds a path display list with external graphics state resources.
+///
+/// # Errors
+///
+/// Returns [`GraphicsError`] when tokenization fails, path or display-list
+/// limits are exceeded, a named external graphics state is missing, or
+/// supported operators receive malformed operands.
+pub fn build_path_display_list_with_ext_graphics_states<'a>(
+    tokens: impl IntoIterator<Item = ContentResult<ContentToken<'a>>>,
+    ext_graphics_states: &ExtGraphicsStateResources,
+    options: DisplayListOptions,
+) -> GraphicsResult<DisplayList> {
+    let mut interpreter =
+        DisplayListInterpreter::new_with_ext_graphics_states(options, ext_graphics_states);
+    interpreter.interpret(tokens)?;
+    Ok(interpreter.display_list)
+}
+
 /// Builds positioned text display-list items from supported text operators.
 ///
 /// # Errors
@@ -2323,7 +2414,14 @@ fn rasterize_path_item(
     )?;
     match path.paint {
         PaintMode::Fill { rule } => {
-            fill_path(device, &flattened, rule, path.state.fill_color, options)?;
+            fill_path(
+                device,
+                &flattened,
+                rule,
+                path.state.fill_color,
+                path.state.blend_mode,
+                options,
+            )?;
         }
         PaintMode::Stroke => {
             stroke_path(
@@ -2331,16 +2429,25 @@ fn rasterize_path_item(
                 &flattened,
                 path.state.line_width * transform.scale,
                 path.state.stroke_color,
+                path.state.blend_mode,
                 options,
             )?;
         }
         PaintMode::FillStroke { rule } => {
-            fill_path(device, &flattened, rule, path.state.fill_color, options)?;
+            fill_path(
+                device,
+                &flattened,
+                rule,
+                path.state.fill_color,
+                path.state.blend_mode,
+                options,
+            )?;
             stroke_path(
                 device,
                 &flattened,
                 path.state.line_width * transform.scale,
                 path.state.stroke_color,
+                path.state.blend_mode,
                 options,
             )?;
         }
@@ -2481,6 +2588,7 @@ struct DisplayListInterpreter<'r> {
     current_path: CurrentPath,
     display_list: DisplayList,
     options: DisplayListOptions,
+    ext_graphics_states: Option<&'r ExtGraphicsStateResources>,
     forms: Option<FormInterpreterContext<'r>>,
 }
 
@@ -2521,6 +2629,22 @@ impl<'r> DisplayListInterpreter<'r> {
             current_path: CurrentPath::default(),
             display_list: DisplayList::new(),
             options,
+            ext_graphics_states: None,
+            forms: None,
+        }
+    }
+
+    fn new_with_ext_graphics_states(
+        options: DisplayListOptions,
+        ext_graphics_states: &'r ExtGraphicsStateResources,
+    ) -> Self {
+        Self {
+            current: GraphicsState::default(),
+            stack: Vec::new(),
+            current_path: CurrentPath::default(),
+            display_list: DisplayList::new(),
+            options,
+            ext_graphics_states: Some(ext_graphics_states),
             forms: None,
         }
     }
@@ -2538,6 +2662,7 @@ impl<'r> DisplayListInterpreter<'r> {
             current_path: CurrentPath::default(),
             display_list: DisplayList::new(),
             options,
+            ext_graphics_states: None,
             forms: Some(FormInterpreterContext {
                 resources: forms,
                 scope,
@@ -2581,6 +2706,7 @@ impl<'r> DisplayListInterpreter<'r> {
             b"G" => self.set_stroke_gray(offset, operands),
             b"rg" => self.set_fill_rgb(offset, operands),
             b"RG" => self.set_stroke_rgb(offset, operands),
+            b"gs" => self.set_ext_graphics_state(offset, operands),
             b"m" => self.move_to(offset, operands),
             b"l" => self.line_to(offset, operands),
             b"c" => self.curve_to(offset, operands),
@@ -2840,6 +2966,28 @@ impl<'r> DisplayListInterpreter<'r> {
             g: number_operand(offset, b"RG", operands, 1)?.clamp(0.0, 1.0),
             b: number_operand(offset, b"RG", operands, 2)?.clamp(0.0, 1.0),
         };
+        Ok(())
+    }
+
+    fn set_ext_graphics_state(
+        &mut self,
+        offset: ByteOffset,
+        operands: &[PdfPrimitive<'_>],
+    ) -> GraphicsResult<()> {
+        expect_operand_count(offset, b"gs", operands, 1)?;
+        let name = name_operand(offset, b"gs", operands, 0)?;
+        let state = self
+            .ext_graphics_states
+            .and_then(|states| states.get(name))
+            .ok_or_else(|| {
+                GraphicsError::new(
+                    Some(offset),
+                    GraphicsErrorKind::MissingExtGraphicsState {
+                        name: name.as_bytes().to_vec(),
+                    },
+                )
+            })?;
+        self.current.blend_mode = state.blend_mode;
         Ok(())
     }
 
@@ -4008,6 +4156,78 @@ fn decode_form_xobject(
     })
 }
 
+fn decode_ext_graphics_state(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+) -> GraphicsResult<ExtGraphicsState> {
+    reject_enabled_overprint(dictionary)?;
+    Ok(ExtGraphicsState {
+        blend_mode: ext_graphics_state_blend_mode(dictionary)?,
+    })
+}
+
+fn ext_graphics_state_blend_mode(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+) -> GraphicsResult<BlendMode> {
+    let Some(value) = dictionary_value(dictionary, b"BM") else {
+        return Ok(BlendMode::Normal);
+    };
+    match value {
+        PdfPrimitive::Name(name) => blend_mode_from_name(name.as_bytes()),
+        PdfPrimitive::Array(values) => {
+            for value in values {
+                if let PdfPrimitive::Name(name) = value {
+                    if let Ok(blend_mode) = blend_mode_from_name(name.as_bytes()) {
+                        return Ok(blend_mode);
+                    }
+                }
+            }
+            Err(GraphicsError::new(
+                None,
+                GraphicsErrorKind::UnsupportedBlendMode {
+                    mode: b"BM".to_vec(),
+                },
+            ))
+        }
+        _ => Err(GraphicsError::new(
+            None,
+            GraphicsErrorKind::UnsupportedBlendMode {
+                mode: b"malformed".to_vec(),
+            },
+        )),
+    }
+}
+
+fn blend_mode_from_name(name: &[u8]) -> GraphicsResult<BlendMode> {
+    match name {
+        b"Normal" | b"Compatible" => Ok(BlendMode::Normal),
+        b"Multiply" => Ok(BlendMode::Multiply),
+        b"Screen" => Ok(BlendMode::Screen),
+        _ => Err(GraphicsError::new(
+            None,
+            GraphicsErrorKind::UnsupportedBlendMode {
+                mode: name.to_vec(),
+            },
+        )),
+    }
+}
+
+fn reject_enabled_overprint(dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)]) -> GraphicsResult<()> {
+    for key in [b"OP".as_slice(), b"op"] {
+        let Some(value) = dictionary_value(dictionary, key) else {
+            continue;
+        };
+        if matches!(value, PdfPrimitive::Boolean(true)) {
+            return Err(GraphicsError::new(
+                None,
+                GraphicsErrorKind::UnsupportedOverprint {
+                    feature: key.to_vec(),
+                },
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn form_transparency_group(
     dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
 ) -> GraphicsResult<Option<TransparencyGroup>> {
@@ -4799,6 +5019,7 @@ fn fill_path(
     path: &FlattenedPath,
     rule: FillRule,
     color: DeviceColor,
+    blend_mode: BlendMode,
     options: PathRasterOptions,
 ) -> RasterResult<()> {
     let source = device_color_to_rgba(color);
@@ -4822,6 +5043,7 @@ fn fill_path(
                     x,
                     y,
                     source,
+                    blend_mode,
                     f64::from(covered) / f64::from(sample_count),
                 )?;
             }
@@ -4835,6 +5057,7 @@ fn stroke_path(
     path: &FlattenedPath,
     line_width: f64,
     color: DeviceColor,
+    blend_mode: BlendMode,
     options: PathRasterOptions,
 ) -> RasterResult<()> {
     let source = device_color_to_rgba(color);
@@ -4863,6 +5086,7 @@ fn stroke_path(
                     x,
                     y,
                     source,
+                    blend_mode,
                     f64::from(covered) / f64::from(sample_count),
                 )?;
             }
@@ -4994,20 +5218,51 @@ fn blend_pixel(
     x: u32,
     y: u32,
     source: Rgba,
+    blend_mode: BlendMode,
     coverage: f64,
 ) -> RasterResult<()> {
     let dest = device.pixel(x, y)?;
+    let blended = blend_source_with_backdrop(source, dest, blend_mode);
     let inv = 1.0 - coverage;
     device.set_pixel(
         x,
         y,
         Rgba {
-            r: blend_channel(source.r, dest.r, coverage, inv),
-            g: blend_channel(source.g, dest.g, coverage, inv),
-            b: blend_channel(source.b, dest.b, coverage, inv),
+            r: blend_channel(blended.r, dest.r, coverage, inv),
+            g: blend_channel(blended.g, dest.g, coverage, inv),
+            b: blend_channel(blended.b, dest.b, coverage, inv),
             a: 255,
         },
     )
+}
+
+fn blend_source_with_backdrop(source: Rgba, dest: Rgba, blend_mode: BlendMode) -> Rgba {
+    match blend_mode {
+        BlendMode::Normal => source,
+        BlendMode::Multiply => Rgba {
+            r: multiply_channel(source.r, dest.r),
+            g: multiply_channel(source.g, dest.g),
+            b: multiply_channel(source.b, dest.b),
+            a: source.a,
+        },
+        BlendMode::Screen => Rgba {
+            r: screen_channel(source.r, dest.r),
+            g: screen_channel(source.g, dest.g),
+            b: screen_channel(source.b, dest.b),
+            a: source.a,
+        },
+    }
+}
+
+fn multiply_channel(source: u8, dest: u8) -> u8 {
+    ((u16::from(source) * u16::from(dest) + 127) / 255) as u8
+}
+
+fn screen_channel(source: u8, dest: u8) -> u8 {
+    255u8.saturating_sub(multiply_channel(
+        255u8.saturating_sub(source),
+        255u8.saturating_sub(dest),
+    ))
 }
 
 fn blend_channel(source: u8, dest: u8, coverage: f64, inv_coverage: f64) -> u8 {
@@ -6337,6 +6592,15 @@ fn invalid_image_resource(name: &[u8]) -> GraphicsError {
     )
 }
 
+fn invalid_ext_graphics_state(name: &[u8]) -> GraphicsError {
+    GraphicsError::new(
+        None,
+        GraphicsErrorKind::InvalidExtGraphicsState {
+            name: name.to_vec(),
+        },
+    )
+}
+
 fn unsupported_image_filter(filter: &[u8]) -> GraphicsError {
     GraphicsError::new(
         None,
@@ -6703,6 +6967,26 @@ pub enum GraphicsErrorKind {
         /// Unsupported transparency-group feature name.
         feature: Vec<u8>,
     },
+    /// External graphics state blend mode is unsupported.
+    UnsupportedBlendMode {
+        /// Unsupported blend mode name.
+        mode: Vec<u8>,
+    },
+    /// External graphics state overprint policy is unsupported.
+    UnsupportedOverprint {
+        /// Unsupported overprint feature name.
+        feature: Vec<u8>,
+    },
+    /// External graphics state resource name was not present in the resource map.
+    MissingExtGraphicsState {
+        /// Missing external graphics state resource name.
+        name: Vec<u8>,
+    },
+    /// External graphics state resource is malformed.
+    InvalidExtGraphicsState {
+        /// Invalid external graphics state resource name.
+        name: Vec<u8>,
+    },
     /// Form resource name was not present in the resource map.
     MissingForm {
         /// Missing form resource name.
@@ -6883,6 +7167,28 @@ impl fmt::Display for GraphicsErrorKind {
                 f,
                 "unsupported transparency-group feature {}",
                 String::from_utf8_lossy(feature)
+            ),
+            Self::UnsupportedBlendMode { mode } => {
+                write!(
+                    f,
+                    "unsupported blend mode {}",
+                    String::from_utf8_lossy(mode)
+                )
+            }
+            Self::UnsupportedOverprint { feature } => write!(
+                f,
+                "unsupported overprint feature {}",
+                String::from_utf8_lossy(feature)
+            ),
+            Self::MissingExtGraphicsState { name } => write!(
+                f,
+                "missing external graphics state resource {}",
+                String::from_utf8_lossy(name)
+            ),
+            Self::InvalidExtGraphicsState { name } => write!(
+                f,
+                "invalid external graphics state resource {}",
+                String::from_utf8_lossy(name)
             ),
             Self::MissingForm { name } => {
                 write!(f, "missing form resource {}", String::from_utf8_lossy(name))
@@ -7529,6 +7835,126 @@ mod tests {
                 r: 0.9,
                 g: 0.2,
                 b: 0.1,
+            }
+        );
+    }
+
+    #[test]
+    fn ext_graphics_state_resources_should_parse_supported_blend_modes() {
+        let dictionary = vec![(
+            PdfName::new(b"GS1"),
+            PdfPrimitive::Dictionary(vec![(
+                PdfName::new(b"BM"),
+                PdfPrimitive::Name(PdfName::new(b"Multiply")),
+            )]),
+        )];
+        let resources = ExtGraphicsStateResources::from_extgstate_dictionary(&dictionary)
+            .expect("supported blend mode");
+
+        assert_eq!(
+            resources.get(PdfName::new(b"GS1")),
+            Some(ExtGraphicsState {
+                blend_mode: BlendMode::Multiply,
+            })
+        );
+    }
+
+    #[test]
+    fn ext_graphics_state_resources_should_reject_unsupported_blend_mode() {
+        let dictionary = vec![(
+            PdfName::new(b"GS1"),
+            PdfPrimitive::Dictionary(vec![(
+                PdfName::new(b"BM"),
+                PdfPrimitive::Name(PdfName::new(b"Overlay")),
+            )]),
+        )];
+        let error = ExtGraphicsStateResources::from_extgstate_dictionary(&dictionary)
+            .expect_err("unsupported blend mode should fail explicitly");
+
+        assert_eq!(
+            error.kind(),
+            &GraphicsErrorKind::UnsupportedBlendMode {
+                mode: b"Overlay".to_vec(),
+            }
+        );
+    }
+
+    #[test]
+    fn ext_graphics_state_resources_should_reject_enabled_overprint() {
+        let dictionary = vec![(
+            PdfName::new(b"GS1"),
+            PdfPrimitive::Dictionary(vec![(PdfName::new(b"OP"), PdfPrimitive::Boolean(true))]),
+        )];
+        let error = ExtGraphicsStateResources::from_extgstate_dictionary(&dictionary)
+            .expect_err("enabled overprint should fail explicitly");
+
+        assert_eq!(
+            error.kind(),
+            &GraphicsErrorKind::UnsupportedOverprint {
+                feature: b"OP".to_vec(),
+            }
+        );
+    }
+
+    #[test]
+    fn display_list_should_apply_external_graphics_state_blend_mode() {
+        let dictionary = vec![(
+            PdfName::new(b"GS1"),
+            PdfPrimitive::Dictionary(vec![(
+                PdfName::new(b"BM"),
+                PdfPrimitive::Name(PdfName::new(b"Screen")),
+            )]),
+        )];
+        let resources = ExtGraphicsStateResources::from_extgstate_dictionary(&dictionary)
+            .expect("supported blend mode");
+        let list = build_path_display_list_with_ext_graphics_states(
+            tokenize_content(PdfBytes::new(b"/GS1 gs 0.9 0.2 0.1 rg 70 55 80 50 re f")),
+            &resources,
+            DisplayListOptions::default(),
+        )
+        .expect("valid graphics state stream");
+
+        let DisplayItem::Path(path) = &list.items()[0] else {
+            panic!("expected path display item");
+        };
+        assert_eq!(path.state.blend_mode, BlendMode::Screen);
+    }
+
+    #[test]
+    fn blend_source_with_backdrop_should_apply_supported_blend_modes() {
+        let source = Rgba {
+            r: 255,
+            g: 0,
+            b: 0,
+            a: 255,
+        };
+        let backdrop = Rgba {
+            r: 128,
+            g: 128,
+            b: 128,
+            a: 255,
+        };
+
+        assert_eq!(
+            blend_source_with_backdrop(source, backdrop, BlendMode::Normal),
+            source
+        );
+        assert_eq!(
+            blend_source_with_backdrop(source, backdrop, BlendMode::Multiply),
+            Rgba {
+                r: 128,
+                g: 0,
+                b: 0,
+                a: 255,
+            }
+        );
+        assert_eq!(
+            blend_source_with_backdrop(source, backdrop, BlendMode::Screen),
+            Rgba {
+                r: 255,
+                g: 128,
+                b: 128,
+                a: 255,
             }
         );
     }

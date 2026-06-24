@@ -105,6 +105,9 @@ slices. It provides deterministic affine `Matrix` math, a small copyable
 and RGB fill/stroke color, and clipping placeholders. It also builds bounded
 path display lists for `m`, `l`, `c`, `h`, `re`, `S`, `s`, `f`, `F`, `f*`,
 `B`, and `B*`. Unsupported path construction operators return typed errors.
+Page `/ExtGState` resources can set path blend mode state for `Normal`,
+`Compatible`, `Multiply`, and `Screen`; enabled overprint is rejected as an
+explicit unsupported policy until print-production semantics are modeled.
 Text display-list support interprets `BT`, `ET`, `Tf`, `Td`, `Tm`, `Tj`, and
 `TJ` into positioned `TextDisplayItem` values. Font descriptors carry simple
 single-byte encodings, Differences arrays, and bounded ToUnicode CMaps for the
@@ -150,10 +153,11 @@ and text rasterization remain later milestones.
 Basic path rasterization now paints path display lists into RGBA rasters using
 bounded line-segment flattening and fixed supersampling. It supports nonzero
 and even-odd fills plus simple stroked line segments, composites opaque device
-gray/RGB colors over the requested background, and is wired through
-`pdfrust-native` for simple path-only Classic PDFs. The CLI exposes this path
-as `render-native` so generated vector fixtures can be compared against the
-PDFium backend during development.
+gray/RGB colors over the requested background with `Normal`, `Multiply`, and
+`Screen` blend modes, and is wired through `pdfrust-native` for simple
+path-only Classic PDFs. The CLI exposes this path as `render-native` so
+generated vector fixtures can be compared against the PDFium backend during
+development.
 Image XObject rasterization draws decoded `DeviceRGB`, `DeviceGray`,
 `DeviceCMYK`, and Indexed images with nearest-neighbor sampling through the
 image placement matrix and the page transform. The native backend resolves page

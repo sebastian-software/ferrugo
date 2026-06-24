@@ -1,6 +1,6 @@
 # 0049: Blend Modes And Overprint Policy
 
-Status: todo
+Status: in-progress
 Phase: 6
 Size: medium
 Depends on: 0048
@@ -45,4 +45,24 @@ for thumbnails.
 
 ## Completion Notes
 
-Empty until done.
+In progress:
+
+- First implementation slice adds direct `/ExtGState` resource parsing for
+  `/BM` values `Normal`, `Compatible`, `Multiply`, and `Screen`.
+- Path display-list execution applies `/gs` graphics-state resources and stores
+  the active blend mode in each path item.
+- Path rasterization applies `Normal`, `Multiply`, and `Screen` with
+  allocation-free channel math inside the pixel loop.
+- Enabled `/OP true` and `/op true` overprint policies fail with typed
+  unsupported errors instead of silently rendering incorrect thumbnails.
+- Native rendering now resolves page-level `/Resources /ExtGState` dictionaries
+  for the path pass.
+- Current validation:
+  - `cargo fmt --check`
+  - `git diff --check`
+  - `cargo check`
+  - `cargo test --quiet`
+  - `cargo test -p pdfrust-render ext_graphics_state -- --nocapture`
+  - `cargo test -p pdfrust-render blend_source_with_backdrop -- --nocapture`
+  - `cargo test -p pdfrust-render display_list_should_apply_external_graphics_state_blend_mode -- --nocapture`
+  - `cargo clippy --all-targets --all-features -- -D warnings`
