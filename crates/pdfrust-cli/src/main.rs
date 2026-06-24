@@ -79,7 +79,7 @@ fn render_auto_command(args: &[OsString]) -> Result<(), CliError> {
 
 fn render_auto(config: RenderConfig) -> Result<(), CliError> {
     let outcome = render_auto_thumbnail(&config)?;
-    eprintln!("render backend: {}", outcome.backend.as_str());
+    eprintln!("render backend: {}", outcome.backend);
     let png = encode_rgba_png(&outcome.thumbnail)?;
     fs::write(&config.output, png).map_err(|source| CliError::Io {
         path: config.output,
@@ -97,7 +97,14 @@ fn render_auto_thumbnail(config: &RenderConfig) -> Result<AutoRenderOutcome, Cli
             thumbnail,
             backend: AutoRenderBackend::Native,
         }),
-        Err(ThumbnailError::Unsupported) => {
+        Err(err) if err.class() == pdfrust_thumbnail::ThumbnailErrorClass::Unsupported => {
+            let reason = FallbackReason::from_native_error(&err);
+            if config.fallback_policy.denies(reason) {
+                return Err(CliError::Render {
+                    class: err.class().as_str(),
+                    message: format!("PDFium fallback denied for {}", reason.as_str()),
+                });
+            }
             let pdfium =
                 PdfiumBackend::from_env().map_err(|err| CliError::Backend(err.to_string()))?;
             let thumbnail = pdfium
@@ -108,7 +115,7 @@ fn render_auto_thumbnail(config: &RenderConfig) -> Result<AutoRenderOutcome, Cli
                 })?;
             Ok(AutoRenderOutcome {
                 thumbnail,
-                backend: AutoRenderBackend::PdfiumFallback,
+                backend: AutoRenderBackend::PdfiumFallback { reason },
             })
         }
         Err(err) => Err(CliError::Render {
@@ -121,14 +128,72 @@ fn render_auto_thumbnail(config: &RenderConfig) -> Result<AutoRenderOutcome, Cli
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum AutoRenderBackend {
     Native,
-    PdfiumFallback,
+    PdfiumFallback { reason: FallbackReason },
 }
 
-impl AutoRenderBackend {
+impl fmt::Display for AutoRenderBackend {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Native => f.write_str("native"),
+            Self::PdfiumFallback { reason } => {
+                write!(
+                    f,
+                    "pdfium fallback_reason={} fallback_category={}",
+                    reason.as_str(),
+                    reason.category()
+                )
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FallbackReason {
+    NativeUnsupported,
+    NativeUnsupportedFeature(&'static str),
+}
+
+impl FallbackReason {
+    fn from_native_error(error: &ThumbnailError) -> Self {
+        error
+            .unsupported_feature_bucket()
+            .map(Self::NativeUnsupportedFeature)
+            .unwrap_or(Self::NativeUnsupported)
+    }
+
     const fn as_str(self) -> &'static str {
         match self {
-            Self::Native => "native",
-            Self::PdfiumFallback => "pdfium fallback_reason=unsupported",
+            Self::NativeUnsupported => "native.unsupported",
+            Self::NativeUnsupportedFeature(bucket) => bucket,
+        }
+    }
+
+    const fn category(self) -> &'static str {
+        self.as_str()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct FallbackPolicy {
+    native_only: bool,
+    denied_reasons: Vec<String>,
+}
+
+impl FallbackPolicy {
+    fn denies(&self, reason: FallbackReason) -> bool {
+        self.native_only
+            || self
+                .denied_reasons
+                .iter()
+                .any(|denied| denied == reason.as_str())
+    }
+}
+
+impl Default for FallbackPolicy {
+    fn default() -> Self {
+        Self {
+            native_only: env_flag("PDFRUST_NATIVE_ONLY"),
+            denied_reasons: env_list("PDFRUST_DENY_FALLBACK_REASONS"),
         }
     }
 }
@@ -347,6 +412,7 @@ struct RenderConfig {
     max_edge: u32,
     background: Rgba,
     timeout: Duration,
+    fallback_policy: FallbackPolicy,
 }
 
 impl RenderConfig {
@@ -357,6 +423,7 @@ impl RenderConfig {
         let mut max_edge = DEFAULT_MAX_EDGE;
         let mut background = Rgba::WHITE;
         let mut timeout = DEFAULT_TIMEOUT;
+        let mut fallback_policy = FallbackPolicy::default();
 
         let mut index = 0;
         while index < args.len() {
@@ -385,6 +452,15 @@ impl RenderConfig {
                     let seconds = parse_u64(args, index, "--timeout")?;
                     timeout = Duration::from_secs(seconds);
                 }
+                "--native-only" | "--no-pdfium-fallback" => {
+                    fallback_policy.native_only = true;
+                }
+                "--deny-fallback-reason" => {
+                    index += 1;
+                    fallback_policy
+                        .denied_reasons
+                        .push(required_str(args, index, "--deny-fallback-reason")?.to_string());
+                }
                 value if value.starts_with('-') => {
                     return Err(CliError::Usage(format!("unknown option `{value}`")));
                 }
@@ -412,6 +488,7 @@ impl RenderConfig {
             max_edge,
             background,
             timeout,
+            fallback_policy,
         })
     }
 }
@@ -609,6 +686,26 @@ fn parse_u64(args: &[OsString], index: usize, option: &str) -> Result<u64, CliEr
     required_str(args, index, option)?
         .parse()
         .map_err(|_| CliError::Usage(format!("{option} must be an unsigned integer")))
+}
+
+fn env_flag(name: &str) -> bool {
+    env::var_os(name)
+        .and_then(|value| value.into_string().ok())
+        .is_some_and(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+}
+
+fn env_list(name: &str) -> Vec<String> {
+    env::var(name)
+        .map(|value| {
+            value
+                .split(',')
+                .filter_map(|item| {
+                    let item = item.trim();
+                    (!item.is_empty()).then(|| item.to_string())
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn parse_background(value: &str) -> Result<Rgba, CliError> {
@@ -846,7 +943,7 @@ fn print_usage() {
     println!(
         "Usage: pdfrust-cli <render|render-auto|render-native|render-pdfium|render-isolated|compare-metadata> <input.pdf> \
          [--output PATH] [--page-index N] [--max-edge N] [--background #RRGGBB] \
-         [--timeout SECONDS]"
+         [--timeout SECONDS] [--native-only] [--deny-fallback-reason BUCKET]"
     );
 }
 
@@ -957,11 +1054,53 @@ mod tests {
             max_edge: 220,
             background: Rgba::WHITE,
             timeout: Duration::from_secs(5),
+            fallback_policy: FallbackPolicy::default(),
         };
 
         let outcome = render_auto_thumbnail(&config).expect("supported fixture should render");
 
         assert_eq!(outcome.backend, AutoRenderBackend::Native);
+    }
+
+    #[test]
+    fn render_auto_thumbnail_should_honor_native_only_policy() {
+        env::remove_var(pdfrust_pdfium::PDFIUM_LIBRARY_ENV);
+        let input = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/generated/optional-content-ocmd.pdf");
+        let output = PathBuf::from("target/unused-native-only.png");
+        let config = RenderConfig {
+            input,
+            output,
+            page_index: 0,
+            max_edge: 220,
+            background: Rgba::WHITE,
+            timeout: Duration::from_secs(5),
+            fallback_policy: FallbackPolicy {
+                native_only: true,
+                denied_reasons: Vec::new(),
+            },
+        };
+
+        let error = render_auto_thumbnail(&config)
+            .expect_err("native-only mode should deny PDFium fallback");
+
+        assert_eq!(
+            error.to_string(),
+            "render error [unsupported]: PDFium fallback denied for graphics.optional-content"
+        );
+    }
+
+    #[test]
+    fn fallback_reason_should_use_native_feature_bucket() {
+        let error = ThumbnailError::unsupported_feature("graphics.optional-content");
+
+        let reason = FallbackReason::from_native_error(&error);
+
+        assert_eq!(
+            reason,
+            FallbackReason::NativeUnsupportedFeature("graphics.optional-content")
+        );
+        assert_eq!(reason.category(), "graphics.optional-content");
     }
 
     #[test]

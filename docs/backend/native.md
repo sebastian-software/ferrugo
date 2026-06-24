@@ -62,10 +62,19 @@ cargo run -p pdfrust-cli -- render fixtures/generated/text-page.pdf \
   --timeout 5
 ```
 
-`render` and `render-auto` try the Rust-native backend first. If native returns the public
-`unsupported` class, it retries through PDFium using `PDFRUST_PDFIUM_LIBRARY`.
-`encrypted`, `malformed`, and `internal` failures are not silently retried.
-The selected backend is printed as a render diagnostic.
+`render` and `render-auto` try the Rust-native backend first. If native returns
+the public `unsupported` class, it retries through PDFium using
+`PDFRUST_PDFIUM_LIBRARY`. `encrypted`, `malformed`, and `internal` failures are
+not silently retried. The selected backend is printed as a render diagnostic.
+Fallback diagnostics include `fallback_reason=<bucket>` and
+`fallback_category=<bucket>` so corpus runs can count the remaining PDFium
+surface.
+
+Use `--native-only` or `--no-pdfium-fallback` with `render`/`render-auto` to
+fail CI or release validation when native cannot render a fixture without
+PDFium. Use `--deny-fallback-reason <bucket>` for targeted experiments, or set
+`PDFRUST_NATIVE_ONLY=1` / `PDFRUST_DENY_FALLBACK_REASONS=bucket.one,bucket.two`
+for environment-driven runs.
 
 Use `render-native` to force native without fallback. Use `render-pdfium` or
 `render-isolated` to force PDFium.

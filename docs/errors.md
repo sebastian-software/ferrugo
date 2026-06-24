@@ -55,3 +55,10 @@ preserving the public `unsupported` class:
 These buckets are not API classes. They make support matrices and corpus
 reports stable without forcing downstream callers to depend on milestone-level
 implementation details.
+
+Automatic native-first rendering preserves the public `unsupported` class and
+emits the bucket as `fallback_reason` / `fallback_category` when PDFium fallback
+is used. Generic unsupported outcomes use `native.unsupported` until a narrower
+bucket is available. `PDFRUST_NATIVE_ONLY=1`, `--native-only`, and
+`--deny-fallback-reason <bucket>` can turn these diagnostics into local or CI
+failure gates.

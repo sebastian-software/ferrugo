@@ -242,6 +242,8 @@ pub enum ThumbnailError {
     Malformed,
     /// The document uses unsupported features.
     Unsupported,
+    /// The document uses an unsupported feature with a stable diagnostic bucket.
+    UnsupportedFeature(&'static str),
     /// Rendering exceeded the configured timeout.
     Timeout,
     /// Backend failure not covered by a more specific stable class.
@@ -255,13 +257,28 @@ impl ThumbnailError {
         Self::Internal(message.into())
     }
 
+    /// Creates an unsupported-feature error with a stable internal bucket.
+    #[must_use]
+    pub const fn unsupported_feature(bucket: &'static str) -> Self {
+        Self::UnsupportedFeature(bucket)
+    }
+
+    /// Returns the internal unsupported-feature bucket when one is available.
+    #[must_use]
+    pub const fn unsupported_feature_bucket(&self) -> Option<&'static str> {
+        match self {
+            Self::UnsupportedFeature(bucket) => Some(bucket),
+            _ => None,
+        }
+    }
+
     /// Returns the stable high-level error class.
     #[must_use]
     pub const fn class(&self) -> ThumbnailErrorClass {
         match self {
             Self::Encrypted => ThumbnailErrorClass::Encrypted,
             Self::Malformed => ThumbnailErrorClass::Malformed,
-            Self::Unsupported => ThumbnailErrorClass::Unsupported,
+            Self::Unsupported | Self::UnsupportedFeature(_) => ThumbnailErrorClass::Unsupported,
             Self::Timeout => ThumbnailErrorClass::Timeout,
             Self::Internal(_) => ThumbnailErrorClass::Internal,
         }
@@ -309,6 +326,9 @@ impl fmt::Display for ThumbnailError {
             Self::Encrypted => f.write_str("PDF is encrypted or password protected"),
             Self::Malformed => f.write_str("PDF is malformed"),
             Self::Unsupported => f.write_str("PDF feature is unsupported"),
+            Self::UnsupportedFeature(bucket) => {
+                write!(f, "PDF feature is unsupported ({bucket})")
+            }
             Self::Timeout => f.write_str("thumbnail rendering timed out"),
             Self::Internal(message) => write!(f, "internal thumbnail error: {message}"),
         }

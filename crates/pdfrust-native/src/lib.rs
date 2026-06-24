@@ -29,6 +29,19 @@ use pdfrust_thumbnail::{
 /// Stable crate role used by architecture smoke tests and documentation.
 pub const CRATE_ROLE: &str = "native-backend";
 
+const BUCKET_GRAPHICS_OPTIONAL_CONTENT: &str = "graphics.optional-content";
+const BUCKET_GRAPHICS_PATTERN_SHADING: &str = "graphics.pattern-shading";
+const BUCKET_GRAPHICS_STROKE_CLIP: &str = "graphics.stroke-clip";
+const BUCKET_GRAPHICS_TRANSPARENCY: &str = "graphics.transparency";
+const BUCKET_IMAGE_COLOR_SPACE: &str = "image.color-space";
+const BUCKET_IMAGE_FILTER: &str = "image.filter";
+const BUCKET_RENDERER_FORM_XOBJECT: &str = "renderer.form-xobject-composition";
+const BUCKET_RENDERER_MEMORY_BUDGET: &str = "renderer.memory-budget";
+const BUCKET_RENDERER_UNSUPPORTED: &str = "native.unsupported";
+const BUCKET_TEXT_CMAP_TOUNICODE: &str = "text.cmap-tounicode";
+const BUCKET_TEXT_FONT_PROGRAM: &str = "text.font-program";
+const BUCKET_TEXT_GLYPH_OUTLINE: &str = "text.glyph-outline";
+
 /// Rust-native thumbnail backend.
 ///
 /// The backend is intentionally a placeholder until the parser, object model,
@@ -142,7 +155,7 @@ fn render_bytes(bytes: &[u8], options: &ThumbnailOptions) -> Result<Thumbnail, T
     let page = page_tree
         .pages()
         .get(options.page_index as usize)
-        .ok_or(ThumbnailError::Unsupported)?;
+        .ok_or_else(|| unsupported_feature(BUCKET_RENDERER_UNSUPPORTED))?;
     let content = page_content_stream(&document, page)?;
     let optional_content = page_optional_content_properties(&document, page)?;
     let optional_content_state = document_optional_content_state(&document)?;
@@ -234,7 +247,8 @@ fn page_content_stream(
         .get(page.id)
         .ok_or(ThumbnailError::Malformed)?;
     let dictionary = object_dictionary(&object.value)?;
-    let contents = dictionary_value(dictionary, b"Contents").ok_or(ThumbnailError::Unsupported)?;
+    let contents = dictionary_value(dictionary, b"Contents")
+        .ok_or_else(|| unsupported_feature(BUCKET_RENDERER_UNSUPPORTED))?;
     decode_contents(document, contents)
 }
 
@@ -350,7 +364,7 @@ fn page_tiling_pattern_resources(
     let mut decoded = Vec::new();
     for (name, value) in patterns {
         let PdfPrimitive::Reference(reference) = value else {
-            return Err(ThumbnailError::Unsupported);
+            return Err(unsupported_feature(BUCKET_GRAPHICS_PATTERN_SHADING));
         };
         let object_number =
             ObjectNumber::new(reference.object).map_err(|_| ThumbnailError::Malformed)?;
@@ -365,7 +379,9 @@ fn page_tiling_pattern_resources(
         let ObjectValue::Stream(stream) = &object.value else {
             return Err(ThumbnailError::Malformed);
         };
-        let content = stream.decode().map_err(|_| ThumbnailError::Unsupported)?;
+        let content = stream
+            .decode()
+            .map_err(|_| unsupported_feature(BUCKET_GRAPHICS_PATTERN_SHADING))?;
         decoded.push(
             decode_tiling_pattern(
                 name.as_bytes().to_vec(),
@@ -570,7 +586,7 @@ fn document_optional_content_state(
         });
     };
     if dictionary_value(default_config, b"AS").is_some() {
-        return Err(ThumbnailError::Unsupported);
+        return Err(unsupported_feature(BUCKET_GRAPHICS_OPTIONAL_CONTENT));
     }
     let base_visible = match dictionary_value(default_config, b"BaseState") {
         Some(PdfPrimitive::Name(name)) if name.as_bytes() == b"OFF" => false,
@@ -677,7 +693,7 @@ fn optional_content_policy(
             Ok(OptionalContentPolicy::Unsupported)
         }
         PdfPrimitive::Dictionary(dictionary) if dictionary_name_is(dictionary, b"Type", b"OCG") => {
-            Err(ThumbnailError::Unsupported)
+            Err(unsupported_feature(BUCKET_GRAPHICS_OPTIONAL_CONTENT))
         }
         _ => Err(ThumbnailError::Malformed),
     }
@@ -795,15 +811,17 @@ fn optional_content_marker_visible(
         return Ok(true);
     }
     let PdfPrimitive::Name(property_name) = operands[1].0 else {
-        return Err(ThumbnailError::Unsupported);
+        return Err(unsupported_feature(BUCKET_GRAPHICS_OPTIONAL_CONTENT));
     };
     let property = properties
         .iter()
         .find(|property| property.name.as_slice() == property_name.as_bytes())
-        .ok_or(ThumbnailError::Unsupported)?;
+        .ok_or_else(|| unsupported_feature(BUCKET_GRAPHICS_OPTIONAL_CONTENT))?;
     match property.policy {
         OptionalContentPolicy::Group(reference) => Ok(state.visible(reference)),
-        OptionalContentPolicy::Unsupported => Err(ThumbnailError::Unsupported),
+        OptionalContentPolicy::Unsupported => {
+            Err(unsupported_feature(BUCKET_GRAPHICS_OPTIONAL_CONTENT))
+        }
     }
 }
 
@@ -1008,7 +1026,7 @@ fn decode_contents(
             }
             Ok(decoded)
         }
-        _ => Err(ThumbnailError::Unsupported),
+        _ => Err(unsupported_feature(BUCKET_RENDERER_UNSUPPORTED)),
     }
 }
 
@@ -1027,7 +1045,7 @@ fn decode_content_reference(
         .get(reference.id)
         .ok_or(ThumbnailError::Malformed)?;
     let ObjectValue::Stream(stream) = &object.value else {
-        return Err(ThumbnailError::Unsupported);
+        return Err(unsupported_feature(BUCKET_RENDERER_UNSUPPORTED));
     };
     stream.decode().map_err(|_| ThumbnailError::Malformed)
 }
@@ -1102,7 +1120,52 @@ fn map_graphics_error(error: GraphicsError) -> ThumbnailError {
         | GraphicsErrorKind::OperandCount { .. }
         | GraphicsErrorKind::InvalidOperand { .. }
         | GraphicsErrorKind::MissingCurrentPoint { .. } => ThumbnailError::Malformed,
-        _ => ThumbnailError::Unsupported,
+        GraphicsErrorKind::UnsupportedPathOperator { .. }
+        | GraphicsErrorKind::UnsupportedDashPattern { .. } => {
+            unsupported_feature(BUCKET_GRAPHICS_STROKE_CLIP)
+        }
+        GraphicsErrorKind::UnsupportedFontProgram { .. }
+        | GraphicsErrorKind::UnsupportedTextEncoding
+        | GraphicsErrorKind::UnsupportedTextEncodingFeature { .. }
+        | GraphicsErrorKind::MissingTextMapping { .. }
+        | GraphicsErrorKind::TextRunOverflow { .. } => {
+            unsupported_feature(BUCKET_TEXT_FONT_PROGRAM)
+        }
+        GraphicsErrorKind::UnsupportedGlyphOutlineProgram { .. }
+        | GraphicsErrorKind::UnsupportedGlyphOutline { .. }
+        | GraphicsErrorKind::GlyphOutlineSegmentOverflow { .. }
+        | GraphicsErrorKind::GlyphOutlineCacheOverflow { .. } => {
+            unsupported_feature(BUCKET_TEXT_GLYPH_OUTLINE)
+        }
+        GraphicsErrorKind::UnsupportedCMap { .. }
+        | GraphicsErrorKind::CMapBytesOverflow { .. }
+        | GraphicsErrorKind::CMapEntriesOverflow { .. } => {
+            unsupported_feature(BUCKET_TEXT_CMAP_TOUNICODE)
+        }
+        GraphicsErrorKind::UnsupportedImageColorSpace { .. } => {
+            unsupported_feature(BUCKET_IMAGE_COLOR_SPACE)
+        }
+        GraphicsErrorKind::UnsupportedImageFilter { .. } => {
+            unsupported_feature(BUCKET_IMAGE_FILTER)
+        }
+        GraphicsErrorKind::ImageBytesOverflow { .. } => {
+            unsupported_feature(BUCKET_RENDERER_MEMORY_BUDGET)
+        }
+        GraphicsErrorKind::UnsupportedSoftMask { .. }
+        | GraphicsErrorKind::UnsupportedTransparencyGroup { .. }
+        | GraphicsErrorKind::UnsupportedBlendMode { .. }
+        | GraphicsErrorKind::UnsupportedOverprint { .. }
+        | GraphicsErrorKind::SoftMaskDepthOverflow { .. } => {
+            unsupported_feature(BUCKET_GRAPHICS_TRANSPARENCY)
+        }
+        GraphicsErrorKind::UnsupportedShading { .. }
+        | GraphicsErrorKind::UnsupportedPattern { .. } => {
+            unsupported_feature(BUCKET_GRAPHICS_PATTERN_SHADING)
+        }
+        GraphicsErrorKind::FormRecursionOverflow { .. } => {
+            unsupported_feature(BUCKET_RENDERER_FORM_XOBJECT)
+        }
+        _ => unsupported_feature(BUCKET_RENDERER_UNSUPPORTED),
     }
 }
 
@@ -1110,10 +1173,18 @@ fn map_raster_error(error: RasterError) -> ThumbnailError {
     match error.kind() {
         RasterErrorKind::PageRasterPixelsOverflow { .. }
         | RasterErrorKind::PathComplexityOverflow { .. }
-        | RasterErrorKind::TransparencyGroupPixelsOverflow { .. }
-        | RasterErrorKind::PatternTileOverflow { .. } => ThumbnailError::Unsupported,
+        | RasterErrorKind::TransparencyGroupPixelsOverflow { .. } => {
+            unsupported_feature(BUCKET_RENDERER_MEMORY_BUDGET)
+        }
+        RasterErrorKind::PatternTileOverflow { .. } => {
+            unsupported_feature(BUCKET_GRAPHICS_PATTERN_SHADING)
+        }
         _ => ThumbnailError::internal(error.to_string()),
     }
+}
+
+const fn unsupported_feature(bucket: &'static str) -> ThumbnailError {
+    ThumbnailError::unsupported_feature(bucket)
 }
 
 fn map_object_error(error: ObjectError) -> ThumbnailError {
@@ -1191,7 +1262,14 @@ mod tests {
             RasterErrorKind::PageRasterPixelsOverflow { limit: 1 },
         ));
 
-        assert_eq!(error, ThumbnailError::Unsupported);
+        assert_eq!(
+            error.class(),
+            pdfrust_thumbnail::ThumbnailErrorClass::Unsupported
+        );
+        assert_eq!(
+            error.unsupported_feature_bucket(),
+            Some(BUCKET_RENDERER_MEMORY_BUDGET)
+        );
     }
 
     #[test]
@@ -1780,7 +1858,14 @@ mod tests {
         )
         .expect_err("OCMD policy should not render silently");
 
-        assert_eq!(error, ThumbnailError::Unsupported);
+        assert_eq!(
+            error.class(),
+            pdfrust_thumbnail::ThumbnailErrorClass::Unsupported
+        );
+        assert_eq!(
+            error.unsupported_feature_bucket(),
+            Some(BUCKET_GRAPHICS_OPTIONAL_CONTENT)
+        );
     }
 
     #[test]
@@ -2006,7 +2091,14 @@ mod tests {
             )
             .expect_err("missing page should be unsupported");
 
-        assert_eq!(error, ThumbnailError::Unsupported);
+        assert_eq!(
+            error.class(),
+            pdfrust_thumbnail::ThumbnailErrorClass::Unsupported
+        );
+        assert_eq!(
+            error.unsupported_feature_bucket(),
+            Some(BUCKET_RENDERER_UNSUPPORTED)
+        );
     }
 
     #[test]
