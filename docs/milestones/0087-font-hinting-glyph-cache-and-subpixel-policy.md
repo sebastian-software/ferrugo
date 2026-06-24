@@ -1,6 +1,6 @@
 # 0087: Font Hinting Glyph Cache And Subpixel Policy
 
-Status: todo
+Status: done
 Phase: 15
 Size: medium
 Depends on: 0086
@@ -47,4 +47,16 @@ hinting, caching, and subpixel positioning policy.
 
 ## Completion Notes
 
-Empty until done.
+Completed in 0087 implementation slice.
+
+- Added a bounded fallback glyph bitmap cache for the built-in ASCII text
+  rasterizer.
+- Keyed cached glyph bitmaps by normalized character, quantized glyph cell size,
+  and mask-only paint policy.
+- Preserved user-space subpixel glyph origins through display-list construction
+  and final device coverage.
+- Documented that color is intentionally outside the cache key because cached
+  entries store masks, not painted pixels.
+- Added cache key, eviction, and subpixel positioning tests.
+- Published the validation report at
+  `docs/reports/glyph-cache-subpixel-policy-2026-06-25.md`.
