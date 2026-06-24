@@ -1,6 +1,6 @@
 # 0074: Annotation And Form Interaction Coverage
 
-Status: todo
+Status: done
 Phase: 12
 Size: medium
 Depends on: 0073
@@ -48,4 +48,13 @@ appearance rendering is available.
 
 ## Completion Notes
 
-Empty until done.
+Completed with the `test: add radio form appearance coverage` implementation
+and the `docs: complete annotation form coverage` report update.
+
+- Added selected and Off-state AcroForm radio widget fixtures.
+- Added native-backend tests for `/AP /N` state-dictionary selection through
+  `/AS` and visible On/Off rendering.
+- Confirmed existing annotation, highlight, link, widget, checkbox, text-field,
+  and signature-placeholder coverage remains green.
+- Recorded form corpus comparison and remaining interactive/clip-scope limits in
+  `docs/reports/annotation-form-coverage-2026-06-24.md`.
