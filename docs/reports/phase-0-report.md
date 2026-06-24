@@ -93,6 +93,7 @@ gate product-facing reliability on timeout and isolation:
 
 1. Use the current Rust facade, fixtures, CLI, and baseline format as the test
    spine.
-2. Decide timeout and isolation before Node-API or npm packaging.
+2. Use process isolation for product-facing timeout enforcement before Node-API
+   or npm packaging; see `docs/decisions/0002-timeout-and-process-isolation.md`.
 3. Keep Rust-native renderer work as the long-term direction, but use the
    PDFium-backed baseline to define expected thumbnail behavior first.

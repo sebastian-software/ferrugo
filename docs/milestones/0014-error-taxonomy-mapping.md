@@ -49,5 +49,5 @@ Completed on 2026-06-24.
 - Mapped known PDFium error codes to stable thumbnail classes.
 - Added CLI render error output with the stable class.
 - Documented the taxonomy in `docs/errors.md`.
-- Timeout is reserved in the facade taxonomy; live timeout probes require the
-  local PDFium backend.
+- Timeout is reserved in the facade taxonomy; milestone 0019 chose
+  child-process isolation for hard timeout enforcement.

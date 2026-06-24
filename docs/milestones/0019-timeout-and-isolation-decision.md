@@ -1,6 +1,6 @@
 # 0019: Timeout And Isolation Decision
 
-Status: todo
+Status: done
 Phase: 1
 Size: small
 Depends on: 0018
@@ -39,4 +39,12 @@ Decide how Phase 1 enforces render timeouts and contains hostile PDFs.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-24.
+
+- Added `docs/decisions/0002-timeout-and-process-isolation.md`.
+- Chose child-process isolation for product-facing hard timeout enforcement.
+- Kept serialized in-process PDFium rendering for trusted local probes and
+  differential harness work only.
+- Updated `docs/errors.md` and the Phase 0 report to match the timeout
+  semantics.
+- Added follow-up milestone 0020 for the child-process render runner.

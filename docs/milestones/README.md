@@ -21,7 +21,7 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
-| 0019 | [Timeout And Isolation Decision](0019-timeout-and-isolation-decision.md) | 1 | small | 0018 |
+| 0020 | [Child Process Render Runner](0020-child-process-render-runner.md) | 1 | medium | 0019 |
 
 ## In Progress
 
@@ -49,6 +49,7 @@ No milestones are currently in progress.
 | 0016 | [Phase 0 Report And Pivot Decision](0016-phase-0-report-and-pivot-decision.md) | 0 | small | 2026-06-24 |
 | 0017 | [Run Local PDFium Build](0017-run-local-pdfium-build.md) | 1 | medium | 2026-06-24 |
 | 0018 | [Live Thumbnail Fixture Render](0018-live-thumbnail-fixture-render.md) | 1 | small | 2026-06-24 |
+| 0019 | [Timeout And Isolation Decision](0019-timeout-and-isolation-decision.md) | 1 | small | 2026-06-24 |
 
 ## Update Rules
 
