@@ -56,5 +56,8 @@ Empty until done.
 - Added stack-backed image Decode array parsing for DeviceGray, DeviceRGB, and
   DeviceCMYK samples, applying supported decode ranges in-place after stream
   decoding.
+- Added Indexed color-space parsing for DeviceGray and DeviceRGB lookup tables,
+  keeping index samples compact and resolving palette colors during raster
+  sampling.
 - Kept unsupported non-process color spaces typed; `Separation` remains an
   explicit unsupported color-space error.

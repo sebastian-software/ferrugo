@@ -588,6 +588,10 @@ pub enum ImageColorSpace {
     DeviceRgb,
     /// DeviceCMYK image samples.
     DeviceCmyk,
+    /// Indexed samples with DeviceGray lookup values.
+    IndexedGray,
+    /// Indexed samples with DeviceRGB lookup values.
+    IndexedRgb,
 }
 
 impl ImageColorSpace {
@@ -598,6 +602,15 @@ impl ImageColorSpace {
             Self::DeviceGray => 1,
             Self::DeviceRgb => 3,
             Self::DeviceCmyk => 4,
+            Self::IndexedGray | Self::IndexedRgb => 1,
+        }
+    }
+
+    const fn indexed_components(self) -> Option<usize> {
+        match self {
+            Self::IndexedGray => Some(1),
+            Self::IndexedRgb => Some(3),
+            Self::DeviceGray | Self::DeviceRgb | Self::DeviceCmyk => None,
         }
     }
 }
@@ -617,6 +630,8 @@ pub struct ImageXObject {
     pub color_space: ImageColorSpace,
     /// Decoded image samples.
     pub samples: Arc<[u8]>,
+    /// Indexed color lookup bytes for Indexed images.
+    pub indexed_lookup: Option<Arc<[u8]>>,
 }
 
 /// One placed image item captured before rasterization.
@@ -3869,7 +3884,7 @@ fn decode_image_xobject(
             },
         ));
     }
-    let expected_len = expected_image_len(width, height, color_space)?;
+    let expected_len = expected_image_len(width, height, color_space.kind)?;
     if decoded.len() != expected_len {
         return Err(GraphicsError::new(
             None,
@@ -3882,7 +3897,7 @@ fn decode_image_xobject(
     let mut decoded = decoded;
     apply_image_decode(
         &mut decoded,
-        color_space,
+        color_space.kind,
         image_decode_ranges(stream.dictionary())?,
     )?;
     Ok(ImageXObject {
@@ -3890,8 +3905,9 @@ fn decode_image_xobject(
         width,
         height,
         bits_per_component,
-        color_space,
+        color_space: color_space.kind,
         samples: Arc::from(decoded),
+        indexed_lookup: color_space.indexed_lookup,
     })
 }
 
@@ -3923,7 +3939,7 @@ fn decode_inline_image(
             },
         ));
     }
-    let expected_len = expected_image_len(width, height, color_space)?;
+    let expected_len = expected_image_len(width, height, color_space.kind)?;
     if data.len() != expected_len {
         return Err(GraphicsError::new(
             None,
@@ -3934,14 +3950,19 @@ fn decode_inline_image(
         ));
     }
     let mut samples = data.to_vec();
-    apply_image_decode(&mut samples, color_space, image_decode_ranges(attributes)?)?;
+    apply_image_decode(
+        &mut samples,
+        color_space.kind,
+        image_decode_ranges(attributes)?,
+    )?;
     Ok(ImageXObject {
         resource_name: b"inline-image".to_vec(),
         width,
         height,
         bits_per_component,
-        color_space,
+        color_space: color_space.kind,
         samples: Arc::from(samples),
+        indexed_lookup: color_space.indexed_lookup,
     })
 }
 
@@ -4340,6 +4361,32 @@ fn sample_image(image: &ImageXObject, x: f64, y: f64) -> Rgba {
             image.samples[index + 2],
             image.samples[index + 3],
         ),
+        ImageColorSpace::IndexedGray => {
+            let lookup = image.indexed_lookup.as_deref().unwrap_or_default();
+            let index = usize::from(image.samples[index]).min(lookup.len().saturating_sub(1));
+            let channel = lookup.get(index).copied().unwrap_or(0);
+            Rgba {
+                r: channel,
+                g: channel,
+                b: channel,
+                a: 255,
+            }
+        }
+        ImageColorSpace::IndexedRgb => {
+            let lookup = image.indexed_lookup.as_deref().unwrap_or_default();
+            let lookup_index = usize::from(image.samples[index])
+                .saturating_mul(3)
+                .min(lookup.len());
+            let rgb = lookup
+                .get(lookup_index..lookup_index + 3)
+                .unwrap_or(&[0, 0, 0]);
+            Rgba {
+                r: rgb[0],
+                g: rgb[1],
+                b: rgb[2],
+                a: 255,
+            }
+        }
     }
 }
 
@@ -4625,9 +4672,24 @@ fn require_unfiltered_inline_image(
     ))
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ImageColorSpaceInfo {
+    kind: ImageColorSpace,
+    indexed_lookup: Option<Arc<[u8]>>,
+}
+
+impl ImageColorSpaceInfo {
+    fn new(kind: ImageColorSpace) -> Self {
+        Self {
+            kind,
+            indexed_lookup: None,
+        }
+    }
+}
+
 fn image_color_space(
     dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
-) -> GraphicsResult<ImageColorSpace> {
+) -> GraphicsResult<ImageColorSpaceInfo> {
     let Some(value) =
         dictionary_value(dictionary, b"ColorSpace").or_else(|| dictionary_value(dictionary, b"CS"))
     else {
@@ -4640,17 +4702,24 @@ fn image_color_space(
     };
     match value {
         PdfPrimitive::Name(name) if name.as_bytes() == b"DeviceRGB" => {
-            Ok(ImageColorSpace::DeviceRgb)
+            Ok(ImageColorSpaceInfo::new(ImageColorSpace::DeviceRgb))
         }
-        PdfPrimitive::Name(name) if name.as_bytes() == b"RGB" => Ok(ImageColorSpace::DeviceRgb),
+        PdfPrimitive::Name(name) if name.as_bytes() == b"RGB" => {
+            Ok(ImageColorSpaceInfo::new(ImageColorSpace::DeviceRgb))
+        }
         PdfPrimitive::Name(name) if name.as_bytes() == b"DeviceCMYK" => {
-            Ok(ImageColorSpace::DeviceCmyk)
+            Ok(ImageColorSpaceInfo::new(ImageColorSpace::DeviceCmyk))
         }
-        PdfPrimitive::Name(name) if name.as_bytes() == b"CMYK" => Ok(ImageColorSpace::DeviceCmyk),
+        PdfPrimitive::Name(name) if name.as_bytes() == b"CMYK" => {
+            Ok(ImageColorSpaceInfo::new(ImageColorSpace::DeviceCmyk))
+        }
         PdfPrimitive::Name(name) if name.as_bytes() == b"DeviceGray" => {
-            Ok(ImageColorSpace::DeviceGray)
+            Ok(ImageColorSpaceInfo::new(ImageColorSpace::DeviceGray))
         }
-        PdfPrimitive::Name(name) if name.as_bytes() == b"G" => Ok(ImageColorSpace::DeviceGray),
+        PdfPrimitive::Name(name) if name.as_bytes() == b"G" => {
+            Ok(ImageColorSpaceInfo::new(ImageColorSpace::DeviceGray))
+        }
+        PdfPrimitive::Array(values) => indexed_color_space(values),
         PdfPrimitive::Name(name) => Err(GraphicsError::new(
             None,
             GraphicsErrorKind::UnsupportedImageColorSpace {
@@ -4664,6 +4733,70 @@ fn image_color_space(
             },
         )),
     }
+}
+
+fn indexed_color_space(values: &[PdfPrimitive<'_>]) -> GraphicsResult<ImageColorSpaceInfo> {
+    if values.len() != 4 {
+        return Err(unsupported_color_space(b"Indexed"));
+    }
+    let PdfPrimitive::Name(kind) = values[0] else {
+        return Err(unsupported_color_space(b"Indexed"));
+    };
+    if !matches!(kind.as_bytes(), b"Indexed" | b"I") {
+        return Err(unsupported_color_space(kind.as_bytes()));
+    }
+    let PdfPrimitive::Name(base) = values[1] else {
+        return Err(unsupported_color_space(b"Indexed"));
+    };
+    let base_kind = match base.as_bytes() {
+        b"DeviceRGB" | b"RGB" => ImageColorSpace::IndexedRgb,
+        b"DeviceGray" | b"G" => ImageColorSpace::IndexedGray,
+        _ => return Err(unsupported_color_space(base.as_bytes())),
+    };
+    let hival = match values[2] {
+        PdfPrimitive::Number(PdfNumber::Integer(value)) => {
+            u8::try_from(value).map_err(|_| unsupported_color_space(b"Indexed"))?
+        }
+        _ => return Err(unsupported_color_space(b"Indexed")),
+    };
+    let lookup = indexed_lookup_bytes(&values[3])?;
+    let components = base_kind
+        .indexed_components()
+        .ok_or_else(|| unsupported_color_space(b"Indexed"))?;
+    let expected = (usize::from(hival) + 1)
+        .checked_mul(components)
+        .ok_or_else(|| unsupported_color_space(b"Indexed"))?;
+    if lookup.len() < expected {
+        return Err(GraphicsError::new(
+            None,
+            GraphicsErrorKind::InvalidImageResource {
+                name: b"Indexed".to_vec(),
+            },
+        ));
+    }
+    Ok(ImageColorSpaceInfo {
+        kind: base_kind,
+        indexed_lookup: Some(Arc::from(&lookup[..expected])),
+    })
+}
+
+fn indexed_lookup_bytes(value: &PdfPrimitive<'_>) -> GraphicsResult<Vec<u8>> {
+    let PdfPrimitive::String(string) = value else {
+        return Err(unsupported_color_space(b"Indexed"));
+    };
+    match string {
+        PdfString::Literal(bytes) => Ok(bytes.to_vec()),
+        PdfString::Hex(bytes) => decode_hex_bytes(bytes),
+    }
+}
+
+fn unsupported_color_space(color_space: &[u8]) -> GraphicsError {
+    GraphicsError::new(
+        None,
+        GraphicsErrorKind::UnsupportedImageColorSpace {
+            color_space: color_space.to_vec(),
+        },
+    )
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -4750,8 +4883,15 @@ fn apply_image_decode(
     for pixel in samples.chunks_exact_mut(components) {
         for (sample, (min, max)) in pixel.iter_mut().zip(decode.ranges[..decode.len].iter()) {
             let normalized = f64::from(*sample) / 255.0;
-            let decoded = (min + normalized * (max - min)).clamp(0.0, 1.0);
-            *sample = (decoded * 255.0).round() as u8;
+            let decoded = min + normalized * (max - min);
+            *sample = match color_space {
+                ImageColorSpace::IndexedGray | ImageColorSpace::IndexedRgb => {
+                    decoded.clamp(0.0, 255.0).round() as u8
+                }
+                ImageColorSpace::DeviceGray
+                | ImageColorSpace::DeviceRgb
+                | ImageColorSpace::DeviceCmyk => (decoded.clamp(0.0, 1.0) * 255.0).round() as u8,
+            };
         }
     }
     Ok(())
@@ -7193,6 +7333,25 @@ mod tests {
     }
 
     #[test]
+    fn image_resources_should_decode_indexed_rgb_xobject() {
+        let document = load_image_xobject_pdf(
+            b"q 10 0 0 10 0 0 cm /Im1 Do Q",
+            b"<< /Type /XObject /Subtype /Image /Width 2 /Height 1 /ColorSpace [/Indexed /DeviceRGB 1 <ff00000000ff>] /BitsPerComponent 8 /Length 2 >>",
+            &[0, 1],
+        );
+        let resources =
+            image_resources_from_document(&document).expect("valid Indexed image resource");
+        let image = resources.get(PdfName::new(b"Im1")).expect("image resource");
+
+        assert_eq!(image.color_space, ImageColorSpace::IndexedRgb);
+        assert_eq!(&*image.samples, &[0, 1]);
+        assert_eq!(
+            image.indexed_lookup.as_deref(),
+            Some([255, 0, 0, 0, 0, 255].as_slice())
+        );
+    }
+
+    #[test]
     fn image_display_list_should_place_image_with_ctm_bounds() {
         let document = load_image_xobject_pdf(
             b"q 64 0 0 64 28 28 cm /Im1 Do Q",
@@ -7327,6 +7486,60 @@ mod tests {
                 r: 255,
                 g: 0,
                 b: 0,
+                a: 255,
+            }
+        );
+    }
+
+    #[test]
+    fn image_rasterizer_should_draw_indexed_rgb_samples() {
+        let document = load_image_xobject_pdf(
+            b"q 20 0 0 10 0 0 cm /Im1 Do Q",
+            b"<< /Type /XObject /Subtype /Image /Width 2 /Height 1 /ColorSpace [/Indexed /DeviceRGB 1 <ff00000000ff>] /BitsPerComponent 8 /Length 2 >>",
+            &[0, 1],
+        );
+        let resources =
+            image_resources_from_document(&document).expect("valid Indexed image resource");
+        let content = content_stream_from_document(&document);
+        let list = build_image_display_list(
+            tokenize_content(PdfBytes::new(&content)),
+            &resources,
+            DisplayListOptions::default(),
+        )
+        .expect("valid Indexed image display list");
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 20.0,
+                    max_y: 10.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            20,
+        )
+        .expect("Indexed image transform");
+        let mut device = transform.create_device(Rgba::WHITE).expect("raster device");
+
+        rasterize_images(&list, &mut device, transform).expect("Indexed image should rasterize");
+
+        assert_eq!(
+            device.pixel(5, 5).expect("left Indexed sample"),
+            Rgba {
+                r: 255,
+                g: 0,
+                b: 0,
+                a: 255,
+            }
+        );
+        assert_eq!(
+            device.pixel(15, 5).expect("right Indexed sample"),
+            Rgba {
+                r: 0,
+                g: 0,
+                b: 255,
                 a: 255,
             }
         );
