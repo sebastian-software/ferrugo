@@ -637,6 +637,7 @@ pub fn load_classic_document(input: PdfBytes<'_>) -> ObjectResult<ClassicDocumen
     let startxref = locate_startxref(bytes)?;
     let (mut xref, trailer) = parse_classic_xref_chain(bytes, startxref)?;
     extend_classic_xref_with_hybrid_stream(bytes, &mut xref, &trailer)?;
+    reject_encrypted_trailer(&trailer)?;
     let mut objects = ObjectTable::new();
 
     for entry in xref.entries() {
@@ -644,11 +645,13 @@ pub fn load_classic_document(input: PdfBytes<'_>) -> ObjectResult<ClassicDocumen
         objects.insert(object)?;
     }
 
-    Ok(ClassicDocument {
+    let document = ClassicDocument {
         xref,
         trailer,
         objects,
-    })
+    };
+    reject_encrypted_catalog(&document)?;
+    Ok(document)
 }
 
 /// Loads a PDF whose `startxref` points at an xref stream.
@@ -661,6 +664,7 @@ pub fn load_modern_document(input: PdfBytes<'_>) -> ObjectResult<ModernDocument<
     let bytes = input.as_bytes();
     let startxref = locate_startxref(bytes)?;
     let (xref, trailer) = parse_xref_stream_and_trailer(bytes, startxref)?;
+    reject_encrypted_trailer(&trailer)?;
     let mut objects = ObjectTable::new();
 
     for entry in xref.entries() {
@@ -673,12 +677,14 @@ pub fn load_modern_document(input: PdfBytes<'_>) -> ObjectResult<ModernDocument<
     let object_streams = load_referenced_object_streams(&objects, xref.entries())?;
     validate_compressed_entries(&object_streams, xref.entries())?;
 
-    Ok(ModernDocument {
+    let document = ModernDocument {
         xref,
         trailer,
         objects,
         object_streams,
-    })
+    };
+    reject_encrypted_catalog(&document)?;
+    Ok(document)
 }
 
 trait DocumentObjects {
@@ -731,6 +737,35 @@ fn resolve_page_tree(document: &impl DocumentObjects) -> ObjectResult<PageTree> 
         &mut pages,
     )?;
     Ok(PageTree { pages })
+}
+
+fn reject_encrypted_trailer(trailer: &Trailer<'_>) -> ObjectResult<()> {
+    if dictionary_value(trailer.entries(), b"Encrypt").is_some() {
+        return Err(ObjectError::Encrypted);
+    }
+    Ok(())
+}
+
+fn reject_encrypted_catalog(document: &impl DocumentObjects) -> ObjectResult<()> {
+    let Some(PdfPrimitive::Reference(reference)) =
+        dictionary_value(document.trailer().entries(), b"Root")
+    else {
+        return Ok(());
+    };
+    let root = Reference::new(ObjectId::new(
+        ObjectNumber::new(reference.object)?,
+        GenerationNumber::new(reference.generation),
+    ));
+    let Some(catalog) = document.get_object_owned(root.id)? else {
+        return Ok(());
+    };
+    let Ok(dictionary) = object_dictionary(&catalog) else {
+        return Ok(());
+    };
+    if dictionary_value(dictionary, b"Encrypt").is_some() {
+        return Err(ObjectError::Encrypted);
+    }
+    Ok(())
 }
 
 fn traverse_page_tree(
@@ -1930,6 +1965,8 @@ const fn is_whitespace(byte: u8) -> bool {
 pub enum ObjectError {
     /// Lower-level syntax parser error.
     Syntax(SyntaxError),
+    /// Document declares encryption metadata and cannot be interpreted as plain PDF.
+    Encrypted,
     /// Malformed object-model syntax.
     Malformed {
         /// Source offset.
@@ -2025,6 +2062,7 @@ impl ObjectError {
     pub const fn offset(&self) -> Option<ByteOffset> {
         match self {
             Self::Syntax(error) => Some(error.offset()),
+            Self::Encrypted => None,
             Self::Malformed { offset, .. } => Some(*offset),
             Self::UnsupportedStreamLength
             | Self::UnsupportedFilter { .. }
@@ -2054,6 +2092,7 @@ impl fmt::Display for ObjectError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Syntax(error) => write!(f, "{error}"),
+            Self::Encrypted => f.write_str("PDF is encrypted"),
             Self::Malformed { offset, message } => write!(f, "{message} at {offset}"),
             Self::UnsupportedStreamLength => f.write_str("unsupported stream length"),
             Self::UnsupportedFilter { name } => {
@@ -2432,6 +2471,24 @@ mod tests {
     }
 
     #[test]
+    fn load_classic_document_should_reject_encrypted_trailer() {
+        let pdf = build_encrypted_trailer_pdf();
+
+        let error = load_classic_document(PdfBytes::new(&pdf)).expect_err("encrypted trailer");
+
+        assert_eq!(error, ObjectError::Encrypted);
+    }
+
+    #[test]
+    fn load_classic_document_should_reject_encrypted_catalog() {
+        let pdf = build_encrypted_catalog_pdf();
+
+        let error = load_classic_document(PdfBytes::new(&pdf)).expect_err("encrypted catalog");
+
+        assert_eq!(error, ObjectError::Encrypted);
+    }
+
+    #[test]
     fn load_classic_document_should_require_startxref() {
         let error =
             load_classic_document(PdfBytes::new(b"%PDF-1.7\n")).expect_err("missing startxref");
@@ -2657,6 +2714,54 @@ mod tests {
         pdf.extend_from_slice(
             format!(
                 "xref\n0 4\n0000000000 65535 f \n{object_1:010} 00000 n \n{object_2:010} 00000 n \n{object_3:010} 00000 n \ntrailer\n<< /Size 5 /Root 1 0 R /XRefStm {xref_stream_offset} >>\nstartxref\n{classic_xref}\n%%EOF\n"
+            )
+            .as_bytes(),
+        );
+        pdf
+    }
+
+    fn build_encrypted_trailer_pdf() -> Vec<u8> {
+        let mut pdf = b"%PDF-1.7\n".to_vec();
+        let object_1 = append_object(
+            &mut pdf,
+            b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n",
+        );
+        let object_2 = append_object(
+            &mut pdf,
+            b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n",
+        );
+        let object_3 = append_object(
+            &mut pdf,
+            b"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 160] >>\nendobj\n",
+        );
+        let xref_offset = pdf.len();
+        pdf.extend_from_slice(
+            format!(
+                "xref\n0 4\n0000000000 65535 f \n{object_1:010} 00000 n \n{object_2:010} 00000 n \n{object_3:010} 00000 n \ntrailer\n<< /Size 4 /Root 1 0 R /Encrypt 4 0 R >>\nstartxref\n{xref_offset}\n%%EOF\n"
+            )
+            .as_bytes(),
+        );
+        pdf
+    }
+
+    fn build_encrypted_catalog_pdf() -> Vec<u8> {
+        let mut pdf = b"%PDF-1.7\n".to_vec();
+        let object_1 = append_object(
+            &mut pdf,
+            b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R /Encrypt << /Filter /Standard >> >>\nendobj\n",
+        );
+        let object_2 = append_object(
+            &mut pdf,
+            b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n",
+        );
+        let object_3 = append_object(
+            &mut pdf,
+            b"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 160] >>\nendobj\n",
+        );
+        let xref_offset = pdf.len();
+        pdf.extend_from_slice(
+            format!(
+                "xref\n0 4\n0000000000 65535 f \n{object_1:010} 00000 n \n{object_2:010} 00000 n \n{object_3:010} 00000 n \ntrailer\n<< /Size 4 /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF\n"
             )
             .as_bytes(),
         );

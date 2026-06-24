@@ -7,8 +7,9 @@ use std::fs;
 
 use pdfrust_content::{tokenize_content, ContentToken};
 use pdfrust_object::{
-    load_classic_document, load_modern_document, ClassicDocument, GenerationNumber, ObjectId,
-    ObjectNumber, ObjectValue, PageBox, PageMetadata as ObjectPageMetadata, PageTree, Reference,
+    load_classic_document, load_modern_document, ClassicDocument, GenerationNumber, ObjectError,
+    ObjectId, ObjectNumber, ObjectValue, PageBox, PageMetadata as ObjectPageMetadata, PageTree,
+    Reference,
 };
 use pdfrust_render::{
     build_form_display_list_with_graphics_resources, build_image_display_list,
@@ -87,19 +88,18 @@ fn inspect_bytes(bytes: &[u8]) -> Result<DocumentMetadata, ThumbnailError> {
     let input = PdfBytes::new(bytes);
     match load_modern_document(input).and_then(|document| document.page_tree()) {
         Ok(page_tree) => metadata_from_page_tree(&page_tree),
+        Err(ObjectError::Encrypted) => Err(ThumbnailError::Encrypted),
         Err(_) => load_classic_document(input)
             .and_then(|document| document.page_tree())
-            .map_err(|_| ThumbnailError::Malformed)
+            .map_err(map_object_error)
             .and_then(|page_tree| metadata_from_page_tree(&page_tree)),
     }
 }
 
 fn render_bytes(bytes: &[u8], options: &ThumbnailOptions) -> Result<Thumbnail, ThumbnailError> {
     let input = PdfBytes::new(bytes);
-    let document = load_classic_document(input).map_err(|_| ThumbnailError::Malformed)?;
-    let page_tree = document
-        .page_tree()
-        .map_err(|_| ThumbnailError::Malformed)?;
+    let document = load_classic_document(input).map_err(map_object_error)?;
+    let page_tree = document.page_tree().map_err(map_object_error)?;
     let page = page_tree
         .pages()
         .get(options.page_index as usize)
@@ -1069,6 +1069,13 @@ fn map_graphics_error(error: GraphicsError) -> ThumbnailError {
 
 fn map_raster_error(error: RasterError) -> ThumbnailError {
     ThumbnailError::internal(error.to_string())
+}
+
+fn map_object_error(error: ObjectError) -> ThumbnailError {
+    match error {
+        ObjectError::Encrypted => ThumbnailError::Encrypted,
+        _ => ThumbnailError::Malformed,
+    }
 }
 
 fn metadata_from_page_tree(page_tree: &PageTree) -> Result<DocumentMetadata, ThumbnailError> {

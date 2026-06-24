@@ -1,6 +1,6 @@
 # 0056: Encryption And Permissions Policy
 
-Status: todo
+Status: in-progress
 Phase: 7
 Size: small
 Depends on: 0055
@@ -45,4 +45,14 @@ boundary.
 
 ## Completion Notes
 
-Empty until done.
+In progress:
+
+- First detection slice adds `ObjectError::Encrypted`, rejects classic trailer
+  `/Encrypt` before loading indirect objects, and rejects unusual catalog
+  `/Encrypt` metadata before returning a loaded document.
+- Native backend mapping now preserves encrypted object-loader failures as
+  `ThumbnailError::Encrypted` instead of collapsing them into `malformed`.
+- Added object-loader tests for trailer-level and catalog-level encryption
+  detection.
+- Current validation:
+  - `cargo test -p pdfrust-object encrypted -- --nocapture`
