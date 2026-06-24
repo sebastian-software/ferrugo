@@ -21,7 +21,7 @@ use pdfrust_render::{
     PageRotation, PageTransform, PageTransformOptions, PathBounds, PathRasterOptions, RasterError,
     RasterErrorKind, ShadingResources, TilingPatternResources,
 };
-use pdfrust_syntax::{PdfBytes, PdfName, PdfNumber, PdfPrimitive, PdfReference};
+use pdfrust_syntax::{PdfBytes, PdfName, PdfNumber, PdfPrimitive, PdfReference, PdfString};
 use pdfrust_thumbnail::{
     DocumentMetadata, DocumentMetadataBackend, PageMetadata as ThumbnailPageMetadata, PageSize,
     PdfSource, Thumbnail, ThumbnailBackend, ThumbnailError, ThumbnailOptions,
@@ -395,6 +395,18 @@ fn render_bytes(bytes: &[u8], options: &ThumbnailOptions) -> Result<Thumbnail, T
             PathRasterOptions::default(),
         )
         .map_err(map_raster_error)?;
+        match build_text_display_list(
+            tokenize_content(PdfBytes::new(&annotation_fallback_content)),
+            &font_resources,
+            DisplayListOptions::default(),
+        ) {
+            Ok(annotation_text_list) => {
+                rasterize_text(&annotation_text_list, &mut raster, transform)
+                    .map_err(map_raster_error)?;
+            }
+            Err(error) if is_ignorable_annotation_fallback_text_error(&error) => {}
+            Err(error) => return Err(map_graphics_error(error)),
+        }
     }
     let dimensions = raster.dimensions();
     Thumbnail::rgba(dimensions.width, dimensions.height, raster.into_pixels())
@@ -1330,6 +1342,7 @@ fn append_annotation_fallback(
         b"Square" => append_square_annotation_fallback(content, annotation, rect),
         b"Circle" => append_circle_annotation_fallback(content, annotation, rect),
         b"Text" => append_text_note_annotation_fallback(content, annotation, rect),
+        b"Widget" => append_widget_annotation_fallback(content, annotation, rect),
         b"Link" => {}
         _ => {}
     }
@@ -1440,6 +1453,149 @@ fn append_text_note_annotation_fallback(
     );
     append_text_note_icon_border(content, icon, body);
     content.extend_from_slice(b"Q\n");
+}
+
+fn append_widget_annotation_fallback(
+    content: &mut Vec<u8>,
+    annotation: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    rect: PathBounds,
+) {
+    let Some(PdfPrimitive::Name(field_type)) = dictionary_value(annotation, b"FT") else {
+        return;
+    };
+    match field_type.as_bytes() {
+        b"Tx" => append_text_widget_fallback(content, annotation, rect),
+        b"Ch" => append_text_widget_fallback(content, annotation, rect),
+        b"Btn" if widget_button_is_radio(annotation) => {
+            append_radio_widget_fallback(content, annotation, rect);
+        }
+        b"Btn" => append_checkbox_widget_fallback(content, annotation, rect),
+        _ => {}
+    }
+}
+
+fn append_text_widget_fallback(
+    content: &mut Vec<u8>,
+    annotation: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    rect: PathBounds,
+) {
+    append_annotation_graphics_state(
+        content,
+        ANNOTATION_OPAQUE_GRAPHICS_STATE,
+        [0.92, 0.96, 1.0],
+        true,
+    );
+    append_fill_rect(content, rect);
+    content.extend_from_slice(b"Q\n");
+    append_annotation_graphics_state(
+        content,
+        ANNOTATION_OPAQUE_GRAPHICS_STATE,
+        [0.0, 0.0, 0.0],
+        false,
+    );
+    content.extend_from_slice(
+        format!(
+            "1 w {} {} {} {} re S Q\n",
+            format_pdf_number(rect.min_x),
+            format_pdf_number(rect.min_y),
+            format_pdf_number(rect.max_x - rect.min_x),
+            format_pdf_number(rect.max_y - rect.min_y)
+        )
+        .as_bytes(),
+    );
+    if let Some(value) = widget_text_value(annotation) {
+        append_widget_text_value(content, rect, value);
+    }
+}
+
+fn append_checkbox_widget_fallback(
+    content: &mut Vec<u8>,
+    annotation: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    rect: PathBounds,
+) {
+    append_annotation_graphics_state(
+        content,
+        ANNOTATION_OPAQUE_GRAPHICS_STATE,
+        [1.0, 1.0, 1.0],
+        true,
+    );
+    append_fill_rect(content, rect);
+    content.extend_from_slice(b"Q\n");
+    append_annotation_graphics_state(
+        content,
+        ANNOTATION_OPAQUE_GRAPHICS_STATE,
+        [0.0, 0.0, 0.0],
+        false,
+    );
+    content.extend_from_slice(
+        format!(
+            "1 w {} {} {} {} re S Q\n",
+            format_pdf_number(rect.min_x),
+            format_pdf_number(rect.min_y),
+            format_pdf_number(rect.max_x - rect.min_x),
+            format_pdf_number(rect.max_y - rect.min_y)
+        )
+        .as_bytes(),
+    );
+    if widget_button_is_on(annotation) {
+        let inset_x = (rect.max_x - rect.min_x) * 0.3;
+        let inset_y = (rect.max_y - rect.min_y) * 0.3;
+        append_annotation_graphics_state(
+            content,
+            ANNOTATION_OPAQUE_GRAPHICS_STATE,
+            [0.0, 0.0, 0.0],
+            true,
+        );
+        append_fill_rect(
+            content,
+            PathBounds {
+                min_x: rect.min_x + inset_x,
+                min_y: rect.min_y + inset_y,
+                max_x: rect.max_x - inset_x,
+                max_y: rect.max_y - inset_y,
+            },
+        );
+        content.extend_from_slice(b"Q\n");
+    }
+}
+
+fn append_radio_widget_fallback(
+    content: &mut Vec<u8>,
+    annotation: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    rect: PathBounds,
+) {
+    let center_x = (rect.min_x + rect.max_x) * 0.5;
+    let center_y = (rect.min_y + rect.max_y) * 0.5;
+    let radius_x = (rect.max_x - rect.min_x) * 0.5;
+    let radius_y = (rect.max_y - rect.min_y) * 0.5;
+    append_annotation_graphics_state(
+        content,
+        ANNOTATION_OPAQUE_GRAPHICS_STATE,
+        [0.0, 0.0, 0.0],
+        false,
+    );
+    append_ellipse_polyline(content, center_x, center_y, radius_x, radius_y);
+    content.extend_from_slice(b"S Q\n");
+    if widget_button_is_on(annotation) {
+        append_annotation_graphics_state(
+            content,
+            ANNOTATION_OPAQUE_GRAPHICS_STATE,
+            [0.0, 0.0, 0.0],
+            true,
+        );
+        let inset_x = (rect.max_x - rect.min_x) * 0.35;
+        let inset_y = (rect.max_y - rect.min_y) * 0.35;
+        append_fill_rect(
+            content,
+            PathBounds {
+                min_x: rect.min_x + inset_x,
+                min_y: rect.min_y + inset_y,
+                max_x: rect.max_x - inset_x,
+                max_y: rect.max_y - inset_y,
+            },
+        );
+        content.extend_from_slice(b"Q\n");
+    }
 }
 
 fn text_note_icon_bounds(rect: PathBounds) -> PathBounds {
@@ -1560,6 +1716,75 @@ fn append_text_note_icon_border(content: &mut Vec<u8>, icon: PathBounds, body: P
             max_y: body.min_y,
         },
     );
+}
+
+fn widget_button_is_radio(annotation: &[(PdfName<'_>, PdfPrimitive<'_>)]) -> bool {
+    let Some(PdfPrimitive::Number(PdfNumber::Integer(flags))) = dictionary_value(annotation, b"Ff")
+    else {
+        return false;
+    };
+    flags & 32_768 != 0
+}
+
+fn widget_button_is_on(annotation: &[(PdfName<'_>, PdfPrimitive<'_>)]) -> bool {
+    if let Some(PdfPrimitive::Name(active_state)) = dictionary_value(annotation, b"AS") {
+        return active_state.as_bytes() != b"Off";
+    }
+    matches!(
+        dictionary_value(annotation, b"V"),
+        Some(PdfPrimitive::Name(value)) if value.as_bytes() != b"Off"
+    )
+}
+
+fn widget_text_value<'a>(annotation: &'a [(PdfName<'a>, PdfPrimitive<'a>)]) -> Option<&'a [u8]> {
+    match dictionary_value(annotation, b"V")? {
+        PdfPrimitive::String(value) => Some(match value {
+            PdfString::Literal(bytes) | PdfString::Hex(bytes) => *bytes,
+        }),
+        PdfPrimitive::Name(value) => Some(value.as_bytes()),
+        _ => None,
+    }
+}
+
+fn append_widget_text_value(content: &mut Vec<u8>, rect: PathBounds, value: &[u8]) {
+    if value.is_empty() {
+        return;
+    }
+    let font_size = ((rect.max_y - rect.min_y) * 0.45).clamp(6.0, 12.0);
+    let baseline = rect.min_y + (rect.max_y - rect.min_y - font_size) * 0.5;
+    content.extend_from_slice(
+        format!(
+            "BT /F1 {} Tf 0 0 0 rg {} {} Td ",
+            format_pdf_number(font_size),
+            format_pdf_number(rect.min_x + 4.0),
+            format_pdf_number(baseline)
+        )
+        .as_bytes(),
+    );
+    append_pdf_literal_string(content, value);
+    content.extend_from_slice(b" Tj ET\n");
+}
+
+fn append_pdf_literal_string(content: &mut Vec<u8>, value: &[u8]) {
+    content.push(b'(');
+    for byte in value.iter().take(64) {
+        match *byte {
+            b'(' | b')' | b'\\' => {
+                content.push(b'\\');
+                content.push(*byte);
+            }
+            0x20..=0x7e => content.push(*byte),
+            _ => content.push(b'?'),
+        }
+    }
+    content.push(b')');
+}
+
+fn is_ignorable_annotation_fallback_text_error(error: &GraphicsError) -> bool {
+    matches!(
+        error.kind(),
+        GraphicsErrorKind::MissingFont { .. } | GraphicsErrorKind::FontNotSelected
+    )
 }
 
 fn append_annotation_graphics_state(
@@ -2868,6 +3093,49 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_synthesize_acroform_text_field_without_appearance() {
+        let bytes = include_bytes!(
+            "../../../fixtures/generated/acroform-text-field-missing-appearance.pdf"
+        );
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 140,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated AcroForm text field fallback fixture should render");
+
+        assert_eq!(thumbnail.width, 140);
+        assert_eq!(thumbnail.height, 80);
+        assert_eq!(rgba_at(&thumbnail, 60, 37), [235, 245, 255, 255]);
+        assert_eq!(rgba_at(&thumbnail, 45, 37), [0, 0, 0, 255]);
+        assert_eq!(rgba_at(&thumbnail, 105, 40), [255, 255, 255, 255]);
+    }
+
+    #[test]
+    fn native_backend_should_synthesize_acroform_choice_without_appearance() {
+        let bytes =
+            include_bytes!("../../../fixtures/generated/acroform-choice-missing-appearance.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 140,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated AcroForm choice fallback fixture should render");
+
+        assert_eq!(thumbnail.width, 140);
+        assert_eq!(thumbnail.height, 80);
+        assert_eq!(rgba_at(&thumbnail, 70, 37), [235, 245, 255, 255]);
+        assert_eq!(rgba_at(&thumbnail, 45, 37), [0, 0, 0, 255]);
+        assert_eq!(rgba_at(&thumbnail, 115, 40), [255, 255, 255, 255]);
+    }
+
+    #[test]
     fn native_backend_should_render_generated_acroform_checkbox_fixture() {
         let bytes = include_bytes!("../../../fixtures/generated/acroform-checkbox.pdf");
         let thumbnail = ThumbnailBackend::render(
@@ -2888,6 +3156,26 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_synthesize_acroform_checkbox_without_appearance() {
+        let bytes =
+            include_bytes!("../../../fixtures/generated/acroform-checkbox-missing-appearance.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 80,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated AcroForm checkbox fallback fixture should render");
+
+        assert_eq!(thumbnail.width, 80);
+        assert_eq!(thumbnail.height, 80);
+        assert_eq!(rgba_at(&thumbnail, 30, 40), [0, 0, 0, 255]);
+        assert_eq!(rgba_at(&thumbnail, 45, 40), [255, 255, 255, 255]);
+    }
+
+    #[test]
     fn native_backend_should_render_generated_acroform_radio_fixture() {
         let bytes = include_bytes!("../../../fixtures/generated/acroform-radio.pdf");
         let thumbnail = ThumbnailBackend::render(
@@ -2904,6 +3192,26 @@ mod tests {
         assert_eq!(thumbnail.height, 80);
         assert_low_intensity(rgba_at(&thumbnail, 30, 28), 96);
         assert_low_intensity(rgba_at(&thumbnail, 20, 28), 96);
+    }
+
+    #[test]
+    fn native_backend_should_synthesize_acroform_radio_without_appearance() {
+        let bytes =
+            include_bytes!("../../../fixtures/generated/acroform-radio-missing-appearance.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 100,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated AcroForm radio fallback fixture should render");
+
+        assert_eq!(thumbnail.width, 100);
+        assert_eq!(thumbnail.height, 80);
+        assert_eq!(rgba_at(&thumbnail, 30, 40), [0, 0, 0, 255]);
+        assert_eq!(rgba_at(&thumbnail, 45, 40), [255, 255, 255, 255]);
     }
 
     #[test]

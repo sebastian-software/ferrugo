@@ -1272,6 +1272,31 @@ def acroform_text_field_pdf() -> bytes:
     return pdf.render(catalog)
 
 
+def acroform_text_field_missing_appearance_pdf() -> bytes:
+    pdf = Pdf()
+    content = b""
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 140 80] "
+        "/Resources << /Font << /F1 4 0 R >> >> "
+        f"/Contents {contents} 0 R /Annots [5 0 R] >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    font = pdf.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    field = pdf.add(
+        "<< /Type /Annot /Subtype /Widget /FT /Tx /T (Name) /V (Ada) "
+        "/Rect [30 30 100 52] >>"
+    )
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R /AcroForm << /Fields [{field} 0 R] >> >>")
+    assert font == 4
+    assert field == 5
+    return pdf.render(catalog)
+
+
 def acroform_checkbox_pdf() -> bytes:
     pdf = Pdf()
     content = b""
@@ -1312,6 +1337,28 @@ def acroform_checkbox_pdf() -> bytes:
     )
     catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R /AcroForm << /Fields [{field} 0 R] >> >>")
     assert field == 6
+    return pdf.render(catalog)
+
+
+def acroform_checkbox_missing_appearance_pdf() -> bytes:
+    pdf = Pdf()
+    content = b""
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 80 80] "
+        f"/Contents {contents} 0 R /Annots [4 0 R] >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    field = pdf.add(
+        "<< /Type /Annot /Subtype /Widget /FT /Btn /T (Agree) /V /Yes /AS /Yes "
+        "/Rect [20 30 40 50] >>"
+    )
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R /AcroForm << /Fields [{field} 0 R] >> >>")
+    assert field == 4
     return pdf.render(catalog)
 
 
@@ -1360,6 +1407,28 @@ def acroform_radio_pdf() -> bytes:
     return pdf.render(catalog)
 
 
+def acroform_radio_missing_appearance_pdf() -> bytes:
+    pdf = Pdf()
+    content = b""
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 100 80] "
+        f"/Contents {contents} 0 R /Annots [4 0 R] >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    field = pdf.add(
+        "<< /Type /Annot /Subtype /Widget /FT /Btn /Ff 32768 /T (ChoiceA) "
+        "/V /A /AS /A /Rect [20 30 40 50] >>"
+    )
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R /AcroForm << /Fields [{field} 0 R] >> >>")
+    assert field == 4
+    return pdf.render(catalog)
+
+
 def acroform_radio_off_pdf() -> bytes:
     pdf = Pdf()
     content = b""
@@ -1400,6 +1469,31 @@ def acroform_radio_off_pdf() -> bytes:
     )
     catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R /AcroForm << /Fields [{field} 0 R] >> >>")
     assert field == 6
+    return pdf.render(catalog)
+
+
+def acroform_choice_missing_appearance_pdf() -> bytes:
+    pdf = Pdf()
+    content = b""
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 140 80] "
+        "/Resources << /Font << /F1 4 0 R >> >> "
+        f"/Contents {contents} 0 R /Annots [5 0 R] >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    font = pdf.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    field = pdf.add(
+        "<< /Type /Annot /Subtype /Widget /FT /Ch /T (Plan) /V (Basic) "
+        "/Rect [30 30 110 52] >>"
+    )
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R /AcroForm << /Fields [{field} 0 R] >> >>")
+    assert font == 4
+    assert field == 5
     return pdf.render(catalog)
 
 
@@ -2175,8 +2269,24 @@ def main() -> None:
     )
     write("widget-annotation-appearance.pdf", widget_annotation_appearance_pdf())
     write("acroform-text-field.pdf", acroform_text_field_pdf())
+    write(
+        "acroform-text-field-missing-appearance.pdf",
+        acroform_text_field_missing_appearance_pdf(),
+    )
     write("acroform-checkbox.pdf", acroform_checkbox_pdf())
+    write(
+        "acroform-checkbox-missing-appearance.pdf",
+        acroform_checkbox_missing_appearance_pdf(),
+    )
+    write(
+        "acroform-choice-missing-appearance.pdf",
+        acroform_choice_missing_appearance_pdf(),
+    )
     write("acroform-radio.pdf", acroform_radio_pdf())
+    write(
+        "acroform-radio-missing-appearance.pdf",
+        acroform_radio_missing_appearance_pdf(),
+    )
     write("acroform-radio-off.pdf", acroform_radio_off_pdf())
     write("acroform-signature-placeholder.pdf", acroform_signature_placeholder_pdf())
     write("optional-content-layer-on.pdf", optional_content_layer_pdf(visible=True))
