@@ -19,7 +19,28 @@ Allowed statuses:
 
 ## Todo
 
-No milestones are currently todo.
+| ID | Milestone | Phase | Size | Depends On |
+| --- | --- | --- | --- | --- |
+| 0021 | [Rust Native Crate Layout](0021-rust-native-crate-layout.md) | 1 | small | 0020 |
+| 0022 | [Byte Input And Offset Errors](0022-byte-input-and-offset-errors.md) | 1 | small | 0021 |
+| 0023 | [PDF Primitive Parser](0023-pdf-primitive-parser.md) | 1 | medium | 0022 |
+| 0024 | [Indirect Objects And References](0024-indirect-objects-and-references.md) | 1 | medium | 0023 |
+| 0025 | [Classic Xref And Trailer Loader](0025-classic-xref-and-trailer-loader.md) | 1 | medium | 0024 |
+| 0026 | [Streams And Basic Filters](0026-streams-and-basic-filters.md) | 1 | medium | 0025 |
+| 0027 | [Xref Streams And Object Streams](0027-xref-streams-and-object-streams.md) | 1 | medium | 0026 |
+| 0028 | [Catalog And Page Tree](0028-catalog-and-page-tree.md) | 1 | medium | 0027 |
+| 0029 | [Rust Backend Differential Harness](0029-rust-backend-differential-harness.md) | 1 | medium | 0028 |
+| 0030 | [Content Stream Tokenizer](0030-content-stream-tokenizer.md) | 2 | medium | 0029 |
+| 0031 | [Graphics State And Transforms](0031-graphics-state-and-transforms.md) | 2 | medium | 0030 |
+| 0032 | [Path Display List](0032-path-display-list.md) | 2 | medium | 0031 |
+| 0033 | [Text State And Font Stubs](0033-text-state-and-font-stubs.md) | 2 | medium | 0032 |
+| 0034 | [Image XObject Decoding And Placement](0034-image-xobject-decoding-and-placement.md) | 2 | medium | 0033 |
+| 0035 | [Form XObject Recursion And Budgets](0035-form-xobject-recursion-and-budgets.md) | 2 | medium | 0034 |
+| 0036 | [Raster Device And Page Transform](0036-raster-device-and-page-transform.md) | 3 | medium | 0035 |
+| 0037 | [Path Rasterization](0037-path-rasterization.md) | 3 | medium | 0036 |
+| 0038 | [Image Rasterization And Alpha](0038-image-rasterization-and-alpha.md) | 3 | medium | 0037 |
+| 0039 | [Basic Text Rasterization](0039-basic-text-rasterization.md) | 3 | medium | 0038 |
+| 0040 | [Typical Document Coverage Gate](0040-typical-document-coverage-gate.md) | 4 | medium | 0039 |
 
 ## In Progress
 
