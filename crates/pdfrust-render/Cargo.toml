@@ -8,6 +8,7 @@ rust-version.workspace = true
 
 [dependencies]
 pdfrust-content = { path = "../pdfrust-content" }
+pdfrust-syntax = { path = "../pdfrust-syntax" }
 pdfrust-thumbnail = { path = "../pdfrust-thumbnail" }
 
 [lints]

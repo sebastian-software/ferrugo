@@ -21,7 +21,6 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
-| 0031 | [Graphics State And Transforms](0031-graphics-state-and-transforms.md) | 2 | medium | 0030 |
 | 0032 | [Path Display List](0032-path-display-list.md) | 2 | medium | 0031 |
 | 0033 | [Text State And Font Stubs](0033-text-state-and-font-stubs.md) | 2 | medium | 0032 |
 | 0034 | [Image XObject Decoding And Placement](0034-image-xobject-decoding-and-placement.md) | 2 | medium | 0033 |
@@ -90,6 +89,7 @@ No milestones are currently in progress.
 | 0028 | [Catalog And Page Tree](0028-catalog-and-page-tree.md) | 1 | medium | 2026-06-24 |
 | 0029 | [Rust Backend Differential Harness](0029-rust-backend-differential-harness.md) | 1 | medium | 2026-06-24 |
 | 0030 | [Content Stream Tokenizer](0030-content-stream-tokenizer.md) | 2 | medium | 2026-06-24 |
+| 0031 | [Graphics State And Transforms](0031-graphics-state-and-transforms.md) | 2 | medium | 2026-06-24 |
 
 ## Update Rules
 

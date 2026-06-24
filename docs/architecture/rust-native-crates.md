@@ -98,3 +98,10 @@ oracle and Rust-native candidate results in the baseline format.
 slices, skips content comments, and preserves byte offsets in `ContentError`.
 It deliberately does not execute graphics state, resolve resources, or build a
 display list yet.
+
+`pdfrust-render` now owns the first graphics-state execution slice. It provides
+deterministic affine `Matrix` math, a small copyable `GraphicsState`, stack
+limits for `q`/`Q`, and interpretation for `cm`, `w`, gray fill/stroke color,
+and clipping placeholders. Unsupported content operators are ignored for this
+slice after clearing operands so mixed text/vector streams can be scanned before
+later milestones add text and path execution.
