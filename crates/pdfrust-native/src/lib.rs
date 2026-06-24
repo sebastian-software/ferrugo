@@ -1887,6 +1887,29 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_apply_custom_background() {
+        let bytes = include_bytes!("../../../fixtures/generated/text-page.pdf");
+        let background = pdfrust_thumbnail::Rgba {
+            r: 10,
+            g: 20,
+            b: 30,
+            a: 255,
+        };
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 300,
+                background,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated text fixture should render with custom background");
+
+        assert_eq!(rgba_at(&thumbnail, 0, 0), [10, 20, 30, 255]);
+    }
+
+    #[test]
     fn native_backend_should_render_generated_embedded_font_fixture() {
         let bytes = include_bytes!("../../../fixtures/generated/embedded-font.pdf");
         let thumbnail = ThumbnailBackend::render(

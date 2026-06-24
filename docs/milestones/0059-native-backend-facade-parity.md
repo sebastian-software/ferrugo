@@ -50,3 +50,5 @@ PDFium backend for supported documents.
 - First slice maps native raster memory-budget exhaustion to the public
   `unsupported` class instead of `internal`, preserving `internal` for backend
   defects such as invalid options or allocation invariants.
+- Second slice adds native facade coverage for custom background color
+  handling on supported documents.
