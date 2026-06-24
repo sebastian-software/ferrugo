@@ -1,0 +1,15 @@
+[package]
+name = "pdfrust-native"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+pdfrust-object = { path = "../pdfrust-object" }
+pdfrust-render = { path = "../pdfrust-render" }
+pdfrust-thumbnail = { path = "../pdfrust-thumbnail" }
+
+[lints]
+workspace = true

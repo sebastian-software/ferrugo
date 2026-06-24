@@ -1,6 +1,6 @@
 # 0021: Rust Native Crate Layout
 
-Status: todo
+Status: done
 Phase: 1
 Size: small
 Depends on: 0020
@@ -47,4 +47,13 @@ renderer behavior yet.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-24.
+
+- Added Rust-native workspace crates:
+  `pdfrust-syntax`, `pdfrust-object`, `pdfrust-content`, `pdfrust-render`, and
+  `pdfrust-native`.
+- Added `#![forbid(unsafe_code)]` to each Rust-native implementation crate.
+- Added compile-time smoke tests for crate roles and dependency direction.
+- Added `docs/architecture/rust-native-crates.md` to document ownership
+  boundaries.
+- Kept the PDFium backend isolated from the Rust-native crate APIs.

@@ -11,11 +11,46 @@ dependencies = [
 ]
 
 [[package]]
+name = "pdfrust-content"
+version = "0.1.0"
+dependencies = [
+ "pdfrust-object",
+]
+
+[[package]]
+name = "pdfrust-native"
+version = "0.1.0"
+dependencies = [
+ "pdfrust-object",
+ "pdfrust-render",
+ "pdfrust-thumbnail",
+]
+
+[[package]]
+name = "pdfrust-object"
+version = "0.1.0"
+dependencies = [
+ "pdfrust-syntax",
+]
+
+[[package]]
 name = "pdfrust-pdfium"
 version = "0.1.0"
 dependencies = [
  "pdfrust-thumbnail",
 ]
+
+[[package]]
+name = "pdfrust-render"
+version = "0.1.0"
+dependencies = [
+ "pdfrust-content",
+ "pdfrust-thumbnail",
+]
+
+[[package]]
+name = "pdfrust-syntax"
+version = "0.1.0"
 
 [[package]]
 name = "pdfrust-thumbnail"

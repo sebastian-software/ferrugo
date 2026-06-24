@@ -1,0 +1,14 @@
+[package]
+name = "pdfrust-render"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+pdfrust-content = { path = "../pdfrust-content" }
+pdfrust-thumbnail = { path = "../pdfrust-thumbnail" }
+
+[lints]
+workspace = true

@@ -21,7 +21,6 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
-| 0021 | [Rust Native Crate Layout](0021-rust-native-crate-layout.md) | 1 | small | 0020 |
 | 0022 | [Byte Input And Offset Errors](0022-byte-input-and-offset-errors.md) | 1 | small | 0021 |
 | 0023 | [PDF Primitive Parser](0023-pdf-primitive-parser.md) | 1 | medium | 0022 |
 | 0024 | [Indirect Objects And References](0024-indirect-objects-and-references.md) | 1 | medium | 0023 |
@@ -70,6 +69,7 @@ No milestones are currently in progress.
 | 0018 | [Live Thumbnail Fixture Render](0018-live-thumbnail-fixture-render.md) | 1 | small | 2026-06-24 |
 | 0019 | [Timeout And Isolation Decision](0019-timeout-and-isolation-decision.md) | 1 | small | 2026-06-24 |
 | 0020 | [Child Process Render Runner](0020-child-process-render-runner.md) | 1 | medium | 2026-06-24 |
+| 0021 | [Rust Native Crate Layout](0021-rust-native-crate-layout.md) | 1 | small | 2026-06-24 |
 
 ## Update Rules
 

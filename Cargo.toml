@@ -1,7 +1,12 @@
 [workspace]
 members = [
     "crates/pdfrust-cli",
+    "crates/pdfrust-content",
+    "crates/pdfrust-native",
+    "crates/pdfrust-object",
     "crates/pdfrust-pdfium",
+    "crates/pdfrust-render",
+    "crates/pdfrust-syntax",
     "crates/pdfrust-thumbnail",
 ]
 resolver = "2"
