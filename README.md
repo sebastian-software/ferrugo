@@ -6,8 +6,8 @@ PDFium, the PDF library used by Chromium, with the longer-term goal of making
 high-quality PDF rendering available from Rust and Node.js through Node-API
 bindings.
 
-This repository currently contains concept and research notes only. It is not
-yet an implementation workspace.
+This repository contains the Phase 0 documentation and a minimal Rust workspace
+for the thumbnail-generation probe.
 
 Unless noted otherwise, repository code and documentation are licensed under
 either MIT or Apache-2.0 at the user's option. PDFium and other renderers are
@@ -54,8 +54,6 @@ full-renderer parity until after those measurements exist.
 ## Initial Non-Goals
 
 - Shipping an npm package, prebuilt binaries, or bundled PDFium in Phase 0.
-- Creating the Cargo workspace, build system, or implementation crates as part
-  of the current documentation-only phase.
 - A line-by-line rewrite of PDFium as the first milestone.
 - Full JavaScript, XFA, signing, editing, and form-filling parity in the MVP.
 - Depending on AGPL engines in the core library.
@@ -76,3 +74,8 @@ full-renderer parity until after those measurements exist.
 - [Minimal PDFium GN args](docs/build/pdfium-gn-args.md)
 - [PDFium build measurement baseline](docs/measurements/pdfium-build-baseline.md)
 - [Fixture policy](docs/fixtures.md)
+
+## Workspace
+
+- `crates/pdfrust-thumbnail`: backend-neutral thumbnail facade.
+- `crates/pdfrust-cli`: local CLI shell for fixture rendering and measurement.

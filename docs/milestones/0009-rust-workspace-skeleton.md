@@ -1,6 +1,6 @@
 # 0009: Rust Workspace Skeleton
 
-Status: todo
+Status: done
 Phase: 0
 Size: small
 Depends on: 0003
@@ -41,5 +41,9 @@ Create the smallest Rust workspace needed for the Phase 0 CLI/library probe.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-24.
 
+- Added a Cargo workspace.
+- Added `pdfrust-thumbnail` for backend-neutral library code.
+- Added `pdfrust-cli` as the local command shell.
+- Added workspace lint and rustfmt defaults.
