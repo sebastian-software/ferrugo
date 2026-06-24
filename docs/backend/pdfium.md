@@ -57,7 +57,7 @@ initialized=true last_error=0 library=/private/tmp/pdfrust-tools/pdfium-work/pdf
 After `PDFRUST_PDFIUM_LIBRARY` points at a local PDFium build:
 
 ```sh
-cargo run -p pdfrust-cli -- render fixtures/generated/text-page.pdf \
+cargo run -p pdfrust-cli -- render-pdfium fixtures/generated/text-page.pdf \
   --output target/pdfrust-thumbnails/text-page.png \
   --page-index 0 \
   --max-edge 1024 \
@@ -78,5 +78,5 @@ cargo run -p pdfrust-cli -- render-isolated fixtures/generated/text-page.pdf \
 ```
 
 `render-worker` is a private child-process entry point. Callers should use
-`render` for direct trusted probes or `render-isolated` for hard timeout
-semantics.
+`render-pdfium` for direct trusted PDFium probes or `render-isolated` for hard
+timeout semantics. The public `render` command is native-first automatic mode.

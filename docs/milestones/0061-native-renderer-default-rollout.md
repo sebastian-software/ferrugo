@@ -1,6 +1,6 @@
 # 0061: Native Renderer Default Rollout
 
-Status: in-progress
+Status: done
 Phase: 9
 Size: medium
 Depends on: 0060
@@ -51,3 +51,5 @@ PDFium retirement gate, while keeping fallback behavior explicit.
   `render-isolated`.
 - Second slice made `render-auto` report the selected backend in diagnostics
   and added direct backend-choice regression coverage.
+- Final slice made `render` the native-first automatic default for supported
+  fixtures and added `render-pdfium` as the direct forced-PDFium command.

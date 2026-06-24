@@ -54,7 +54,7 @@ cargo run -p pdfrust-cli -- render-native fixtures/generated/text-page.pdf \
 Use native-first automatic rendering for supported categories:
 
 ```sh
-cargo run -p pdfrust-cli -- render-auto fixtures/generated/text-page.pdf \
+cargo run -p pdfrust-cli -- render fixtures/generated/text-page.pdf \
   --output target/pdfrust-thumbnails/text-page-auto.png \
   --page-index 0 \
   --max-edge 1024 \
@@ -62,10 +62,13 @@ cargo run -p pdfrust-cli -- render-auto fixtures/generated/text-page.pdf \
   --timeout 5
 ```
 
-`render-auto` tries the Rust-native backend first. If native returns the public
+`render` and `render-auto` try the Rust-native backend first. If native returns the public
 `unsupported` class, it retries through PDFium using `PDFRUST_PDFIUM_LIBRARY`.
 `encrypted`, `malformed`, and `internal` failures are not silently retried.
 The selected backend is printed as a render diagnostic.
+
+Use `render-native` to force native without fallback. Use `render-pdfium` or
+`render-isolated` to force PDFium.
 
 Compare metadata with PDFium when the local PDFium environment is available:
 

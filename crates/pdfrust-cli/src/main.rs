@@ -32,8 +32,8 @@ fn main() -> ExitCode {
 fn run(args: Vec<OsString>) -> Result<(), CliError> {
     let command = args.first().and_then(|arg| arg.to_str());
     match command {
-        Some("render") | Some("render-worker") => render_direct_command(&args[1..]),
-        Some("render-auto") => render_auto_command(&args[1..]),
+        Some("render") | Some("render-auto") => render_auto_command(&args[1..]),
+        Some("render-pdfium") | Some("render-worker") => render_direct_command(&args[1..]),
         Some("render-native") => render_native_command(&args[1..]),
         Some("render-isolated") => render_isolated_command(&args[1..]),
         Some("compare-metadata") => compare_metadata_command(&args[1..]),
@@ -844,7 +844,7 @@ fn crc32(bytes: impl IntoIterator<Item = u8>) -> u32 {
 
 fn print_usage() {
     println!(
-        "Usage: pdfrust-cli <render|render-auto|render-native|render-isolated|compare-metadata> <input.pdf> \
+        "Usage: pdfrust-cli <render|render-auto|render-native|render-pdfium|render-isolated|compare-metadata> <input.pdf> \
          [--output PATH] [--page-index N] [--max-edge N] [--background #RRGGBB] \
          [--timeout SECONDS]"
     );
@@ -916,6 +916,31 @@ mod tests {
         .expect("auto render should use native without requiring PDFium");
 
         let png = fs::read(&output).expect("auto PNG should be written");
+        assert!(png.starts_with(b"\x89PNG\r\n\x1a\n"));
+    }
+
+    #[test]
+    fn render_command_should_default_to_auto_mode() {
+        env::remove_var(pdfrust_pdfium::PDFIUM_LIBRARY_ENV);
+        let output =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/default-auto-vector-test.png");
+        let input =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/generated/vector-paths.pdf");
+        fs::create_dir_all(output.parent().expect("output parent"))
+            .expect("test target directory should be created");
+        let _ = fs::remove_file(&output);
+
+        run(vec![
+            OsString::from("render"),
+            input.as_os_str().to_os_string(),
+            OsString::from("--max-edge"),
+            OsString::from("220"),
+            OsString::from("--output"),
+            output.as_os_str().to_os_string(),
+        ])
+        .expect("default render should use auto mode");
+
+        let png = fs::read(&output).expect("default auto PNG should be written");
         assert!(png.starts_with(b"\x89PNG\r\n\x1a\n"));
     }
 
