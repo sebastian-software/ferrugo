@@ -33,6 +33,7 @@ The initial seed set covers:
 - ExtGState Multiply and Screen path blend modes
 - dashed vector strokes
 - stroke line-cap styles
+- stroke line-join styles
 - axial DeviceRGB shading gradients
 - radial DeviceRGB shading gradients
 - colored tiling patterns

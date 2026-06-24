@@ -78,13 +78,23 @@ In progress:
   flattened subpaths: Round joins cover the vertex radius, Bevel joins add the
   corner triangle, and Miter joins use offset-line intersections until the
   configured miter limit falls back to Bevel geometry.
+- Sixth fixture slice adds generated `fixtures/generated/line-joins.pdf`
+  through `scripts/generate_fixtures.py`, covering Bevel, Round, and Miter
+  joins on right-angle strokes.
+- PDFium/native comparison for `line-joins.pdf` at `max-edge 120`: `120x120`,
+  changed RGB pixels `21`, RGB MAE `0.1730`, p95 RGB delta `0`, max channel
+  delta `255`, native non-white pixels `1427`. Bevel and Miter sample pixels
+  match PDFium exactly; the Round sample differs only by antialiasing intensity.
 - Current validation:
   - `cargo test -p pdfrust-render dash -- --nocapture`
   - `cargo test -p pdfrust-render line_cap -- --nocapture`
   - `cargo test -p pdfrust-render line_join -- --nocapture`
   - `cargo test -p pdfrust-native dashed_stroke -- --nocapture`
   - `cargo test -p pdfrust-native line_caps -- --nocapture`
+  - `cargo test -p pdfrust-native line_joins -- --nocapture`
   - `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render fixtures/generated/dashed-stroke.pdf --max-edge 120 --output target/pdfrust-thumbnails/dashed-stroke-pdfium-0051.png`
   - `cargo run -p pdfrust-cli -- render-native fixtures/generated/dashed-stroke.pdf --max-edge 120 --output target/pdfrust-thumbnails/dashed-stroke-native-0051.png`
   - `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render fixtures/generated/line-caps.pdf --max-edge 120 --output target/pdfrust-thumbnails/line-caps-pdfium-0051.png`
   - `cargo run -p pdfrust-cli -- render-native fixtures/generated/line-caps.pdf --max-edge 120 --output target/pdfrust-thumbnails/line-caps-native-0051.png`
+  - `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render fixtures/generated/line-joins.pdf --max-edge 120 --output target/pdfrust-thumbnails/line-joins-pdfium-0051.png`
+  - `cargo run -p pdfrust-cli -- render-native fixtures/generated/line-joins.pdf --max-edge 120 --output target/pdfrust-thumbnails/line-joins-native-0051.png`

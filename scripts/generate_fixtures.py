@@ -478,6 +478,16 @@ def line_caps_pdf() -> bytes:
     )
 
 
+def line_joins_pdf() -> bytes:
+    return page_pdf(
+        "[0 0 120 120]",
+        "0 0 0 RG 8 w "
+        "2 j 20 30 m 50 30 l 50 60 l S "
+        "1 j 20 75 m 50 75 l 50 105 l S "
+        "0 j 80 30 m 110 30 l 110 60 l S",
+    )
+
+
 def embedded_font_pdf() -> bytes:
     pdf = Pdf()
     content = b"BT /F1 18 Tf 20 60 Td (embedded font fixture) Tj ET"
@@ -637,6 +647,7 @@ def main() -> None:
     write("tiling-pattern.pdf", tiling_pattern_pdf())
     write("dashed-stroke.pdf", dashed_stroke_pdf())
     write("line-caps.pdf", line_caps_pdf())
+    write("line-joins.pdf", line_joins_pdf())
     write("embedded-font.pdf", embedded_font_pdf())
     write("tounicode-text.pdf", tounicode_text_pdf())
     write("encoding-differences.pdf", encoding_differences_pdf())
