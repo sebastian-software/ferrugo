@@ -2676,6 +2676,69 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_render_generated_type3_vector_text_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/type3-vector-text.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 220,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated Type3 vector text fixture should render through native backend");
+
+        assert_eq!(thumbnail.width, 220);
+        assert_eq!(thumbnail.height, 120);
+        assert!(thumbnail
+            .bytes
+            .chunks_exact(4)
+            .any(|pixel| pixel != [255, 255, 255, 255]));
+    }
+
+    #[test]
+    fn native_backend_should_render_generated_type3_symbol_font_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/type3-symbol-font.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 220,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated Type3 symbol fixture should render through native backend");
+
+        assert_eq!(thumbnail.width, 220);
+        assert_eq!(thumbnail.height, 120);
+        assert!(thumbnail
+            .bytes
+            .chunks_exact(4)
+            .any(|pixel| pixel != [255, 255, 255, 255]));
+    }
+
+    #[test]
+    fn native_backend_should_render_generated_type3_barcode_font_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/type3-barcode-font.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 220,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated Type3 barcode fixture should render through native backend");
+
+        assert_eq!(thumbnail.width, 220);
+        assert_eq!(thumbnail.height, 160);
+        assert!(thumbnail
+            .bytes
+            .chunks_exact(4)
+            .any(|pixel| pixel != [255, 255, 255, 255]));
+    }
+
+    #[test]
     fn native_backend_should_render_generated_office_table_fixture() {
         let bytes = include_bytes!("../../../fixtures/generated/office-table.pdf");
         let thumbnail = ThumbnailBackend::render(

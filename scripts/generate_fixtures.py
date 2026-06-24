@@ -1591,6 +1591,78 @@ def text_spacing_pdf() -> bytes:
     )
 
 
+def type3_font_pdf(
+    content: bytes,
+    font_dictionary: str,
+    char_procs: list[bytes],
+    media_box: str = "[0 0 220 120]",
+) -> bytes:
+    pdf = Pdf()
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        f"<< /Type /Page /Parent 3 0 R /MediaBox {media_box} "
+        "/Resources << /Font << /F1 4 0 R >> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    font = pdf.add(font_dictionary)
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert font == 4
+    for char_proc in char_procs:
+        pdf.add(
+            f"<< /Length {len(char_proc)} >>\nstream\n".encode("ascii")
+            + char_proc
+            + b"\nendstream"
+        )
+    return pdf.render(catalog)
+
+
+def type3_vector_text_pdf() -> bytes:
+    return type3_font_pdf(
+        b"BT /F1 28 Tf 20 56 Td (ABBA) Tj ET",
+        "<< /Type /Font /Subtype /Type3 /FontBBox [0 0 700 700] "
+        "/FontMatrix [0.001 0 0 0.001 0 0] "
+        "/FirstChar 65 /LastChar 66 /Widths [700 700] "
+        "/Encoding << /Differences [65 /A /B] >> "
+        "/CharProcs << /A 6 0 R /B 7 0 R >> >>",
+        [
+            b"0 0 0 rg 60 0 m 350 700 l 640 0 l 500 0 l 440 150 l 260 150 l 200 0 l h f",
+            b"0 0 0 rg 80 0 360 700 re f 320 0 260 300 re f 320 400 220 300 re f",
+        ],
+    )
+
+
+def type3_symbol_font_pdf() -> bytes:
+    return type3_font_pdf(
+        b"BT /F1 42 Tf 36 42 Td (SSS) Tj ET",
+        "<< /Type /Font /Subtype /Type3 /FontBBox [0 0 600 600] "
+        "/FontMatrix [0.001 0 0 0.001 0 0] "
+        "/FirstChar 83 /LastChar 83 /Widths [640] "
+        "/Encoding << /Differences [83 /S] >> "
+        "/CharProcs << /S 6 0 R >> >>",
+        [
+            b"0.05 0.15 0.55 rg 300 580 m 390 380 l 580 360 l 430 240 l 480 40 l 300 150 l 120 40 l 170 240 l 20 360 l 210 380 l h f",
+        ],
+    )
+
+
+def type3_barcode_font_pdf() -> bytes:
+    return type3_font_pdf(
+        b"BT /F1 76 Tf 20 42 Td (III) Tj ET",
+        "<< /Type /Font /Subtype /Type3 /FontBBox [0 0 520 700] "
+        "/FontMatrix [0.001 0 0 0.001 0 0] "
+        "/FirstChar 73 /LastChar 73 /Widths [520] "
+        "/Encoding << /Differences [73 /I] >> "
+        "/CharProcs << /I 6 0 R >> >>",
+        [b"0 0 0 rg 30 0 80 700 re f 170 0 80 700 re f 320 0 150 700 re f"],
+        media_box="[0 0 220 160]",
+    )
+
+
 def office_table_pdf() -> bytes:
     return page_pdf(
         "[0 0 260 160]",
@@ -1791,6 +1863,9 @@ def main() -> None:
     write("shaped-rtl-text.pdf", shaped_rtl_text_pdf())
     write("encoding-differences.pdf", encoding_differences_pdf())
     write("text-spacing.pdf", text_spacing_pdf())
+    write("type3-vector-text.pdf", type3_vector_text_pdf())
+    write("type3-symbol-font.pdf", type3_symbol_font_pdf())
+    write("type3-barcode-font.pdf", type3_barcode_font_pdf())
     write("office-table.pdf", office_table_pdf())
     write("multi-page-report.pdf", multi_page_report_pdf())
     write("page-targeted-stream.pdf", page_targeted_stream_pdf())

@@ -49,6 +49,9 @@ fixtures/generated/tiling-pattern.pdf	report	scripts/generate_fixtures.py	MIT OR
 fixtures/generated/tounicode-text.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,tounicode	Generated ToUnicode character-code mapping fixture.
 fixtures/generated/transparency-alpha.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	transparency,alpha,extgstate	Generated ExtGState fill and stroke alpha fixture.
 fixtures/generated/transparency-group.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	transparency,form-xobject	Generated path-only transparency group fixture.
+fixtures/generated/type3-barcode-font.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,type3,charproc,barcode	Generated Type3 barcode-like glyph CharProc fixture.
+fixtures/generated/type3-symbol-font.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,type3,charproc,symbol	Generated Type3 symbol-like glyph CharProc fixture.
+fixtures/generated/type3-vector-text.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,type3,charproc,vector	Generated Type3 vector glyph CharProc text fixture.
 fixtures/generated/user-unit-page.pdf	browser-print	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	geometry,userunit	Generated non-default UserUnit page geometry fixture.
 fixtures/generated/vector-paths.pdf	browser-print	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	vector,path	Generated vector path drawing fixture.
 fixtures/generated/vector-stress.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	vector,stress,clipping,curve,chart	Generated vector-heavy chart stress fixture with nested clips and cubic curves.

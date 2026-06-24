@@ -1680,9 +1680,16 @@ pub fn extract_glyph_outline(
 }
 
 /// Single-byte font encoding metadata.
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FontEncoding {
-    differences: Vec<(u8, char)>,
+    differences: Vec<FontEncodingDifference>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct FontEncodingDifference {
+    code: u8,
+    name: Vec<u8>,
+    character: char,
 }
 
 impl FontEncoding {
@@ -1694,15 +1701,39 @@ impl FontEncoding {
         }
     }
 
-    fn with_differences(differences: Vec<(u8, char)>) -> Self {
+    fn with_differences(differences: Vec<FontEncodingDifference>) -> Self {
         Self { differences }
     }
 
     fn decode_byte(&self, byte: u8) -> Option<char> {
         self.differences
             .iter()
-            .find_map(|(code, character)| (*code == byte).then_some(*character))
+            .find_map(|difference| (difference.code == byte).then_some(difference.character))
             .or_else(|| byte.is_ascii().then_some(byte as char))
+    }
+
+    fn glyph_name_for_code(&self, code: u8) -> Vec<u8> {
+        self.differences
+            .iter()
+            .find_map(|difference| (difference.code == code).then(|| difference.name.clone()))
+            .unwrap_or_else(|| ascii_glyph_name(code))
+    }
+}
+
+impl Default for FontEncoding {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+fn ascii_glyph_name(code: u8) -> Vec<u8> {
+    match code {
+        b' ' => b"space".to_vec(),
+        b'-' => b"hyphen".to_vec(),
+        b'.' => b"period".to_vec(),
+        b',' => b"comma".to_vec(),
+        _ if code.is_ascii_alphanumeric() => vec![code],
+        _ => b".notdef".to_vec(),
     }
 }
 
@@ -1754,6 +1785,54 @@ pub struct CidFontMetrics {
     pub default_width: Option<i32>,
 }
 
+/// Decoded Type 3 font metadata and glyph programs.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Type3Font {
+    /// Matrix mapping Type 3 glyph space into text space.
+    pub font_matrix: Matrix,
+    /// Optional font bounding box.
+    pub font_bbox: Option<PathBounds>,
+    /// Explicit widths from `/FirstChar`, `/LastChar`, and `/Widths`.
+    pub widths: Vec<Type3GlyphWidth>,
+    /// Decoded CharProc streams keyed by glyph name.
+    pub char_procs: Vec<Type3CharProc>,
+}
+
+impl Type3Font {
+    fn char_proc_for_code(&self, code: u32, encoding: &FontEncoding) -> Option<&Type3CharProc> {
+        let code = u8::try_from(code).ok()?;
+        let name = encoding.glyph_name_for_code(code);
+        self.char_procs
+            .iter()
+            .find(|char_proc| char_proc.name == name)
+    }
+
+    fn width_for_code(&self, code: u32) -> Option<f64> {
+        let code = u8::try_from(code).ok()?;
+        self.widths
+            .iter()
+            .find_map(|width| (width.code == code).then_some(width.width))
+    }
+}
+
+/// Type 3 glyph width entry in glyph space.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Type3GlyphWidth {
+    /// Source character code.
+    pub code: u8,
+    /// Width value from `/Widths`.
+    pub width: f64,
+}
+
+/// Decoded Type 3 glyph CharProc content stream.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Type3CharProc {
+    /// Glyph name from `/CharProcs`.
+    pub name: Vec<u8>,
+    /// Decoded CharProc content bytes.
+    pub content: Arc<[u8]>,
+}
+
 /// Text writing mode selected by font encoding or CMap metadata.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum TextWritingMode {
@@ -1765,7 +1844,7 @@ pub enum TextWritingMode {
 }
 
 /// Font descriptor used by text display-list construction.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct FontDescriptor {
     /// Resource name used by content streams, without the leading slash.
     pub resource_name: Vec<u8>,
@@ -1783,6 +1862,8 @@ pub struct FontDescriptor {
     pub to_unicode: Option<ToUnicodeMap>,
     /// Optional CID descendant font metrics for Type 0 composite fonts.
     pub cid_metrics: Option<CidFontMetrics>,
+    /// Optional Type 3 font metadata and decoded CharProcs.
+    pub type3: Option<Arc<Type3Font>>,
     /// Writing mode selected for text advance.
     pub writing_mode: TextWritingMode,
 }
@@ -1800,11 +1881,19 @@ impl FontDescriptor {
             encoding: FontEncoding::new(),
             to_unicode: None,
             cid_metrics: None,
+            type3: None,
             writing_mode: TextWritingMode::Horizontal,
         }
     }
 
-    fn fallback_advance_width(&self) -> f64 {
+    fn advance_width_for_glyph(&self, glyph: &TextGlyph) -> f64 {
+        if let Some(width) = self
+            .type3
+            .as_ref()
+            .and_then(|type3| type3.width_for_code(glyph.character_code))
+        {
+            return width;
+        }
         self.cid_metrics.as_ref().map_or(500.0, |metrics| {
             f64::from(metrics.default_width.unwrap_or(1000))
         })
@@ -1812,7 +1901,7 @@ impl FontDescriptor {
 }
 
 /// Lightweight font resource map.
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct FontResources {
     fonts: Vec<FontDescriptor>,
 }
@@ -2004,6 +2093,11 @@ where
     let writing_mode = font_writing_mode(dictionary);
     let to_unicode = load_to_unicode_map(dictionary, resolver, options)?;
     let cid_metrics = load_cid_font_metrics(dictionary, resolver)?;
+    let type3 = if subtype == Some(FontSubtype::Type3) {
+        Some(Arc::new(load_type3_font(dictionary, resolver, options)?))
+    } else {
+        None
+    };
     Ok(FontDescriptor {
         resource_name: resource_name.as_bytes().to_vec(),
         base_font,
@@ -2013,8 +2107,145 @@ where
         encoding,
         to_unicode,
         cid_metrics,
+        type3,
         writing_mode,
     })
+}
+
+fn load_type3_font<'a, R>(
+    dictionary: &[(PdfName<'a>, PdfPrimitive<'a>)],
+    resolver: &'a R,
+    options: DisplayListOptions,
+) -> GraphicsResult<Type3Font>
+where
+    R: FontObjectResolver<'a> + ?Sized,
+{
+    let font_matrix =
+        optional_matrix(dictionary, b"FontMatrix")?.unwrap_or_else(|| Matrix::scale(0.001, 0.001));
+    let font_bbox = optional_bbox(dictionary, b"FontBBox")?;
+    let widths = load_type3_widths(dictionary)?;
+    let char_procs = load_type3_char_procs(dictionary, resolver, options.max_font_program_bytes)?;
+    Ok(Type3Font {
+        font_matrix,
+        font_bbox,
+        widths,
+        char_procs,
+    })
+}
+
+fn optional_bbox(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    key: &[u8],
+) -> GraphicsResult<Option<PathBounds>> {
+    let Some(value) = dictionary_value(dictionary, key) else {
+        return Ok(None);
+    };
+    bounds_from_array(value).map(Some)
+}
+
+fn load_type3_widths(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+) -> GraphicsResult<Vec<Type3GlyphWidth>> {
+    let Some(PdfPrimitive::Array(width_values)) = dictionary_value(dictionary, b"Widths") else {
+        return Ok(Vec::new());
+    };
+    let first_char = optional_u8(dictionary, b"FirstChar")?.unwrap_or(0);
+    let last_char = optional_u8(dictionary, b"LastChar")?
+        .unwrap_or_else(|| first_char.saturating_add(width_values.len().saturating_sub(1) as u8));
+    let expected_len = usize::from(last_char.saturating_sub(first_char)) + 1;
+    if expected_len != width_values.len() {
+        return Err(invalid_font_resource(b"Widths"));
+    }
+    let mut widths = Vec::with_capacity(width_values.len());
+    for (index, value) in width_values.iter().enumerate() {
+        let code = first_char
+            .checked_add(u8::try_from(index).map_err(|_| invalid_font_resource(b"Widths"))?)
+            .ok_or_else(|| invalid_font_resource(b"Widths"))?;
+        widths.push(Type3GlyphWidth {
+            code,
+            width: primitive_number(value).ok_or_else(|| invalid_font_resource(b"Widths"))?,
+        });
+    }
+    Ok(widths)
+}
+
+fn optional_u8(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    key: &[u8],
+) -> GraphicsResult<Option<u8>> {
+    let Some(value) = optional_i32(dictionary, key)? else {
+        return Ok(None);
+    };
+    u8::try_from(value)
+        .map(Some)
+        .map_err(|_| invalid_font_resource(key))
+}
+
+fn load_type3_char_procs<'a, R>(
+    dictionary: &[(PdfName<'a>, PdfPrimitive<'a>)],
+    resolver: &'a R,
+    max_char_proc_bytes: usize,
+) -> GraphicsResult<Vec<Type3CharProc>>
+where
+    R: FontObjectResolver<'a> + ?Sized,
+{
+    let Some(PdfPrimitive::Dictionary(char_procs)) = dictionary_value(dictionary, b"CharProcs")
+    else {
+        return Err(invalid_font_resource(b"CharProcs"));
+    };
+    let mut decoded = Vec::with_capacity(char_procs.len());
+    for (name, value) in char_procs {
+        let stream = match value {
+            PdfPrimitive::Reference(_) => {
+                let reference = reference_from_primitive(value)
+                    .ok_or_else(|| invalid_font_resource(b"CharProcs"))?;
+                let object = resolver.resolve_font_object(reference)?.ok_or_else(|| {
+                    GraphicsError::new(
+                        None,
+                        GraphicsErrorKind::MissingFontObject {
+                            name: name.as_bytes().to_vec(),
+                        },
+                    )
+                })?;
+                let ObjectValue::Stream(stream) = object.value else {
+                    return Err(invalid_font_resource(b"CharProcs"));
+                };
+                stream
+            }
+            _ => return Err(invalid_font_resource(b"CharProcs")),
+        };
+        let content = stream
+            .decode_with_options(StreamDecodeOptions {
+                max_decoded_len: max_char_proc_bytes,
+            })
+            .map_err(|error| match error {
+                pdfrust_object::ObjectError::StreamLimitExceeded { .. } => GraphicsError::new(
+                    error.offset(),
+                    GraphicsErrorKind::FontProgramBytesOverflow {
+                        limit: max_char_proc_bytes,
+                    },
+                ),
+                _ => GraphicsError::new(
+                    error.offset(),
+                    GraphicsErrorKind::ObjectModel {
+                        message: error.to_string(),
+                    },
+                ),
+            })?;
+        if content.len() > max_char_proc_bytes {
+            return Err(GraphicsError::new(
+                None,
+                GraphicsErrorKind::FontProgramBytesOverflow {
+                    limit: max_char_proc_bytes,
+                },
+            ));
+        }
+        decoded.push(Type3CharProc {
+            name: name.as_bytes().to_vec(),
+            content: Arc::from(content),
+        });
+    }
+    Ok(decoded)
 }
 
 fn load_cid_font_metrics<'a, R>(
@@ -2962,7 +3193,7 @@ pub fn rasterize_display_list_into(
                 rasterize_transparency_group(group, device, transform, options)?;
             }
             DisplayItem::Image(image) => draw_image(device, image, transform)?,
-            DisplayItem::Text(text) => draw_text_run(device, text, transform)?,
+            DisplayItem::Text(text) => draw_text_run(device, text, transform, options)?,
         }
     }
     Ok(())
@@ -3301,7 +3532,7 @@ pub fn rasterize_text(
         let DisplayItem::Text(text) = item else {
             continue;
         };
-        draw_text_run(device, text, transform)?;
+        draw_text_run(device, text, transform, PathRasterOptions::default())?;
     }
     Ok(())
 }
@@ -4463,7 +4694,7 @@ impl<'r> TextDisplayListInterpreter<'r> {
             .text
             .font
             .as_ref()
-            .map_or(500.0, FontDescriptor::fallback_advance_width);
+            .map_or(500.0, |font| font.advance_width_for_glyph(glyph));
         (self.text.font_size * font_width / 1000.0 + self.text.character_spacing + word_spacing)
             * self.text.horizontal_scaling
     }
@@ -7206,6 +7437,7 @@ fn draw_text_run(
     device: &mut RasterDevice,
     text: &TextDisplayItem,
     page_transform: PageTransform,
+    options: PathRasterOptions,
 ) -> RasterResult<()> {
     let Some(color) = text
         .rendering_mode
@@ -7214,6 +7446,9 @@ fn draw_text_run(
     else {
         return Ok(());
     };
+    if text.font.type3.is_some() {
+        return draw_type3_text_run(device, text, page_transform, options);
+    }
     let cell = text.font_size / 7.0;
     for (glyph, origin) in text.glyphs.iter().zip(text.glyph_origins.iter()) {
         let Some(character) = glyph.unicode.chars().next() else {
@@ -7233,6 +7468,60 @@ fn draw_text_run(
         )?;
     }
     Ok(())
+}
+
+fn draw_type3_text_run(
+    device: &mut RasterDevice,
+    text: &TextDisplayItem,
+    page_transform: PageTransform,
+    options: PathRasterOptions,
+) -> RasterResult<()> {
+    let type3 = text.font.type3.as_ref().ok_or_else(|| {
+        RasterError::new(RasterErrorKind::Type3Glyph {
+            message: "missing Type3 font metadata".to_string(),
+        })
+    })?;
+    let base = text.state.ctm.multiply(text.text_matrix);
+    for (glyph, origin) in text.glyphs.iter().zip(text.glyph_origins.iter()) {
+        let Some(char_proc) = type3.char_proc_for_code(glyph.character_code, &text.font.encoding)
+        else {
+            continue;
+        };
+        let mut glyph_state = text.state;
+        glyph_state.ctm = Matrix {
+            e: origin.x,
+            f: origin.y,
+            ..base
+        }
+        .multiply(Matrix::scale(text.font_size, text.font_size))
+        .multiply(type3.font_matrix);
+        let mut interpreter = DisplayListInterpreter::new(DisplayListOptions::default());
+        interpreter.current = glyph_state;
+        interpreter
+            .interpret(tokenize_content(PdfBytes::new(&char_proc.content)))
+            .map_err(raster_type3_error)?;
+        for item in interpreter.display_list.items() {
+            let DisplayItem::Path(path) = item else {
+                continue;
+            };
+            rasterize_path_item(
+                path,
+                device,
+                PathRasterContext {
+                    transform: page_transform,
+                    options,
+                    clips: &[],
+                },
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn raster_type3_error(error: GraphicsError) -> RasterError {
+    RasterError::new(RasterErrorKind::Type3Glyph {
+        message: error.to_string(),
+    })
 }
 
 fn draw_ascii_glyph(
@@ -7973,7 +8262,11 @@ fn encoding_dictionary(
                         },
                     )
                 })?;
-                differences.push((current_code, character));
+                differences.push(FontEncodingDifference {
+                    code: current_code,
+                    name: name.as_bytes().to_vec(),
+                    character,
+                });
                 code = current_code.checked_add(1);
             }
             _ => return Err(invalid_font_resource(b"Encoding")),
@@ -8568,6 +8861,11 @@ pub enum RasterErrorKind {
     },
     /// Image transform could not be inverted for sampling.
     SingularImageTransform,
+    /// Type 3 glyph CharProc rendering failed.
+    Type3Glyph {
+        /// Underlying deterministic renderer error.
+        message: String,
+    },
     /// Row or pixel coordinate was outside the raster.
     OutOfBounds,
 }
@@ -8595,6 +8893,7 @@ impl fmt::Display for RasterErrorKind {
                 write!(f, "tiling pattern exceeds tile limit {limit}")
             }
             Self::SingularImageTransform => f.write_str("image transform is singular"),
+            Self::Type3Glyph { message } => write!(f, "Type3 glyph render error: {message}"),
             Self::OutOfBounds => f.write_str("raster coordinate is out of bounds"),
         }
     }
@@ -11068,6 +11367,129 @@ mod tests {
     }
 
     #[test]
+    fn font_resources_should_load_type3_charprocs_and_widths() {
+        let document = load_type3_text_pdf(
+            b"BT /F1 12 Tf (A) Tj ET",
+            b"0 0 500 700 re f",
+            b"<< /Type /Font /Subtype /Type3 /FontBBox [0 0 500 700] /FontMatrix [0.001 0 0 0.001 0 0] /FirstChar 65 /LastChar 65 /Widths [500] /Encoding << /Differences [65 /A] >> /CharProcs << /A 6 0 R >> >>",
+        );
+        let resources =
+            font_resources_from_document(&document, &[("F1", 4)]).expect("valid Type3 font");
+        let font = resources.get(PdfName::new(b"F1")).expect("font resource");
+        let type3 = font.type3.as_ref().expect("Type3 metadata");
+
+        assert_eq!(font.subtype, Some(FontSubtype::Type3));
+        assert_eq!(type3.font_matrix, Matrix::scale(0.001, 0.001));
+        assert_eq!(
+            type3.font_bbox,
+            Some(PathBounds {
+                min_x: 0.0,
+                min_y: 0.0,
+                max_x: 500.0,
+                max_y: 700.0,
+            })
+        );
+        assert_eq!(
+            type3.widths,
+            vec![Type3GlyphWidth {
+                code: 65,
+                width: 500.0,
+            }]
+        );
+        assert_eq!(type3.char_procs[0].name, b"A");
+        assert_eq!(&*type3.char_procs[0].content, b"0 0 500 700 re f");
+    }
+
+    #[test]
+    fn text_display_list_should_advance_type3_text_with_widths() {
+        let document = load_type3_text_pdf(
+            b"BT /F1 10 Tf (AA) Tj ET",
+            b"0 0 700 700 re f",
+            b"<< /Type /Font /Subtype /Type3 /FontMatrix [0.001 0 0 0.001 0 0] /FirstChar 65 /LastChar 65 /Widths [700] /Encoding << /Differences [65 /A] >> /CharProcs << /A 6 0 R >> >>",
+        );
+        let resources =
+            font_resources_from_document(&document, &[("F1", 4)]).expect("valid Type3 font");
+        let content = content_stream_from_document(&document);
+        let list = build_text_display_list(
+            tokenize_content(PdfBytes::new(&content)),
+            &resources,
+            DisplayListOptions::default(),
+        )
+        .expect("Type3 text should decode");
+
+        let DisplayItem::Text(text) = &list.items()[0] else {
+            panic!("expected text display item");
+        };
+        assert_eq!(text.glyph_origins[0], Point { x: 0.0, y: 0.0 });
+        assert_eq!(text.glyph_origins[1], Point { x: 7.0, y: 0.0 });
+    }
+
+    #[test]
+    fn rasterize_text_should_render_type3_charproc_paths() {
+        let document = load_type3_text_pdf(
+            b"BT /F1 20 Tf 10 10 Td (A) Tj ET",
+            b"0 0 500 700 re f",
+            b"<< /Type /Font /Subtype /Type3 /FontMatrix [0.001 0 0 0.001 0 0] /FirstChar 65 /LastChar 65 /Widths [500] /Encoding << /Differences [65 /A] >> /CharProcs << /A 6 0 R >> >>",
+        );
+        let resources =
+            font_resources_from_document(&document, &[("F1", 4)]).expect("valid Type3 font");
+        let content = content_stream_from_document(&document);
+        let list = build_text_display_list(
+            tokenize_content(PdfBytes::new(&content)),
+            &resources,
+            DisplayListOptions::default(),
+        )
+        .expect("Type3 text should decode");
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 40.0,
+                    max_y: 40.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            40,
+        )
+        .expect("page transform");
+        let mut device = transform.create_device(Rgba::WHITE).expect("raster device");
+
+        rasterize_text(&list, &mut device, transform).expect("Type3 text should rasterize");
+
+        let non_white_pixels = device
+            .pixels()
+            .chunks_exact(PixelFormat::Rgba8.bytes_per_pixel())
+            .filter(|pixel| *pixel != [255, 255, 255, 255])
+            .count();
+        assert!(non_white_pixels > 0);
+    }
+
+    #[test]
+    fn font_resources_should_enforce_type3_charproc_byte_budget() {
+        let document = load_type3_text_pdf(
+            b"BT /F1 12 Tf (A) Tj ET",
+            b"0 0 500 700 re f",
+            b"<< /Type /Font /Subtype /Type3 /FirstChar 65 /LastChar 65 /Widths [500] /Encoding << /Differences [65 /A] >> /CharProcs << /A 6 0 R >> >>",
+        );
+        let error = font_resources_from_document_with_options(
+            &document,
+            &[("F1", 4)],
+            DisplayListOptions {
+                max_font_program_bytes: 3,
+                ..DisplayListOptions::default()
+            },
+        )
+        .expect_err("CharProc should exceed configured budget");
+
+        assert_eq!(
+            error.kind(),
+            &GraphicsErrorKind::FontProgramBytesOverflow { limit: 3 }
+        );
+    }
+
+    #[test]
     fn font_resources_should_enforce_tounicode_cmap_byte_budget() {
         let document = load_tounicode_text_pdf(
             b"BT /F1 12 Tf <01> Tj ET",
@@ -12813,6 +13235,29 @@ mod tests {
         let pdf = build_classic_pdf_from_objects(&objects);
         let leaked = Box::leak(pdf.into_boxed_slice());
         load_classic_document(PdfBytes::new(leaked)).expect("ToUnicode text PDF should load")
+    }
+
+    fn load_type3_text_pdf(
+        content_stream: &[u8],
+        char_proc_stream: &[u8],
+        font_dictionary: &[u8],
+    ) -> ClassicDocument<'static> {
+        let content_dictionary = format!("<< /Length {} >>", content_stream.len());
+        let char_proc_dictionary = format!("<< /Length {} >>", char_proc_stream.len());
+        let objects = vec![
+            stream_object_bytes(1, content_dictionary.as_bytes(), content_stream),
+            indirect_object_bytes(
+                2,
+                b"<< /Type /Page /Parent 3 0 R /MediaBox [0 0 120 120] /Resources << /Font << /F1 4 0 R >> >> /Contents 1 0 R >>",
+            ),
+            indirect_object_bytes(3, b"<< /Type /Pages /Kids [2 0 R] /Count 1 >>"),
+            indirect_object_bytes(4, font_dictionary),
+            indirect_object_bytes(5, b"<< /Type /Catalog /Pages 3 0 R >>"),
+            stream_object_bytes(6, char_proc_dictionary.as_bytes(), char_proc_stream),
+        ];
+        let pdf = build_classic_pdf_from_objects(&objects);
+        let leaked = Box::leak(pdf.into_boxed_slice());
+        load_classic_document(PdfBytes::new(leaked)).expect("Type3 text PDF should load")
     }
 
     fn test_truetype_program() -> FontProgram {
