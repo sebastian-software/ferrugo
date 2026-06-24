@@ -60,7 +60,8 @@ The initial primitive parser returns `PdfPrimitive<'a>` values for null,
 booleans, numbers, names, literal strings, hexadecimal strings, arrays, and
 dictionaries. Names and string contents are borrowed from the original input.
 Literal string escapes and hexadecimal string bytes are preserved raw for later
-semantic decoding.
+semantic decoding. Parser layers that need to read a primitive followed by more
+structure use `parse_primitive_prefix` to keep the first consumed byte offset.
 
 `pdfrust-object` owns typed indirect object IDs and references. Its first loader
 can parse contiguous `obj ... endobj` slices into `IndirectObject<'a>` values
@@ -70,4 +71,7 @@ object-stream loading remain later milestones.
 The classic document loader locates `startxref`, parses classic `xref`
 subsections, reads the trailer dictionary, and resolves all in-use xref entries
 into the object table. It verifies that each xref offset points at the expected
-object ID. Xref streams and repair mode remain separate milestones.
+object ID. Stream objects are represented as `ObjectValue::Stream` with borrowed
+raw bytes, dictionary entries, and a bounded decode path for `FlateDecode`,
+`ASCIIHexDecode`, and `ASCII85Decode` filter chains. Xref streams, object
+streams, indirect stream lengths, and repair mode remain separate milestones.

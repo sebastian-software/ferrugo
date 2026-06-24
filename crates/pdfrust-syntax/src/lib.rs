@@ -223,16 +223,33 @@ pub enum PdfString<'a> {
 /// Returns [`SyntaxError`] when the input is empty, malformed, or has trailing
 /// non-whitespace bytes after the primitive.
 pub fn parse_primitive(input: PdfBytes<'_>) -> SyntaxResult<PdfPrimitive<'_>> {
-    let mut parser = PrimitiveParser::new(input);
-    let value = parser.parse_value()?;
+    let (value, consumed) = parse_primitive_prefix(input)?;
+    let mut parser = PrimitiveParser::new(PdfBytes::new(&input.as_bytes()[consumed.get()..]));
     parser.skip_whitespace_and_comments()?;
     if parser.cursor.peek().is_some() {
         return Err(SyntaxError::new(
-            parser.cursor.offset(),
+            ByteOffset::new(consumed.get() + parser.cursor.offset().get()),
             SyntaxErrorKind::InvalidToken,
         ));
     }
     Ok(value)
+}
+
+/// Parses one core PDF primitive from the beginning of `input`.
+///
+/// Unlike [`parse_primitive`], this function returns after the first primitive
+/// and reports how many bytes were consumed. Callers that parse larger PDF
+/// structures, such as indirect stream objects, can then inspect the following
+/// bytes without reparsing the primitive.
+///
+/// # Errors
+///
+/// Returns [`SyntaxError`] when the input does not begin with a complete
+/// primitive.
+pub fn parse_primitive_prefix(input: PdfBytes<'_>) -> SyntaxResult<(PdfPrimitive<'_>, ByteOffset)> {
+    let mut parser = PrimitiveParser::new(input);
+    let value = parser.parse_value()?;
+    Ok((value, parser.cursor.offset()))
 }
 
 struct PrimitiveParser<'a> {
@@ -750,6 +767,15 @@ mod tests {
 
         assert_eq!(error.offset(), ByteOffset::new(5));
         assert_eq!(error.kind(), SyntaxErrorKind::InvalidToken);
+    }
+
+    #[test]
+    fn parse_primitive_prefix_should_return_first_value_and_consumed_offset() {
+        let (value, consumed) = parse_primitive_prefix(PdfBytes::new(b"<< /Length 5 >>\nstream"))
+            .expect("primitive prefix");
+
+        assert!(matches!(value, PdfPrimitive::Dictionary(_)));
+        assert_eq!(consumed, ByteOffset::new(15));
     }
 
     #[test]

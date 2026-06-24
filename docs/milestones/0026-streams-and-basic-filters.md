@@ -1,6 +1,6 @@
 # 0026: Streams And Basic Filters
 
-Status: todo
+Status: done
 Phase: 1
 Size: medium
 Depends on: 0025
@@ -44,4 +44,19 @@ Read PDF streams and decode the first common lossless filters.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-24.
+
+- Added `ObjectValue::Stream` and `StreamObject` so indirect stream objects
+  keep dictionary metadata, borrowed raw stream bytes, and raw byte offsets.
+- Added `parse_primitive_prefix` for parser layers that need one primitive
+  followed by additional structure such as `stream`.
+- Added bounded stream decoding through `StreamDecodeOptions`, including
+  `FlateDecode`, `ASCIIHexDecode`, and `ASCII85Decode`.
+- Added filter-array handling with aliases `/Fl`, `/AHx`, and `/A85`.
+- Added typed errors for unsupported filters, unsupported stream lengths,
+  decode failures, and decoded-size limit violations.
+- Added tests for raw stream ranges, generated compressed content streams,
+  filter arrays, malformed filter data, unsupported filters, and expansion
+  limits.
+- Direct `/Length` integers are supported. Indirect stream lengths remain a
+  later object-resolution task.

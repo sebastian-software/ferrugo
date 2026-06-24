@@ -3,9 +3,12 @@
 #![forbid(unsafe_code)]
 
 use std::fmt;
+use std::io::Read;
 
+use flate2::read::ZlibDecoder;
 use pdfrust_syntax::{
-    parse_primitive, ByteCursor, ByteOffset, PdfBytes, PdfName, PdfPrimitive, SyntaxError,
+    parse_primitive, parse_primitive_prefix, ByteCursor, ByteOffset, PdfBytes, PdfName, PdfNumber,
+    PdfPrimitive, SyntaxError,
 };
 
 /// Stable crate role used by architecture smoke tests and documentation.
@@ -109,8 +112,84 @@ pub struct IndirectObject<'a> {
     /// Object identifier from the indirect object header.
     pub id: ObjectId,
     /// Parsed object value between `obj` and `endobj`.
-    pub value: PdfPrimitive<'a>,
+    pub value: ObjectValue<'a>,
 }
+
+/// Parsed indirect object value.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ObjectValue<'a> {
+    /// Non-stream PDF primitive.
+    Primitive(PdfPrimitive<'a>),
+    /// Stream object with dictionary metadata and borrowed raw bytes.
+    Stream(StreamObject<'a>),
+}
+
+/// Parsed PDF stream object.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StreamObject<'a> {
+    dictionary: Vec<(PdfName<'a>, PdfPrimitive<'a>)>,
+    raw: &'a [u8],
+    raw_offset: ByteOffset,
+}
+
+impl<'a> StreamObject<'a> {
+    /// Returns the stream dictionary entries in source order.
+    #[must_use]
+    pub fn dictionary(&self) -> &[(PdfName<'a>, PdfPrimitive<'a>)] {
+        &self.dictionary
+    }
+
+    /// Returns the borrowed encoded stream bytes.
+    #[must_use]
+    pub const fn raw(&self) -> &'a [u8] {
+        self.raw
+    }
+
+    /// Returns the byte offset where the raw stream data starts.
+    #[must_use]
+    pub const fn raw_offset(&self) -> ByteOffset {
+        self.raw_offset
+    }
+
+    /// Decodes this stream with default safety limits.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ObjectError`] when the filter chain is unsupported,
+    /// malformed, or exceeds the configured expansion limit.
+    pub fn decode(&self) -> ObjectResult<Vec<u8>> {
+        self.decode_with_options(StreamDecodeOptions::default())
+    }
+
+    /// Decodes this stream with explicit safety limits.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ObjectError`] when the filter chain is unsupported,
+    /// malformed, or exceeds the configured expansion limit.
+    pub fn decode_with_options(&self, options: StreamDecodeOptions) -> ObjectResult<Vec<u8>> {
+        let filters = stream_filters(&self.dictionary)?;
+        decode_stream_bytes(self.raw, &filters, options)
+    }
+}
+
+/// Stream decode safety configuration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StreamDecodeOptions {
+    /// Maximum number of bytes any decode step may produce.
+    pub max_decoded_len: usize,
+}
+
+impl Default for StreamDecodeOptions {
+    fn default() -> Self {
+        Self {
+            max_decoded_len: DEFAULT_MAX_DECODED_LEN,
+        }
+    }
+}
+
+/// Default decoded stream size limit.
+pub const DEFAULT_MAX_DECODED_LEN: usize = 16 * 1024 * 1024;
 
 /// Object table with duplicate detection.
 #[derive(Debug, Default, Clone, PartialEq)]
@@ -248,28 +327,107 @@ pub fn parse_reference(input: PdfBytes<'_>) -> ObjectResult<Reference> {
 /// Returns [`ObjectError`] when the object header, body, or terminator is
 /// malformed.
 pub fn parse_indirect_object(input: PdfBytes<'_>) -> ObjectResult<IndirectObject<'_>> {
-    let mut parser = ObjectParser::new(input);
+    let (object, consumed) = parse_indirect_object_prefix(input.as_bytes(), ByteOffset::new(0))?;
+    let mut parser = RawParser::new(input.as_bytes(), consumed.get());
+    parser.skip_whitespace()?;
+    if parser.peek().is_some() {
+        return Err(ObjectError::malformed(
+            parser.offset(),
+            "trailing data after indirect object",
+        ));
+    }
+    Ok(object)
+}
+
+fn parse_indirect_object_prefix<'a>(
+    bytes: &'a [u8],
+    base_offset: ByteOffset,
+) -> ObjectResult<(IndirectObject<'a>, ByteOffset)> {
+    let mut parser = ObjectParser::new(PdfBytes::new(bytes));
     let id = parser.parse_object_id()?;
     parser.skip_whitespace()?;
     parser.consume_keyword(b"obj")?;
     parser.skip_whitespace()?;
-    let body_start = parser.cursor.offset().get();
-    let remaining = parser.cursor.remaining();
-    let endobj_start = find_keyword(remaining, b"endobj").ok_or_else(|| {
-        ObjectError::malformed(parser.cursor.offset(), "indirect object is missing endobj")
-    })?;
-    let body_end = body_start + endobj_start;
-    let body = &parser.cursor.input()[body_start..body_end];
-    let value = parse_primitive(PdfBytes::new(body))?;
-    parser.cursor.advance(endobj_start + b"endobj".len())?;
+    let value = parser.parse_object_value(base_offset)?;
     parser.skip_whitespace()?;
-    if parser.cursor.peek().is_some() {
-        return Err(ObjectError::malformed(
-            parser.cursor.offset(),
-            "trailing data after indirect object",
-        ));
+    parser.consume_keyword(b"endobj")?;
+    Ok((IndirectObject { id, value }, parser.cursor.offset()))
+}
+
+impl<'a> ObjectParser<'a> {
+    fn parse_object_value(&mut self, base_offset: ByteOffset) -> ObjectResult<ObjectValue<'a>> {
+        let (primitive, consumed) = parse_primitive_prefix(PdfBytes::new(self.cursor.remaining()))?;
+        self.cursor.advance(consumed.get())?;
+        self.skip_whitespace()?;
+
+        if !self.cursor.remaining().starts_with(b"stream") {
+            return Ok(ObjectValue::Primitive(primitive));
+        }
+
+        let PdfPrimitive::Dictionary(dictionary) = primitive else {
+            return Err(ObjectError::malformed(
+                self.cursor.offset(),
+                "stream object must start with a dictionary",
+            ));
+        };
+        let raw_len = direct_stream_length(&dictionary)?;
+        self.consume_keyword(b"stream")?;
+        self.consume_stream_line_break()?;
+        let raw_start = self.cursor.offset().get();
+        let raw_end = raw_start.checked_add(raw_len).ok_or_else(|| {
+            ObjectError::malformed(self.cursor.offset(), "stream length overflow")
+        })?;
+        if raw_end > self.cursor.input().len() {
+            return Err(ObjectError::malformed(
+                self.cursor.offset(),
+                "stream length exceeds object input",
+            ));
+        }
+        let raw = &self.cursor.input()[raw_start..raw_end];
+        self.cursor.advance(raw_len)?;
+        self.consume_optional_stream_line_break()?;
+        self.consume_keyword(b"endstream")?;
+        let raw_offset = ByteOffset::new(base_offset.get().saturating_add(raw_start));
+
+        Ok(ObjectValue::Stream(StreamObject {
+            dictionary,
+            raw,
+            raw_offset,
+        }))
     }
-    Ok(IndirectObject { id, value })
+
+    fn consume_stream_line_break(&mut self) -> ObjectResult<()> {
+        let offset = self.cursor.offset();
+        match self.cursor.read_byte()? {
+            b'\r' => {
+                if self.cursor.peek() == Some(b'\n') {
+                    self.cursor.advance(1)?;
+                }
+                Ok(())
+            }
+            b'\n' => Ok(()),
+            _ => Err(ObjectError::malformed(
+                offset,
+                "stream keyword must be followed by a line break",
+            )),
+        }
+    }
+
+    fn consume_optional_stream_line_break(&mut self) -> ObjectResult<()> {
+        match self.cursor.peek() {
+            Some(b'\r') => {
+                self.cursor.advance(1)?;
+                if self.cursor.peek() == Some(b'\n') {
+                    self.cursor.advance(1)?;
+                }
+            }
+            Some(b'\n') => {
+                self.cursor.advance(1)?;
+            }
+            _ => {}
+        }
+        Ok(())
+    }
 }
 
 /// Loads a simple PDF that uses a classic xref table.
@@ -307,11 +465,7 @@ fn parse_object_at_offset<'a>(
             "xref offset is outside input",
         ));
     }
-    let tail = &bytes[start..];
-    let endobj_offset = find_keyword(tail, b"endobj")
-        .ok_or_else(|| ObjectError::malformed(entry.offset, "xref object is missing endobj"))?;
-    let end = start + endobj_offset + b"endobj".len();
-    let object = parse_indirect_object(PdfBytes::new(&bytes[start..end]))?;
+    let (object, _) = parse_indirect_object_prefix(&bytes[start..], entry.offset)?;
     if object.id != entry.id {
         return Err(ObjectError::XrefOffsetMismatch {
             expected: entry.id,
@@ -412,6 +566,10 @@ impl<'a> RawParser<'a> {
 
     fn starts_with(&self, keyword: &[u8]) -> bool {
         self.bytes[self.offset..].starts_with(keyword)
+    }
+
+    fn peek(&self) -> Option<u8> {
+        self.bytes.get(self.offset).copied()
     }
 
     fn consume_keyword(&mut self, keyword: &[u8]) -> ObjectResult<()> {
@@ -593,6 +751,249 @@ fn parse_u16(raw: &[u8], offset: ByteOffset) -> ObjectResult<u16> {
         .map_err(|_| ObjectError::malformed(offset, "generation is out of range"))
 }
 
+fn direct_stream_length(dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)]) -> ObjectResult<usize> {
+    let value = dictionary_value(dictionary, b"Length")
+        .ok_or_else(|| ObjectError::malformed(ByteOffset::new(0), "stream is missing /Length"))?;
+    let PdfPrimitive::Number(PdfNumber::Integer(length)) = value else {
+        return Err(ObjectError::UnsupportedStreamLength);
+    };
+    usize::try_from(*length).map_err(|_| {
+        ObjectError::malformed(ByteOffset::new(0), "stream length must be non-negative")
+    })
+}
+
+fn stream_filters(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+) -> ObjectResult<Vec<StreamFilter>> {
+    let Some(value) = dictionary_value(dictionary, b"Filter") else {
+        return Ok(Vec::new());
+    };
+    match value {
+        PdfPrimitive::Name(name) => Ok(vec![StreamFilter::from_name(name.as_bytes())?]),
+        PdfPrimitive::Array(filters) => filters
+            .iter()
+            .map(|filter| match filter {
+                PdfPrimitive::Name(name) => StreamFilter::from_name(name.as_bytes()),
+                _ => Err(ObjectError::malformed(
+                    ByteOffset::new(0),
+                    "stream filter array must contain names",
+                )),
+            })
+            .collect(),
+        _ => Err(ObjectError::malformed(
+            ByteOffset::new(0),
+            "stream /Filter must be a name or array",
+        )),
+    }
+}
+
+fn dictionary_value<'a>(
+    dictionary: &'a [(PdfName<'a>, PdfPrimitive<'a>)],
+    key: &[u8],
+) -> Option<&'a PdfPrimitive<'a>> {
+    dictionary
+        .iter()
+        .find_map(|(name, value)| (name.as_bytes() == key).then_some(value))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StreamFilter {
+    Flate,
+    AsciiHex,
+    Ascii85,
+}
+
+impl StreamFilter {
+    fn from_name(name: &[u8]) -> ObjectResult<Self> {
+        match name {
+            b"FlateDecode" | b"Fl" => Ok(Self::Flate),
+            b"ASCIIHexDecode" | b"AHx" => Ok(Self::AsciiHex),
+            b"ASCII85Decode" | b"A85" => Ok(Self::Ascii85),
+            _ => Err(ObjectError::UnsupportedFilter {
+                name: name.to_vec(),
+            }),
+        }
+    }
+
+    const fn label(self) -> &'static str {
+        match self {
+            Self::Flate => "FlateDecode",
+            Self::AsciiHex => "ASCIIHexDecode",
+            Self::Ascii85 => "ASCII85Decode",
+        }
+    }
+}
+
+fn decode_stream_bytes(
+    raw: &[u8],
+    filters: &[StreamFilter],
+    options: StreamDecodeOptions,
+) -> ObjectResult<Vec<u8>> {
+    ensure_decode_limit(raw.len(), options.max_decoded_len)?;
+    let mut decoded = raw.to_vec();
+    for filter in filters {
+        decoded = match filter {
+            StreamFilter::Flate => decode_flate(&decoded, options.max_decoded_len)?,
+            StreamFilter::AsciiHex => decode_ascii_hex(&decoded, options.max_decoded_len)?,
+            StreamFilter::Ascii85 => decode_ascii85(&decoded, options.max_decoded_len)?,
+        };
+    }
+    Ok(decoded)
+}
+
+fn decode_flate(raw: &[u8], max_decoded_len: usize) -> ObjectResult<Vec<u8>> {
+    let mut decoder = ZlibDecoder::new(raw);
+    let mut decoded = Vec::new();
+    let read_limit = u64::try_from(max_decoded_len)
+        .unwrap_or(u64::MAX)
+        .saturating_add(1);
+    decoder
+        .by_ref()
+        .take(read_limit)
+        .read_to_end(&mut decoded)
+        .map_err(|_| ObjectError::Decode {
+            filter: StreamFilter::Flate.label(),
+            message: "invalid flate stream",
+        })?;
+    ensure_decode_limit(decoded.len(), max_decoded_len)?;
+    Ok(decoded)
+}
+
+fn decode_ascii_hex(raw: &[u8], max_decoded_len: usize) -> ObjectResult<Vec<u8>> {
+    let mut decoded = Vec::new();
+    let mut high_nibble = None;
+
+    for byte in raw.iter().copied() {
+        if is_whitespace(byte) {
+            continue;
+        }
+        if byte == b'>' {
+            break;
+        }
+        let nibble = hex_nibble(byte).ok_or(ObjectError::Decode {
+            filter: StreamFilter::AsciiHex.label(),
+            message: "invalid ASCIIHex digit",
+        })?;
+        if let Some(high) = high_nibble.take() {
+            push_limited(&mut decoded, (high << 4) | nibble, max_decoded_len)?;
+        } else {
+            high_nibble = Some(nibble);
+        }
+    }
+
+    if let Some(high) = high_nibble {
+        push_limited(&mut decoded, high << 4, max_decoded_len)?;
+    }
+    Ok(decoded)
+}
+
+fn decode_ascii85(raw: &[u8], max_decoded_len: usize) -> ObjectResult<Vec<u8>> {
+    let mut decoded = Vec::new();
+    let mut group = [0_u8; 5];
+    let mut group_len = 0_usize;
+    let mut index = 0_usize;
+
+    while index < raw.len() {
+        let byte = raw[index];
+        index += 1;
+        if is_whitespace(byte) {
+            continue;
+        }
+        if byte == b'~' {
+            if raw.get(index) != Some(&b'>') {
+                return Err(ObjectError::Decode {
+                    filter: StreamFilter::Ascii85.label(),
+                    message: "ASCII85 terminator must be ~>",
+                });
+            }
+            break;
+        }
+        if byte == b'z' {
+            if group_len != 0 {
+                return Err(ObjectError::Decode {
+                    filter: StreamFilter::Ascii85.label(),
+                    message: "ASCII85 z shortcut must start a group",
+                });
+            }
+            extend_limited(&mut decoded, &[0, 0, 0, 0], max_decoded_len)?;
+            continue;
+        }
+        if !(b'!'..=b'u').contains(&byte) {
+            return Err(ObjectError::Decode {
+                filter: StreamFilter::Ascii85.label(),
+                message: "invalid ASCII85 digit",
+            });
+        }
+        group[group_len] = byte - b'!';
+        group_len += 1;
+        if group_len == 5 {
+            append_ascii85_group(&mut decoded, &group, 4, max_decoded_len)?;
+            group_len = 0;
+        }
+    }
+
+    if group_len == 1 {
+        return Err(ObjectError::Decode {
+            filter: StreamFilter::Ascii85.label(),
+            message: "ASCII85 final group is too short",
+        });
+    }
+    if group_len > 1 {
+        group[group_len..].fill(b'u' - b'!');
+        append_ascii85_group(&mut decoded, &group, group_len - 1, max_decoded_len)?;
+    }
+    Ok(decoded)
+}
+
+fn append_ascii85_group(
+    decoded: &mut Vec<u8>,
+    group: &[u8; 5],
+    output_len: usize,
+    max_decoded_len: usize,
+) -> ObjectResult<()> {
+    let value = group.iter().try_fold(0_u32, |accumulator, digit| {
+        accumulator
+            .checked_mul(85)
+            .and_then(|value| value.checked_add(u32::from(*digit)))
+            .ok_or(ObjectError::Decode {
+                filter: StreamFilter::Ascii85.label(),
+                message: "ASCII85 group overflow",
+            })
+    })?;
+    let bytes = value.to_be_bytes();
+    extend_limited(decoded, &bytes[..output_len], max_decoded_len)
+}
+
+fn hex_nibble(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
+    }
+}
+
+fn push_limited(decoded: &mut Vec<u8>, byte: u8, max_decoded_len: usize) -> ObjectResult<()> {
+    ensure_decode_limit(decoded.len().saturating_add(1), max_decoded_len)?;
+    decoded.push(byte);
+    Ok(())
+}
+
+fn extend_limited(decoded: &mut Vec<u8>, bytes: &[u8], max_decoded_len: usize) -> ObjectResult<()> {
+    ensure_decode_limit(decoded.len().saturating_add(bytes.len()), max_decoded_len)?;
+    decoded.extend_from_slice(bytes);
+    Ok(())
+}
+
+fn ensure_decode_limit(len: usize, max_decoded_len: usize) -> ObjectResult<()> {
+    if len > max_decoded_len {
+        return Err(ObjectError::StreamLimitExceeded {
+            limit: max_decoded_len,
+        });
+    }
+    Ok(())
+}
+
 fn find_keyword(haystack: &[u8], keyword: &[u8]) -> Option<usize> {
     haystack
         .windows(keyword.len())
@@ -621,6 +1022,25 @@ pub enum ObjectError {
         /// Static diagnostic message.
         message: &'static str,
     },
+    /// Stream length uses a form this loader cannot resolve yet.
+    UnsupportedStreamLength,
+    /// Stream filter is valid PDF syntax but unsupported.
+    UnsupportedFilter {
+        /// Raw filter name bytes.
+        name: Vec<u8>,
+    },
+    /// Stream decoding failed.
+    Decode {
+        /// Filter that reported the failure.
+        filter: &'static str,
+        /// Static diagnostic message.
+        message: &'static str,
+    },
+    /// Decoded stream output exceeded the configured limit.
+    StreamLimitExceeded {
+        /// Configured decoded byte limit.
+        limit: usize,
+    },
     /// Duplicate indirect object ID.
     DuplicateObject {
         /// Duplicated object ID.
@@ -648,6 +1068,10 @@ impl ObjectError {
         match self {
             Self::Syntax(error) => Some(error.offset()),
             Self::Malformed { offset, .. } => Some(*offset),
+            Self::UnsupportedStreamLength
+            | Self::UnsupportedFilter { .. }
+            | Self::Decode { .. }
+            | Self::StreamLimitExceeded { .. } => None,
             Self::DuplicateObject { .. } => None,
             Self::XrefOffsetMismatch { offset, .. } => Some(*offset),
         }
@@ -665,6 +1089,18 @@ impl fmt::Display for ObjectError {
         match self {
             Self::Syntax(error) => write!(f, "{error}"),
             Self::Malformed { offset, message } => write!(f, "{message} at {offset}"),
+            Self::UnsupportedStreamLength => f.write_str("unsupported stream length"),
+            Self::UnsupportedFilter { name } => {
+                write!(
+                    f,
+                    "unsupported stream filter /{}",
+                    String::from_utf8_lossy(name)
+                )
+            }
+            Self::Decode { filter, message } => write!(f, "{filter} decode error: {message}"),
+            Self::StreamLimitExceeded { limit } => {
+                write!(f, "decoded stream exceeds limit of {limit} bytes")
+            }
             Self::DuplicateObject { id } => write!(
                 f,
                 "duplicate object {} {}",
@@ -692,6 +1128,11 @@ impl std::error::Error for ObjectError {}
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use std::io::Write;
+
+    use flate2::write::ZlibEncoder;
+    use flate2::Compression;
 
     #[test]
     fn crate_role_should_be_stable() {
@@ -727,7 +1168,102 @@ mod tests {
 
         assert_eq!(object.id.number.get(), 12);
         assert_eq!(object.id.generation.get(), 0);
-        assert!(matches!(object.value, PdfPrimitive::Dictionary(_)));
+        assert!(matches!(
+            object.value,
+            ObjectValue::Primitive(PdfPrimitive::Dictionary(_))
+        ));
+    }
+
+    #[test]
+    fn parse_indirect_object_should_parse_stream_raw_range() {
+        let object = parse_indirect_object(PdfBytes::new(
+            b"4 0 obj\n<< /Length 5 >>\nstream\nhello\nendstream\nendobj",
+        ))
+        .expect("stream object");
+
+        let ObjectValue::Stream(stream) = object.value else {
+            panic!("expected stream object");
+        };
+        assert_eq!(stream.raw(), b"hello");
+        assert_eq!(stream.raw_offset(), ByteOffset::new(31));
+    }
+
+    #[test]
+    fn stream_decode_should_copy_unfiltered_bytes_within_limit() {
+        let decoded = with_test_stream(b"<< /Length 5 >>\nstream\nhello\nendstream", |stream| {
+            stream
+                .decode_with_options(StreamDecodeOptions { max_decoded_len: 5 })
+                .expect("decoded stream")
+        });
+
+        assert_eq!(decoded, b"hello");
+    }
+
+    #[test]
+    fn stream_decode_should_decode_flate_filter() {
+        let compressed = zlib_compress(b"BT /F1 12 Tf ET");
+        let object = build_stream_object(
+            b"<< /Length ",
+            compressed.len(),
+            b" /Filter /FlateDecode >>",
+            &compressed,
+        );
+        let decoded = with_test_stream(&object, |stream| {
+            stream.decode().expect("flate decoded stream")
+        });
+
+        assert_eq!(decoded, b"BT /F1 12 Tf ET");
+    }
+
+    #[test]
+    fn stream_decode_should_decode_ascii_hex_filter() {
+        let decoded = with_test_stream(
+            b"<< /Length 11 /Filter /ASCIIHexDecode >>\nstream\n48656c6c6f>\nendstream",
+            |stream| stream.decode().expect("ASCIIHex decoded stream"),
+        );
+
+        assert_eq!(decoded, b"Hello");
+    }
+
+    #[test]
+    fn stream_decode_should_apply_filter_arrays_in_order() {
+        let decoded = with_test_stream(
+            b"<< /Length 7 /Filter [ /ASCIIHexDecode /ASCII85Decode ] >>\nstream\n7A7E3E>\nendstream",
+            |stream| stream.decode().expect("filter array decoded stream"),
+        );
+
+        assert_eq!(decoded, &[0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn stream_decode_should_reject_unsupported_filter() {
+        let error = with_test_stream(
+            b"<< /Length 5 /Filter /DCTDecode >>\nstream\nhello\nendstream",
+            |stream| stream.decode().expect_err("unsupported filter"),
+        );
+
+        assert!(matches!(error, ObjectError::UnsupportedFilter { .. }));
+    }
+
+    #[test]
+    fn stream_decode_should_reject_expansion_past_limit() {
+        let error = with_test_stream(b"<< /Length 5 >>\nstream\nhello\nendstream", |stream| {
+            stream
+                .decode_with_options(StreamDecodeOptions { max_decoded_len: 4 })
+                .expect_err("stream limit")
+        });
+
+        assert_eq!(error, ObjectError::StreamLimitExceeded { limit: 4 });
+    }
+
+    #[test]
+    fn stream_decode_should_reject_malformed_ascii_hex() {
+        let error = with_test_stream(
+            b"<< /Length 3 /Filter /ASCIIHexDecode >>\nstream\nxx>\nendstream",
+            |stream| stream.decode().expect_err("malformed ASCIIHex"),
+        );
+
+        assert!(matches!(error, ObjectError::Decode { .. }));
     }
 
     #[test]
@@ -735,7 +1271,7 @@ mod tests {
         let error =
             parse_indirect_object(PdfBytes::new(b"12 0 obj true")).expect_err("missing endobj");
 
-        assert_eq!(error.offset(), Some(ByteOffset::new(9)));
+        assert_eq!(error.offset(), Some(ByteOffset::new(13)));
     }
 
     #[test]
@@ -788,6 +1324,26 @@ mod tests {
     }
 
     #[test]
+    fn load_classic_document_should_decode_compressed_stream_object() {
+        let compressed = zlib_compress(b"BT /F1 12 Tf ET");
+        let pdf = build_classic_stream_pdf(&compressed);
+
+        let document = load_classic_document(PdfBytes::new(&pdf)).expect("classic document");
+        let object = document
+            .objects
+            .get(ObjectId::new(
+                ObjectNumber::new(1).expect("object number"),
+                GenerationNumber::new(0),
+            ))
+            .expect("stream object");
+        let ObjectValue::Stream(stream) = &object.value else {
+            panic!("expected stream object");
+        };
+
+        assert_eq!(stream.decode().expect("decoded stream"), b"BT /F1 12 Tf ET");
+    }
+
+    #[test]
     fn load_classic_document_should_report_offset_mismatch() {
         let pdf = build_classic_pdf(true);
 
@@ -837,5 +1393,58 @@ mod tests {
         let offset = pdf.len();
         pdf.extend_from_slice(object);
         offset
+    }
+
+    fn with_test_stream<T>(input: &[u8], test: impl FnOnce(&StreamObject<'_>) -> T) -> T {
+        let mut object = b"4 0 obj\n".to_vec();
+        object.extend_from_slice(input);
+        object.extend_from_slice(b"\nendobj");
+        let object = parse_indirect_object(PdfBytes::new(&object)).expect("stream object");
+        let ObjectValue::Stream(stream) = &object.value else {
+            panic!("expected stream object");
+        };
+        test(stream)
+    }
+
+    fn build_stream_object(
+        prefix: &[u8],
+        length: usize,
+        suffix: &[u8],
+        stream_bytes: &[u8],
+    ) -> Vec<u8> {
+        let mut object = Vec::new();
+        object.extend_from_slice(prefix);
+        object.extend_from_slice(length.to_string().as_bytes());
+        object.extend_from_slice(suffix);
+        object.extend_from_slice(b"\nstream\n");
+        object.extend_from_slice(stream_bytes);
+        object.extend_from_slice(b"\nendstream");
+        object
+    }
+
+    fn build_classic_stream_pdf(stream_bytes: &[u8]) -> Vec<u8> {
+        let mut pdf = b"%PDF-1.7\n".to_vec();
+        let stream_object = build_stream_object(
+            b"1 0 obj\n<< /Length ",
+            stream_bytes.len(),
+            b" /Filter /FlateDecode >>",
+            stream_bytes,
+        );
+        let object_1 = append_object(&mut pdf, &stream_object);
+        pdf.extend_from_slice(b"\nendobj\n");
+        let xref_offset = pdf.len();
+        pdf.extend_from_slice(
+            format!(
+                "xref\n0 2\n0000000000 65535 f \n{object_1:010} 00000 n \ntrailer\n<< /Size 2 /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF\n"
+            )
+            .as_bytes(),
+        );
+        pdf
+    }
+
+    fn zlib_compress(input: &[u8]) -> Vec<u8> {
+        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(input).expect("write compressed input");
+        encoder.finish().expect("finish compressed input")
     }
 }
