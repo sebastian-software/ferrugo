@@ -1,6 +1,6 @@
 # 0088: Image Mask Stencil And Bitmap Edge Cases
 
-Status: todo
+Status: completed
 Phase: 15
 Size: medium
 Depends on: 0087
@@ -46,4 +46,30 @@ and scanned overlays.
 
 ## Completion Notes
 
-Empty until done.
+- Implemented `/ImageMask true` Image XObjects as stencil masks painted with
+  the current fill color.
+- Matched PDFium stencil polarity for `/Decode [0 1]` and `/Decode [1 0]`.
+- Kept decoded mask samples row-packed and sampled bits directly during
+  rasterization.
+- Added signature, monochrome icon, and compressed logo ImageMask fixtures to
+  the generated corpus and manifest.
+- Added focused renderer tests for default polarity, inverted polarity,
+  unsupported decode arrays, fill-color painting, and mask byte budgets.
+- Added native fixture coverage for all three generated ImageMask documents.
+- Wrote `docs/reports/image-mask-stencil-coverage-2026-06-25.md`.
+
+Validation completed:
+
+- `cargo fmt --check`
+- `cargo test -p pdfrust-render image_mask`
+- `cargo test -p pdfrust-native image_mask`
+- `cargo check --workspace --no-default-features`
+- `cargo test --workspace --no-default-features`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --output target/image-mask-summary-0088.json`
+- `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --output target/image-mask-visual-diff-0088.json`
+- `cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/image-mask-benchmark-0088.json`
+
+The ImageMask fixtures reported two exact visual matches and one accepted drift
+against PDFium. The full corpus reported 61 fixtures total, 59 native renders,
+1 known optional-content fallback, and 1 known encrypted error.
