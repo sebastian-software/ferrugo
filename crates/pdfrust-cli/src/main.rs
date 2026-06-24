@@ -29,6 +29,8 @@ use pdfrust_thumbnail::{
 
 #[cfg(feature = "pdfium")]
 const WORKER_POLL_INTERVAL: Duration = Duration::from_millis(10);
+#[cfg(any(feature = "pdfium", test))]
+const LOW_AMPLITUDE_VISUAL_DRIFT_MAX_DELTA: u8 = 8;
 #[cfg(not(feature = "pdfium"))]
 const PDFIUM_FEATURE_MESSAGE: &str =
     "PDFium support is disabled; rebuild pdfrust-cli with --features pdfium";
@@ -2082,9 +2084,11 @@ fn classify_visual_diff(
     if metrics.changed_pixels == 0 && metrics.max_channel_delta == 0 {
         return VisualDiffStatus::Exact;
     }
+    let bounded_distribution = metrics.p95_channel_delta <= thresholds.max_p95_channel_delta
+        && metrics.changed_ratio <= thresholds.max_changed_ratio;
+    let low_amplitude_field = metrics.max_channel_delta <= LOW_AMPLITUDE_VISUAL_DRIFT_MAX_DELTA;
     if metrics.mean_abs_error <= thresholds.max_mean_abs_error
-        && metrics.p95_channel_delta <= thresholds.max_p95_channel_delta
-        && metrics.changed_ratio <= thresholds.max_changed_ratio
+        && (bounded_distribution || low_amplitude_field)
     {
         VisualDiffStatus::AcceptedDrift
     } else {
@@ -3506,6 +3510,36 @@ mod tests {
                     max_changed_ratio: 0.0,
                 },
             ),
+            VisualDiffStatus::Blocker
+        );
+    }
+
+    #[test]
+    fn visual_diff_metrics_should_accept_low_amplitude_field_drift() {
+        let metrics = VisualDiffMetrics {
+            width: 120,
+            height: 120,
+            changed_pixels: 14_400,
+            changed_ratio: 1.0,
+            mean_abs_error: 1.25,
+            p95_channel_delta: 4,
+            max_channel_delta: 5,
+            native_nonwhite_pixels: 14_400,
+            pdfium_nonwhite_pixels: 14_400,
+        };
+
+        assert_eq!(
+            classify_visual_diff(&metrics, VisualDiffThresholds::default()),
+            VisualDiffStatus::AcceptedDrift
+        );
+
+        let high_delta = VisualDiffMetrics {
+            max_channel_delta: 64,
+            ..metrics
+        };
+
+        assert_eq!(
+            classify_visual_diff(&high_delta, VisualDiffThresholds::default()),
             VisualDiffStatus::Blocker
         );
     }

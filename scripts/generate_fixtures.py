@@ -883,6 +883,28 @@ def radial_gradient_pdf() -> bytes:
     return pdf.render(catalog)
 
 
+def mesh_shading_unsupported_pdf() -> bytes:
+    pdf = Pdf()
+    content = b"/Sh1 sh"
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 120 120] "
+        "/Resources << /Shading << /Sh1 << "
+        "/ShadingType 4 /ColorSpace /DeviceRGB /BitsPerCoordinate 8 "
+        "/BitsPerComponent 8 /BitsPerFlag 2 "
+        "/Decode [0 120 0 120 0 1 0 1 0 1] "
+        "/Length 0 >> >> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    return pdf.render(catalog)
+
+
 def tiling_pattern_pdf() -> bytes:
     pdf = Pdf()
     content = b"/Pattern cs /P1 scn 0 0 120 120 re f"
@@ -2028,6 +2050,7 @@ def main() -> None:
     write("transparency-alpha.pdf", transparency_alpha_pdf())
     write("axial-gradient.pdf", axial_gradient_pdf())
     write("radial-gradient.pdf", radial_gradient_pdf())
+    write("mesh-shading-unsupported.pdf", mesh_shading_unsupported_pdf())
     write("tiling-pattern.pdf", tiling_pattern_pdf())
     write("dashed-stroke.pdf", dashed_stroke_pdf())
     write("line-caps.pdf", line_caps_pdf())

@@ -2128,6 +2128,12 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_report_generated_unsupported_mesh_shading_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/mesh-shading-unsupported.pdf");
+        assert_unsupported_feature_fixture(bytes, "graphics.pattern-shading");
+    }
+
+    #[test]
     fn native_backend_should_render_generated_tiling_pattern_fixture() {
         let bytes = include_bytes!("../../../fixtures/generated/tiling-pattern.pdf");
         let thumbnail = ThumbnailBackend::render(
@@ -3186,18 +3192,22 @@ mod tests {
     }
 
     fn assert_unsupported_image_filter_fixture(bytes: &[u8]) {
+        assert_unsupported_feature_fixture(bytes, "image.filter");
+    }
+
+    fn assert_unsupported_feature_fixture(bytes: &[u8], bucket: &'static str) {
         let error = ThumbnailBackend::render(
             &NativeBackend::new(),
             PdfSource::from_bytes(bytes),
             &ThumbnailOptions::default(),
         )
-        .expect_err("unsupported image codec fixture should not render natively");
+        .expect_err("unsupported feature fixture should not render natively");
 
         assert_eq!(
             error.class(),
             pdfrust_thumbnail::ThumbnailErrorClass::Unsupported
         );
-        assert_eq!(error.unsupported_feature_bucket(), Some("image.filter"));
+        assert_eq!(error.unsupported_feature_bucket(), Some(bucket));
     }
 
     fn assert_dark(rgba: [u8; 4]) {

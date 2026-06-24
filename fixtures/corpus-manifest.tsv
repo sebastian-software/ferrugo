@@ -31,6 +31,7 @@ fixtures/generated/line-caps.pdf	report	scripts/generate_fixtures.py	MIT OR Apac
 fixtures/generated/line-joins.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	vector,stroke,line-join	Generated line-join stroke fixture.
 fixtures/generated/link-annotation-appearance.pdf	mixed-layout	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	annotation,link,appearance	Generated link annotation appearance fixture.
 fixtures/generated/malformed-xref-offset-drift.pdf	mixed-layout	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	xref,recovery	Generated malformed xref offset-drift fixture.
+fixtures/generated/mesh-shading-unsupported.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	shading,mesh,unsupported	Generated unsupported mesh shading fixture.
 fixtures/generated/mixed-text-image.pdf	mixed-layout	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,image,vector,z-order	Generated mixed handout-style page with image, vector marker, and text.
 fixtures/generated/multi-page-report.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	2	text,table,vector,multipage,report	Generated two-page report with repeated headers, table lines, and text.
 fixtures/generated/optional-content-layer-off.pdf	presentation	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	optional-content,layer-off	Generated default-hidden optional content layer fixture.
