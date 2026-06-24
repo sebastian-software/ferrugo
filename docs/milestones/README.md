@@ -21,28 +21,6 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
-| 0054 | [Optional Content And Layer Policy](0054-optional-content-and-layer-policy.md) | 7 | medium | 0053 |
-| 0055 | [Incremental Updates And Hybrid References](0055-incremental-updates-and-hybrid-references.md) | 7 | medium | 0054 |
-| 0056 | [Encryption And Permissions Policy](0056-encryption-and-permissions-policy.md) | 7 | small | 0055 |
-| 0057 | [Malformed PDF Recovery Budget](0057-malformed-pdf-recovery-budget.md) | 7 | medium | 0056 |
-| 0058 | [Renderer Cache And Memory Budgets](0058-renderer-cache-and-memory-budgets.md) | 8 | medium | 0057 |
-| 0059 | [Native Backend Facade Parity](0059-native-backend-facade-parity.md) | 8 | medium | 0058 |
-| 0060 | [PDFium Retirement Gate](0060-pdfium-retirement-gate.md) | 8 | medium | 0059 |
-| 0061 | [Native Renderer Default Rollout](0061-native-renderer-default-rollout.md) | 9 | medium | 0060 |
-| 0062 | [PDFium Fallback Telemetry And Kill Switch](0062-pdfium-fallback-telemetry-and-kill-switch.md) | 9 | small | 0061 |
-| 0063 | [Corpus Taxonomy And Sampling Expansion](0063-corpus-taxonomy-and-sampling-expansion.md) | 9 | medium | 0062 |
-| 0064 | [Office Export Document Coverage](0064-office-export-document-coverage.md) | 10 | medium | 0063 |
-| 0065 | [Browser Print Document Coverage](0065-browser-print-document-coverage.md) | 10 | medium | 0064 |
-| 0066 | [Scanned Document And Large Image Coverage](0066-scanned-document-and-large-image-coverage.md) | 10 | medium | 0065 |
-| 0067 | [Mixed Text Image Page Fidelity](0067-mixed-text-image-page-fidelity.md) | 10 | medium | 0066 |
-| 0068 | [Complex Font Subsetting And CID Fonts](0068-complex-font-subsetting-and-cid-fonts.md) | 11 | medium | 0067 |
-| 0069 | [Vertical And CJK Text Coverage](0069-vertical-and-cjk-text-coverage.md) | 11 | medium | 0068 |
-| 0070 | [Bidirectional And Shaped Text Policy](0070-bidirectional-and-shaped-text-policy.md) | 11 | medium | 0069 |
-| 0071 | [Transparency Stack Fidelity Gate](0071-transparency-stack-fidelity-gate.md) | 11 | medium | 0070 |
-| 0072 | [Vector Graphics Stress Coverage](0072-vector-graphics-stress-coverage.md) | 11 | medium | 0071 |
-| 0073 | [Table And Report Layout Fidelity](0073-table-and-report-layout-fidelity.md) | 12 | medium | 0072 |
-| 0074 | [Annotation And Form Interaction Coverage](0074-annotation-and-form-interaction-coverage.md) | 12 | medium | 0073 |
-| 0075 | [Color Management And Output Intent Policy](0075-color-management-and-output-intent-policy.md) | 12 | medium | 0074 |
 | 0076 | [Streaming Parse And Incremental Rendering](0076-streaming-parse-and-incremental-rendering.md) | 12 | medium | 0075 |
 | 0077 | [Parallel Page Rendering Scheduler](0077-parallel-page-rendering-scheduler.md) | 12 | medium | 0076 |
 | 0078 | [Renderer Benchmark Suite And Budgets](0078-renderer-benchmark-suite-and-budgets.md) | 13 | medium | 0077 |
@@ -73,15 +51,37 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
-| 0053 | [AcroForm Appearance Rendering](0053-acroform-appearance-rendering.md) | 7 | medium | 0052 |
-| 0050 | [Patterns Shadings And Gradients](0050-patterns-shadings-and-gradients.md) | 6 | medium | 0049 |
 
 ## Done
 
 | ID | Milestone | Phase | Size | Completed |
 | --- | --- | --- | --- | --- |
+| 0075 | [Color Management And Output Intent Policy](0075-color-management-and-output-intent-policy.md) | 12 | medium | 2026-06-24 |
+| 0074 | [Annotation And Form Interaction Coverage](0074-annotation-and-form-interaction-coverage.md) | 12 | medium | 2026-06-24 |
+| 0073 | [Table And Report Layout Fidelity](0073-table-and-report-layout-fidelity.md) | 12 | medium | 2026-06-24 |
+| 0072 | [Vector Graphics Stress Coverage](0072-vector-graphics-stress-coverage.md) | 11 | medium | 2026-06-24 |
+| 0071 | [Transparency Stack Fidelity Gate](0071-transparency-stack-fidelity-gate.md) | 11 | medium | 2026-06-24 |
+| 0070 | [Bidirectional And Shaped Text Policy](0070-bidirectional-and-shaped-text-policy.md) | 11 | medium | 2026-06-24 |
+| 0069 | [Vertical And CJK Text Coverage](0069-vertical-and-cjk-text-coverage.md) | 11 | medium | 2026-06-24 |
+| 0068 | [Complex Font Subsetting And CID Fonts](0068-complex-font-subsetting-and-cid-fonts.md) | 11 | medium | 2026-06-24 |
+| 0067 | [Mixed Text Image Page Fidelity](0067-mixed-text-image-page-fidelity.md) | 10 | medium | 2026-06-24 |
+| 0066 | [Scanned Document And Large Image Coverage](0066-scanned-document-and-large-image-coverage.md) | 10 | medium | 2026-06-24 |
+| 0065 | [Browser Print Document Coverage](0065-browser-print-document-coverage.md) | 10 | medium | 2026-06-24 |
+| 0064 | [Office Export Document Coverage](0064-office-export-document-coverage.md) | 10 | medium | 2026-06-24 |
+| 0063 | [Corpus Taxonomy And Sampling Expansion](0063-corpus-taxonomy-and-sampling-expansion.md) | 9 | medium | 2026-06-24 |
+| 0062 | [PDFium Fallback Telemetry And Kill Switch](0062-pdfium-fallback-telemetry-and-kill-switch.md) | 9 | small | 2026-06-24 |
+| 0061 | [Native Renderer Default Rollout](0061-native-renderer-default-rollout.md) | 9 | medium | 2026-06-24 |
+| 0060 | [PDFium Retirement Gate](0060-pdfium-retirement-gate.md) | 8 | medium | 2026-06-24 |
+| 0059 | [Native Backend Facade Parity](0059-native-backend-facade-parity.md) | 8 | medium | 2026-06-24 |
+| 0058 | [Renderer Cache And Memory Budgets](0058-renderer-cache-and-memory-budgets.md) | 8 | medium | 2026-06-24 |
+| 0057 | [Malformed PDF Recovery Budget](0057-malformed-pdf-recovery-budget.md) | 7 | medium | 2026-06-24 |
+| 0056 | [Encryption And Permissions Policy](0056-encryption-and-permissions-policy.md) | 7 | small | 2026-06-24 |
+| 0055 | [Incremental Updates And Hybrid References](0055-incremental-updates-and-hybrid-references.md) | 7 | medium | 2026-06-24 |
+| 0054 | [Optional Content And Layer Policy](0054-optional-content-and-layer-policy.md) | 7 | medium | 2026-06-24 |
+| 0053 | [AcroForm Appearance Rendering](0053-acroform-appearance-rendering.md) | 7 | medium | 2026-06-24 |
 | 0052 | [Annotation Appearance Rendering](0052-annotation-appearance-rendering.md) | 7 | medium | 2026-06-24 |
 | 0051 | [Advanced Stroke And Clipping Fidelity](0051-advanced-stroke-and-clipping-fidelity.md) | 6 | medium | 2026-06-24 |
+| 0050 | [Patterns Shadings And Gradients](0050-patterns-shadings-and-gradients.md) | 6 | medium | 2026-06-24 |
 | 0049 | [Blend Modes And Overprint Policy](0049-blend-modes-and-overprint-policy.md) | 6 | medium | 2026-06-24 |
 | 0048 | [Soft Masks And Transparency Groups](0048-soft-masks-and-transparency-groups.md) | 6 | medium | 2026-06-24 |
 | 0047 | [Image Filter Coverage](0047-image-filter-coverage.md) | 6 | medium | 2026-06-24 |

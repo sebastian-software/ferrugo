@@ -1,6 +1,6 @@
 # 0075: Color Management And Output Intent Policy
 
-Status: todo
+Status: done
 Phase: 12
 Size: medium
 Depends on: 0074
@@ -47,4 +47,16 @@ overfitting to prepress requirements.
 
 ## Completion Notes
 
-Empty until done.
+Completed with the `test: add output intent color coverage` implementation and
+the `docs: complete color management policy` report update.
+
+- Added `fixtures/generated/output-intent-rgb.pdf`, a DeviceRGB page with
+  catalog OutputIntent metadata and a profile stream.
+- Added native-backend coverage proving supported DeviceRGB content still
+  renders natively when OutputIntent metadata is present.
+- Accepted `docs/decisions/0005-color-management-and-output-intent-policy.md`:
+  OutputIntent is metadata-only for thumbnails; ICCBased, Lab, Separation,
+  DeviceN, spot color, and proofing workflows remain explicit unsupported
+  cases.
+- Recorded corpus summary and exact native/PDFium comparison results in
+  `docs/reports/color-management-coverage-2026-06-24.md`.

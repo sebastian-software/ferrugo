@@ -1,6 +1,6 @@
 # 0050: Patterns Shadings And Gradients
 
-Status: completed
+Status: done
 Phase: 6
 Size: medium
 Depends on: 0049
