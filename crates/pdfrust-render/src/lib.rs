@@ -6311,11 +6311,7 @@ fn stroke_path(
     context: PathRasterContext<'_>,
 ) -> RasterResult<()> {
     let source = device_color_to_rgba(state.color);
-    let radius = if state.line_width <= 0.0 {
-        0.5
-    } else {
-        state.line_width / 2.0
-    };
+    let radius = stroke_radius_for_device_line_width(state.line_width);
     let dashed_lines;
     let (stroke_lines, joins): (&[LineSegment], &[StrokeJoin]) = if state.dash_pattern.is_solid() {
         (path.lines.as_slice(), path.joins.as_slice())
@@ -6363,6 +6359,14 @@ fn stroke_path(
         }
     }
     Ok(())
+}
+
+fn stroke_radius_for_device_line_width(line_width: f64) -> f64 {
+    if line_width <= 1.0 {
+        0.5
+    } else {
+        line_width / 2.0
+    }
 }
 
 fn dashed_line_segments(
@@ -10014,6 +10018,32 @@ mod tests {
     }
 
     #[test]
+    fn rasterize_paths_should_keep_zero_width_hairline_visible() {
+        let raster = rasterize_stroke_width_stream(b"0 w 0 5 m 20 5 l S");
+        let black = Rgba {
+            r: 0,
+            g: 0,
+            b: 0,
+            a: 255,
+        };
+
+        assert_eq!(raster.pixel(10, 4).expect("zero-width hairline"), black);
+    }
+
+    #[test]
+    fn rasterize_paths_should_promote_subpixel_strokes_to_hairline() {
+        let raster = rasterize_stroke_width_stream(b"0.1 w 0 5 m 20 5 l S");
+        let black = Rgba {
+            r: 0,
+            g: 0,
+            b: 0,
+            a: 255,
+        };
+
+        assert_eq!(raster.pixel(10, 4).expect("subpixel hairline"), black);
+    }
+
+    #[test]
     fn rasterize_paths_should_apply_round_line_join() {
         let bevel = rasterize_line_join_stream(b"2 j 6 w 5 5 m 10 5 l 10 10 l S");
         let round = rasterize_line_join_stream(b"1 j 6 w 5 5 m 10 5 l 10 10 l S");
@@ -11707,11 +11737,15 @@ mod tests {
     }
 
     fn rasterize_line_cap_stream(content: &[u8]) -> RasterDevice {
+        rasterize_stroke_width_stream(content)
+    }
+
+    fn rasterize_stroke_width_stream(content: &[u8]) -> RasterDevice {
         let list = build_path_display_list(
             tokenize_content(PdfBytes::new(content)),
             DisplayListOptions::default(),
         )
-        .expect("valid line-cap stream");
+        .expect("valid stroke-width stream");
         let transform = PageTransform::new(
             PageGeometry {
                 media_box: PathBounds {
@@ -11736,7 +11770,7 @@ mod tests {
                 ..PathRasterOptions::default()
             },
         )
-        .expect("line-cap stroke should rasterize")
+        .expect("stroke-width stream should rasterize")
     }
 
     fn rasterize_clip_stream(content: &[u8]) -> RasterDevice {

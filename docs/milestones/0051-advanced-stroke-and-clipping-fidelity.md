@@ -96,11 +96,16 @@ In progress:
   `120x120`, changed RGB pixels `0`, RGB MAE `0.0000`, p95 RGB delta `0`,
   max channel delta `0`, native non-white pixels `10944`. Filled, hole, and
   outside-clip sample pixels match PDFium exactly.
+- Ninth implementation slice documents and enforces the thumbnail hairline
+  policy: transformed stroke widths at or below one device pixel render with a
+  half-pixel radius, keeping `0 w` and positive subpixel strokes visible without
+  widening already-visible strokes.
 - Current validation:
   - `cargo test -p pdfrust-render dash -- --nocapture`
   - `cargo test -p pdfrust-render line_cap -- --nocapture`
   - `cargo test -p pdfrust-render line_join -- --nocapture`
   - `cargo test -p pdfrust-render clip -- --nocapture`
+  - `cargo test -p pdfrust-render hairline -- --nocapture`
   - `cargo test -p pdfrust-native dashed_stroke -- --nocapture`
   - `cargo test -p pdfrust-native line_caps -- --nocapture`
   - `cargo test -p pdfrust-native line_joins -- --nocapture`
