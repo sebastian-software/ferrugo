@@ -1,6 +1,6 @@
 # 0051: Advanced Stroke And Clipping Fidelity
 
-Status: todo
+Status: in-progress
 Phase: 6
 Size: medium
 Depends on: 0050
@@ -46,4 +46,12 @@ content.
 
 ## Completion Notes
 
-Empty until done.
+In progress:
+
+- First implementation slice adds bounded stroke dash-pattern state for the
+  `d` operator. Dash arrays are stored in a fixed-size graphics-state
+  representation, captured in path display-list items, and expanded into
+  painted stroke segments once per rasterized path. Overlong dash arrays fail
+  with a typed unsupported error instead of growing state allocations.
+- Current validation:
+  - `cargo test -p pdfrust-render dash -- --nocapture`

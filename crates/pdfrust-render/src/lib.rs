@@ -67,6 +67,9 @@ pub const DEFAULT_TRANSPARENCY_GROUP_PIXELS_LIMIT: usize = 16 * 1024 * 1024;
 /// Default maximum number of repeated pattern tiles in one rasterization pass.
 pub const DEFAULT_PATTERN_TILE_LIMIT: usize = 65_536;
 
+/// Maximum dash segments tracked in the graphics state.
+pub const MAX_STROKE_DASH_SEGMENTS: usize = 8;
+
 /// Result alias for graphics-state interpretation.
 pub type GraphicsResult<T> = Result<T, GraphicsError>;
 
@@ -429,6 +432,55 @@ pub enum FillColorSpace {
     Pattern,
 }
 
+/// Stroke dash pattern tracked in graphics state.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct StrokeDashPattern {
+    /// Dash and gap lengths.
+    pub segments: [f64; MAX_STROKE_DASH_SEGMENTS],
+    /// Number of active dash and gap lengths.
+    pub len: usize,
+    /// Initial dash phase.
+    pub phase: f64,
+}
+
+impl StrokeDashPattern {
+    /// Solid stroke pattern with no dashes.
+    #[must_use]
+    pub const fn solid() -> Self {
+        Self {
+            segments: [0.0; MAX_STROKE_DASH_SEGMENTS],
+            len: 0,
+            phase: 0.0,
+        }
+    }
+
+    fn is_solid(self) -> bool {
+        self.active_len() == 0
+    }
+
+    fn active_len(self) -> usize {
+        self.len.min(MAX_STROKE_DASH_SEGMENTS)
+    }
+
+    fn scaled(self, scale: f64) -> Self {
+        let mut scaled = self;
+        scaled.len = scaled.active_len();
+        let mut index = 0;
+        while index < scaled.len {
+            scaled.segments[index] *= scale;
+            index += 1;
+        }
+        scaled.phase *= scale;
+        scaled
+    }
+}
+
+impl Default for StrokeDashPattern {
+    fn default() -> Self {
+        Self::solid()
+    }
+}
+
 /// Current graphics state subset needed by early renderer milestones.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GraphicsState {
@@ -448,6 +500,8 @@ pub struct GraphicsState {
     pub fill_color_space: FillColorSpace,
     /// Current fill pattern resource index, if `/Pattern` color space is active.
     pub fill_pattern: Option<usize>,
+    /// Current stroke dash pattern.
+    pub stroke_dash: StrokeDashPattern,
     /// Current blend mode for path painting.
     pub blend_mode: BlendMode,
     /// Placeholder flag set by `W` or `W*` until clipping is modeled fully.
@@ -465,6 +519,7 @@ impl Default for GraphicsState {
             stroke_color: DeviceColor::BLACK,
             fill_color_space: FillColorSpace::Device,
             fill_pattern: None,
+            stroke_dash: StrokeDashPattern::solid(),
             blend_mode: BlendMode::Normal,
             clip_path_pending: false,
         }
@@ -2830,9 +2885,13 @@ fn rasterize_path_item(
             stroke_path(
                 device,
                 &flattened,
-                path.state.line_width * transform.scale,
-                path.state.stroke_color,
-                path.state.blend_mode,
+                StrokeRasterState {
+                    line_width: path.state.line_width * transform.scale,
+                    color: path.state.stroke_color,
+                    blend_mode: path.state.blend_mode,
+                    dash_pattern: path.state.stroke_dash,
+                    dash_scale: transform.scale,
+                },
                 options,
             )?;
         }
@@ -2854,9 +2913,13 @@ fn rasterize_path_item(
             stroke_path(
                 device,
                 &flattened,
-                path.state.line_width * transform.scale,
-                path.state.stroke_color,
-                path.state.blend_mode,
+                StrokeRasterState {
+                    line_width: path.state.line_width * transform.scale,
+                    color: path.state.stroke_color,
+                    blend_mode: path.state.blend_mode,
+                    dash_pattern: path.state.stroke_dash,
+                    dash_scale: transform.scale,
+                },
                 options,
             )?;
         }
@@ -3126,6 +3189,7 @@ impl<'r> DisplayListInterpreter<'r> {
             b"Q" => self.restore_state(offset, operands),
             b"cm" => self.concatenate_matrix(offset, operands),
             b"w" => self.set_line_width(offset, operands),
+            b"d" => self.set_stroke_dash(offset, operands),
             b"g" => self.set_fill_gray(offset, operands),
             b"G" => self.set_stroke_gray(offset, operands),
             b"rg" => self.set_fill_rgb(offset, operands),
@@ -3342,6 +3406,15 @@ impl<'r> DisplayListInterpreter<'r> {
             return Err(invalid_operand(offset, b"w"));
         }
         self.current.line_width = line_width;
+        Ok(())
+    }
+
+    fn set_stroke_dash(
+        &mut self,
+        offset: ByteOffset,
+        operands: &[PdfPrimitive<'_>],
+    ) -> GraphicsResult<()> {
+        self.current.stroke_dash = dash_pattern_operand(offset, operands)?;
         Ok(())
     }
 
@@ -3687,6 +3760,15 @@ struct FlattenedPath {
 struct LineSegment {
     from: Point,
     to: Point,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct StrokeRasterState {
+    line_width: f64,
+    color: DeviceColor,
+    blend_mode: BlendMode,
+    dash_pattern: StrokeDashPattern,
+    dash_scale: f64,
 }
 
 struct TextDisplayListInterpreter<'r> {
@@ -4342,6 +4424,7 @@ impl GraphicsStateInterpreter {
             b"Q" => self.restore_state(offset, operands),
             b"cm" => self.concatenate_matrix(offset, operands),
             b"w" => self.set_line_width(offset, operands),
+            b"d" => self.set_stroke_dash(offset, operands),
             b"g" => self.set_fill_gray(offset, operands),
             b"G" => self.set_stroke_gray(offset, operands),
             b"rg" => self.set_fill_rgb(offset, operands),
@@ -4411,6 +4494,15 @@ impl GraphicsStateInterpreter {
             return Err(invalid_operand(offset, b"w"));
         }
         self.current.line_width = line_width;
+        Ok(())
+    }
+
+    fn set_stroke_dash(
+        &mut self,
+        offset: ByteOffset,
+        operands: &[PdfPrimitive<'_>],
+    ) -> GraphicsResult<()> {
+        self.current.stroke_dash = dash_pattern_operand(offset, operands)?;
         Ok(())
     }
 
@@ -4508,6 +4600,53 @@ fn number_operand(
         Some(PdfPrimitive::Number(PdfNumber::Real(value))) if value.is_finite() => Ok(*value),
         _ => Err(invalid_operand(offset, operator)),
     }
+}
+
+fn dash_pattern_operand(
+    offset: ByteOffset,
+    operands: &[PdfPrimitive<'_>],
+) -> GraphicsResult<StrokeDashPattern> {
+    expect_operand_count(offset, b"d", operands, 2)?;
+    let Some(PdfPrimitive::Array(values)) = operands.first() else {
+        return Err(invalid_operand(offset, b"d"));
+    };
+    let phase = number_operand(offset, b"d", operands, 1)?;
+    if phase < 0.0 {
+        return Err(invalid_operand(offset, b"d"));
+    }
+    if values.is_empty() {
+        return Ok(StrokeDashPattern::solid());
+    }
+    if values.len() > MAX_STROKE_DASH_SEGMENTS {
+        return Err(GraphicsError::new(
+            Some(offset),
+            GraphicsErrorKind::UnsupportedDashPattern {
+                limit: MAX_STROKE_DASH_SEGMENTS,
+            },
+        ));
+    }
+
+    let mut pattern = StrokeDashPattern {
+        phase,
+        ..StrokeDashPattern::solid()
+    };
+    let mut total = 0.0;
+    for (index, value) in values.iter().enumerate() {
+        let segment = match value {
+            PdfPrimitive::Number(PdfNumber::Integer(value)) if *value >= 0 => *value as f64,
+            PdfPrimitive::Number(PdfNumber::Real(value)) if value.is_finite() && *value >= 0.0 => {
+                *value
+            }
+            _ => return Err(invalid_operand(offset, b"d")),
+        };
+        pattern.segments[index] = segment;
+        total += segment;
+    }
+    if total <= f64::EPSILON {
+        return Err(invalid_operand(offset, b"d"));
+    }
+    pattern.len = values.len();
+    Ok(pattern)
 }
 
 fn name_operand<'a>(
@@ -5942,16 +6081,25 @@ fn wrap_pattern_coordinate(value: f64, origin: f64, step: f64) -> f64 {
 fn stroke_path(
     device: &mut RasterDevice,
     path: &FlattenedPath,
-    line_width: f64,
-    color: DeviceColor,
-    blend_mode: BlendMode,
+    state: StrokeRasterState,
     options: PathRasterOptions,
 ) -> RasterResult<()> {
-    let source = device_color_to_rgba(color);
-    let radius = if line_width <= 0.0 {
+    let source = device_color_to_rgba(state.color);
+    let radius = if state.line_width <= 0.0 {
         0.5
     } else {
-        line_width / 2.0
+        state.line_width / 2.0
+    };
+    let dashed_lines;
+    let stroke_lines = if state.dash_pattern.is_solid() {
+        path.lines.as_slice()
+    } else {
+        dashed_lines = dashed_line_segments(
+            &path.lines,
+            state.dash_pattern.scaled(state.dash_scale),
+            options.max_flattened_segments,
+        )?;
+        dashed_lines.as_slice()
     };
     let samples = u32::from(options.supersample);
     let sample_count = samples * samples;
@@ -5962,7 +6110,7 @@ fn stroke_path(
             for sample_y in 0..samples {
                 for sample_x in 0..samples {
                     let point = sample_point(x, y, sample_x, sample_y, samples);
-                    if point_in_stroke(point, &path.lines, radius) {
+                    if point_in_stroke(point, stroke_lines, radius) {
                         covered += 1;
                     }
                 }
@@ -5973,13 +6121,76 @@ fn stroke_path(
                     x,
                     y,
                     source,
-                    blend_mode,
+                    state.blend_mode,
                     f64::from(covered) / f64::from(sample_count),
                 )?;
             }
         }
     }
     Ok(())
+}
+
+fn dashed_line_segments(
+    lines: &[LineSegment],
+    pattern: StrokeDashPattern,
+    limit: usize,
+) -> RasterResult<Vec<LineSegment>> {
+    let len = pattern.active_len();
+    let total: f64 = pattern.segments[..len].iter().sum();
+    if total <= f64::EPSILON {
+        return Ok(Vec::new());
+    }
+
+    let mut output = Vec::new();
+    let mut distance = pattern.phase.rem_euclid(total);
+    let mut pattern_index = 0;
+    while distance >= pattern.segments[pattern_index] && pattern.segments[pattern_index] > 0.0 {
+        distance -= pattern.segments[pattern_index];
+        pattern_index = (pattern_index + 1) % len;
+    }
+    let mut draw = pattern_index % 2 == 0;
+    let mut remaining_in_pattern = pattern.segments[pattern_index] - distance;
+
+    for line in lines {
+        let dx = line.to.x - line.from.x;
+        let dy = line.to.y - line.from.y;
+        let length = dx.hypot(dy);
+        if length <= f64::EPSILON {
+            continue;
+        }
+        let mut consumed = 0.0;
+        while consumed < length {
+            if remaining_in_pattern <= f64::EPSILON {
+                pattern_index = (pattern_index + 1) % len;
+                draw = pattern_index % 2 == 0;
+                remaining_in_pattern = pattern.segments[pattern_index];
+                continue;
+            }
+            let step = remaining_in_pattern.min(length - consumed);
+            if draw && step > f64::EPSILON {
+                if output.len() >= limit {
+                    return Err(RasterError::new(RasterErrorKind::PathComplexityOverflow {
+                        limit,
+                    }));
+                }
+                let start = consumed / length;
+                let end = (consumed + step) / length;
+                output.push(LineSegment {
+                    from: Point {
+                        x: dx.mul_add(start, line.from.x),
+                        y: dy.mul_add(start, line.from.y),
+                    },
+                    to: Point {
+                        x: dx.mul_add(end, line.from.x),
+                        y: dy.mul_add(end, line.from.y),
+                    },
+                });
+            }
+            consumed += step;
+            remaining_in_pattern -= step;
+        }
+    }
+    Ok(output)
 }
 
 fn sample_point(x: u32, y: u32, sample_x: u32, sample_y: u32, samples: u32) -> Point {
@@ -7908,6 +8119,11 @@ pub enum GraphicsErrorKind {
         /// Unsupported overprint feature name.
         feature: Vec<u8>,
     },
+    /// Stroke dash pattern exceeds the fixed graphics-state representation.
+    UnsupportedDashPattern {
+        /// Configured dash segment limit.
+        limit: usize,
+    },
     /// External graphics state resource name was not present in the resource map.
     MissingExtGraphicsState {
         /// Missing external graphics state resource name.
@@ -8141,6 +8357,9 @@ impl fmt::Display for GraphicsErrorKind {
                 "unsupported overprint feature {}",
                 String::from_utf8_lossy(feature)
             ),
+            Self::UnsupportedDashPattern { limit } => {
+                write!(f, "stroke dash pattern exceeds segment limit {limit}")
+            }
             Self::MissingExtGraphicsState { name } => write!(
                 f,
                 "missing external graphics state resource {}",
@@ -8673,6 +8892,20 @@ mod tests {
     }
 
     #[test]
+    fn graphics_state_should_track_stroke_dash_pattern() {
+        let state = interpret_graphics_state(
+            tokenize_content(PdfBytes::new(b"[4 2] 1 d")),
+            GraphicsStateOptions::default(),
+        )
+        .expect("valid dash pattern");
+
+        assert_eq!(state.stroke_dash.len, 2);
+        assert_eq!(state.stroke_dash.segments[0], 4.0);
+        assert_eq!(state.stroke_dash.segments[1], 2.0);
+        assert_eq!(state.stroke_dash.phase, 1.0);
+    }
+
+    #[test]
     fn graphics_state_should_restore_saved_state() {
         let state = interpret_graphics_state(
             tokenize_content(PdfBytes::new(b"0.25 g q 0.75 g Q")),
@@ -8800,6 +9033,22 @@ mod tests {
                 b: 0.8,
             }
         );
+    }
+
+    #[test]
+    fn display_list_should_capture_stroke_dash_pattern() {
+        let list = build_path_display_list(
+            tokenize_content(PdfBytes::new(b"[4 4] 0 d 2 w 0 5 m 20 5 l S")),
+            DisplayListOptions::default(),
+        )
+        .expect("valid dashed stroke stream");
+
+        let DisplayItem::Path(path) = &list.items()[0] else {
+            panic!("expected path display item");
+        };
+        assert_eq!(path.state.stroke_dash.len, 2);
+        assert_eq!(path.state.stroke_dash.segments[0], 4.0);
+        assert_eq!(path.state.stroke_dash.segments[1], 4.0);
     }
 
     #[test]
@@ -9200,6 +9449,51 @@ mod tests {
                 a: 255,
             }
         );
+    }
+
+    #[test]
+    fn rasterize_paths_should_apply_stroke_dash_pattern() {
+        let list = build_path_display_list(
+            tokenize_content(PdfBytes::new(b"[4 4] 0 d 2 w 0 5 m 20 5 l S")),
+            DisplayListOptions::default(),
+        )
+        .expect("valid dashed stroke stream");
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 20.0,
+                    max_y: 10.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            20,
+        )
+        .expect("dash transform");
+        let raster = rasterize_paths(
+            &list,
+            transform,
+            Rgba::WHITE,
+            PathRasterOptions {
+                supersample: 1,
+                ..PathRasterOptions::default()
+            },
+        )
+        .expect("dashed stroke should rasterize");
+
+        let black = Rgba {
+            r: 0,
+            g: 0,
+            b: 0,
+            a: 255,
+        };
+
+        assert_eq!(raster.pixel(1, 4).expect("first dash"), black);
+        assert_eq!(raster.pixel(5, 4).expect("first gap"), Rgba::WHITE);
+        assert_eq!(raster.pixel(9, 4).expect("second dash"), black);
+        assert_eq!(raster.pixel(13, 4).expect("second gap"), Rgba::WHITE);
     }
 
     #[test]
