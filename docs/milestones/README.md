@@ -21,7 +21,6 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
-| 0050 | [Patterns Shadings And Gradients](0050-patterns-shadings-and-gradients.md) | 6 | medium | 0049 |
 | 0051 | [Advanced Stroke And Clipping Fidelity](0051-advanced-stroke-and-clipping-fidelity.md) | 6 | medium | 0050 |
 | 0052 | [Annotation Appearance Rendering](0052-annotation-appearance-rendering.md) | 7 | medium | 0051 |
 | 0053 | [AcroForm Appearance Rendering](0053-acroform-appearance-rendering.md) | 7 | medium | 0052 |
@@ -57,6 +56,7 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
+| 0050 | [Patterns Shadings And Gradients](0050-patterns-shadings-and-gradients.md) | 6 | medium | 0049 |
 
 ## Done
 

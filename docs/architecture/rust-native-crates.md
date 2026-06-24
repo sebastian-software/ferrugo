@@ -108,6 +108,8 @@ path display lists for `m`, `l`, `c`, `h`, `re`, `S`, `s`, `f`, `F`, `f*`,
 Page `/ExtGState` resources can set path blend mode state for `Normal`,
 `Compatible`, `Multiply`, and `Screen`; enabled overprint is rejected as an
 explicit unsupported policy until print-production semantics are modeled.
+Page `/Shading` resources support the first axial `/ShadingType 2` subset via
+`DeviceRGB`/`DeviceGray` Type 2 functions and the `sh` content operator.
 Text display-list support interprets `BT`, `ET`, `Tf`, `Td`, `Tm`, `Tj`, and
 `TJ` into positioned `TextDisplayItem` values. Font descriptors carry simple
 single-byte encodings, Differences arrays, and bounded ToUnicode CMaps for the
@@ -161,6 +163,8 @@ gray/RGB colors over the requested background with `Normal`, `Multiply`, and
 path-only Classic PDFs. The CLI exposes this path as `render-native` so
 generated vector fixtures can be compared against the PDFium backend during
 development.
+Axial shadings are rasterized by projecting device pixels onto the transformed
+gradient axis and sampling the supported Type 2 function directly.
 Image XObject rasterization draws decoded `DeviceRGB`, `DeviceGray`,
 `DeviceCMYK`, and Indexed images with nearest-neighbor sampling through the
 image placement matrix and the page transform. The native backend resolves page

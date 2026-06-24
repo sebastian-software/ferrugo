@@ -476,6 +476,32 @@ impl Default for ExtGraphicsState {
     }
 }
 
+/// Decoded shading resource subset.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Shading {
+    /// Axial gradient shading.
+    Axial(AxialShading),
+}
+
+/// Axial shading data used by thumbnail rasterization.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AxialShading {
+    /// Start point in shading coordinates.
+    pub start: Point,
+    /// End point in shading coordinates.
+    pub end: Point,
+    /// Start color.
+    pub start_color: DeviceColor,
+    /// End color.
+    pub end_color: DeviceColor,
+    /// Exponent from the sampled Type 2 function.
+    pub exponent: f64,
+    /// Whether samples before the start point extend the start color.
+    pub extend_start: bool,
+    /// Whether samples after the end point extend the end color.
+    pub extend_end: bool,
+}
+
 /// Path fill rule.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FillRule {
@@ -704,6 +730,15 @@ pub struct TransparencyGroupDisplayItem {
     pub state: GraphicsState,
 }
 
+/// One shading paint operation captured before rasterization.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ShadingDisplayItem {
+    /// Decoded shading resource.
+    pub shading: Shading,
+    /// Graphics state snapshot at paint time.
+    pub state: GraphicsState,
+}
+
 /// Decoded Form XObject resource.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FormXObject {
@@ -763,6 +798,8 @@ pub enum DisplayItem {
     Image(ImageDisplayItem),
     /// Path-only transparency group.
     TransparencyGroup(TransparencyGroupDisplayItem),
+    /// Shading paint operation.
+    Shading(ShadingDisplayItem),
 }
 
 /// Display list produced from content streams before rasterization.
@@ -814,6 +851,7 @@ impl DisplayList {
                 }),
                 DisplayItem::Image(image) => Some(image.bounds),
                 DisplayItem::TransparencyGroup(group) => Some(group.bounds),
+                DisplayItem::Shading(_) => None,
             };
             if let Some(item_bounds) = item_bounds {
                 bounds = Some(match bounds {
@@ -968,6 +1006,52 @@ impl ExtGraphicsStateResources {
     pub fn get(&self, name: PdfName<'_>) -> Option<ExtGraphicsState> {
         self.states.iter().find_map(|(resource, state)| {
             (resource.as_slice() == name.as_bytes()).then_some(*state)
+        })
+    }
+}
+
+/// Shading resource map.
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct ShadingResources {
+    shadings: Vec<(Vec<u8>, Shading)>,
+}
+
+impl ShadingResources {
+    /// Creates an empty shading resource map.
+    #[must_use]
+    pub const fn empty() -> Self {
+        Self {
+            shadings: Vec::new(),
+        }
+    }
+
+    /// Resolves shadings from a PDF `/Shading` resource dictionary.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`GraphicsError`] when a shading dictionary uses an unsupported
+    /// shading type, color space, or sampled function.
+    pub fn from_shading_dictionary(
+        dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    ) -> GraphicsResult<Self> {
+        let mut shadings = Vec::new();
+        for (name, value) in dictionary {
+            let PdfPrimitive::Dictionary(shading_dictionary) = value else {
+                return Err(invalid_shading_resource(name.as_bytes()));
+            };
+            shadings.push((
+                name.as_bytes().to_vec(),
+                decode_shading(shading_dictionary)?,
+            ));
+        }
+        Ok(Self { shadings })
+    }
+
+    /// Returns the shading matching a PDF resource name.
+    #[must_use]
+    pub fn get(&self, name: PdfName<'_>) -> Option<&Shading> {
+        self.shadings.iter().find_map(|(resource, shading)| {
+            (resource.as_slice() == name.as_bytes()).then_some(shading)
         })
     }
 }
@@ -2295,8 +2379,25 @@ pub fn build_path_display_list_with_ext_graphics_states<'a>(
     ext_graphics_states: &ExtGraphicsStateResources,
     options: DisplayListOptions,
 ) -> GraphicsResult<DisplayList> {
+    let shadings = ShadingResources::empty();
+    build_path_display_list_with_graphics_resources(tokens, ext_graphics_states, &shadings, options)
+}
+
+/// Builds a path display list with external graphics and shading resources.
+///
+/// # Errors
+///
+/// Returns [`GraphicsError`] when tokenization fails, path or display-list
+/// limits are exceeded, a named resource is missing, or supported operators
+/// receive malformed operands.
+pub fn build_path_display_list_with_graphics_resources<'a>(
+    tokens: impl IntoIterator<Item = ContentResult<ContentToken<'a>>>,
+    ext_graphics_states: &ExtGraphicsStateResources,
+    shadings: &ShadingResources,
+    options: DisplayListOptions,
+) -> GraphicsResult<DisplayList> {
     let mut interpreter =
-        DisplayListInterpreter::new_with_ext_graphics_states(options, ext_graphics_states);
+        DisplayListInterpreter::new_with_graphics_resources(options, ext_graphics_states, shadings);
     interpreter.interpret(tokens)?;
     Ok(interpreter.display_list)
 }
@@ -2363,11 +2464,36 @@ pub fn build_form_display_list_with_ext_graphics_states<'a>(
     ext_graphics_states: &ExtGraphicsStateResources,
     options: DisplayListOptions,
 ) -> GraphicsResult<DisplayList> {
+    let shadings = ShadingResources::empty();
+    build_form_display_list_with_graphics_resources(
+        tokens,
+        forms,
+        ext_graphics_states,
+        &shadings,
+        options,
+    )
+}
+
+/// Builds display-list items from Form XObject invocations with graphics resources.
+///
+/// # Errors
+///
+/// Returns [`GraphicsError`] when tokenization fails, a named resource is
+/// missing, form recursion exceeds the configured limit, or display limits are
+/// exceeded.
+pub fn build_form_display_list_with_graphics_resources<'a>(
+    tokens: impl IntoIterator<Item = ContentResult<ContentToken<'a>>>,
+    forms: &FormResources,
+    ext_graphics_states: &ExtGraphicsStateResources,
+    shadings: &ShadingResources,
+    options: DisplayListOptions,
+) -> GraphicsResult<DisplayList> {
     let mut interpreter = DisplayListInterpreter::new_with_forms(
         GraphicsState::default(),
         options,
         forms,
         Some(ext_graphics_states),
+        Some(shadings),
         FormResourceScope::page(),
         0,
     );
@@ -2410,6 +2536,7 @@ pub fn rasterize_paths_into(
     for item in display_list.items() {
         match item {
             DisplayItem::Path(path) => rasterize_path_item(path, device, transform, options)?,
+            DisplayItem::Shading(shading) => rasterize_shading_item(shading, device, transform)?,
             DisplayItem::TransparencyGroup(group) => {
                 rasterize_transparency_group(group, device, transform, options)?;
             }
@@ -2417,6 +2544,74 @@ pub fn rasterize_paths_into(
         }
     }
     Ok(())
+}
+
+fn rasterize_shading_item(
+    item: &ShadingDisplayItem,
+    device: &mut RasterDevice,
+    transform: PageTransform,
+) -> RasterResult<()> {
+    match &item.shading {
+        Shading::Axial(shading) => rasterize_axial_shading(*shading, item.state, device, transform),
+    }
+}
+
+fn rasterize_axial_shading(
+    shading: AxialShading,
+    state: GraphicsState,
+    device: &mut RasterDevice,
+    transform: PageTransform,
+) -> RasterResult<()> {
+    let start = state.ctm.transform_point(shading.start.x, shading.start.y);
+    let start = transform.matrix.transform_point(start.x, start.y);
+    let end = state.ctm.transform_point(shading.end.x, shading.end.y);
+    let end = transform.matrix.transform_point(end.x, end.y);
+    let dx = end.x - start.x;
+    let dy = end.y - start.y;
+    let length_squared = dx.mul_add(dx, dy * dy);
+    if length_squared <= f64::EPSILON {
+        return Ok(());
+    }
+    let dimensions = device.dimensions();
+    for y in 0..dimensions.height {
+        for x in 0..dimensions.width {
+            let sample_x = f64::from(x) + 0.5;
+            let sample_y = f64::from(y) + 0.5;
+            let mut t = ((sample_x - start.x) * dx + (sample_y - start.y) * dy) / length_squared;
+            if t < 0.0 {
+                if !shading.extend_start {
+                    continue;
+                }
+                t = 0.0;
+            } else if t > 1.0 {
+                if !shading.extend_end {
+                    continue;
+                }
+                t = 1.0;
+            }
+            let source = sample_axial_color(shading, t);
+            blend_pixel(device, x, y, source, state.blend_mode, 1.0)?;
+        }
+    }
+    Ok(())
+}
+
+fn sample_axial_color(shading: AxialShading, t: f64) -> Rgba {
+    let ratio = t.clamp(0.0, 1.0).powf(shading.exponent);
+    let start = device_color_to_rgba(shading.start_color);
+    let end = device_color_to_rgba(shading.end_color);
+    Rgba {
+        r: interpolate_channel(start.r, end.r, ratio),
+        g: interpolate_channel(start.g, end.g, ratio),
+        b: interpolate_channel(start.b, end.b, ratio),
+        a: 255,
+    }
+}
+
+fn interpolate_channel(start: u8, end: u8, ratio: f64) -> u8 {
+    f64::from(start)
+        .mul_add(1.0 - ratio, f64::from(end) * ratio)
+        .round() as u8
 }
 
 fn rasterize_path_item(
@@ -2607,6 +2802,7 @@ struct DisplayListInterpreter<'r> {
     display_list: DisplayList,
     options: DisplayListOptions,
     ext_graphics_states: Option<&'r ExtGraphicsStateResources>,
+    shadings: Option<&'r ShadingResources>,
     forms: Option<FormInterpreterContext<'r>>,
 }
 
@@ -2648,13 +2844,15 @@ impl<'r> DisplayListInterpreter<'r> {
             display_list: DisplayList::new(),
             options,
             ext_graphics_states: None,
+            shadings: None,
             forms: None,
         }
     }
 
-    fn new_with_ext_graphics_states(
+    fn new_with_graphics_resources(
         options: DisplayListOptions,
         ext_graphics_states: &'r ExtGraphicsStateResources,
+        shadings: &'r ShadingResources,
     ) -> Self {
         Self {
             current: GraphicsState::default(),
@@ -2663,6 +2861,7 @@ impl<'r> DisplayListInterpreter<'r> {
             display_list: DisplayList::new(),
             options,
             ext_graphics_states: Some(ext_graphics_states),
+            shadings: Some(shadings),
             forms: None,
         }
     }
@@ -2672,6 +2871,7 @@ impl<'r> DisplayListInterpreter<'r> {
         options: DisplayListOptions,
         forms: &'r FormResources,
         ext_graphics_states: Option<&'r ExtGraphicsStateResources>,
+        shadings: Option<&'r ShadingResources>,
         scope: FormResourceScope<'r>,
         recursion_depth: usize,
     ) -> Self {
@@ -2682,6 +2882,7 @@ impl<'r> DisplayListInterpreter<'r> {
             display_list: DisplayList::new(),
             options,
             ext_graphics_states,
+            shadings,
             forms: Some(FormInterpreterContext {
                 resources: forms,
                 scope,
@@ -2726,6 +2927,7 @@ impl<'r> DisplayListInterpreter<'r> {
             b"rg" => self.set_fill_rgb(offset, operands),
             b"RG" => self.set_stroke_rgb(offset, operands),
             b"gs" => self.set_ext_graphics_state(offset, operands),
+            b"sh" => self.paint_shading(offset, operands),
             b"m" => self.move_to(offset, operands),
             b"l" => self.line_to(offset, operands),
             b"c" => self.curve_to(offset, operands),
@@ -2831,6 +3033,7 @@ impl<'r> DisplayListInterpreter<'r> {
             self.options,
             context.resources,
             self.ext_graphics_states,
+            self.shadings,
             FormResourceScope::for_form(form),
             context.recursion_depth + 1,
         );
@@ -3009,6 +3212,34 @@ impl<'r> DisplayListInterpreter<'r> {
             })?;
         self.current.blend_mode = state.blend_mode;
         Ok(())
+    }
+
+    fn paint_shading(
+        &mut self,
+        offset: ByteOffset,
+        operands: &[PdfPrimitive<'_>],
+    ) -> GraphicsResult<()> {
+        expect_operand_count(offset, b"sh", operands, 1)?;
+        let name = name_operand(offset, b"sh", operands, 0)?;
+        let shading = self
+            .shadings
+            .and_then(|shadings| shadings.get(name))
+            .ok_or_else(|| {
+                GraphicsError::new(
+                    Some(offset),
+                    GraphicsErrorKind::MissingShading {
+                        name: name.as_bytes().to_vec(),
+                    },
+                )
+            })?;
+        self.display_list.push(
+            DisplayItem::Shading(ShadingDisplayItem {
+                shading: shading.clone(),
+                state: self.current,
+            }),
+            self.options.max_display_items,
+            offset,
+        )
     }
 
     fn move_to(&mut self, offset: ByteOffset, operands: &[PdfPrimitive<'_>]) -> GraphicsResult<()> {
@@ -4246,6 +4477,146 @@ fn reject_enabled_overprint(dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)]) -> G
         }
     }
     Ok(())
+}
+
+fn decode_shading(dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)]) -> GraphicsResult<Shading> {
+    let Some(PdfPrimitive::Number(PdfNumber::Integer(2))) =
+        dictionary_value(dictionary, b"ShadingType")
+    else {
+        return Err(unsupported_shading(b"ShadingType"));
+    };
+    let color_space = shading_color_space(dictionary)?;
+    let coords = required_number_array::<4>(dictionary, b"Coords")?;
+    let (start_color, end_color, exponent) = decode_type2_function(dictionary, color_space)?;
+    let (extend_start, extend_end) = optional_bool_pair(dictionary, b"Extend")?;
+    Ok(Shading::Axial(AxialShading {
+        start: Point {
+            x: coords[0],
+            y: coords[1],
+        },
+        end: Point {
+            x: coords[2],
+            y: coords[3],
+        },
+        start_color,
+        end_color,
+        exponent,
+        extend_start,
+        extend_end,
+    }))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ShadingColorSpace {
+    DeviceGray,
+    DeviceRgb,
+}
+
+fn shading_color_space(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+) -> GraphicsResult<ShadingColorSpace> {
+    match dictionary_value(dictionary, b"ColorSpace") {
+        Some(PdfPrimitive::Name(name)) if matches!(name.as_bytes(), b"DeviceGray" | b"G") => {
+            Ok(ShadingColorSpace::DeviceGray)
+        }
+        Some(PdfPrimitive::Name(name)) if matches!(name.as_bytes(), b"DeviceRGB" | b"RGB") => {
+            Ok(ShadingColorSpace::DeviceRgb)
+        }
+        Some(PdfPrimitive::Name(name)) => Err(unsupported_shading(name.as_bytes())),
+        _ => Err(invalid_shading_resource(b"ColorSpace")),
+    }
+}
+
+fn decode_type2_function(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    color_space: ShadingColorSpace,
+) -> GraphicsResult<(DeviceColor, DeviceColor, f64)> {
+    let Some(PdfPrimitive::Dictionary(function)) = dictionary_value(dictionary, b"Function") else {
+        return Err(invalid_shading_resource(b"Function"));
+    };
+    let Some(PdfPrimitive::Number(PdfNumber::Integer(2))) =
+        dictionary_value(function, b"FunctionType")
+    else {
+        return Err(unsupported_shading(b"FunctionType"));
+    };
+    let exponent = required_number(function, b"N")?;
+    if !exponent.is_finite() || exponent <= 0.0 {
+        return Err(invalid_shading_resource(b"N"));
+    }
+    let start_color = function_color(function, b"C0", color_space)?;
+    let end_color = function_color(function, b"C1", color_space)?;
+    Ok((start_color, end_color, exponent))
+}
+
+fn function_color(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    key: &'static [u8],
+    color_space: ShadingColorSpace,
+) -> GraphicsResult<DeviceColor> {
+    match color_space {
+        ShadingColorSpace::DeviceGray => {
+            let components = required_number_array::<1>(dictionary, key)?;
+            Ok(DeviceColor::Gray(DeviceGray(components[0].clamp(0.0, 1.0))))
+        }
+        ShadingColorSpace::DeviceRgb => {
+            let components = required_number_array::<3>(dictionary, key)?;
+            Ok(DeviceColor::Rgb {
+                r: components[0].clamp(0.0, 1.0),
+                g: components[1].clamp(0.0, 1.0),
+                b: components[2].clamp(0.0, 1.0),
+            })
+        }
+    }
+}
+
+fn required_number(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    key: &'static [u8],
+) -> GraphicsResult<f64> {
+    dictionary_value(dictionary, key)
+        .and_then(number_from_primitive)
+        .ok_or_else(|| invalid_shading_resource(key))
+}
+
+fn required_number_array<const N: usize>(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    key: &'static [u8],
+) -> GraphicsResult<[f64; N]> {
+    let Some(PdfPrimitive::Array(values)) = dictionary_value(dictionary, key) else {
+        return Err(invalid_shading_resource(key));
+    };
+    if values.len() != N {
+        return Err(invalid_shading_resource(key));
+    }
+    let mut numbers = [0.0; N];
+    for (target, value) in numbers.iter_mut().zip(values) {
+        *target = number_from_primitive(value).ok_or_else(|| invalid_shading_resource(key))?;
+    }
+    Ok(numbers)
+}
+
+fn optional_bool_pair(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    key: &'static [u8],
+) -> GraphicsResult<(bool, bool)> {
+    let Some(value) = dictionary_value(dictionary, key) else {
+        return Ok((false, false));
+    };
+    let PdfPrimitive::Array(values) = value else {
+        return Err(invalid_shading_resource(key));
+    };
+    let [PdfPrimitive::Boolean(first), PdfPrimitive::Boolean(second)] = values.as_slice() else {
+        return Err(invalid_shading_resource(key));
+    };
+    Ok((*first, *second))
+}
+
+fn number_from_primitive(value: &PdfPrimitive<'_>) -> Option<f64> {
+    match value {
+        PdfPrimitive::Number(PdfNumber::Integer(value)) => Some(*value as f64),
+        PdfPrimitive::Number(PdfNumber::Real(value)) if value.is_finite() => Some(*value),
+        _ => None,
+    }
 }
 
 fn form_transparency_group(
@@ -6621,6 +6992,24 @@ fn invalid_ext_graphics_state(name: &[u8]) -> GraphicsError {
     )
 }
 
+fn invalid_shading_resource(name: &[u8]) -> GraphicsError {
+    GraphicsError::new(
+        None,
+        GraphicsErrorKind::InvalidShadingResource {
+            name: name.to_vec(),
+        },
+    )
+}
+
+fn unsupported_shading(feature: &[u8]) -> GraphicsError {
+    GraphicsError::new(
+        None,
+        GraphicsErrorKind::UnsupportedShading {
+            feature: feature.to_vec(),
+        },
+    )
+}
+
 fn unsupported_image_filter(filter: &[u8]) -> GraphicsError {
     GraphicsError::new(
         None,
@@ -7007,6 +7396,21 @@ pub enum GraphicsErrorKind {
         /// Invalid external graphics state resource name.
         name: Vec<u8>,
     },
+    /// Shading resource name was not present in the resource map.
+    MissingShading {
+        /// Missing shading resource name.
+        name: Vec<u8>,
+    },
+    /// Shading resource dictionary is malformed.
+    InvalidShadingResource {
+        /// Invalid shading resource or field name.
+        name: Vec<u8>,
+    },
+    /// Shading resource uses a feature outside the current support.
+    UnsupportedShading {
+        /// Unsupported shading feature.
+        feature: Vec<u8>,
+    },
     /// Form resource name was not present in the resource map.
     MissingForm {
         /// Missing form resource name.
@@ -7209,6 +7613,21 @@ impl fmt::Display for GraphicsErrorKind {
                 f,
                 "invalid external graphics state resource {}",
                 String::from_utf8_lossy(name)
+            ),
+            Self::MissingShading { name } => write!(
+                f,
+                "missing shading resource {}",
+                String::from_utf8_lossy(name)
+            ),
+            Self::InvalidShadingResource { name } => write!(
+                f,
+                "invalid shading resource {}",
+                String::from_utf8_lossy(name)
+            ),
+            Self::UnsupportedShading { feature } => write!(
+                f,
+                "unsupported shading feature {}",
+                String::from_utf8_lossy(feature)
             ),
             Self::MissingForm { name } => {
                 write!(f, "missing form resource {}", String::from_utf8_lossy(name))
@@ -7973,6 +8392,99 @@ mod tests {
             Rgba {
                 r: 255,
                 g: 128,
+                b: 128,
+                a: 255,
+            }
+        );
+    }
+
+    #[test]
+    fn shading_resources_should_parse_axial_device_rgb_shading() {
+        let dictionary = vec![(
+            PdfName::new(b"Sh1"),
+            PdfPrimitive::Dictionary(test_axial_shading_dictionary()),
+        )];
+        let resources =
+            ShadingResources::from_shading_dictionary(&dictionary).expect("axial shading");
+
+        let Some(Shading::Axial(shading)) = resources.get(PdfName::new(b"Sh1")) else {
+            panic!("expected axial shading");
+        };
+        assert_eq!(shading.start, Point { x: 0.0, y: 0.0 });
+        assert_eq!(shading.end, Point { x: 100.0, y: 0.0 });
+        assert_eq!(shading.exponent, 1.0);
+        assert!(shading.extend_start);
+        assert!(shading.extend_end);
+    }
+
+    #[test]
+    fn shading_resources_should_reject_unsupported_shading_type() {
+        let dictionary = vec![(
+            PdfName::new(b"Sh1"),
+            PdfPrimitive::Dictionary(vec![(
+                PdfName::new(b"ShadingType"),
+                PdfPrimitive::Number(PdfNumber::Integer(4)),
+            )]),
+        )];
+        let error = ShadingResources::from_shading_dictionary(&dictionary)
+            .expect_err("mesh shading should be unsupported");
+
+        assert_eq!(
+            error.kind(),
+            &GraphicsErrorKind::UnsupportedShading {
+                feature: b"ShadingType".to_vec(),
+            }
+        );
+    }
+
+    #[test]
+    fn display_list_should_capture_shading_operator() {
+        let dictionary = vec![(
+            PdfName::new(b"Sh1"),
+            PdfPrimitive::Dictionary(test_axial_shading_dictionary()),
+        )];
+        let shadings =
+            ShadingResources::from_shading_dictionary(&dictionary).expect("axial shading");
+        let ext_graphics_states = ExtGraphicsStateResources::empty();
+        let list = build_path_display_list_with_graphics_resources(
+            tokenize_content(PdfBytes::new(b"/Sh1 sh")),
+            &ext_graphics_states,
+            &shadings,
+            DisplayListOptions::default(),
+        )
+        .expect("valid shading stream");
+
+        let DisplayItem::Shading(item) = &list.items()[0] else {
+            panic!("expected shading display item");
+        };
+        assert_eq!(item.state.blend_mode, BlendMode::Normal);
+    }
+
+    #[test]
+    fn axial_shading_sampling_should_interpolate_colors() {
+        let shading = AxialShading {
+            start: Point { x: 0.0, y: 0.0 },
+            end: Point { x: 100.0, y: 0.0 },
+            start_color: DeviceColor::Rgb {
+                r: 1.0,
+                g: 0.0,
+                b: 0.0,
+            },
+            end_color: DeviceColor::Rgb {
+                r: 0.0,
+                g: 0.0,
+                b: 1.0,
+            },
+            exponent: 1.0,
+            extend_start: true,
+            extend_end: true,
+        };
+
+        assert_eq!(
+            sample_axial_color(shading, 0.5),
+            Rgba {
+                r: 128,
+                g: 0,
                 b: 128,
                 a: 255,
             }
@@ -9680,6 +10192,64 @@ mod tests {
             })
             .collect::<Vec<_>>();
         FontResources::from_font_dictionary(&fonts, document, options)
+    }
+
+    fn test_axial_shading_dictionary() -> Vec<(PdfName<'static>, PdfPrimitive<'static>)> {
+        vec![
+            (
+                PdfName::new(b"ShadingType"),
+                PdfPrimitive::Number(PdfNumber::Integer(2)),
+            ),
+            (
+                PdfName::new(b"ColorSpace"),
+                PdfPrimitive::Name(PdfName::new(b"DeviceRGB")),
+            ),
+            (
+                PdfName::new(b"Coords"),
+                PdfPrimitive::Array(vec![
+                    PdfPrimitive::Number(PdfNumber::Integer(0)),
+                    PdfPrimitive::Number(PdfNumber::Integer(0)),
+                    PdfPrimitive::Number(PdfNumber::Integer(100)),
+                    PdfPrimitive::Number(PdfNumber::Integer(0)),
+                ]),
+            ),
+            (
+                PdfName::new(b"Function"),
+                PdfPrimitive::Dictionary(vec![
+                    (
+                        PdfName::new(b"FunctionType"),
+                        PdfPrimitive::Number(PdfNumber::Integer(2)),
+                    ),
+                    (
+                        PdfName::new(b"C0"),
+                        PdfPrimitive::Array(vec![
+                            PdfPrimitive::Number(PdfNumber::Integer(1)),
+                            PdfPrimitive::Number(PdfNumber::Integer(0)),
+                            PdfPrimitive::Number(PdfNumber::Integer(0)),
+                        ]),
+                    ),
+                    (
+                        PdfName::new(b"C1"),
+                        PdfPrimitive::Array(vec![
+                            PdfPrimitive::Number(PdfNumber::Integer(0)),
+                            PdfPrimitive::Number(PdfNumber::Integer(0)),
+                            PdfPrimitive::Number(PdfNumber::Integer(1)),
+                        ]),
+                    ),
+                    (
+                        PdfName::new(b"N"),
+                        PdfPrimitive::Number(PdfNumber::Integer(1)),
+                    ),
+                ]),
+            ),
+            (
+                PdfName::new(b"Extend"),
+                PdfPrimitive::Array(vec![
+                    PdfPrimitive::Boolean(true),
+                    PdfPrimitive::Boolean(true),
+                ]),
+            ),
+        ]
     }
 
     fn content_stream_from_document(document: &ClassicDocument<'_>) -> Vec<u8> {

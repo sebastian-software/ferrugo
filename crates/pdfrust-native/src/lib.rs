@@ -11,12 +11,12 @@ use pdfrust_object::{
     ObjectNumber, ObjectValue, PageBox, PageMetadata as ObjectPageMetadata, PageTree, Reference,
 };
 use pdfrust_render::{
-    build_form_display_list_with_ext_graphics_states, build_image_display_list,
-    build_path_display_list_with_ext_graphics_states, build_text_display_list, rasterize_images,
+    build_form_display_list_with_graphics_resources, build_image_display_list,
+    build_path_display_list_with_graphics_resources, build_text_display_list, rasterize_images,
     rasterize_paths, rasterize_paths_into, rasterize_text, DisplayListOptions,
     ExtGraphicsStateResources, FontResources, FormResources, GraphicsError, GraphicsErrorKind,
     ImageResources, PageGeometry, PageRotation, PageTransform, PathBounds, PathRasterOptions,
-    RasterError,
+    RasterError, ShadingResources,
 };
 use pdfrust_syntax::{PdfBytes, PdfName, PdfPrimitive};
 use pdfrust_thumbnail::{
@@ -107,9 +107,11 @@ fn render_bytes(bytes: &[u8], options: &ThumbnailOptions) -> Result<Thumbnail, T
     let content = page_content_stream(&document, page)?;
     let display_options = DisplayListOptions::default();
     let ext_graphics_states = page_ext_graphics_state_resources(&document, page)?;
-    let display_list = build_path_display_list_with_ext_graphics_states(
+    let shadings = page_shading_resources(&document, page)?;
+    let display_list = build_path_display_list_with_graphics_resources(
         tokenize_content(PdfBytes::new(&content)),
         &ext_graphics_states,
+        &shadings,
         display_options,
     )
     .map_err(map_graphics_error)?;
@@ -123,10 +125,11 @@ fn render_bytes(bytes: &[u8], options: &ThumbnailOptions) -> Result<Thumbnail, T
     )
     .map_err(map_raster_error)?;
     let form_resources = page_form_resources(&document, page)?;
-    let form_list = build_form_display_list_with_ext_graphics_states(
+    let form_list = build_form_display_list_with_graphics_resources(
         tokenize_content(PdfBytes::new(&content)),
         &form_resources,
         &ext_graphics_states,
+        &shadings,
         DisplayListOptions::default(),
     )
     .map_err(map_graphics_error)?;
@@ -206,6 +209,43 @@ fn page_ext_graphics_state_resources(
     };
     ExtGraphicsStateResources::from_extgstate_dictionary(ext_graphics_states)
         .map_err(map_graphics_error)
+}
+
+fn page_shading_resources(
+    document: &ClassicDocument<'_>,
+    page: &ObjectPageMetadata,
+) -> Result<ShadingResources, ThumbnailError> {
+    let object = document
+        .objects
+        .get(page.id)
+        .ok_or(ThumbnailError::Malformed)?;
+    let dictionary = object_dictionary(&object.value)?;
+    let Some(resources) = dictionary_value(dictionary, b"Resources") else {
+        return Ok(ShadingResources::empty());
+    };
+    let resource_dictionary = match resources {
+        PdfPrimitive::Dictionary(dictionary) => dictionary.as_slice(),
+        PdfPrimitive::Reference(reference) => {
+            let object_number =
+                ObjectNumber::new(reference.object).map_err(|_| ThumbnailError::Malformed)?;
+            let reference = Reference::new(ObjectId::new(
+                object_number,
+                GenerationNumber::new(reference.generation),
+            ));
+            let object = document
+                .objects
+                .get(reference.id)
+                .ok_or(ThumbnailError::Malformed)?;
+            object_dictionary(&object.value)?
+        }
+        _ => return Err(ThumbnailError::Malformed),
+    };
+    let Some(PdfPrimitive::Dictionary(shadings)) =
+        dictionary_value(resource_dictionary, b"Shading")
+    else {
+        return Ok(ShadingResources::empty());
+    };
+    ShadingResources::from_shading_dictionary(shadings).map_err(map_graphics_error)
 }
 
 fn page_image_resources(
