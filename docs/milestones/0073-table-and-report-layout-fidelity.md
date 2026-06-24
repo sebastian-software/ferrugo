@@ -1,6 +1,6 @@
 # 0073: Table And Report Layout Fidelity
 
-Status: todo
+Status: done
 Phase: 12
 Size: medium
 Depends on: 0072
@@ -44,4 +44,13 @@ Improve native fidelity for reports, invoices, statements, and table-heavy PDFs.
 
 ## Completion Notes
 
-Empty until done.
+Completed with the `test: add multi-page report coverage` implementation and
+the `docs: complete report layout coverage` report update.
+
+- Added `fixtures/generated/multi-page-report.pdf`, a generated two-page report
+  with repeated header styling, a logo marker, table ruling lines, and text
+  cells.
+- Added native-backend render coverage for the first page.
+- Added native-backend metadata coverage for two-page ordering and dimensions.
+- Verified PDFium/native metadata parity and documented render fidelity limits
+  in `docs/reports/report-layout-coverage-2026-06-24.md`.
