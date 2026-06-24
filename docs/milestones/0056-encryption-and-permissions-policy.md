@@ -1,6 +1,6 @@
 # 0056: Encryption And Permissions Policy
 
-Status: in-progress
+Status: done
 Phase: 7
 Size: small
 Depends on: 0055
@@ -45,7 +45,7 @@ boundary.
 
 ## Completion Notes
 
-In progress:
+Completed:
 
 - First detection slice adds `ObjectError::Encrypted`, rejects classic trailer
   `/Encrypt` before loading indirect objects, and rejects unusual catalog
@@ -58,6 +58,14 @@ In progress:
   with a normal page graph plus trailer `/Encrypt`. Native render and metadata
   inspection both return `ThumbnailError::Encrypted`, proving the caller can
   distinguish encrypted inputs from malformed PDFs.
+- Password, permission, and decryption scope is documented in
+  `docs/policies/encryption-and-permissions.md`; native unsupported/security
+  diagnostics can use the `security.encryption` bucket recorded in
+  `docs/errors.md`.
 - Current validation:
   - `cargo test -p pdfrust-object encrypted -- --nocapture`
   - `cargo test -p pdfrust-native encrypted_generated -- --nocapture`
+  - `cargo fmt --check`
+  - `cargo check`
+  - `cargo clippy --all-targets --all-features -- -D warnings`
+  - `cargo test --quiet`
