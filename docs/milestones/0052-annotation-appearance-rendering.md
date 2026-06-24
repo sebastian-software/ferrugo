@@ -1,6 +1,6 @@
 # 0052: Annotation Appearance Rendering
 
-Status: todo
+Status: in-progress
 Phase: 7
 Size: medium
 Depends on: 0051
