@@ -37,6 +37,7 @@ The initial seed set covers:
 - image soft-mask alpha compositing
 - page-sized scan-like DeviceGray image placement
 - mixed text, image, and vector marker page
+- page-targeted rendering with an unrelated malformed page stream
 - Form XObject invocation
 - path-only Form XObject transparency groups
 - ExtGState Multiply and Screen path blend modes

@@ -1,0 +1,40 @@
+%PDF-1.4
+%‚„œ”
+1 0 obj
+<< /Length 35 >>
+stream
+q 0.1 0.6 0.2 rg 20 20 80 40 re f Q
+endstream
+endobj
+2 0 obj
+<< /Length 55 /Filter /UnsupportedDecode >>
+stream
+this stream should not decode while rendering page zero
+endstream
+endobj
+3 0 obj
+<< /Type /Page /Parent 5 0 R /MediaBox [0 0 120 80] /Resources << >> /Contents 1 0 R >>
+endobj
+4 0 obj
+<< /Type /Page /Parent 5 0 R /MediaBox [0 0 120 80] /Resources << >> /Contents 2 0 R >>
+endobj
+5 0 obj
+<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>
+endobj
+6 0 obj
+<< /Type /Catalog /Pages 5 0 R >>
+endobj
+xref
+0 7
+0000000000 65535 f 
+0000000015 00000 n 
+0000000100 00000 n 
+0000000232 00000 n 
+0000000335 00000 n 
+0000000438 00000 n 
+0000000501 00000 n 
+trailer
+<< /Size 7 /Root 6 0 R >>
+startxref
+550
+%%EOF

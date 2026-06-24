@@ -1602,6 +1602,36 @@ def multi_page_report_pdf() -> bytes:
     return pdf.render(catalog)
 
 
+def page_targeted_stream_pdf() -> bytes:
+    pdf = Pdf()
+    content_1 = b"q 0.1 0.6 0.2 rg 20 20 80 40 re f Q"
+    content_2 = b"this stream should not decode while rendering page zero"
+    contents_1 = pdf.add(
+        f"<< /Length {len(content_1)} >>\nstream\n".encode("ascii")
+        + content_1
+        + b"\nendstream"
+    )
+    contents_2 = pdf.add(
+        f"<< /Length {len(content_2)} /Filter /UnsupportedDecode >>\nstream\n".encode(
+            "ascii"
+        )
+        + content_2
+        + b"\nendstream"
+    )
+    page_1 = pdf.add(
+        "<< /Type /Page /Parent 5 0 R /MediaBox [0 0 120 80] "
+        f"/Resources << >> /Contents {contents_1} 0 R >>"
+    )
+    page_2 = pdf.add(
+        "<< /Type /Page /Parent 5 0 R /MediaBox [0 0 120 80] "
+        f"/Resources << >> /Contents {contents_2} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page_1} 0 R {page_2} 0 R] /Count 2 >>")
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert pages == 5
+    return pdf.render(catalog)
+
+
 def write(name: str, data: bytes) -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     (OUT / name).write_bytes(data)
@@ -1682,6 +1712,7 @@ def main() -> None:
     write("text-spacing.pdf", text_spacing_pdf())
     write("office-table.pdf", office_table_pdf())
     write("multi-page-report.pdf", multi_page_report_pdf())
+    write("page-targeted-stream.pdf", page_targeted_stream_pdf())
 
 
 if __name__ == "__main__":

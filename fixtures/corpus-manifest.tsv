@@ -35,6 +35,7 @@ fixtures/generated/optional-content-ocmd.pdf	presentation	scripts/generate_fixtu
 fixtures/generated/office-table.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,table,vector	Generated office-style table with header fill, ruled cells, and text.
 fixtures/generated/output-intent-rgb.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	color,output-intent,devicergb	Generated DeviceRGB page with catalog OutputIntent profile metadata.
 fixtures/generated/page-size-letter.pdf	browser-print	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	page-size,letter	Generated letter page geometry fixture.
+fixtures/generated/page-targeted-stream.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	2	streaming,page-targeted,malformed-secondary-page	Generated two-page fixture proving page zero renders without decoding a malformed second-page stream.
 fixtures/generated/predictor-image.pdf	scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,flate,predictor	Generated Flate image PNG predictor fixture.
 fixtures/generated/radial-gradient.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	shading,radial-gradient	Generated DeviceRGB radial shading fixture.
 fixtures/generated/scanned-page.pdf	scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,page-sized,devicegray	Generated page-sized scan-like DeviceGray image fixture.

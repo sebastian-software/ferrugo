@@ -2485,6 +2485,41 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_not_decode_unrelated_page_streams() {
+        let bytes = include_bytes!("../../../fixtures/generated/page-targeted-stream.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 120,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("first page should render without decoding second-page content");
+
+        assert_eq!(thumbnail.width, 120);
+        assert_eq!(thumbnail.height, 80);
+        assert_eq!(rgba_at(&thumbnail, 40, 40), [26, 153, 51, 255]);
+    }
+
+    #[test]
+    fn native_backend_should_decode_requested_page_streams_only() {
+        let bytes = include_bytes!("../../../fixtures/generated/page-targeted-stream.pdf");
+        let error = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                page_index: 1,
+                max_edge: 120,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect_err("second page should fail when its own content stream is decoded");
+
+        assert_eq!(error, ThumbnailError::Malformed);
+    }
+
+    #[test]
     fn native_backend_should_inspect_generated_multi_page_report_order() {
         let bytes = include_bytes!("../../../fixtures/generated/multi-page-report.pdf");
         let metadata =
