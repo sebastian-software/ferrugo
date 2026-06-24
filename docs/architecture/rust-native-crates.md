@@ -105,6 +105,8 @@ slices. It provides deterministic affine `Matrix` math, a small copyable
 and RGB fill/stroke color, and clipping placeholders. It also builds bounded
 path display lists for `m`, `l`, `c`, `h`, `re`, `S`, `s`, `f`, `F`, `f*`,
 `B`, and `B*`. Unsupported path construction operators return typed errors.
+Page transform creation enforces a default page-raster pixel budget before an
+owned RGBA raster buffer can be allocated.
 Page `/ExtGState` resources can set path blend mode state for `Normal`,
 `Compatible`, `Multiply`, and `Screen`; enabled overprint is rejected as an
 explicit unsupported policy until print-production semantics are modeled.

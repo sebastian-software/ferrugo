@@ -34,6 +34,9 @@ pub const DEFAULT_DISPLAY_ITEM_LIMIT: usize = 8_192;
 /// Default maximum bytes in one decoded text run.
 pub const DEFAULT_TEXT_RUN_BYTES_LIMIT: usize = 64 * 1024;
 
+/// Default maximum pixels in one page raster buffer.
+pub const DEFAULT_PAGE_RASTER_PIXELS_LIMIT: usize = 16 * 1024 * 1024;
+
 /// Default maximum decoded bytes for one ToUnicode CMap stream.
 pub const DEFAULT_CMAP_BYTES_LIMIT: usize = 1024 * 1024;
 
@@ -2436,6 +2439,20 @@ impl PageTransform {
     /// Returns [`RasterError`] for invalid page boxes, zero `max_edge`, or
     /// overflowing output dimensions.
     pub fn new(geometry: PageGeometry, max_edge: u32) -> RasterResult<Self> {
+        Self::new_with_options(geometry, max_edge, PageTransformOptions::default())
+    }
+
+    /// Builds a page-to-raster transform with explicit page-raster budgets.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RasterError`] for invalid page boxes, zero `max_edge`,
+    /// overflowing output dimensions, or page-raster budget exhaustion.
+    pub fn new_with_options(
+        geometry: PageGeometry,
+        max_edge: u32,
+        options: PageTransformOptions,
+    ) -> RasterResult<Self> {
         if max_edge == 0 {
             return Err(RasterError::new(RasterErrorKind::InvalidMaxEdge));
         }
@@ -2464,6 +2481,7 @@ impl PageTransform {
         let width = scaled_dimension(rotated_width, scale, max_edge)?;
         let height = scaled_dimension(rotated_height, scale, max_edge)?;
         let dimensions = RasterDimensions::new(width, height)?;
+        ensure_page_raster_pixel_budget(dimensions, options.max_page_pixels)?;
         let matrix = page_to_pixel_matrix(source_box, geometry.rotation, scale);
         Ok(Self {
             source_box,
@@ -2481,6 +2499,21 @@ impl PageTransform {
     /// Returns [`RasterError`] when the target buffer cannot be allocated.
     pub fn create_device(self, background: Rgba) -> RasterResult<RasterDevice> {
         RasterDevice::new(self.dimensions.width, self.dimensions.height, background)
+    }
+}
+
+/// Page transform and raster allocation budget configuration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PageTransformOptions {
+    /// Maximum pixels accepted in one page raster buffer.
+    pub max_page_pixels: usize,
+}
+
+impl Default for PageTransformOptions {
+    fn default() -> Self {
+        Self {
+            max_page_pixels: DEFAULT_PAGE_RASTER_PIXELS_LIMIT,
+        }
     }
 }
 
@@ -8078,6 +8111,23 @@ fn scaled_dimension(value: f64, scale: f64, max_edge: u32) -> RasterResult<u32> 
     Ok((scaled.round() as u32).clamp(1, max_edge))
 }
 
+fn ensure_page_raster_pixel_budget(
+    dimensions: RasterDimensions,
+    max_page_pixels: usize,
+) -> RasterResult<()> {
+    let pixels = (dimensions.width as usize)
+        .checked_mul(dimensions.height as usize)
+        .ok_or_else(|| RasterError::new(RasterErrorKind::BufferOverflow))?;
+    if pixels > max_page_pixels {
+        return Err(RasterError::new(
+            RasterErrorKind::PageRasterPixelsOverflow {
+                limit: max_page_pixels,
+            },
+        ));
+    }
+    Ok(())
+}
+
 fn page_to_pixel_matrix(bounds: PathBounds, rotation: PageRotation, scale: f64) -> Matrix {
     match rotation {
         PageRotation::Deg0 => Matrix::new(
@@ -8282,6 +8332,11 @@ pub enum RasterErrorKind {
     StrideOverflow,
     /// Pixel buffer length overflowed `usize`.
     BufferOverflow,
+    /// Page raster pixel count exceeded the configured limit.
+    PageRasterPixelsOverflow {
+        /// Configured page-raster pixel limit.
+        limit: usize,
+    },
     /// Flattened path complexity exceeded the configured limit.
     PathComplexityOverflow {
         /// Configured flattened line segment limit.
@@ -8313,6 +8368,9 @@ impl fmt::Display for RasterErrorKind {
             Self::DimensionOverflow => f.write_str("raster dimension overflow"),
             Self::StrideOverflow => f.write_str("raster stride overflow"),
             Self::BufferOverflow => f.write_str("raster buffer size overflow"),
+            Self::PageRasterPixelsOverflow { limit } => {
+                write!(f, "page raster exceeds pixel limit {limit}")
+            }
             Self::PathComplexityOverflow { limit } => {
                 write!(f, "flattened path exceeds segment limit {limit}")
             }
@@ -9012,6 +9070,32 @@ mod tests {
         assert_eq!(
             transform.matrix.transform_point(110.0, 20.0),
             Point { x: 100.0, y: 100.0 }
+        );
+    }
+
+    #[test]
+    fn page_transform_should_enforce_page_raster_pixel_budget() {
+        let error = PageTransform::new_with_options(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 100.0,
+                    max_y: 100.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            100,
+            PageTransformOptions {
+                max_page_pixels: 99,
+            },
+        )
+        .expect_err("page raster budget should fail before allocation");
+
+        assert_eq!(
+            error.kind(),
+            &RasterErrorKind::PageRasterPixelsOverflow { limit: 99 }
         );
     }
 

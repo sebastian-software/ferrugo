@@ -1,6 +1,6 @@
 # 0058: Renderer Cache And Memory Budgets
 
-Status: todo
+Status: in-progress
 Phase: 8
 Size: medium
 Depends on: 0057
@@ -46,4 +46,6 @@ and PDFium fallback reduction.
 
 ## Completion Notes
 
-Empty until done.
+- First slice added `PageTransformOptions` with
+  `DEFAULT_PAGE_RASTER_PIXELS_LIMIT`, enforcing a page-raster pixel budget
+  before allocation and returning a typed `PageRasterPixelsOverflow` error.
