@@ -1,6 +1,6 @@
 # 0086: Type3 Font And CharProc Rendering
 
-Status: todo
+Status: done
 Phase: 15
 Size: medium
 Depends on: 0085
@@ -46,4 +46,18 @@ display-list and raster paths.
 
 ## Completion Notes
 
-Empty until done.
+Completed in 0086 implementation slice.
+
+- Added Type3 font metadata loading for `/FontMatrix`, `/FontBBox`,
+  `/FirstChar`, `/LastChar`, `/Widths`, `/Encoding` differences, and referenced
+  `/CharProcs` streams.
+- Routed Type3 text rasterization through the existing content/path display-list
+  and raster pipeline instead of adding a duplicate glyph renderer.
+- Stored Type3 metadata behind `Arc` so cloned text display items do not carry
+  large CharProc payloads by value.
+- Added deterministic fixtures for vector, symbol-like, and barcode-like Type3
+  glyph programs.
+- Added malformed/budget coverage through a Type3 CharProc byte-limit test.
+- Added native fixture regression tests for the generated Type3 PDFs.
+- Published the validation report at
+  `docs/reports/type3-font-coverage-2026-06-25.md`.

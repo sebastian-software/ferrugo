@@ -21,7 +21,6 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
-| 0086 | [Type3 Font And CharProc Rendering](0086-type3-font-and-charproc-rendering.md) | 15 | medium | 0085 |
 | 0087 | [Font Hinting Glyph Cache And Subpixel Policy](0087-font-hinting-glyph-cache-and-subpixel-policy.md) | 15 | medium | 0086 |
 | 0088 | [Image Mask Stencil And Bitmap Edge Cases](0088-image-mask-stencil-and-bitmap-edge-cases.md) | 15 | medium | 0087 |
 | 0089 | [JPX JBIG2 And Specialized Image Codec Policy](0089-jpx-jbig2-and-specialized-image-codec-policy.md) | 15 | medium | 0088 |
@@ -66,6 +65,7 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Completed |
 | --- | --- | --- | --- | --- |
+| 0086 | [Type3 Font And CharProc Rendering](0086-type3-font-and-charproc-rendering.md) | 15 | medium | 2026-06-25 |
 | 0085 | [Page Geometry Boxes Rotation And User Units](0085-page-geometry-boxes-rotation-and-user-units.md) | 15 | medium | 2026-06-24 |
 | 0084 | [Visual Diff Dashboard And Review Workflow](0084-visual-diff-dashboard-and-review-workflow.md) | 14 | medium | 2026-06-24 |
 | 0083 | [Real-World Corpus Ingestion And Classification](0083-real-world-corpus-ingestion-and-classification.md) | 14 | medium | 2026-06-24 |
