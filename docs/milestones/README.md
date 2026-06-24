@@ -21,7 +21,6 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
-| 0051 | [Advanced Stroke And Clipping Fidelity](0051-advanced-stroke-and-clipping-fidelity.md) | 6 | medium | 0050 |
 | 0052 | [Annotation Appearance Rendering](0052-annotation-appearance-rendering.md) | 7 | medium | 0051 |
 | 0053 | [AcroForm Appearance Rendering](0053-acroform-appearance-rendering.md) | 7 | medium | 0052 |
 | 0054 | [Optional Content And Layer Policy](0054-optional-content-and-layer-policy.md) | 7 | medium | 0053 |
@@ -62,6 +61,7 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Completed |
 | --- | --- | --- | --- | --- |
+| 0051 | [Advanced Stroke And Clipping Fidelity](0051-advanced-stroke-and-clipping-fidelity.md) | 6 | medium | 2026-06-24 |
 | 0049 | [Blend Modes And Overprint Policy](0049-blend-modes-and-overprint-policy.md) | 6 | medium | 2026-06-24 |
 | 0048 | [Soft Masks And Transparency Groups](0048-soft-masks-and-transparency-groups.md) | 6 | medium | 2026-06-24 |
 | 0047 | [Image Filter Coverage](0047-image-filter-coverage.md) | 6 | medium | 2026-06-24 |

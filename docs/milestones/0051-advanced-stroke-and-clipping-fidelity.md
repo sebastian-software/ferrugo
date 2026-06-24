@@ -1,6 +1,6 @@
 # 0051: Advanced Stroke And Clipping Fidelity
 
-Status: in-progress
+Status: done
 Phase: 6
 Size: medium
 Depends on: 0050
