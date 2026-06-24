@@ -1,6 +1,6 @@
 # 0059: Native Backend Facade Parity
 
-Status: in-progress
+Status: done
 Phase: 8
 Size: medium
 Depends on: 0058
@@ -52,3 +52,5 @@ PDFium backend for supported documents.
   defects such as invalid options or allocation invariants.
 - Second slice adds native facade coverage for custom background color
   handling on supported documents.
+- Final documentation slice added `docs/backend/native.md` with facade contract,
+  fallback behavior, and local validation commands.

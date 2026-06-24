@@ -1,0 +1,62 @@
+# Rust-Native Backend
+
+Status: supported for generated fixture coverage.
+Date: 2026-06-24.
+
+The Rust-native backend lives in `crates/pdfrust-native` and implements the same
+`pdfrust-thumbnail` facade traits as the PDFium backend:
+
+- `ThumbnailBackend` for single-page RGBA thumbnail rendering.
+- `DocumentMetadataBackend` for page-count and page-size inspection.
+
+Callers can switch between `PdfiumBackend` and `NativeBackend` without changing
+the facade input or output types. The native backend returns raw RGBA thumbnail
+buffers through `Thumbnail::rgba`; CLI PNG encoding remains owned by
+`pdfrust-cli`, matching the PDFium backend path.
+
+## Supported Contract
+
+- `page_index` selects the zero-based page or returns `unsupported` when the
+  page is unavailable.
+- `max_edge` uses the same scale-down policy as PDFium: the largest page edge is
+  clamped to the requested maximum, preserving aspect ratio.
+- `background` initializes the page raster before paths, images, text, and
+  appearances are painted.
+- Encrypted documents return the public `encrypted` class.
+- Malformed parser/object structures return the public `malformed` class.
+- Unsupported native features and budget exhaustion return the public
+  `unsupported` class.
+
+## Fallback Policy
+
+PDFium remains the oracle and broad fallback until the retirement gate says the
+native backend covers enough typical documents. Product code should use native
+only where the support matrix marks the document class as rendered, or should
+retry through PDFium when native returns `unsupported`.
+
+Do not retry native `encrypted` or `malformed` errors through a silent repair
+path. Encrypted documents need explicit password/security policy, and malformed
+documents should stay diagnosable.
+
+## Local Checks
+
+Use native directly:
+
+```sh
+cargo run -p pdfrust-cli -- render-native fixtures/generated/text-page.pdf \
+  --output target/pdfrust-thumbnails/text-page-native.png \
+  --page-index 0 \
+  --max-edge 1024 \
+  --background '#ffffff' \
+  --timeout 5
+```
+
+Compare metadata with PDFium when the local PDFium environment is available:
+
+```sh
+cargo run -p pdfrust-cli -- compare-metadata fixtures/generated/text-page.pdf \
+  --output target/pdfrust-thumbnails/text-page-metadata-comparison.json
+```
+
+The comparison JSON includes `rust_native_memory`, which records the default
+native memory budget snapshot used for the local run.
