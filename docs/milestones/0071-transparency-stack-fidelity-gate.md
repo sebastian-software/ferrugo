@@ -1,6 +1,6 @@
 # 0071: Transparency Stack Fidelity Gate
 
-Status: todo
+Status: done
 Phase: 11
 Size: medium
 Depends on: 0070
@@ -47,4 +47,14 @@ fallback.
 
 ## Completion Notes
 
-Empty until done.
+Completed with the `feat: composite extgstate alpha paths` implementation and
+the `docs: complete transparency stack gate` report update.
+
+- Added ExtGState `/ca` and `/CA` decoding and independent fill/stroke alpha in
+  the native display-list graphics state.
+- Applied alpha-aware compositing to path fills, tiling-pattern fills, and
+  strokes while preserving existing blend-mode behavior.
+- Added `fixtures/generated/transparency-alpha.pdf`, manifest/docs metadata,
+  unit tests, and a native backend fixture test.
+- Recorded validation and remaining limitations in
+  `docs/reports/transparency-stack-coverage-2026-06-24.md`.
