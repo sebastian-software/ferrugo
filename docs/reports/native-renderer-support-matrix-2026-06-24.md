@@ -21,7 +21,7 @@ Milestone: 0041.
 | `vector-paths.pdf` | `rendered` | path rasterization | done in 0037 | no for simple paths |
 | `text-page.pdf` | `degraded` | fallback ASCII text | 0042-0045 font pipeline | yes for faithful text |
 | `image-xobject.pdf` | `rendered` | DeviceRGB Image XObject | done in 0038 | no for unfiltered RGB/gray images |
-| `form-xobject.pdf` | `unsupported` | Form XObject composition | pull forward before 0042, then 0059 parity | yes |
+| `form-xobject.pdf` | `rendered` | path-only Form XObject composition | done in 0041b, then 0059 parity | no for path-only forms |
 | `inline-image.pdf` | `rendered` | unfiltered inline image stream execution | done in 0041a | no for unfiltered RGB/gray inline images |
 
 ## Local Corpus Category Matrix
@@ -41,13 +41,13 @@ Milestone: 0041.
 
 | Rank | Gap | Product value | Implementation risk | Memory risk | Owner |
 | --- | --- | --- | --- | --- | --- |
-| 1 | Combined native Form XObject rendering | high | medium | low to medium | pull forward before 0042 |
-| 2 | Font program loading and fallback policy | high | high | medium | 0042 |
-| 3 | CMap and ToUnicode mapping | high | high | low to medium | 0043 |
-| 4 | Glyph outline extraction | high | high | medium | 0044 |
-| 5 | Complex text positioning baseline | high | medium | low | 0045 |
-| 6 | Color spaces and decode arrays | high | medium | low | 0046 |
-| 7 | Image filter coverage | high | medium to high | high | 0047 |
+| 1 | Font program loading and fallback policy | high | high | medium | 0042 |
+| 2 | CMap and ToUnicode mapping | high | high | low to medium | 0043 |
+| 3 | Glyph outline extraction | high | high | medium | 0044 |
+| 4 | Complex text positioning baseline | high | medium | low | 0045 |
+| 5 | Color spaces and decode arrays | high | medium | low | 0046 |
+| 6 | Image filter coverage | high | medium to high | high | 0047 |
+| 7 | Text and image execution inside Form XObjects | medium to high | medium | medium | 0059 parity follow-up |
 | 8 | Soft masks and transparency groups | medium to high | high | high | 0048 |
 | 9 | Advanced stroke and clipping fidelity | medium | medium | low | 0051 |
 
@@ -67,3 +67,5 @@ integration gaps that should be pulled forward before the font pipeline or
 image-filter work: inline image streams and combined Form XObject rendering.
 The unfiltered inline-image slice landed as 0041a; filtered inline images remain
 part of 0047 image filter coverage.
+Path-only native Form XObject composition landed as 0041b. Text and image
+execution inside forms remains a later parity gap.

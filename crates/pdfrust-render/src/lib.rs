@@ -674,19 +674,26 @@ impl DisplayList {
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct ImageResources {
     images: Vec<ImageXObject>,
+    non_image_names: Vec<Vec<u8>>,
 }
 
 impl ImageResources {
     /// Creates an empty image resource map.
     #[must_use]
     pub const fn empty() -> Self {
-        Self { images: Vec::new() }
+        Self {
+            images: Vec::new(),
+            non_image_names: Vec::new(),
+        }
     }
 
     /// Creates an image resource map from decoded images.
     #[must_use]
     pub fn new(images: Vec<ImageXObject>) -> Self {
-        Self { images }
+        Self {
+            images,
+            non_image_names: Vec::new(),
+        }
     }
 
     /// Resolves image XObjects from a PDF `/XObject` resource dictionary.
@@ -705,6 +712,7 @@ impl ImageResources {
         R: ImageObjectResolver<'a> + ?Sized,
     {
         let mut images = Vec::new();
+        let mut non_image_names = Vec::new();
         for (name, value) in dictionary {
             let Some(reference) = reference_from_primitive(value) else {
                 continue;
@@ -721,6 +729,7 @@ impl ImageResources {
                 return Err(invalid_image_resource(name.as_bytes()));
             };
             if !dictionary_name_is(stream.dictionary(), b"Subtype", b"Image") {
+                non_image_names.push(name.as_bytes().to_vec());
                 continue;
             }
             images.push(decode_image_xobject(
@@ -729,7 +738,10 @@ impl ImageResources {
                 options.max_image_bytes,
             )?);
         }
-        Ok(Self { images })
+        Ok(Self {
+            images,
+            non_image_names,
+        })
     }
 
     /// Returns the image matching a PDF resource name.
@@ -739,6 +751,12 @@ impl ImageResources {
             .iter()
             .find(|image| image.resource_name.as_slice() == name.as_bytes())
     }
+
+    fn is_known_non_image(&self, name: PdfName<'_>) -> bool {
+        self.non_image_names
+            .iter()
+            .any(|non_image| non_image.as_slice() == name.as_bytes())
+    }
 }
 
 /// Form XObject resource map.
@@ -746,6 +764,8 @@ impl ImageResources {
 pub struct FormResources {
     forms: Vec<FormXObject>,
     aliases: Vec<XObjectReference>,
+    non_form_names: Vec<Vec<u8>>,
+    non_form_references: Vec<Reference>,
 }
 
 impl FormResources {
@@ -755,13 +775,20 @@ impl FormResources {
         Self {
             forms: Vec::new(),
             aliases: Vec::new(),
+            non_form_names: Vec::new(),
+            non_form_references: Vec::new(),
         }
     }
 
     /// Creates a form resource map from decoded forms.
     #[must_use]
     pub fn new(forms: Vec<FormXObject>, aliases: Vec<XObjectReference>) -> Self {
-        Self { forms, aliases }
+        Self {
+            forms,
+            aliases,
+            non_form_names: Vec::new(),
+            non_form_references: Vec::new(),
+        }
     }
 
     /// Resolves Form XObjects from a PDF `/XObject` resource dictionary.
@@ -779,6 +806,8 @@ impl FormResources {
     {
         let mut forms = Vec::new();
         let mut aliases = Vec::new();
+        let mut non_form_names = Vec::new();
+        let mut non_form_references = Vec::new();
         let mut queue = xobject_references(dictionary);
 
         while let Some(alias) = queue.pop() {
@@ -801,6 +830,18 @@ impl FormResources {
                 continue;
             };
             if !dictionary_name_is(stream.dictionary(), b"Subtype", b"Form") {
+                if !non_form_names
+                    .iter()
+                    .any(|existing| existing == &alias.name)
+                {
+                    non_form_names.push(alias.name.clone());
+                }
+                if !non_form_references
+                    .iter()
+                    .any(|reference| reference == &alias.reference)
+                {
+                    non_form_references.push(alias.reference);
+                }
                 continue;
             }
             let form = decode_form_xobject(alias.name, alias.reference, stream)?;
@@ -808,7 +849,12 @@ impl FormResources {
             forms.push(form);
         }
 
-        Ok(Self { forms, aliases })
+        Ok(Self {
+            forms,
+            aliases,
+            non_form_names,
+            non_form_references,
+        })
     }
 
     /// Returns the form matching a page-level PDF resource name.
@@ -841,6 +887,30 @@ impl FormResources {
             }
         }
         self.get(name)
+    }
+
+    fn is_known_non_form_invocation(
+        &self,
+        name: PdfName<'_>,
+        local_xobjects: Option<&[XObjectReference]>,
+        inherits_parent_resources: bool,
+    ) -> bool {
+        if let Some(local_xobjects) = local_xobjects {
+            if let Some(reference) = local_xobjects.iter().find_map(|resource| {
+                (resource.name.as_slice() == name.as_bytes()).then_some(resource.reference)
+            }) {
+                return self
+                    .non_form_references
+                    .iter()
+                    .any(|non_form| non_form == &reference);
+            }
+            if !inherits_parent_resources {
+                return false;
+            }
+        }
+        self.non_form_names
+            .iter()
+            .any(|non_form| non_form.as_slice() == name.as_bytes())
     }
 }
 
@@ -1282,10 +1352,26 @@ pub fn rasterize_paths(
     background: Rgba,
     options: PathRasterOptions,
 ) -> RasterResult<RasterDevice> {
+    let mut device = transform.create_device(background)?;
+    rasterize_paths_into(display_list, &mut device, transform, options)?;
+    Ok(device)
+}
+
+/// Rasterizes path display-list items into an existing RGBA raster device.
+///
+/// # Errors
+///
+/// Returns [`RasterError`] when supersampling is invalid or flattened path
+/// complexity exceeds configured limits.
+pub fn rasterize_paths_into(
+    display_list: &DisplayList,
+    device: &mut RasterDevice,
+    transform: PageTransform,
+    options: PathRasterOptions,
+) -> RasterResult<()> {
     if options.supersample == 0 {
         return Err(RasterError::new(RasterErrorKind::InvalidSupersampling));
     }
-    let mut device = transform.create_device(background)?;
     for item in display_list.items() {
         let DisplayItem::Path(path) = item else {
             continue;
@@ -1297,17 +1383,11 @@ pub fn rasterize_paths(
         )?;
         match path.paint {
             PaintMode::Fill { rule } => {
-                fill_path(
-                    &mut device,
-                    &flattened,
-                    rule,
-                    path.state.fill_color,
-                    options,
-                )?;
+                fill_path(device, &flattened, rule, path.state.fill_color, options)?;
             }
             PaintMode::Stroke => {
                 stroke_path(
-                    &mut device,
+                    device,
                     &flattened,
                     path.state.line_width * transform.scale,
                     path.state.stroke_color,
@@ -1315,15 +1395,9 @@ pub fn rasterize_paths(
                 )?;
             }
             PaintMode::FillStroke { rule } => {
-                fill_path(
-                    &mut device,
-                    &flattened,
-                    rule,
-                    path.state.fill_color,
-                    options,
-                )?;
+                fill_path(device, &flattened, rule, path.state.fill_color, options)?;
                 stroke_path(
-                    &mut device,
+                    device,
                     &flattened,
                     path.state.line_width * transform.scale,
                     path.state.stroke_color,
@@ -1332,7 +1406,7 @@ pub fn rasterize_paths(
             }
         }
     }
-    Ok(device)
+    Ok(())
 }
 
 /// Rasterizes image display-list items into an existing RGBA raster device.
@@ -1556,21 +1630,25 @@ impl<'r> DisplayListInterpreter<'r> {
         let Some(context) = self.forms else {
             return Ok(());
         };
-        let form = context
-            .resources
-            .resolve_invocation(
+        let Some(form) = context.resources.resolve_invocation(
+            name,
+            context.scope.local_xobjects,
+            context.scope.inherits_parent_resources,
+        ) else {
+            if context.resources.is_known_non_form_invocation(
                 name,
                 context.scope.local_xobjects,
                 context.scope.inherits_parent_resources,
-            )
-            .ok_or_else(|| {
-                GraphicsError::new(
-                    Some(offset),
-                    GraphicsErrorKind::MissingForm {
-                        name: name.as_bytes().to_vec(),
-                    },
-                )
-            })?;
+            ) {
+                return Ok(());
+            }
+            return Err(GraphicsError::new(
+                Some(offset),
+                GraphicsErrorKind::MissingForm {
+                    name: name.as_bytes().to_vec(),
+                },
+            ));
+        };
         if context.recursion_depth >= self.options.max_form_recursion_depth {
             return Err(GraphicsError::new(
                 Some(offset),
@@ -2324,14 +2402,17 @@ impl<'r> ImageDisplayListInterpreter<'r> {
     ) -> GraphicsResult<()> {
         expect_operand_count(offset, b"Do", operands, 1)?;
         let name = name_operand(offset, b"Do", operands, 0)?;
-        let image = self.images.get(name).cloned().ok_or_else(|| {
-            GraphicsError::new(
+        let Some(image) = self.images.get(name).cloned() else {
+            if self.images.is_known_non_image(name) {
+                return Ok(());
+            }
+            return Err(GraphicsError::new(
                 Some(offset),
                 GraphicsErrorKind::MissingImage {
                     name: name.as_bytes().to_vec(),
                 },
-            )
-        })?;
+            ));
+        };
         let transform = self.current.ctm;
         self.display_list.push(
             DisplayItem::Image(ImageDisplayItem {
@@ -5181,6 +5262,35 @@ mod tests {
                 name: b"Missing".to_vec(),
             }
         );
+    }
+
+    #[test]
+    fn image_display_list_should_ignore_known_form_xobject_names() {
+        let document = load_form_xobject_pdf(
+            b"/Fm1 Do",
+            b"0 0 10 10 re f",
+            b"<< /Type /XObject /Subtype /Form /BBox [0 0 20 20] /Length 14 >>",
+            None,
+        );
+        let xobjects = vec![(
+            PdfName::new(b"Fm1"),
+            PdfPrimitive::Reference(pdfrust_syntax::PdfReference::new(4, 0)),
+        )];
+        let resources = ImageResources::from_xobject_dictionary(
+            &xobjects,
+            &document,
+            DisplayListOptions::default(),
+        )
+        .expect("valid xobject resources");
+        let content = content_stream_from_document(&document);
+        let list = build_image_display_list(
+            tokenize_content(PdfBytes::new(&content)),
+            &resources,
+            DisplayListOptions::default(),
+        )
+        .expect("known form name should not fail image pass");
+
+        assert!(list.is_empty());
     }
 
     #[test]

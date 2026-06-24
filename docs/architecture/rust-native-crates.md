@@ -125,6 +125,11 @@ with explicit recursion-depth and display-item budgets. Form streams without a
 local `/Resources /XObject` dictionary use those local names for nested Form
 XObjects. Image and text execution inside forms will be wired into the combined
 renderer in later rasterization milestones.
+The native backend now resolves page-level Form XObjects and paints their path
+display-list items into the same page raster. Image and Form resource maps also
+track known opposite XObject subtype names so independent image and form passes
+do not fail when they encounter each other's `Do` invocations. Mixed ordering
+and image/text execution inside forms remain later facade-parity work.
 The first raster setup layer defines checked RGBA raster dimensions, an owned
 `RasterDevice` with safe row and pixel accessors, and `PageTransform` for
 mapping media/crop boxes, rotation, and `max_edge` into device pixels. The

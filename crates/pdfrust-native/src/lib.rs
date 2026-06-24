@@ -11,8 +11,9 @@ use pdfrust_object::{
     ObjectNumber, ObjectValue, PageBox, PageMetadata as ObjectPageMetadata, PageTree, Reference,
 };
 use pdfrust_render::{
-    build_image_display_list, build_path_display_list, build_text_display_list, rasterize_images,
-    rasterize_paths, rasterize_text, DisplayListOptions, FontDescriptor, FontResources,
+    build_form_display_list, build_image_display_list, build_path_display_list,
+    build_text_display_list, rasterize_images, rasterize_paths, rasterize_paths_into,
+    rasterize_text, DisplayListOptions, FontDescriptor, FontResources, FormResources,
     GraphicsError, GraphicsErrorKind, ImageResources, PageGeometry, PageRotation, PageTransform,
     PathBounds, PathRasterOptions, RasterError,
 };
@@ -116,6 +117,20 @@ fn render_bytes(bytes: &[u8], options: &ThumbnailOptions) -> Result<Thumbnail, T
         PathRasterOptions::default(),
     )
     .map_err(map_raster_error)?;
+    let form_resources = page_form_resources(&document, page)?;
+    let form_list = build_form_display_list(
+        tokenize_content(PdfBytes::new(&content)),
+        &form_resources,
+        DisplayListOptions::default(),
+    )
+    .map_err(map_graphics_error)?;
+    rasterize_paths_into(
+        &form_list,
+        &mut raster,
+        transform,
+        PathRasterOptions::default(),
+    )
+    .map_err(map_raster_error)?;
     let image_resources = page_image_resources(&document, page)?;
     let image_list = build_image_display_list(
         tokenize_content(PdfBytes::new(&content)),
@@ -185,6 +200,43 @@ fn page_image_resources(
     };
     ImageResources::from_xobject_dictionary(xobjects, document, DisplayListOptions::default())
         .map_err(map_graphics_error)
+}
+
+fn page_form_resources(
+    document: &ClassicDocument<'_>,
+    page: &ObjectPageMetadata,
+) -> Result<FormResources, ThumbnailError> {
+    let object = document
+        .objects
+        .get(page.id)
+        .ok_or(ThumbnailError::Malformed)?;
+    let dictionary = object_dictionary(&object.value)?;
+    let Some(resources) = dictionary_value(dictionary, b"Resources") else {
+        return Ok(FormResources::empty());
+    };
+    let resource_dictionary = match resources {
+        PdfPrimitive::Dictionary(dictionary) => dictionary.as_slice(),
+        PdfPrimitive::Reference(reference) => {
+            let object_number =
+                ObjectNumber::new(reference.object).map_err(|_| ThumbnailError::Malformed)?;
+            let reference = Reference::new(ObjectId::new(
+                object_number,
+                GenerationNumber::new(reference.generation),
+            ));
+            let object = document
+                .objects
+                .get(reference.id)
+                .ok_or(ThumbnailError::Malformed)?;
+            object_dictionary(&object.value)?
+        }
+        _ => return Err(ThumbnailError::Malformed),
+    };
+    let Some(PdfPrimitive::Dictionary(xobjects)) =
+        dictionary_value(resource_dictionary, b"XObject")
+    else {
+        return Ok(FormResources::empty());
+    };
+    FormResources::from_xobject_dictionary(xobjects, document).map_err(map_graphics_error)
 }
 
 fn page_font_resources(
@@ -445,6 +497,25 @@ mod tests {
         assert_eq!(rgba_at(&thumbnail, 44, 44), [255, 0, 0, 255]);
         assert_eq!(rgba_at(&thumbnail, 76, 44), [0, 255, 0, 255]);
         assert_eq!(rgba_at(&thumbnail, 44, 76), [0, 0, 255, 255]);
+    }
+
+    #[test]
+    fn native_backend_should_render_generated_form_xobject_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/form-xobject.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 120,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated Form XObject fixture should render through native backend");
+
+        assert_eq!(thumbnail.width, 120);
+        assert_eq!(thumbnail.height, 120);
+        assert_eq!(rgba_at(&thumbnail, 30, 30), [51, 179, 77, 255]);
+        assert_eq!(rgba_at(&thumbnail, 88, 24), [51, 179, 77, 255]);
     }
 
     #[test]
