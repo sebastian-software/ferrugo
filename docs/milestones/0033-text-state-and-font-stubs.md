@@ -1,6 +1,6 @@
 # 0033: Text State And Font Stubs
 
-Status: todo
+Status: done
 Phase: 2
 Size: medium
 Depends on: 0032
@@ -46,4 +46,19 @@ where full font rendering is not ready.
 
 ## Completion Notes
 
-Empty until done.
+Completed with the `feat: capture positioned text runs` change.
+
+- Added `TextDisplayItem`, `FontDescriptor`, `FontResources`, and
+  `build_text_display_list` to `pdfrust-render`.
+- Implemented text-state handling for `BT`, `ET`, `Tf`, `Td`, `Tm`, `Tj`, and
+  `TJ`.
+- Added lightweight ASCII literal-string decoding with explicit unsupported
+  behavior for hex strings and non-ASCII text until CMap work lands.
+- Added typed errors for missing fonts, text outside `BT`/`ET`, nested text
+  objects, unselected fonts, unsupported encodings, and text-run size limits.
+- Added tests for the generated `text-page.pdf` fixture, `Tm` plus graphics
+  transforms, `TJ` arrays, missing fonts, missing `Tf`, text outside objects,
+  unsupported hex text, and text-run limits.
+- Validation:
+  - `cargo fmt --check`
+  - `cargo test -p pdfrust-render`

@@ -105,4 +105,8 @@ slices. It provides deterministic affine `Matrix` math, a small copyable
 and RGB fill/stroke color, and clipping placeholders. It also builds bounded
 path display lists for `m`, `l`, `c`, `h`, `re`, `S`, `s`, `f`, `F`, `f*`,
 `B`, and `B*`. Unsupported path construction operators return typed errors.
-Rasterization remains a later milestone.
+Text display-list support interprets `BT`, `ET`, `Tf`, `Td`, `Tm`, `Tj`, and
+`TJ` into positioned `TextDisplayItem` values with lightweight
+`FontDescriptor` stubs. The first text policy accepts simple ASCII literal
+strings only; CMaps, embedded font shaping, glyph outlines, and searchable text
+extraction remain later milestones. Rasterization remains a later milestone.

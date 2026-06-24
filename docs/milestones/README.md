@@ -21,7 +21,6 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
-| 0033 | [Text State And Font Stubs](0033-text-state-and-font-stubs.md) | 2 | medium | 0032 |
 | 0034 | [Image XObject Decoding And Placement](0034-image-xobject-decoding-and-placement.md) | 2 | medium | 0033 |
 | 0035 | [Form XObject Recursion And Budgets](0035-form-xobject-recursion-and-budgets.md) | 2 | medium | 0034 |
 | 0036 | [Raster Device And Page Transform](0036-raster-device-and-page-transform.md) | 3 | medium | 0035 |
@@ -90,6 +89,7 @@ No milestones are currently in progress.
 | 0030 | [Content Stream Tokenizer](0030-content-stream-tokenizer.md) | 2 | medium | 2026-06-24 |
 | 0031 | [Graphics State And Transforms](0031-graphics-state-and-transforms.md) | 2 | medium | 2026-06-24 |
 | 0032 | [Path Display List](0032-path-display-list.md) | 2 | medium | 2026-06-24 |
+| 0033 | [Text State And Font Stubs](0033-text-state-and-font-stubs.md) | 2 | medium | 2026-06-24 |
 
 ## Update Rules
 

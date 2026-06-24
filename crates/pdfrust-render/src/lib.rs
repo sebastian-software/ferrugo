@@ -5,7 +5,7 @@
 use std::fmt;
 
 use pdfrust_content::{ContentErrorKind, ContentResult, ContentToken, OperatorName};
-use pdfrust_syntax::{ByteOffset, PdfNumber, PdfPrimitive};
+use pdfrust_syntax::{ByteOffset, PdfName, PdfNumber, PdfPrimitive, PdfString};
 
 /// Stable crate role used by architecture smoke tests and documentation.
 pub const CRATE_ROLE: &str = "render";
@@ -18,6 +18,9 @@ pub const DEFAULT_PATH_SEGMENT_LIMIT: usize = 16_384;
 
 /// Default maximum display items for one content stream.
 pub const DEFAULT_DISPLAY_ITEM_LIMIT: usize = 8_192;
+
+/// Default maximum bytes in one decoded text run.
+pub const DEFAULT_TEXT_RUN_BYTES_LIMIT: usize = 64 * 1024;
 
 /// Result alias for graphics-state interpretation.
 pub type GraphicsResult<T> = Result<T, GraphicsError>;
@@ -126,6 +129,12 @@ impl Matrix {
             x: self.a.mul_add(x, self.c.mul_add(y, self.e)),
             y: self.b.mul_add(x, self.d.mul_add(y, self.f)),
         }
+    }
+}
+
+impl Default for Matrix {
+    fn default() -> Self {
+        Self::IDENTITY
     }
 }
 
@@ -266,6 +275,23 @@ impl PathDisplayItem {
     }
 }
 
+/// One positioned text run captured before glyph shaping or rasterization.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TextDisplayItem {
+    /// Text decoded through the current lightweight font policy.
+    pub text: String,
+    /// Font descriptor selected by `Tf`.
+    pub font: FontDescriptor,
+    /// Font size selected by `Tf`.
+    pub font_size: f64,
+    /// Text origin after text and graphics transforms are applied.
+    pub origin: Point,
+    /// Text matrix at paint time.
+    pub text_matrix: Matrix,
+    /// Graphics state snapshot at paint time.
+    pub state: GraphicsState,
+}
+
 /// Display-list item.
 #[derive(Debug, Clone, PartialEq)]
 pub enum DisplayItem {
@@ -280,6 +306,8 @@ pub enum DisplayItem {
         /// Graphics state snapshot at clip time.
         state: GraphicsState,
     },
+    /// Positioned text run.
+    Text(TextDisplayItem),
 }
 
 /// Display list produced from content streams before rasterization.
@@ -323,6 +351,12 @@ impl DisplayList {
                 DisplayItem::ClipPlaceholder { segments, .. } => {
                     PathBounds::from_segments(segments)
                 }
+                DisplayItem::Text(text) => Some(PathBounds {
+                    min_x: text.origin.x,
+                    min_y: text.origin.y,
+                    max_x: text.origin.x,
+                    max_y: text.origin.y,
+                }),
             };
             if let Some(item_bounds) = item_bounds {
                 bounds = Some(match bounds {
@@ -343,6 +377,54 @@ impl DisplayList {
         }
         self.items.push(item);
         Ok(())
+    }
+}
+
+/// Lightweight font descriptor used before full font loading lands.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FontDescriptor {
+    /// Resource name used by content streams, without the leading slash.
+    pub resource_name: Vec<u8>,
+    /// Optional base font name from page resources.
+    pub base_font: Option<Vec<u8>>,
+}
+
+impl FontDescriptor {
+    /// Creates a lightweight font descriptor.
+    #[must_use]
+    pub fn new(resource_name: impl Into<Vec<u8>>, base_font: Option<impl Into<Vec<u8>>>) -> Self {
+        Self {
+            resource_name: resource_name.into(),
+            base_font: base_font.map(Into::into),
+        }
+    }
+}
+
+/// Lightweight font resource map.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct FontResources {
+    fonts: Vec<FontDescriptor>,
+}
+
+impl FontResources {
+    /// Creates an empty font resource map.
+    #[must_use]
+    pub const fn empty() -> Self {
+        Self { fonts: Vec::new() }
+    }
+
+    /// Creates a font resource map from descriptors.
+    #[must_use]
+    pub fn new(fonts: Vec<FontDescriptor>) -> Self {
+        Self { fonts }
+    }
+
+    /// Returns the font matching a PDF resource name.
+    #[must_use]
+    pub fn get(&self, name: PdfName<'_>) -> Option<&FontDescriptor> {
+        self.fonts
+            .iter()
+            .find(|font| font.resource_name.as_slice() == name.as_bytes())
     }
 }
 
@@ -424,6 +506,8 @@ pub struct DisplayListOptions {
     pub max_path_segments: usize,
     /// Maximum number of display items allowed in one list.
     pub max_display_items: usize,
+    /// Maximum bytes accepted in one decoded text run.
+    pub max_text_run_bytes: usize,
 }
 
 impl Default for DisplayListOptions {
@@ -432,6 +516,7 @@ impl Default for DisplayListOptions {
             max_stack_depth: DEFAULT_GRAPHICS_STATE_STACK_LIMIT,
             max_path_segments: DEFAULT_PATH_SEGMENT_LIMIT,
             max_display_items: DEFAULT_DISPLAY_ITEM_LIMIT,
+            max_text_run_bytes: DEFAULT_TEXT_RUN_BYTES_LIMIT,
         }
     }
 }
@@ -467,6 +552,23 @@ pub fn build_path_display_list<'a>(
     options: DisplayListOptions,
 ) -> GraphicsResult<DisplayList> {
     let mut interpreter = DisplayListInterpreter::new(options);
+    interpreter.interpret(tokens)?;
+    Ok(interpreter.display_list)
+}
+
+/// Builds positioned text display-list items from supported text operators.
+///
+/// # Errors
+///
+/// Returns [`GraphicsError`] when tokenization fails, text object state is
+/// invalid, a selected font is missing, an encoding is unsupported, or display
+/// limits are exceeded.
+pub fn build_text_display_list<'a>(
+    tokens: impl IntoIterator<Item = ContentResult<ContentToken<'a>>>,
+    fonts: &FontResources,
+    options: DisplayListOptions,
+) -> GraphicsResult<DisplayList> {
+    let mut interpreter = TextDisplayListInterpreter::new(fonts, options);
     interpreter.interpret(tokens)?;
     Ok(interpreter.display_list)
 }
@@ -870,6 +972,316 @@ impl DisplayListInterpreter {
     }
 }
 
+struct TextDisplayListInterpreter<'r> {
+    current: GraphicsState,
+    stack: Vec<GraphicsState>,
+    text: TextState,
+    fonts: &'r FontResources,
+    display_list: DisplayList,
+    options: DisplayListOptions,
+}
+
+impl<'r> TextDisplayListInterpreter<'r> {
+    fn new(fonts: &'r FontResources, options: DisplayListOptions) -> Self {
+        Self {
+            current: GraphicsState::default(),
+            stack: Vec::new(),
+            text: TextState::default(),
+            fonts,
+            display_list: DisplayList::new(),
+            options,
+        }
+    }
+
+    fn interpret<'a>(
+        &mut self,
+        tokens: impl IntoIterator<Item = ContentResult<ContentToken<'a>>>,
+    ) -> GraphicsResult<()> {
+        let mut operands = Vec::new();
+        for token in tokens {
+            match token.map_err(GraphicsError::from_content)? {
+                ContentToken::Operand { value, .. } => operands.push(value),
+                ContentToken::Operator { offset, name } => {
+                    self.apply_operator(offset, name, &operands)?;
+                    operands.clear();
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn apply_operator(
+        &mut self,
+        offset: ByteOffset,
+        name: OperatorName<'_>,
+        operands: &[PdfPrimitive<'_>],
+    ) -> GraphicsResult<()> {
+        match name.as_bytes() {
+            b"q" => self.save_state(offset, operands),
+            b"Q" => self.restore_state(offset, operands),
+            b"cm" => self.concatenate_matrix(offset, operands),
+            b"BT" => self.begin_text(offset, operands),
+            b"ET" => self.end_text(offset, operands),
+            b"Tf" => self.set_font(offset, operands),
+            b"Td" => self.move_text_position(offset, operands),
+            b"Tm" => self.set_text_matrix(offset, operands),
+            b"Tj" => self.show_text(offset, operands),
+            b"TJ" => self.show_text_array(offset, operands),
+            _ => Ok(()),
+        }
+    }
+
+    fn save_state(
+        &mut self,
+        offset: ByteOffset,
+        operands: &[PdfPrimitive<'_>],
+    ) -> GraphicsResult<()> {
+        expect_operand_count(offset, b"q", operands, 0)?;
+        if self.stack.len() >= self.options.max_stack_depth {
+            return Err(GraphicsError::new(
+                Some(offset),
+                GraphicsErrorKind::StackOverflow {
+                    limit: self.options.max_stack_depth,
+                },
+            ));
+        }
+        self.stack.push(self.current);
+        Ok(())
+    }
+
+    fn restore_state(
+        &mut self,
+        offset: ByteOffset,
+        operands: &[PdfPrimitive<'_>],
+    ) -> GraphicsResult<()> {
+        expect_operand_count(offset, b"Q", operands, 0)?;
+        self.current = self
+            .stack
+            .pop()
+            .ok_or_else(|| GraphicsError::new(Some(offset), GraphicsErrorKind::StackUnderflow))?;
+        Ok(())
+    }
+
+    fn concatenate_matrix(
+        &mut self,
+        offset: ByteOffset,
+        operands: &[PdfPrimitive<'_>],
+    ) -> GraphicsResult<()> {
+        expect_operand_count(offset, b"cm", operands, 6)?;
+        self.current.ctm = self.current.ctm.multiply(Matrix::new(
+            number_operand(offset, b"cm", operands, 0)?,
+            number_operand(offset, b"cm", operands, 1)?,
+            number_operand(offset, b"cm", operands, 2)?,
+            number_operand(offset, b"cm", operands, 3)?,
+            number_operand(offset, b"cm", operands, 4)?,
+            number_operand(offset, b"cm", operands, 5)?,
+        ));
+        Ok(())
+    }
+
+    fn begin_text(
+        &mut self,
+        offset: ByteOffset,
+        operands: &[PdfPrimitive<'_>],
+    ) -> GraphicsResult<()> {
+        expect_operand_count(offset, b"BT", operands, 0)?;
+        if self.text.in_text_object {
+            return Err(GraphicsError::new(
+                Some(offset),
+                GraphicsErrorKind::TextObjectAlreadyOpen,
+            ));
+        }
+        self.text = TextState {
+            in_text_object: true,
+            ..TextState::default()
+        };
+        Ok(())
+    }
+
+    fn end_text(
+        &mut self,
+        offset: ByteOffset,
+        operands: &[PdfPrimitive<'_>],
+    ) -> GraphicsResult<()> {
+        expect_operand_count(offset, b"ET", operands, 0)?;
+        self.require_text_object(offset, b"ET")?;
+        self.text.in_text_object = false;
+        Ok(())
+    }
+
+    fn set_font(
+        &mut self,
+        offset: ByteOffset,
+        operands: &[PdfPrimitive<'_>],
+    ) -> GraphicsResult<()> {
+        self.require_text_object(offset, b"Tf")?;
+        expect_operand_count(offset, b"Tf", operands, 2)?;
+        let name = name_operand(offset, b"Tf", operands, 0)?;
+        let font_size = number_operand(offset, b"Tf", operands, 1)?;
+        if font_size <= 0.0 {
+            return Err(invalid_operand(offset, b"Tf"));
+        }
+        let font = self.fonts.get(name).cloned().ok_or_else(|| {
+            GraphicsError::new(
+                Some(offset),
+                GraphicsErrorKind::MissingFont {
+                    name: name.as_bytes().to_vec(),
+                },
+            )
+        })?;
+        self.text.font = Some(font);
+        self.text.font_size = font_size;
+        Ok(())
+    }
+
+    fn move_text_position(
+        &mut self,
+        offset: ByteOffset,
+        operands: &[PdfPrimitive<'_>],
+    ) -> GraphicsResult<()> {
+        self.require_text_object(offset, b"Td")?;
+        expect_operand_count(offset, b"Td", operands, 2)?;
+        let translation = Matrix::translate(
+            number_operand(offset, b"Td", operands, 0)?,
+            number_operand(offset, b"Td", operands, 1)?,
+        );
+        self.text.line_matrix = self.text.line_matrix.multiply(translation);
+        self.text.text_matrix = self.text.line_matrix;
+        Ok(())
+    }
+
+    fn set_text_matrix(
+        &mut self,
+        offset: ByteOffset,
+        operands: &[PdfPrimitive<'_>],
+    ) -> GraphicsResult<()> {
+        self.require_text_object(offset, b"Tm")?;
+        expect_operand_count(offset, b"Tm", operands, 6)?;
+        let matrix = Matrix::new(
+            number_operand(offset, b"Tm", operands, 0)?,
+            number_operand(offset, b"Tm", operands, 1)?,
+            number_operand(offset, b"Tm", operands, 2)?,
+            number_operand(offset, b"Tm", operands, 3)?,
+            number_operand(offset, b"Tm", operands, 4)?,
+            number_operand(offset, b"Tm", operands, 5)?,
+        );
+        self.text.text_matrix = matrix;
+        self.text.line_matrix = matrix;
+        Ok(())
+    }
+
+    fn show_text(
+        &mut self,
+        offset: ByteOffset,
+        operands: &[PdfPrimitive<'_>],
+    ) -> GraphicsResult<()> {
+        self.require_text_object(offset, b"Tj")?;
+        expect_operand_count(offset, b"Tj", operands, 1)?;
+        let text = decode_pdf_text_string(
+            string_operand(offset, b"Tj", operands, 0)?,
+            offset,
+            self.options.max_text_run_bytes,
+        )?;
+        self.push_text(offset, text)
+    }
+
+    fn show_text_array(
+        &mut self,
+        offset: ByteOffset,
+        operands: &[PdfPrimitive<'_>],
+    ) -> GraphicsResult<()> {
+        self.require_text_object(offset, b"TJ")?;
+        expect_operand_count(offset, b"TJ", operands, 1)?;
+        let Some(PdfPrimitive::Array(values)) = operands.first() else {
+            return Err(invalid_operand(offset, b"TJ"));
+        };
+        let mut text = String::new();
+        let mut adjustment = 0.0;
+        for value in values {
+            match value {
+                PdfPrimitive::String(string) => {
+                    let chunk =
+                        decode_pdf_text_string(*string, offset, self.options.max_text_run_bytes)?;
+                    if text.len() + chunk.len() > self.options.max_text_run_bytes {
+                        return Err(GraphicsError::new(
+                            Some(offset),
+                            GraphicsErrorKind::TextRunOverflow {
+                                limit: self.options.max_text_run_bytes,
+                            },
+                        ));
+                    }
+                    text.push_str(&chunk);
+                }
+                PdfPrimitive::Number(PdfNumber::Integer(value)) => {
+                    adjustment += *value as f64;
+                }
+                PdfPrimitive::Number(PdfNumber::Real(value)) if value.is_finite() => {
+                    adjustment += *value;
+                }
+                _ => return Err(invalid_operand(offset, b"TJ")),
+            }
+        }
+        self.push_text(offset, text)?;
+        self.advance_text(-adjustment / 1000.0 * self.text.font_size);
+        Ok(())
+    }
+
+    fn push_text(&mut self, offset: ByteOffset, text: String) -> GraphicsResult<()> {
+        let byte_len = text.len();
+        let font =
+            self.text.font.clone().ok_or_else(|| {
+                GraphicsError::new(Some(offset), GraphicsErrorKind::FontNotSelected)
+            })?;
+        let origin_matrix = self.current.ctm.multiply(self.text.text_matrix);
+        let origin = origin_matrix.transform_point(0.0, 0.0);
+        self.display_list.push(
+            DisplayItem::Text(TextDisplayItem {
+                text,
+                font,
+                font_size: self.text.font_size,
+                origin,
+                text_matrix: self.text.text_matrix,
+                state: self.current,
+            }),
+            self.options.max_display_items,
+            offset,
+        )?;
+        self.advance_text(byte_len as f64 * self.text.font_size * 0.5);
+        Ok(())
+    }
+
+    fn advance_text(&mut self, advance: f64) {
+        self.text.text_matrix = self
+            .text
+            .text_matrix
+            .multiply(Matrix::translate(advance, 0.0));
+    }
+
+    fn require_text_object(
+        &self,
+        offset: ByteOffset,
+        operator: &'static [u8],
+    ) -> GraphicsResult<()> {
+        if self.text.in_text_object {
+            Ok(())
+        } else {
+            Err(GraphicsError::new(
+                Some(offset),
+                GraphicsErrorKind::TextOutsideObject { operator },
+            ))
+        }
+    }
+}
+
+#[derive(Debug, Default, Clone, PartialEq)]
+struct TextState {
+    in_text_object: bool,
+    text_matrix: Matrix,
+    line_matrix: Matrix,
+    font: Option<FontDescriptor>,
+    font_size: f64,
+}
+
 #[derive(Debug, Default, Clone, PartialEq)]
 struct CurrentPath {
     segments: Vec<PathSegment>,
@@ -1116,6 +1528,57 @@ fn number_operand(
     }
 }
 
+fn name_operand<'a>(
+    offset: ByteOffset,
+    operator: &'static [u8],
+    operands: &[PdfPrimitive<'a>],
+    index: usize,
+) -> GraphicsResult<PdfName<'a>> {
+    match operands.get(index) {
+        Some(PdfPrimitive::Name(name)) => Ok(*name),
+        _ => Err(invalid_operand(offset, operator)),
+    }
+}
+
+fn string_operand<'a>(
+    offset: ByteOffset,
+    operator: &'static [u8],
+    operands: &[PdfPrimitive<'a>],
+    index: usize,
+) -> GraphicsResult<PdfString<'a>> {
+    match operands.get(index) {
+        Some(PdfPrimitive::String(string)) => Ok(*string),
+        _ => Err(invalid_operand(offset, operator)),
+    }
+}
+
+fn decode_pdf_text_string(
+    string: PdfString<'_>,
+    offset: ByteOffset,
+    limit: usize,
+) -> GraphicsResult<String> {
+    let PdfString::Literal(bytes) = string else {
+        return Err(GraphicsError::new(
+            Some(offset),
+            GraphicsErrorKind::UnsupportedTextEncoding,
+        ));
+    };
+    if bytes.len() > limit {
+        return Err(GraphicsError::new(
+            Some(offset),
+            GraphicsErrorKind::TextRunOverflow { limit },
+        ));
+    }
+    if !bytes.is_ascii() {
+        return Err(GraphicsError::new(
+            Some(offset),
+            GraphicsErrorKind::UnsupportedTextEncoding,
+        ));
+    }
+    String::from_utf8(bytes.to_vec())
+        .map_err(|_| GraphicsError::new(Some(offset), GraphicsErrorKind::UnsupportedTextEncoding))
+}
+
 fn invalid_operand(offset: ByteOffset, operator: &'static [u8]) -> GraphicsError {
     GraphicsError::new(Some(offset), GraphicsErrorKind::InvalidOperand { operator })
 }
@@ -1235,6 +1698,27 @@ pub enum GraphicsErrorKind {
         /// Operator bytes.
         operator: &'static [u8],
     },
+    /// Text operator appeared outside `BT`/`ET`.
+    TextOutsideObject {
+        /// Operator bytes.
+        operator: &'static [u8],
+    },
+    /// `BT` appeared before the previous text object ended.
+    TextObjectAlreadyOpen,
+    /// `Tj` or `TJ` appeared before a font was selected.
+    FontNotSelected,
+    /// A selected font resource does not exist.
+    MissingFont {
+        /// Missing PDF font resource name.
+        name: Vec<u8>,
+    },
+    /// Text string uses an encoding outside the current ASCII stub policy.
+    UnsupportedTextEncoding,
+    /// Decoded text run exceeds the configured limit.
+    TextRunOverflow {
+        /// Configured text run byte limit.
+        limit: usize,
+    },
 }
 
 impl fmt::Display for GraphicsErrorKind {
@@ -1275,6 +1759,20 @@ impl fmt::Display for GraphicsErrorKind {
                 "operator {} is unsupported for path display lists",
                 String::from_utf8_lossy(operator)
             ),
+            Self::TextOutsideObject { operator } => write!(
+                f,
+                "operator {} requires an open text object",
+                String::from_utf8_lossy(operator)
+            ),
+            Self::TextObjectAlreadyOpen => f.write_str("text object is already open"),
+            Self::FontNotSelected => f.write_str("text font has not been selected"),
+            Self::MissingFont { name } => {
+                write!(f, "missing font resource {}", String::from_utf8_lossy(name))
+            }
+            Self::UnsupportedTextEncoding => f.write_str("unsupported text encoding"),
+            Self::TextRunOverflow { limit } => {
+                write!(f, "decoded text run exceeds byte limit {limit}")
+            }
         }
     }
 }
@@ -1588,6 +2086,141 @@ mod tests {
         );
     }
 
+    #[test]
+    fn text_display_list_should_parse_generated_text_fixture() {
+        let decoded = generated_fixture_content("text-page.pdf");
+        let list = build_text_display_list(
+            tokenize_content(PdfBytes::new(&decoded)),
+            &test_font_resources(),
+            DisplayListOptions::default(),
+        )
+        .expect("text fixture should build text display list");
+
+        assert_eq!(list.len(), 1);
+        let DisplayItem::Text(text) = &list.items()[0] else {
+            panic!("expected text display item");
+        };
+        assert_eq!(text.text, "pdfrust thumbnail fixture");
+        assert_eq!(text.font.resource_name, b"F1");
+        assert_eq!(text.font_size, 24.0);
+        assert_eq!(text.origin, Point { x: 40.0, y: 90.0 });
+    }
+
+    #[test]
+    fn text_display_list_should_apply_tm_and_ctm_to_origin() {
+        let list = build_text_display_list(
+            tokenize_content(PdfBytes::new(
+                b"2 0 0 2 10 20 cm BT /F1 12 Tf 1 0 0 1 5 6 Tm (Hi) Tj ET",
+            )),
+            &test_font_resources(),
+            DisplayListOptions::default(),
+        )
+        .expect("valid text transform stream");
+
+        let DisplayItem::Text(text) = &list.items()[0] else {
+            panic!("expected text display item");
+        };
+        assert_eq!(text.origin, Point { x: 20.0, y: 32.0 });
+    }
+
+    #[test]
+    fn text_display_list_should_parse_tj_arrays() {
+        let list = build_text_display_list(
+            tokenize_content(PdfBytes::new(
+                b"BT /F1 10 Tf 10 20 Td [(A) 120 (B)] TJ (C) Tj ET",
+            )),
+            &test_font_resources(),
+            DisplayListOptions::default(),
+        )
+        .expect("valid TJ stream");
+
+        assert_eq!(list.len(), 2);
+        let DisplayItem::Text(first) = &list.items()[0] else {
+            panic!("expected first text item");
+        };
+        let DisplayItem::Text(second) = &list.items()[1] else {
+            panic!("expected second text item");
+        };
+        assert_eq!(first.text, "AB");
+        assert_eq!(second.text, "C");
+        assert!((second.origin.x - 18.8).abs() < 0.001);
+        assert_eq!(second.origin.y, 20.0);
+    }
+
+    #[test]
+    fn text_display_list_should_report_missing_font() {
+        let error = build_text_display_list(
+            tokenize_content(PdfBytes::new(b"BT /Missing 12 Tf (Hi) Tj ET")),
+            &test_font_resources(),
+            DisplayListOptions::default(),
+        )
+        .expect_err("missing font should fail");
+
+        assert_eq!(
+            error.kind(),
+            &GraphicsErrorKind::MissingFont {
+                name: b"Missing".to_vec(),
+            }
+        );
+    }
+
+    #[test]
+    fn text_display_list_should_report_font_not_selected() {
+        let error = build_text_display_list(
+            tokenize_content(PdfBytes::new(b"BT (Hi) Tj ET")),
+            &test_font_resources(),
+            DisplayListOptions::default(),
+        )
+        .expect_err("show text without Tf should fail");
+
+        assert_eq!(error.kind(), &GraphicsErrorKind::FontNotSelected);
+    }
+
+    #[test]
+    fn text_display_list_should_report_text_outside_object() {
+        let error = build_text_display_list(
+            tokenize_content(PdfBytes::new(b"/F1 12 Tf")),
+            &test_font_resources(),
+            DisplayListOptions::default(),
+        )
+        .expect_err("Tf outside BT/ET should fail");
+
+        assert_eq!(
+            error.kind(),
+            &GraphicsErrorKind::TextOutsideObject { operator: b"Tf" }
+        );
+    }
+
+    #[test]
+    fn text_display_list_should_report_unsupported_hex_text() {
+        let error = build_text_display_list(
+            tokenize_content(PdfBytes::new(b"BT /F1 12 Tf <4869> Tj ET")),
+            &test_font_resources(),
+            DisplayListOptions::default(),
+        )
+        .expect_err("hex strings are unsupported in this milestone");
+
+        assert_eq!(error.kind(), &GraphicsErrorKind::UnsupportedTextEncoding);
+    }
+
+    #[test]
+    fn text_display_list_should_enforce_text_run_limit() {
+        let error = build_text_display_list(
+            tokenize_content(PdfBytes::new(b"BT /F1 12 Tf (abcd) Tj ET")),
+            &test_font_resources(),
+            DisplayListOptions {
+                max_text_run_bytes: 3,
+                ..DisplayListOptions::default()
+            },
+        )
+        .expect_err("text run should exceed limit");
+
+        assert_eq!(
+            error.kind(),
+            &GraphicsErrorKind::TextRunOverflow { limit: 3 }
+        );
+    }
+
     fn generated_fixture_content(file_name: &str) -> Vec<u8> {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join(format!("../../fixtures/generated/{file_name}"));
@@ -1603,5 +2236,12 @@ mod tests {
             panic!("content object should be a stream");
         };
         stream.decode().expect("content stream should decode")
+    }
+
+    fn test_font_resources() -> FontResources {
+        FontResources::new(vec![FontDescriptor::new(
+            b"F1".to_vec(),
+            Some(b"Helvetica".to_vec()),
+        )])
     }
 }
