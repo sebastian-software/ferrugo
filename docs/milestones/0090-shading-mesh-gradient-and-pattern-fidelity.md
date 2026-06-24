@@ -1,6 +1,6 @@
 # 0090: Shading Mesh Gradient And Pattern Fidelity
 
-Status: todo
+Status: completed
 Phase: 15
 Size: medium
 Depends on: 0089
@@ -46,4 +46,13 @@ in charts, presentations, and branded documents.
 
 ## Completion Notes
 
-Empty until done.
+- Completed 2026-06-25.
+- Added a generated unsupported mesh-shading fixture and verified it reports
+  `graphics.pattern-shading` instead of silently rendering incorrect output.
+- Tightened visual-diff classification for full-field low-amplitude gradient
+  drift, keeping high-delta differences as blockers.
+- Verified the existing axial/radial gradient and tiling-pattern fixtures
+  against PDFium at milestone scale; axial and radial gradients are accepted
+  drift, while the tiling pattern is exact.
+- Recorded the evidence in
+  `docs/reports/shading-pattern-fidelity-2026-06-25.md`.
