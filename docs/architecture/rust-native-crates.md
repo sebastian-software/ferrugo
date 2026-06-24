@@ -139,3 +139,9 @@ gray/RGB colors over the requested background, and is wired through
 `pdfrust-native` for simple path-only Classic PDFs. The CLI exposes this path
 as `render-native` so generated vector fixtures can be compared against the
 PDFium backend during development.
+Image XObject rasterization draws decoded `DeviceRGB` and `DeviceGray` images
+with nearest-neighbor sampling through the image placement matrix and the page
+transform. The native backend resolves page `/Resources /XObject` dictionaries,
+builds image display-list items, and composites opaque image samples into the
+same RGBA raster used for paths. Unsupported filters and color spaces still
+fail during image resource resolution with typed errors.

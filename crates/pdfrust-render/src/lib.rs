@@ -321,6 +321,24 @@ impl Matrix {
             y: self.b.mul_add(x, self.d.mul_add(y, self.f)),
         }
     }
+
+    /// Returns the inverse matrix when it is non-singular.
+    #[must_use]
+    pub fn inverse(self) -> Option<Self> {
+        let determinant = self.a.mul_add(self.d, -(self.b * self.c));
+        if determinant.abs() <= f64::EPSILON {
+            return None;
+        }
+        let inv = 1.0 / determinant;
+        Some(Self {
+            a: self.d * inv,
+            b: -self.b * inv,
+            c: -self.c * inv,
+            d: self.a * inv,
+            e: (self.c * self.f - self.d * self.e) * inv,
+            f: (self.b * self.e - self.a * self.f) * inv,
+        })
+    }
 }
 
 impl Default for Matrix {
@@ -1315,6 +1333,26 @@ pub fn rasterize_paths(
         }
     }
     Ok(device)
+}
+
+/// Rasterizes image display-list items into an existing RGBA raster device.
+///
+/// # Errors
+///
+/// Returns [`RasterError`] when an image transform is singular or device access
+/// fails.
+pub fn rasterize_images(
+    display_list: &DisplayList,
+    device: &mut RasterDevice,
+    transform: PageTransform,
+) -> RasterResult<()> {
+    for item in display_list.items() {
+        let DisplayItem::Image(image) = item else {
+            continue;
+        };
+        draw_image(device, image, transform)?;
+    }
+    Ok(())
 }
 
 struct GraphicsStateInterpreter {
@@ -3003,6 +3041,70 @@ fn blend_channel(source: u8, dest: u8, coverage: f64, inv_coverage: f64) -> u8 {
     (f64::from(source).mul_add(coverage, f64::from(dest) * inv_coverage)).round() as u8
 }
 
+fn draw_image(
+    device: &mut RasterDevice,
+    image: &ImageDisplayItem,
+    page_transform: PageTransform,
+) -> RasterResult<()> {
+    let image_to_device = page_transform.matrix.multiply(image.transform);
+    let inverse = image_to_device
+        .inverse()
+        .ok_or_else(|| RasterError::new(RasterErrorKind::SingularImageTransform))?;
+    let bounds = transformed_image_bounds(image_to_device);
+    let dimensions = device.dimensions();
+    let min_x = bounds.min_x.floor().max(0.0) as u32;
+    let min_y = bounds.min_y.floor().max(0.0) as u32;
+    let max_x = bounds.max_x.ceil().min(f64::from(dimensions.width)) as u32;
+    let max_y = bounds.max_y.ceil().min(f64::from(dimensions.height)) as u32;
+
+    for y in min_y..max_y {
+        for x in min_x..max_x {
+            let sample = inverse.transform_point(f64::from(x) + 0.5, f64::from(y) + 0.5);
+            if !(0.0..1.0).contains(&sample.x) || !(0.0..1.0).contains(&sample.y) {
+                continue;
+            }
+            let pixel = sample_image(&image.image, sample.x, sample.y);
+            device.set_pixel(x, y, pixel)?;
+        }
+    }
+    Ok(())
+}
+
+fn transformed_image_bounds(transform: Matrix) -> PathBounds {
+    let p0 = transform.transform_point(0.0, 0.0);
+    let p1 = transform.transform_point(1.0, 0.0);
+    let p2 = transform.transform_point(1.0, 1.0);
+    let p3 = transform.transform_point(0.0, 1.0);
+    let bounds = include_point(None, p0);
+    let bounds = include_point(Some(bounds), p1);
+    let bounds = include_point(Some(bounds), p2);
+    include_point(Some(bounds), p3)
+}
+
+fn sample_image(image: &ImageXObject, x: f64, y: f64) -> Rgba {
+    let sample_x = ((x * f64::from(image.width)).floor() as u32).min(image.width - 1);
+    let sample_y = (((1.0 - y) * f64::from(image.height)).floor() as u32).min(image.height - 1);
+    let index = (sample_y as usize * image.width as usize + sample_x as usize)
+        * image.color_space.bytes_per_pixel();
+    match image.color_space {
+        ImageColorSpace::DeviceGray => {
+            let channel = image.samples[index];
+            Rgba {
+                r: channel,
+                g: channel,
+                b: channel,
+                a: 255,
+            }
+        }
+        ImageColorSpace::DeviceRgb => Rgba {
+            r: image.samples[index],
+            g: image.samples[index + 1],
+            b: image.samples[index + 2],
+            a: 255,
+        },
+    }
+}
+
 fn require_supported_image_filter(
     dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
 ) -> GraphicsResult<()> {
@@ -3421,6 +3523,8 @@ pub enum RasterErrorKind {
         /// Configured flattened line segment limit.
         limit: usize,
     },
+    /// Image transform could not be inverted for sampling.
+    SingularImageTransform,
     /// Row or pixel coordinate was outside the raster.
     OutOfBounds,
 }
@@ -3438,6 +3542,7 @@ impl fmt::Display for RasterErrorKind {
             Self::PathComplexityOverflow { limit } => {
                 write!(f, "flattened path exceeds segment limit {limit}")
             }
+            Self::SingularImageTransform => f.write_str("image transform is singular"),
             Self::OutOfBounds => f.write_str("raster coordinate is out of bounds"),
         }
     }
@@ -4020,10 +4125,83 @@ mod tests {
     }
 
     #[test]
+    fn image_rasterizer_should_draw_generated_image_xobject_fixture() {
+        let document = generated_fixture_document("image-xobject.pdf");
+        let resources = image_resources_from_document(&document).expect("generated image resource");
+        let content = content_stream_from_document(&document);
+        let list = build_image_display_list(
+            tokenize_content(PdfBytes::new(&content)),
+            &resources,
+            DisplayListOptions::default(),
+        )
+        .expect("generated image display list");
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 120.0,
+                    max_y: 120.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            120,
+        )
+        .expect("image fixture transform");
+        let mut device = transform.create_device(Rgba::WHITE).expect("raster device");
+
+        rasterize_images(&list, &mut device, transform).expect("image should rasterize");
+
+        assert_eq!(
+            device.pixel(44, 44).expect("top-left sample"),
+            Rgba {
+                r: 255,
+                g: 0,
+                b: 0,
+                a: 255,
+            }
+        );
+        assert_eq!(
+            device.pixel(76, 44).expect("top-right sample"),
+            Rgba {
+                r: 0,
+                g: 255,
+                b: 0,
+                a: 255,
+            }
+        );
+        assert_eq!(
+            device.pixel(44, 76).expect("bottom-left sample"),
+            Rgba {
+                r: 0,
+                g: 0,
+                b: 255,
+                a: 255,
+            }
+        );
+    }
+
+    #[test]
     fn matrix_should_transform_points_deterministically() {
         let matrix = Matrix::translate(10.0, 20.0).multiply(Matrix::scale(2.0, 3.0));
 
         assert_eq!(matrix.transform_point(4.0, 5.0), Point { x: 18.0, y: 35.0 });
+    }
+
+    #[test]
+    fn matrix_should_invert_non_singular_transforms() {
+        let matrix = Matrix::translate(10.0, 20.0).multiply(Matrix::scale(2.0, 4.0));
+        let inverse = matrix.inverse().expect("matrix should invert");
+        let point = matrix.transform_point(3.0, 5.0);
+
+        assert_eq!(
+            inverse.transform_point(point.x, point.y),
+            Point { x: 3.0, y: 5.0 }
+        );
+        assert!(Matrix::new(0.0, 0.0, 0.0, 0.0, 1.0, 1.0)
+            .inverse()
+            .is_none());
     }
 
     #[test]

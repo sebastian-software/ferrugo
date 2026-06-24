@@ -11,8 +11,9 @@ use pdfrust_object::{
     ObjectNumber, ObjectValue, PageBox, PageMetadata as ObjectPageMetadata, PageTree, Reference,
 };
 use pdfrust_render::{
-    build_path_display_list, rasterize_paths, DisplayListOptions, GraphicsError, GraphicsErrorKind,
-    PageGeometry, PageRotation, PageTransform, PathBounds, PathRasterOptions, RasterError,
+    build_image_display_list, build_path_display_list, rasterize_images, rasterize_paths,
+    DisplayListOptions, GraphicsError, GraphicsErrorKind, ImageResources, PageGeometry,
+    PageRotation, PageTransform, PathBounds, PathRasterOptions, RasterError,
 };
 use pdfrust_syntax::{PdfBytes, PdfName, PdfPrimitive};
 use pdfrust_thumbnail::{
@@ -101,20 +102,27 @@ fn render_bytes(bytes: &[u8], options: &ThumbnailOptions) -> Result<Thumbnail, T
         .get(options.page_index as usize)
         .ok_or(ThumbnailError::Unsupported)?;
     let content = page_content_stream(&document, page)?;
-    let display_list = build_path_display_list(
-        tokenize_content(PdfBytes::new(&content)),
-        DisplayListOptions::default(),
-    )
-    .map_err(map_graphics_error)?;
+    let display_options = DisplayListOptions::default();
+    let display_list =
+        build_path_display_list(tokenize_content(PdfBytes::new(&content)), display_options)
+            .map_err(map_graphics_error)?;
     let transform =
         PageTransform::new(page_geometry(*page), options.max_edge).map_err(map_raster_error)?;
-    let raster = rasterize_paths(
+    let mut raster = rasterize_paths(
         &display_list,
         transform,
         options.background,
         PathRasterOptions::default(),
     )
     .map_err(map_raster_error)?;
+    let image_resources = page_image_resources(&document, page)?;
+    let image_list = build_image_display_list(
+        tokenize_content(PdfBytes::new(&content)),
+        &image_resources,
+        DisplayListOptions::default(),
+    )
+    .map_err(map_graphics_error)?;
+    rasterize_images(&image_list, &mut raster, transform).map_err(map_raster_error)?;
     let dimensions = raster.dimensions();
     Thumbnail::rgba(dimensions.width, dimensions.height, raster.into_pixels())
 }
@@ -130,6 +138,44 @@ fn page_content_stream(
     let dictionary = object_dictionary(&object.value)?;
     let contents = dictionary_value(dictionary, b"Contents").ok_or(ThumbnailError::Unsupported)?;
     decode_contents(document, contents)
+}
+
+fn page_image_resources(
+    document: &ClassicDocument<'_>,
+    page: &ObjectPageMetadata,
+) -> Result<ImageResources, ThumbnailError> {
+    let object = document
+        .objects
+        .get(page.id)
+        .ok_or(ThumbnailError::Malformed)?;
+    let dictionary = object_dictionary(&object.value)?;
+    let Some(resources) = dictionary_value(dictionary, b"Resources") else {
+        return Ok(ImageResources::empty());
+    };
+    let resource_dictionary = match resources {
+        PdfPrimitive::Dictionary(dictionary) => dictionary.as_slice(),
+        PdfPrimitive::Reference(reference) => {
+            let object_number =
+                ObjectNumber::new(reference.object).map_err(|_| ThumbnailError::Malformed)?;
+            let reference = Reference::new(ObjectId::new(
+                object_number,
+                GenerationNumber::new(reference.generation),
+            ));
+            let object = document
+                .objects
+                .get(reference.id)
+                .ok_or(ThumbnailError::Malformed)?;
+            object_dictionary(&object.value)?
+        }
+        _ => return Err(ThumbnailError::Malformed),
+    };
+    let Some(PdfPrimitive::Dictionary(xobjects)) =
+        dictionary_value(resource_dictionary, b"XObject")
+    else {
+        return Ok(ImageResources::empty());
+    };
+    ImageResources::from_xobject_dictionary(xobjects, document, DisplayListOptions::default())
+        .map_err(map_graphics_error)
 }
 
 fn decode_contents(
@@ -296,6 +342,26 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_render_generated_image_xobject_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/image-xobject.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 120,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated image XObject fixture should render through native backend");
+
+        assert_eq!(thumbnail.width, 120);
+        assert_eq!(thumbnail.height, 120);
+        assert_eq!(rgba_at(&thumbnail, 44, 44), [255, 0, 0, 255]);
+        assert_eq!(rgba_at(&thumbnail, 76, 44), [0, 255, 0, 255]);
+        assert_eq!(rgba_at(&thumbnail, 44, 76), [0, 0, 255, 255]);
+    }
+
+    #[test]
     fn native_backend_should_report_unsupported_missing_page() {
         let bytes = include_bytes!("../../../fixtures/generated/vector-paths.pdf");
         let error = NativeBackend::new()
@@ -341,5 +407,15 @@ mod tests {
     fn native_backend_should_depend_on_object_and_render_layers() {
         assert_eq!(object_role(), "object");
         assert_eq!(render_role(), "render");
+    }
+
+    fn rgba_at(thumbnail: &Thumbnail, x: u32, y: u32) -> [u8; 4] {
+        let offset = y as usize * thumbnail.stride + x as usize * 4;
+        [
+            thumbnail.bytes[offset],
+            thumbnail.bytes[offset + 1],
+            thumbnail.bytes[offset + 2],
+            thumbnail.bytes[offset + 3],
+        ]
     }
 }
