@@ -481,6 +481,29 @@ impl Default for StrokeDashPattern {
     }
 }
 
+/// Stroke line-cap style.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum LineCap {
+    /// End strokes exactly at path endpoints.
+    #[default]
+    Butt,
+    /// Add a semicircular cap at path endpoints.
+    Round,
+    /// Extend strokes by half the line width at path endpoints.
+    Square,
+}
+
+impl LineCap {
+    fn from_pdf(value: i64) -> Option<Self> {
+        match value {
+            0 => Some(Self::Butt),
+            1 => Some(Self::Round),
+            2 => Some(Self::Square),
+            _ => None,
+        }
+    }
+}
+
 /// Current graphics state subset needed by early renderer milestones.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GraphicsState {
@@ -502,6 +525,8 @@ pub struct GraphicsState {
     pub fill_pattern: Option<usize>,
     /// Current stroke dash pattern.
     pub stroke_dash: StrokeDashPattern,
+    /// Current stroke line-cap style.
+    pub line_cap: LineCap,
     /// Current blend mode for path painting.
     pub blend_mode: BlendMode,
     /// Placeholder flag set by `W` or `W*` until clipping is modeled fully.
@@ -520,6 +545,7 @@ impl Default for GraphicsState {
             fill_color_space: FillColorSpace::Device,
             fill_pattern: None,
             stroke_dash: StrokeDashPattern::solid(),
+            line_cap: LineCap::Butt,
             blend_mode: BlendMode::Normal,
             clip_path_pending: false,
         }
@@ -2891,6 +2917,7 @@ fn rasterize_path_item(
                     blend_mode: path.state.blend_mode,
                     dash_pattern: path.state.stroke_dash,
                     dash_scale: transform.scale,
+                    line_cap: path.state.line_cap,
                 },
                 options,
             )?;
@@ -2919,6 +2946,7 @@ fn rasterize_path_item(
                     blend_mode: path.state.blend_mode,
                     dash_pattern: path.state.stroke_dash,
                     dash_scale: transform.scale,
+                    line_cap: path.state.line_cap,
                 },
                 options,
             )?;
@@ -3189,6 +3217,7 @@ impl<'r> DisplayListInterpreter<'r> {
             b"Q" => self.restore_state(offset, operands),
             b"cm" => self.concatenate_matrix(offset, operands),
             b"w" => self.set_line_width(offset, operands),
+            b"J" => self.set_line_cap(offset, operands),
             b"d" => self.set_stroke_dash(offset, operands),
             b"g" => self.set_fill_gray(offset, operands),
             b"G" => self.set_stroke_gray(offset, operands),
@@ -3415,6 +3444,15 @@ impl<'r> DisplayListInterpreter<'r> {
         operands: &[PdfPrimitive<'_>],
     ) -> GraphicsResult<()> {
         self.current.stroke_dash = dash_pattern_operand(offset, operands)?;
+        Ok(())
+    }
+
+    fn set_line_cap(
+        &mut self,
+        offset: ByteOffset,
+        operands: &[PdfPrimitive<'_>],
+    ) -> GraphicsResult<()> {
+        self.current.line_cap = line_cap_operand(offset, operands)?;
         Ok(())
     }
 
@@ -3769,6 +3807,7 @@ struct StrokeRasterState {
     blend_mode: BlendMode,
     dash_pattern: StrokeDashPattern,
     dash_scale: f64,
+    line_cap: LineCap,
 }
 
 struct TextDisplayListInterpreter<'r> {
@@ -4424,6 +4463,7 @@ impl GraphicsStateInterpreter {
             b"Q" => self.restore_state(offset, operands),
             b"cm" => self.concatenate_matrix(offset, operands),
             b"w" => self.set_line_width(offset, operands),
+            b"J" => self.set_line_cap(offset, operands),
             b"d" => self.set_stroke_dash(offset, operands),
             b"g" => self.set_fill_gray(offset, operands),
             b"G" => self.set_stroke_gray(offset, operands),
@@ -4503,6 +4543,15 @@ impl GraphicsStateInterpreter {
         operands: &[PdfPrimitive<'_>],
     ) -> GraphicsResult<()> {
         self.current.stroke_dash = dash_pattern_operand(offset, operands)?;
+        Ok(())
+    }
+
+    fn set_line_cap(
+        &mut self,
+        offset: ByteOffset,
+        operands: &[PdfPrimitive<'_>],
+    ) -> GraphicsResult<()> {
+        self.current.line_cap = line_cap_operand(offset, operands)?;
         Ok(())
     }
 
@@ -4647,6 +4696,14 @@ fn dash_pattern_operand(
     }
     pattern.len = values.len();
     Ok(pattern)
+}
+
+fn line_cap_operand(offset: ByteOffset, operands: &[PdfPrimitive<'_>]) -> GraphicsResult<LineCap> {
+    expect_operand_count(offset, b"J", operands, 1)?;
+    let Some(PdfPrimitive::Number(PdfNumber::Integer(value))) = operands.first() else {
+        return Err(invalid_operand(offset, b"J"));
+    };
+    LineCap::from_pdf(*value).ok_or_else(|| invalid_operand(offset, b"J"))
 }
 
 fn name_operand<'a>(
@@ -6110,7 +6167,7 @@ fn stroke_path(
             for sample_y in 0..samples {
                 for sample_x in 0..samples {
                     let point = sample_point(x, y, sample_x, sample_y, samples);
-                    if point_in_stroke(point, stroke_lines, radius) {
+                    if point_in_stroke(point, stroke_lines, radius, state.line_cap) {
                         covered += 1;
                     }
                 }
@@ -6260,11 +6317,58 @@ fn is_left(from: Point, to: Point, point: Point) -> f64 {
     (to.x - from.x).mul_add(point.y - from.y, -((point.x - from.x) * (to.y - from.y)))
 }
 
-fn point_in_stroke(point: Point, lines: &[LineSegment], radius: f64) -> bool {
+fn point_in_stroke(point: Point, lines: &[LineSegment], radius: f64, line_cap: LineCap) -> bool {
     let radius_squared = radius * radius;
-    lines
-        .iter()
-        .any(|line| distance_to_line_segment_squared(point, *line) <= radius_squared)
+    lines.iter().any(|line| match line_cap {
+        LineCap::Butt => distance_to_line_body_squared(point, *line)
+            .is_some_and(|distance| distance <= radius_squared),
+        LineCap::Round => distance_to_line_segment_squared(point, *line) <= radius_squared,
+        LineCap::Square => {
+            distance_to_line_body_squared(point, square_capped_line_segment(*line, radius))
+                .is_some_and(|distance| distance <= radius_squared)
+        }
+    })
+}
+
+fn distance_to_line_body_squared(point: Point, line: LineSegment) -> Option<f64> {
+    let dx = line.to.x - line.from.x;
+    let dy = line.to.y - line.from.y;
+    let len_squared = dx.mul_add(dx, dy * dy);
+    if len_squared <= f64::EPSILON {
+        return None;
+    }
+    let t = ((point.x - line.from.x) * dx + (point.y - line.from.y) * dy) / len_squared;
+    if !(0.0..=1.0).contains(&t) {
+        return None;
+    }
+    let projection = Point {
+        x: line.from.x + t * dx,
+        y: line.from.y + t * dy,
+    };
+    let px = point.x - projection.x;
+    let py = point.y - projection.y;
+    Some(px.mul_add(px, py * py))
+}
+
+fn square_capped_line_segment(line: LineSegment, radius: f64) -> LineSegment {
+    let dx = line.to.x - line.from.x;
+    let dy = line.to.y - line.from.y;
+    let length = dx.hypot(dy);
+    if length <= f64::EPSILON {
+        return line;
+    }
+    let offset_x = dx / length * radius;
+    let offset_y = dy / length * radius;
+    LineSegment {
+        from: Point {
+            x: line.from.x - offset_x,
+            y: line.from.y - offset_y,
+        },
+        to: Point {
+            x: line.to.x + offset_x,
+            y: line.to.y + offset_y,
+        },
+    }
 }
 
 fn distance_to_line_segment_squared(point: Point, line: LineSegment) -> f64 {
@@ -8906,6 +9010,17 @@ mod tests {
     }
 
     #[test]
+    fn graphics_state_should_track_line_cap() {
+        let state = interpret_graphics_state(
+            tokenize_content(PdfBytes::new(b"2 J")),
+            GraphicsStateOptions::default(),
+        )
+        .expect("valid line-cap operator");
+
+        assert_eq!(state.line_cap, LineCap::Square);
+    }
+
+    #[test]
     fn graphics_state_should_restore_saved_state() {
         let state = interpret_graphics_state(
             tokenize_content(PdfBytes::new(b"0.25 g q 0.75 g Q")),
@@ -9049,6 +9164,20 @@ mod tests {
         assert_eq!(path.state.stroke_dash.len, 2);
         assert_eq!(path.state.stroke_dash.segments[0], 4.0);
         assert_eq!(path.state.stroke_dash.segments[1], 4.0);
+    }
+
+    #[test]
+    fn display_list_should_capture_line_cap() {
+        let list = build_path_display_list(
+            tokenize_content(PdfBytes::new(b"1 J 2 w 0 5 m 20 5 l S")),
+            DisplayListOptions::default(),
+        )
+        .expect("valid line-cap stream");
+
+        let DisplayItem::Path(path) = &list.items()[0] else {
+            panic!("expected path display item");
+        };
+        assert_eq!(path.state.line_cap, LineCap::Round);
     }
 
     #[test]
@@ -9494,6 +9623,23 @@ mod tests {
         assert_eq!(raster.pixel(5, 4).expect("first gap"), Rgba::WHITE);
         assert_eq!(raster.pixel(9, 4).expect("second dash"), black);
         assert_eq!(raster.pixel(13, 4).expect("second gap"), Rgba::WHITE);
+    }
+
+    #[test]
+    fn rasterize_paths_should_apply_stroke_line_caps() {
+        let butt = rasterize_line_cap_stream(b"0 J 4 w 5 5 m 15 5 l S");
+        let round = rasterize_line_cap_stream(b"1 J 4 w 5 5 m 15 5 l S");
+        let square = rasterize_line_cap_stream(b"2 J 4 w 5 5 m 15 5 l S");
+        let black = Rgba {
+            r: 0,
+            g: 0,
+            b: 0,
+            a: 255,
+        };
+
+        assert_eq!(butt.pixel(3, 4).expect("butt before start"), Rgba::WHITE);
+        assert_eq!(round.pixel(3, 4).expect("round before start"), black);
+        assert_eq!(square.pixel(3, 4).expect("square before start"), black);
     }
 
     #[test]
@@ -11136,6 +11282,39 @@ mod tests {
         let bytes = std::fs::read(path).expect("fixture should be readable");
         let leaked = Box::leak(bytes.into_boxed_slice());
         load_classic_document(PdfBytes::new(leaked)).expect("fixture should load as PDF")
+    }
+
+    fn rasterize_line_cap_stream(content: &[u8]) -> RasterDevice {
+        let list = build_path_display_list(
+            tokenize_content(PdfBytes::new(content)),
+            DisplayListOptions::default(),
+        )
+        .expect("valid line-cap stream");
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 20.0,
+                    max_y: 10.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            20,
+        )
+        .expect("line-cap transform");
+
+        rasterize_paths(
+            &list,
+            transform,
+            Rgba::WHITE,
+            PathRasterOptions {
+                supersample: 1,
+                ..PathRasterOptions::default()
+            },
+        )
+        .expect("line-cap stroke should rasterize")
     }
 
     fn image_resources_from_document(

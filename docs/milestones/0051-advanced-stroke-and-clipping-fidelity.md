@@ -61,8 +61,13 @@ In progress:
   max channel delta `255`, native non-white pixels `280`. Mid-dash and mid-gap
   samples at x `15/25/35/45/55/65`, y `60` match PDFium and native:
   black, white, black, white, black, white.
+- Third implementation slice adds line-cap state for the `J` operator and
+  rasterizes Butt, Round, and Square caps during stroke sampling. Butt caps now
+  stop at path endpoints, Round caps use endpoint radius coverage, and Square
+  caps extend strokes by half the line width.
 - Current validation:
   - `cargo test -p pdfrust-render dash -- --nocapture`
+  - `cargo test -p pdfrust-render line_cap -- --nocapture`
   - `cargo test -p pdfrust-native dashed_stroke -- --nocapture`
   - `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render fixtures/generated/dashed-stroke.pdf --max-edge 120 --output target/pdfrust-thumbnails/dashed-stroke-pdfium-0051.png`
   - `cargo run -p pdfrust-cli -- render-native fixtures/generated/dashed-stroke.pdf --max-edge 120 --output target/pdfrust-thumbnails/dashed-stroke-native-0051.png`
