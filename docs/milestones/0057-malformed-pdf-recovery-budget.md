@@ -1,6 +1,6 @@
 # 0057: Malformed PDF Recovery Budget
 
-Status: todo
+Status: done
 Phase: 7
 Size: medium
 Depends on: 0056
@@ -46,4 +46,10 @@ coverage without hiding data-corruption risks.
 
 ## Completion Notes
 
-Empty until done.
+- Added `docs/policies/malformed-recovery.md` with explicit supported and
+  non-recoverable recovery cases.
+- Added bounded xref object-offset drift recovery using
+  `DEFAULT_XREF_OFFSET_RECOVERY_SCAN_BYTES`; strict parsing is tried first and
+  unrecovered failures preserve the original error.
+- Added generated `fixtures/generated/malformed-xref-offset-drift.pdf` plus
+  object-loader and native-render regression coverage.

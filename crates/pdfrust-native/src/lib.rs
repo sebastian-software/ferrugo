@@ -1759,6 +1759,24 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_render_generated_malformed_xref_offset_drift_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/malformed-xref-offset-drift.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 120,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated xref-offset-drift fixture should render");
+
+        assert_eq!(thumbnail.width, 120);
+        assert_eq!(thumbnail.height, 80);
+        assert_eq!(rgba_at(&thumbnail, 20, 50), [230, 0, 0, 255]);
+    }
+
+    #[test]
     fn native_backend_should_report_encrypted_generated_fixture_for_render() {
         let bytes = include_bytes!("../../../fixtures/generated/encrypted-placeholder.pdf");
         let error = ThumbnailBackend::render(

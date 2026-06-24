@@ -15,6 +15,9 @@ use pdfrust_syntax::{
 /// Stable crate role used by architecture smoke tests and documentation.
 pub const CRATE_ROLE: &str = "object";
 
+/// Maximum bytes scanned around a declared xref object offset for local repair.
+pub const DEFAULT_XREF_OFFSET_RECOVERY_SCAN_BYTES: usize = 64;
+
 /// Result alias for object-model operations.
 pub type ObjectResult<T> = Result<T, ObjectError>;
 
@@ -641,7 +644,7 @@ pub fn load_classic_document(input: PdfBytes<'_>) -> ObjectResult<ClassicDocumen
     let mut objects = ObjectTable::new();
 
     for entry in xref.entries() {
-        let object = parse_object_at_offset(bytes, *entry)?;
+        let object = parse_object_with_xref_recovery(bytes, *entry)?;
         objects.insert(object)?;
     }
 
@@ -669,7 +672,7 @@ pub fn load_modern_document(input: PdfBytes<'_>) -> ObjectResult<ModernDocument<
 
     for entry in xref.entries() {
         if let XrefStreamEntry::InUse { id, offset } = *entry {
-            let object = parse_object_at_offset(bytes, ClassicXrefEntry { id, offset })?;
+            let object = parse_object_with_xref_recovery(bytes, ClassicXrefEntry { id, offset })?;
             objects.insert(object)?;
         }
     }
@@ -949,6 +952,70 @@ fn parse_object_at_offset<'a>(
         });
     }
     Ok(object)
+}
+
+fn parse_object_with_xref_recovery<'a>(
+    bytes: &'a [u8],
+    entry: ClassicXrefEntry,
+) -> ObjectResult<IndirectObject<'a>> {
+    match parse_object_at_offset(bytes, entry) {
+        Ok(object) => Ok(object),
+        Err(strict_error) => {
+            if matches!(
+                strict_error,
+                ObjectError::Malformed { .. } | ObjectError::Syntax(_)
+            ) {
+                recover_xref_offset(bytes, entry, DEFAULT_XREF_OFFSET_RECOVERY_SCAN_BYTES)
+                    .unwrap_or(Err(strict_error))
+            } else {
+                Err(strict_error)
+            }
+        }
+    }
+}
+
+fn recover_xref_offset<'a>(
+    bytes: &'a [u8],
+    entry: ClassicXrefEntry,
+    scan_bytes: usize,
+) -> Option<ObjectResult<IndirectObject<'a>>> {
+    let expected_header = format!(
+        "{} {} obj",
+        entry.id.number.get(),
+        entry.id.generation.get()
+    );
+    let header = expected_header.as_bytes();
+    if header.is_empty() || bytes.len() < header.len() {
+        return None;
+    }
+
+    let declared = entry.offset.get();
+    let start = declared.saturating_sub(scan_bytes);
+    let end = declared
+        .saturating_add(scan_bytes)
+        .saturating_add(header.len())
+        .min(bytes.len());
+    if end.saturating_sub(start) < header.len() {
+        return None;
+    }
+
+    for (relative, candidate) in bytes[start..end].windows(header.len()).enumerate() {
+        if candidate != header {
+            continue;
+        }
+        let recovered = parse_object_at_offset(
+            bytes,
+            ClassicXrefEntry {
+                id: entry.id,
+                offset: ByteOffset::new(start + relative),
+            },
+        );
+        if recovered.is_ok() {
+            return Some(recovered);
+        }
+    }
+
+    None
 }
 
 fn parse_xref_stream_and_trailer<'a>(
@@ -2413,6 +2480,15 @@ mod tests {
     }
 
     #[test]
+    fn load_classic_document_should_recover_small_xref_offset_drift() {
+        let pdf = build_classic_pdf_with_first_offset_delta(1);
+
+        let document = load_classic_document(PdfBytes::new(&pdf)).expect("recovered document");
+
+        assert_eq!(document.objects.len(), 3);
+    }
+
+    #[test]
     fn load_classic_document_should_use_latest_incremental_object_revision() {
         let pdf = build_incremental_classic_pdf();
 
@@ -2635,6 +2711,31 @@ mod tests {
         } else {
             object_1
         };
+        pdf.extend_from_slice(
+            format!(
+                "xref\n0 4\n0000000000 65535 f \n{object_1_xref:010} 00000 n \n{object_2:010} 00000 n \n{object_3:010} 00000 n \ntrailer\n<< /Size 4 /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF\n"
+            )
+            .as_bytes(),
+        );
+        pdf
+    }
+
+    fn build_classic_pdf_with_first_offset_delta(delta: usize) -> Vec<u8> {
+        let mut pdf = b"%PDF-1.7\n".to_vec();
+        let object_1 = append_object(
+            &mut pdf,
+            b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n",
+        );
+        let object_2 = append_object(
+            &mut pdf,
+            b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n",
+        );
+        let object_3 = append_object(
+            &mut pdf,
+            b"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 160] >>\nendobj\n",
+        );
+        let xref_offset = pdf.len();
+        let object_1_xref = object_1 + delta;
         pdf.extend_from_slice(
             format!(
                 "xref\n0 4\n0000000000 65535 f \n{object_1_xref:010} 00000 n \n{object_2:010} 00000 n \n{object_3:010} 00000 n \ntrailer\n<< /Size 4 /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF\n"

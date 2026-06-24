@@ -21,7 +21,8 @@ class Pdf:
         self.objects.append(body)
         return len(self.objects)
 
-    def render(self, root: int) -> bytes:
+    def render(self, root: int, offset_drift: dict[int, int] | None = None) -> bytes:
+        offset_drift = offset_drift or {}
         out = bytearray(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
         offsets = [0]
         for idx, body in enumerate(self.objects, start=1):
@@ -33,8 +34,9 @@ class Pdf:
         xref_offset = len(out)
         out.extend(f"xref\n0 {len(self.objects) + 1}\n".encode("ascii"))
         out.extend(b"0000000000 65535 f \n")
-        for offset in offsets[1:]:
-            out.extend(f"{offset:010d} 00000 n \n".encode("ascii"))
+        for object_number, offset in enumerate(offsets[1:], start=1):
+            adjusted = offset + offset_drift.get(object_number, 0)
+            out.extend(f"{adjusted:010d} 00000 n \n".encode("ascii"))
         out.extend(
             (
                 f"trailer\n<< /Size {len(self.objects) + 1} /Root {root} 0 R >>\n"
@@ -62,6 +64,23 @@ def page_pdf(media_box: str, content: str | bytes) -> bytes:
     catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
     assert font == 4
     return pdf.render(catalog)
+
+
+def malformed_xref_offset_drift_pdf() -> bytes:
+    pdf = Pdf()
+    content = b"q 0.9 0 0 rg 10 10 60 40 re f Q"
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 120 80] "
+        f"/Resources << >> /Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    return pdf.render(catalog, offset_drift={contents: 1})
 
 
 def form_xobject_pdf() -> bytes:
@@ -1126,6 +1145,7 @@ def main() -> None:
     write("incremental-update.pdf", incremental_update_pdf())
     write("hybrid-reference.pdf", hybrid_reference_pdf())
     write("encrypted-placeholder.pdf", encrypted_placeholder_pdf())
+    write("malformed-xref-offset-drift.pdf", malformed_xref_offset_drift_pdf())
     write("embedded-font.pdf", embedded_font_pdf())
     write("tounicode-text.pdf", tounicode_text_pdf())
     write("encoding-differences.pdf", encoding_differences_pdf())

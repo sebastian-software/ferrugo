@@ -48,6 +48,7 @@ The initial seed set covers:
 - classic incremental update object revisions
 - hybrid-reference classic xref plus xref stream entries
 - encrypted trailer placeholder documents
+- malformed xref object-offset drift
 - axial DeviceRGB shading gradients
 - radial DeviceRGB shading gradients
 - colored tiling patterns
