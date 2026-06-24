@@ -2732,6 +2732,45 @@ mod tests {
     }
 
     #[test]
+    fn native_parallel_renderer_should_match_sequential_page_outputs() {
+        let bytes = include_bytes!("../../../fixtures/generated/multi-page-report.pdf");
+        let options = ThumbnailOptions {
+            max_edge: 260,
+            ..ThumbnailOptions::default()
+        };
+        let page_1 = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                page_index: 1,
+                ..options
+            },
+        )
+        .expect("page 1 should render sequentially");
+        let page_0 = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                page_index: 0,
+                ..options
+            },
+        )
+        .expect("page 0 should render sequentially");
+        let result = render_pages_parallel(
+            PdfSource::from_bytes(bytes),
+            &[1, 0],
+            &options,
+            ParallelRenderOptions {
+                max_workers: 2,
+                ..ParallelRenderOptions::default()
+            },
+        )
+        .expect("multi-page report should render through parallel scheduler");
+
+        assert_eq!(result.pages, vec![page_1, page_0]);
+    }
+
+    #[test]
     fn native_parallel_renderer_should_back_off_workers_for_pixel_budget() {
         let bytes = include_bytes!("../../../fixtures/generated/multi-page-report.pdf");
         let result = render_pages_parallel(
