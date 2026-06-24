@@ -1,6 +1,6 @@
 # 0016: Phase 0 Report And Pivot Decision
 
-Status: todo
+Status: done
 Phase: 0
 Size: small
 Depends on: 0007, 0015
@@ -42,5 +42,9 @@ Close Phase 0 with a short report and a decision on the next product path.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-24.
 
+- Added `docs/reports/phase-0-report.md`.
+- Recorded completed artifacts, missing PDFium measurements, risks, blockers,
+  and the continue-both-tracks recommendation.
+- Added follow-up milestones 0017, 0018, and 0019.

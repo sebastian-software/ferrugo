@@ -77,6 +77,7 @@ full-renderer parity until after those measurements exist.
 - [PDFium backend notes](docs/backend/pdfium.md)
 - [Thumbnail error taxonomy](docs/errors.md)
 - [Differential baseline format](docs/baselines.md)
+- [Phase 0 report](docs/reports/phase-0-report.md)
 
 ## Workspace
 
