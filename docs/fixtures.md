@@ -47,6 +47,7 @@ The initial seed set covers:
 - unsupported optional content membership dictionaries
 - classic incremental update object revisions
 - hybrid-reference classic xref plus xref stream entries
+- encrypted trailer placeholder documents
 - axial DeviceRGB shading gradients
 - radial DeviceRGB shading gradients
 - colored tiling patterns

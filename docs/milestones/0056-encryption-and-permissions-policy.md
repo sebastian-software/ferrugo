@@ -54,5 +54,10 @@ In progress:
   `ThumbnailError::Encrypted` instead of collapsing them into `malformed`.
 - Added object-loader tests for trailer-level and catalog-level encryption
   detection.
+- Fixture slice adds generated `fixtures/generated/encrypted-placeholder.pdf`
+  with a normal page graph plus trailer `/Encrypt`. Native render and metadata
+  inspection both return `ThumbnailError::Encrypted`, proving the caller can
+  distinguish encrypted inputs from malformed PDFs.
 - Current validation:
   - `cargo test -p pdfrust-object encrypted -- --nocapture`
+  - `cargo test -p pdfrust-native encrypted_generated -- --nocapture`

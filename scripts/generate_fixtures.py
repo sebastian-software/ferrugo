@@ -907,6 +907,44 @@ def hybrid_reference_pdf() -> bytes:
     return bytes(pdf)
 
 
+def encrypted_placeholder_pdf() -> bytes:
+    pdf = bytearray(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
+    offsets: list[int] = [0]
+
+    def add_object(number: int, body: bytes) -> None:
+        offsets.append(len(pdf))
+        pdf.extend(f"{number} 0 obj\n".encode("ascii"))
+        pdf.extend(body)
+        pdf.extend(b"\nendobj\n")
+
+    content = b"0.9 0 0 rg 10 10 40 40 re f"
+    add_object(1, b"<< /Type /Catalog /Pages 2 0 R >>")
+    add_object(2, b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
+    add_object(
+        3,
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 120 80] /Contents 4 0 R >>",
+    )
+    add_object(
+        4,
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream",
+    )
+    add_object(5, b"<< /Filter /Standard /V 1 /R 2 /P -4 >>")
+    xref_offset = len(pdf)
+    pdf.extend(f"xref\n0 {len(offsets)}\n".encode("ascii"))
+    pdf.extend(b"0000000000 65535 f \n")
+    for offset in offsets[1:]:
+        pdf.extend(f"{offset:010d} 00000 n \n".encode("ascii"))
+    pdf.extend(
+        (
+            f"trailer\n<< /Size {len(offsets)} /Root 1 0 R /Encrypt 5 0 R >>\n"
+            f"startxref\n{xref_offset}\n%%EOF\n"
+        ).encode("ascii")
+    )
+    return bytes(pdf)
+
+
 def _push_xref_stream_entry(output: bytearray, entry_type: int, field_2: int, field_3: int) -> None:
     output.append(entry_type)
     output.extend(field_2.to_bytes(4, "big"))
@@ -1087,6 +1125,7 @@ def main() -> None:
     write("optional-content-ocmd.pdf", optional_content_ocmd_pdf())
     write("incremental-update.pdf", incremental_update_pdf())
     write("hybrid-reference.pdf", hybrid_reference_pdf())
+    write("encrypted-placeholder.pdf", encrypted_placeholder_pdf())
     write("embedded-font.pdf", embedded_font_pdf())
     write("tounicode-text.pdf", tounicode_text_pdf())
     write("encoding-differences.pdf", encoding_differences_pdf())

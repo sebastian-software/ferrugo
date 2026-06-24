@@ -1759,6 +1759,32 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_report_encrypted_generated_fixture_for_render() {
+        let bytes = include_bytes!("../../../fixtures/generated/encrypted-placeholder.pdf");
+        let error = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 120,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect_err("encrypted fixture should not render");
+
+        assert_eq!(error, ThumbnailError::Encrypted);
+    }
+
+    #[test]
+    fn native_backend_should_report_encrypted_generated_fixture_for_metadata() {
+        let bytes = include_bytes!("../../../fixtures/generated/encrypted-placeholder.pdf");
+        let error =
+            DocumentMetadataBackend::inspect(&NativeBackend::new(), PdfSource::from_bytes(bytes))
+                .expect_err("encrypted fixture should not inspect");
+
+        assert_eq!(error, ThumbnailError::Encrypted);
+    }
+
+    #[test]
     fn native_backend_should_render_generated_text_fixture() {
         let bytes = include_bytes!("../../../fixtures/generated/text-page.pdf");
         let thumbnail = ThumbnailBackend::render(
