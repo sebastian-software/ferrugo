@@ -1733,6 +1733,25 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_render_generated_hybrid_reference_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/hybrid-reference.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 120,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated hybrid-reference fixture should render");
+
+        assert_eq!(thumbnail.width, 120);
+        assert_eq!(thumbnail.height, 80);
+        assert_eq!(rgba_at(&thumbnail, 20, 50), [0, 0, 230, 255]);
+        assert_eq!(rgba_at(&thumbnail, 60, 50), [255, 255, 255, 255]);
+    }
+
+    #[test]
     fn native_backend_should_render_generated_text_fixture() {
         let bytes = include_bytes!("../../../fixtures/generated/text-page.pdf");
         let thumbnail = ThumbnailBackend::render(

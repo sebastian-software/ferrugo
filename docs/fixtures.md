@@ -46,6 +46,7 @@ The initial seed set covers:
 - optional content group default-visible and default-hidden layers
 - unsupported optional content membership dictionaries
 - classic incremental update object revisions
+- hybrid-reference classic xref plus xref stream entries
 - axial DeviceRGB shading gradients
 - radial DeviceRGB shading gradients
 - colored tiling patterns
