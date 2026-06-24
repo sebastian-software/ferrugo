@@ -51,6 +51,7 @@ The initial seed set covers:
 - widget annotation appearance streams
 - AcroForm text-field widget appearance streams
 - AcroForm checkbox widget appearance state dictionaries
+- AcroForm radio widget appearance state dictionaries
 - AcroForm signature placeholder widget appearance streams
 - Type0 CID font with Identity-H and ToUnicode mapping
 - vertical CJK Type0 CID font with Identity-V and ToUnicode mapping

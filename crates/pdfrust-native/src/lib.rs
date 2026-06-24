@@ -2032,6 +2032,44 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_render_generated_acroform_radio_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/acroform-radio.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 100,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated AcroForm radio fixture should render");
+
+        assert_eq!(thumbnail.width, 100);
+        assert_eq!(thumbnail.height, 80);
+        assert_low_intensity(rgba_at(&thumbnail, 30, 28), 96);
+        assert_low_intensity(rgba_at(&thumbnail, 20, 28), 96);
+    }
+
+    #[test]
+    fn native_backend_should_render_generated_acroform_radio_off_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/acroform-radio-off.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 100,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated AcroForm radio off fixture should render");
+
+        assert_eq!(thumbnail.width, 100);
+        assert_eq!(thumbnail.height, 80);
+        assert_low_intensity(rgba_at(&thumbnail, 20, 28), 96);
+        assert_eq!(rgba_at(&thumbnail, 30, 28), [255, 255, 255, 255]);
+    }
+
+    #[test]
     fn native_backend_should_render_generated_acroform_signature_placeholder_fixture() {
         let bytes =
             include_bytes!("../../../fixtures/generated/acroform-signature-placeholder.pdf");

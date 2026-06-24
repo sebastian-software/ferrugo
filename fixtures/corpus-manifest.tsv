@@ -1,5 +1,7 @@
 path	family	source	license	page_count	features	notes
 fixtures/generated/acroform-checkbox.pdf	form	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	acroform,widget,appearance	Generated AcroForm checkbox appearance-state fixture.
+fixtures/generated/acroform-radio-off.pdf	form	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	acroform,radio,widget,appearance,off-state	Generated AcroForm radio widget Off appearance-state fixture.
+fixtures/generated/acroform-radio.pdf	form	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	acroform,radio,widget,appearance,on-state	Generated AcroForm radio widget selected appearance-state fixture.
 fixtures/generated/acroform-signature-placeholder.pdf	form	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	acroform,signature,appearance	Generated signature placeholder widget appearance fixture.
 fixtures/generated/acroform-text-field.pdf	form	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	acroform,text-field,appearance	Generated text field widget appearance fixture.
 fixtures/generated/annotation-appearance.pdf	mixed-layout	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	annotation,appearance	Generated normal annotation appearance fixture.

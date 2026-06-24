@@ -910,6 +910,94 @@ def acroform_checkbox_pdf() -> bytes:
     return pdf.render(catalog)
 
 
+def acroform_radio_pdf() -> bytes:
+    pdf = Pdf()
+    content = b""
+    selected_appearance = (
+        b"1 1 1 rg 0 0 20 20 re f "
+        b"0 0 0 RG 1 w 0.5 0.5 19 19 re S "
+        b"0 0 0 rg 7 7 6 6 re f"
+    )
+    off_appearance = b"1 1 1 rg 0 0 20 20 re f 0 0 0 RG 1 w 0.5 0.5 19 19 re S"
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 100 80] "
+        f"/Contents {contents} 0 R /Annots [6 0 R] >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    selected_appearance_object = pdf.add(
+        b"<< /Type /XObject /Subtype /Form /BBox [0 0 20 20] /Length "
+        + str(len(selected_appearance)).encode("ascii")
+        + b" >>\nstream\n"
+        + selected_appearance
+        + b"\nendstream"
+    )
+    off_appearance_object = pdf.add(
+        b"<< /Type /XObject /Subtype /Form /BBox [0 0 20 20] /Length "
+        + str(len(off_appearance)).encode("ascii")
+        + b" >>\nstream\n"
+        + off_appearance
+        + b"\nendstream"
+    )
+    selected_field = pdf.add(
+        "<< /Type /Annot /Subtype /Widget /FT /Btn /Ff 32768 /T (ChoiceA) /V /A /AS /A "
+        "/Rect [20 42 40 62] "
+        f"/AP << /N << /A {selected_appearance_object} 0 R /Off {off_appearance_object} 0 R >> >> >>"
+    )
+    catalog = pdf.add(
+        f"<< /Type /Catalog /Pages {pages} 0 R /AcroForm << /Fields [{selected_field} 0 R] >> >>"
+    )
+    assert selected_field == 6
+    return pdf.render(catalog)
+
+
+def acroform_radio_off_pdf() -> bytes:
+    pdf = Pdf()
+    content = b""
+    selected_appearance = (
+        b"1 1 1 rg 0 0 20 20 re f "
+        b"0 0 0 RG 1 w 0.5 0.5 19 19 re S "
+        b"0 0 0 rg 7 7 6 6 re f"
+    )
+    off_appearance = b"1 1 1 rg 0 0 20 20 re f 0 0 0 RG 1 w 0.5 0.5 19 19 re S"
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 100 80] "
+        f"/Contents {contents} 0 R /Annots [6 0 R] >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    selected_appearance_object = pdf.add(
+        b"<< /Type /XObject /Subtype /Form /BBox [0 0 20 20] /Length "
+        + str(len(selected_appearance)).encode("ascii")
+        + b" >>\nstream\n"
+        + selected_appearance
+        + b"\nendstream"
+    )
+    off_appearance_object = pdf.add(
+        b"<< /Type /XObject /Subtype /Form /BBox [0 0 20 20] /Length "
+        + str(len(off_appearance)).encode("ascii")
+        + b" >>\nstream\n"
+        + off_appearance
+        + b"\nendstream"
+    )
+    field = pdf.add(
+        "<< /Type /Annot /Subtype /Widget /FT /Btn /Ff 32768 /T (ChoiceOff) /V /A /AS /Off "
+        "/Rect [20 42 40 62] "
+        f"/AP << /N << /A {selected_appearance_object} 0 R /Off {off_appearance_object} 0 R >> >> >>"
+    )
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R /AcroForm << /Fields [{field} 0 R] >> >>")
+    assert field == 6
+    return pdf.render(catalog)
+
+
 def acroform_signature_placeholder_pdf() -> bytes:
     pdf = Pdf()
     content = b""
@@ -1545,6 +1633,8 @@ def main() -> None:
     write("widget-annotation-appearance.pdf", widget_annotation_appearance_pdf())
     write("acroform-text-field.pdf", acroform_text_field_pdf())
     write("acroform-checkbox.pdf", acroform_checkbox_pdf())
+    write("acroform-radio.pdf", acroform_radio_pdf())
+    write("acroform-radio-off.pdf", acroform_radio_off_pdf())
     write("acroform-signature-placeholder.pdf", acroform_signature_placeholder_pdf())
     write("optional-content-layer-on.pdf", optional_content_layer_pdf(visible=True))
     write("optional-content-layer-off.pdf", optional_content_layer_pdf(visible=False))
