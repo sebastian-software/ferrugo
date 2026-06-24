@@ -636,6 +636,37 @@ def widget_annotation_appearance_pdf() -> bytes:
     return pdf.render(catalog)
 
 
+def acroform_text_field_pdf() -> bytes:
+    pdf = Pdf()
+    content = b""
+    appearance = b"0.85 0.92 1 rg 0 0 60 20 re f 0 0 0 RG 1 w 0.5 0.5 59 19 re S"
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 140 80] "
+        f"/Contents {contents} 0 R /Annots [5 0 R] >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    appearance_object = pdf.add(
+        b"<< /Type /XObject /Subtype /Form /BBox [0 0 60 20] /Length "
+        + str(len(appearance)).encode("ascii")
+        + b" >>\nstream\n"
+        + appearance
+        + b"\nendstream"
+    )
+    field = pdf.add(
+        "<< /Type /Annot /Subtype /Widget /FT /Tx /T (Name) /V (Ada) "
+        "/Rect [30 30 90 50] "
+        f"/AP << /N {appearance_object} 0 R >> >>"
+    )
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R /AcroForm << /Fields [{field} 0 R] >> >>")
+    assert field == 5
+    return pdf.render(catalog)
+
+
 def embedded_font_pdf() -> bytes:
     pdf = Pdf()
     content = b"BT /F1 18 Tf 20 60 Td (embedded font fixture) Tj ET"
@@ -802,6 +833,7 @@ def main() -> None:
     write("link-annotation-appearance.pdf", link_annotation_appearance_pdf())
     write("highlight-annotation-appearance.pdf", highlight_annotation_appearance_pdf())
     write("widget-annotation-appearance.pdf", widget_annotation_appearance_pdf())
+    write("acroform-text-field.pdf", acroform_text_field_pdf())
     write("embedded-font.pdf", embedded_font_pdf())
     write("tounicode-text.pdf", tounicode_text_pdf())
     write("encoding-differences.pdf", encoding_differences_pdf())
