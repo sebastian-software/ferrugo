@@ -1,6 +1,6 @@
 # 0018: Live Thumbnail Fixture Render
 
-Status: todo
+Status: done
 Phase: 1
 Size: small
 Depends on: 0017
@@ -41,4 +41,15 @@ Render the generated fixture PDFs through the PDFium backend and CLI.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-24.
+
+- Rendered `fixtures/generated/text-page.pdf` through the release CLI with the
+  live PDFium backend.
+- Wrote PNG artifacts under `target/pdfrust-thumbnails/`.
+- Recorded dimensions, file hashes, decoded RGBA hashes, wall time, CPU time,
+  and max RSS for `max-edge` 256, 512, and 1024 in
+  `docs/measurements/pdfium-build-baseline.md`.
+- Replaced the placeholder success baseline with the real 256px fixture
+  dimensions and digest.
+- `max-edge` 512 and 1024 produced identical 300x160 output because the fixture
+  is not upscaled.

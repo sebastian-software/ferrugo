@@ -1,6 +1,6 @@
 # Phase 0 Report
 
-Status: completed with external PDFium build pending.
+Status: completed with local PDFium build and live render measured.
 Date: 2026-06-24.
 
 Phase 0 created the measurement spine for PDF thumbnail generation: pinned
@@ -9,9 +9,9 @@ PDFium backend shell, a PNG CLI, error taxonomy, and baseline metadata.
 
 ## Summary
 
-The Rust side is operational and validated locally. The PDFium source-build side
-is specified but not yet measured because this environment does not have
-`depot_tools`, `gclient`, `gn`, `ninja`, or a local PDFium dynamic library.
+The Rust side is operational and validated locally. The pinned PDFium source
+build also completed locally, and the PDFium backend rendered the generated
+text fixture through the release CLI.
 
 ## Completed Artifacts
 
@@ -36,9 +36,25 @@ is specified but not yet measured because this environment does not have
 
 ## Measurements
 
-No PDFium binary size, startup, render-time, or memory measurements are
-available yet. The measurement report records commands and environment context,
-but the local build is blocked on toolchain setup.
+PDFium revision `573758fe2dd928279cd52b5a4bc955a6938aab39` was built locally.
+
+- Static complete library: `out/pdfrust-thumb/obj/libpdfium.a`, 264M.
+- Runtime component dylib: `out/pdfrust-dylib/libpdfium.dylib`, 5.4M plus
+  colocated `@rpath` dylib dependencies.
+- Runtime path:
+  `/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib`.
+- Smoke probe: `initialized=true`, `last_error=0`.
+
+Release CLI render measurements for `fixtures/generated/text-page.pdf`:
+
+| max edge | dimensions | time | max RSS |
+| --- | --- | --- | --- |
+| 256 | 256x137 | 0.04s real, 0.01s user, 0.02s sys | 24,313,856 bytes |
+| 512 | 300x160 | 0.03s real, 0.01s user, 0.02s sys | 24,674,304 bytes |
+| 1024 | 300x160 | 0.03s real, 0.01s user, 0.02s sys | 24,625,152 bytes |
+
+`max-edge` 512 and 1024 are identical because the generated fixture page is
+300x160 pixels at PDFium's default scale and the renderer does not upscale.
 
 Available local validation:
 
@@ -61,30 +77,22 @@ The facade exposes stable classes:
 
 PDFium error-code mapping is implemented for known `FPDF_GetLastError` codes.
 Timeout remains a facade class and CLI option; enforcement around a live backend
-needs the PDFium runtime probe.
+still needs worker or process isolation.
 
 ## Risks And Blockers
 
-- PDFium build plausibility is still unknown until `gn gen` and `ninja` run.
-- The dynamic-library filename and exported symbols must be confirmed against
-  the actual cut-down build.
-- RGBA render dimensions and PNG output are compiled and unit-tested, but not
-  live-validated against generated fixtures.
+- The component dylib depends on colocated `@rpath` dylibs, so packaging still
+  needs a distribution decision.
 - Timeout behavior needs either backend cancellation, worker isolation, or
   process isolation before it is robust enough for hostile PDFs.
-- The baseline success example uses placeholder pixel digest and dimensions
-  until the first local render.
 
 ## Decision
 
-Continue with both tracks, but gate product conclusions on live PDFium
-measurements:
+Continue with the current Rust facade and PDFium-backed measurement harness, but
+gate product-facing reliability on timeout and isolation:
 
-1. Finish the local PDFium checkout/build and record real size/startup/render
-   data.
-2. Use the current Rust facade, fixtures, CLI, and baseline format as the test
+1. Use the current Rust facade, fixtures, CLI, and baseline format as the test
    spine.
-3. Do not start Node-API or npm packaging until the PDFium backend either
-   renders fixtures reliably or fails with a documented build/runtime reason.
-4. Keep Rust-native renderer work as the long-term direction, but use the
+2. Decide timeout and isolation before Node-API or npm packaging.
+3. Keep Rust-native renderer work as the long-term direction, but use the
    PDFium-backed baseline to define expected thumbnail behavior first.

@@ -13,11 +13,13 @@ Set `PDFRUST_PDFIUM_LIBRARY` to a local dynamic library built from the pinned
 PDFium checkout:
 
 ```sh
-export PDFRUST_PDFIUM_LIBRARY="../pdfium-work/pdfium/out/pdfrust-thumb/libpdfium.dylib"
+export PDFRUST_PDFIUM_LIBRARY="/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib"
+export DYLD_LIBRARY_PATH="/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib"
 ```
 
-The exact output filename depends on the PDFium target and platform. Keep the
-path local; do not commit PDFium binaries.
+The component dylib depends on other `@rpath` dylibs in the same output
+directory, so `DYLD_LIBRARY_PATH` is required for this local probe. Keep these
+paths local; do not commit PDFium binaries.
 
 ## Serialization
 
@@ -40,9 +42,15 @@ bitmap, and converts PDFium BGRA rows into the facade's RGBA buffer. File reads
 happen before entering the serialized PDFium section so unrelated I/O does not
 hold the global backend lock.
 
-In this environment the probe was not run because no local PDFium library is
-available yet. The code path is covered by unit tests for configuration and by
-`cargo check`.
+In this environment the probe completed against the pinned local PDFium build:
+
+```sh
+cargo run -p pdfrust-pdfium --example smoke
+```
+
+```text
+initialized=true last_error=0 library=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib
+```
 
 ## CLI Example
 
