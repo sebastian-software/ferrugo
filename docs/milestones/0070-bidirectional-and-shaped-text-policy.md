@@ -1,6 +1,6 @@
 # 0070: Bidirectional And Shaped Text Policy
 
-Status: todo
+Status: done
 Phase: 11
 Size: medium
 Depends on: 0069
@@ -46,4 +46,23 @@ text as it appears in PDFs.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-24.
+
+- Added decision record
+  `docs/decisions/0004-bidirectional-and-shaped-text-policy.md`.
+- Documented the renderer policy: respect pre-shaped PDF glyph codes and
+  positioning; do not shape Unicode source text in this phase.
+- Added `fixtures/generated/shaped-rtl-text.pdf`, a pre-positioned Hebrew
+  Type0/CID fixture with ToUnicode mapping.
+- Added native backend coverage for rendering the shaped RTL fixture without
+  fallback.
+- Recorded fallback and PDFium comparison results in
+  `docs/reports/shaped-text-policy-coverage-2026-06-24.md`.
+- Validation:
+  - `cargo fmt --check`
+  - `cargo check`
+  - `cargo test`
+  - `cargo test -p pdfrust-native`
+  - `cargo clippy --all-targets --all-features -- -D warnings`
+  - shaped-text fallback summary through the office-export family
+  - native/PDFium render comparison for `shaped-rtl-text.pdf`
