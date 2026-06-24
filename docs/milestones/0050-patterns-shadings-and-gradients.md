@@ -1,6 +1,6 @@
 # 0050: Patterns Shadings And Gradients
 
-Status: in-progress
+Status: completed
 Phase: 6
 Size: medium
 Depends on: 0049
@@ -45,7 +45,7 @@ browser-generated PDFs.
 
 ## Completion Notes
 
-In progress:
+Completed:
 
 - First implementation slice adds direct `/Resources /Shading` parsing for
   `/ShadingType 2` axial shadings with `DeviceRGB` or `DeviceGray` Type 2
