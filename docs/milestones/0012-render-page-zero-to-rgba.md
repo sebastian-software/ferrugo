@@ -1,6 +1,6 @@
 # 0012: Render Page Zero To RGBA
 
-Status: todo
+Status: done
 Phase: 0
 Size: small
 Depends on: 0011
@@ -42,5 +42,10 @@ facade.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-24.
 
+- Implemented PDFium page rendering to RGBA in `pdfrust-pdfium`.
+- Added bounded `max_edge` scaling and BGRA-to-RGBA conversion.
+- Added a typed missing-file failure test.
+- A live fixture render was not run because no local PDFium library is
+  available in this environment.

@@ -32,6 +32,14 @@ The backend shell can load a local PDFium dynamic library, call
 This validates runtime linkage without exposing PDFium state through the public
 thumbnail API.
 
+## RGBA Rendering
+
+The render path opens borrowed bytes or file input, loads the requested page,
+scales it so neither dimension exceeds `max_edge`, renders through a PDFium
+bitmap, and converts PDFium BGRA rows into the facade's RGBA buffer. File reads
+happen before entering the serialized PDFium section so unrelated I/O does not
+hold the global backend lock.
+
 In this environment the probe was not run because no local PDFium library is
 available yet. The code path is covered by unit tests for configuration and by
 `cargo check`.

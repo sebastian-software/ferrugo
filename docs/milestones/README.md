@@ -21,7 +21,6 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
-| 0012 | [Render Page Zero To RGBA](0012-render-page-zero-to-rgba.md) | 0 | small | 0011 |
 | 0013 | [PNG Output CLI](0013-png-output-cli.md) | 0 | small | 0012 |
 | 0014 | [Error Taxonomy Mapping](0014-error-taxonomy-mapping.md) | 0 | small | 0011 |
 | 0015 | [Differential Baseline Format](0015-differential-baseline-format.md) | 0 | small | 0012, 0014 |
@@ -46,6 +45,7 @@ No milestones are currently in progress.
 | 0009 | [Rust Workspace Skeleton](0009-rust-workspace-skeleton.md) | 0 | small | 2026-06-24 |
 | 0010 | [Thumbnail API Facade](0010-thumbnail-api-facade.md) | 0 | small | 2026-06-24 |
 | 0011 | [PDFium Backend Linkage](0011-pdfium-backend-linkage.md) | 0 | medium | 2026-06-24 |
+| 0012 | [Render Page Zero To RGBA](0012-render-page-zero-to-rgba.md) | 0 | small | 2026-06-24 |
 
 ## Update Rules
 
