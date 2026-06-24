@@ -48,3 +48,10 @@ input, typed IDs, checked offsets, bounded decoding, and explicit error values.
 This layout milestone does not parse or render PDFs. It creates stable crate
 ownership boundaries so milestones 0022 and later can add behavior in small,
 measurable slices against the PDFium baseline.
+
+## Current Syntax Foundation
+
+`pdfrust-syntax` owns borrowed PDF input and offset-aware syntax failures.
+`PdfBytes<'a>` and `ByteCursor<'a>` keep scanning over borrowed bytes, while
+`ByteOffset`, `SyntaxErrorKind`, and `SyntaxError` provide diagnostics that
+later parser layers can preserve without inventing new error plumbing.

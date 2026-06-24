@@ -1,6 +1,6 @@
 # 0022: Byte Input And Offset Errors
 
-Status: todo
+Status: done
 Phase: 1
 Size: small
 Depends on: 0021
@@ -45,4 +45,12 @@ offsets.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-24.
+
+- Added borrowed `PdfBytes<'a>` and `ByteCursor<'a>` types in
+  `pdfrust-syntax`.
+- Added `ByteOffset`, `SyntaxErrorKind`, `SyntaxError`, and `SyntaxResult`.
+- Added tests for borrowed input, offset movement, EOF errors, bounds checks,
+  and error formatting.
+- Documented the syntax foundation in
+  `docs/architecture/rust-native-crates.md`.
