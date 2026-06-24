@@ -52,3 +52,6 @@ and PDFium fallback reduction.
 - Second slice exposed the Rust-native default memory budget snapshot through
   `NativeBackend::memory_diagnostics()` and the `compare-metadata`
   `rust_native_memory` JSON block.
+- Third slice changed the glyph-outline cache from fail-when-full behavior to
+  bounded oldest-entry eviction and documented `max_cache_entries == 0` as an
+  uncached lookup mode.

@@ -1588,7 +1588,7 @@ impl GlyphOutlineCache {
     /// # Errors
     ///
     /// Returns [`GraphicsError`] when the font program is unsupported,
-    /// malformed, exceeds the configured segment budget, or the cache is full.
+    /// malformed, or exceeds the configured segment budget.
     pub fn outline_for(
         &mut self,
         program: &FontProgram,
@@ -1602,15 +1602,13 @@ impl GlyphOutlineCache {
         {
             return Ok(entry.outline.clone());
         }
-        if self.outlines.len() >= options.max_cache_entries {
-            return Err(GraphicsError::new(
-                None,
-                GraphicsErrorKind::GlyphOutlineCacheOverflow {
-                    limit: options.max_cache_entries,
-                },
-            ));
-        }
         let outline = extract_glyph_outline(program, glyph_code, options)?;
+        if options.max_cache_entries == 0 {
+            return Ok(outline);
+        }
+        if self.outlines.len() >= options.max_cache_entries {
+            self.outlines.remove(0);
+        }
         self.outlines.push(CachedGlyphOutline {
             key: program.key,
             glyph_code,
@@ -10766,6 +10764,43 @@ mod tests {
 
         assert_eq!(first, second);
         assert_eq!(cache.len(), 1);
+    }
+
+    #[test]
+    fn glyph_outline_cache_should_evict_oldest_entry_at_limit() {
+        let program = test_truetype_program();
+        let mut cache = GlyphOutlineCache::default();
+        let options = GlyphOutlineOptions {
+            max_cache_entries: 1,
+            ..GlyphOutlineOptions::default()
+        };
+
+        cache
+            .outline_for(&program, 0, options)
+            .expect("first lookup");
+        cache
+            .outline_for(&program, 1, options)
+            .expect("second lookup");
+
+        assert_eq!(cache.len(), 1);
+    }
+
+    #[test]
+    fn glyph_outline_cache_should_allow_uncached_lookup() {
+        let program = test_truetype_program();
+        let mut cache = GlyphOutlineCache::default();
+        let options = GlyphOutlineOptions {
+            max_cache_entries: 0,
+            ..GlyphOutlineOptions::default()
+        };
+
+        let outline = cache
+            .outline_for(&program, 1, options)
+            .expect("uncached lookup")
+            .expect("glyph should exist");
+
+        assert_eq!(outline.glyph_code, 1);
+        assert!(cache.is_empty());
     }
 
     #[test]

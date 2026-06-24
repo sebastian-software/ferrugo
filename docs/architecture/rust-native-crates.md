@@ -195,7 +195,8 @@ or ToUnicode CMaps and carry their source character codes forward.
 Glyph-outline extraction uses `ttf-parser` as the bounded, safe Rust parser for
 SFNT-backed TrueType outlines and raw PDF `/FontFile3` CFF streams, converting
 `OutlineBuilder` callbacks into the existing path segment representation behind
-a small glyph-outline cache. Raw CFF streams are passed through
+a small glyph-outline cache with oldest-entry eviction at its configured limit.
+Raw CFF streams are passed through
 `Face::from_raw_tables` with synthetic required OpenType tables so the native
 renderer does not take an extra CFF parser dependency. Type1 `/FontFile`
 outlines remain unsupported. The current rasterizer still uses the visible
