@@ -112,12 +112,12 @@ first character-code mapping layer. Embedded font shaping, glyph outlines, and
 searchable text extraction remain later milestones. Rasterization remains a
 later milestone.
 Image XObject support resolves `/XObject` resources from the object model,
-decodes unfiltered and `FlateDecode` `DeviceRGB`/`DeviceGray` image streams
-within an explicit byte budget, and stores `ImageDisplayItem` placements using
-the active CTM. Decoded image samples are reference-counted so repeated `Do`
-placements share sample bytes. `DCTDecode`, broader filter chains, and full
-color management return typed unsupported errors until the image-filter and
-color-space milestones.
+decodes unfiltered, `FlateDecode`, and first-slice `DCTDecode`
+`DeviceRGB`/`DeviceGray` image streams within an explicit byte budget, and
+stores `ImageDisplayItem` placements using the active CTM. Decoded image
+samples are reference-counted so repeated `Do` placements share sample bytes.
+Broader filter chains, CCITT/JPX, predictors, and full color management return
+typed unsupported errors until later image-filter and color-space milestones.
 Form XObject support resolves form streams from `/XObject` resource
 dictionaries, decodes form content, applies form matrices, emits bounding-box
 clip placeholders, and recursively reuses the path display-list interpreter
@@ -145,12 +145,13 @@ gray/RGB colors over the requested background, and is wired through
 `pdfrust-native` for simple path-only Classic PDFs. The CLI exposes this path
 as `render-native` so generated vector fixtures can be compared against the
 PDFium backend during development.
-Image XObject rasterization draws decoded `DeviceRGB` and `DeviceGray` images
-with nearest-neighbor sampling through the image placement matrix and the page
-transform. The native backend resolves page `/Resources /XObject` dictionaries,
-builds image display-list items, and composites opaque image samples into the
-same RGBA raster used for paths. Unsupported filters and color spaces still
-fail during image resource resolution with typed errors.
+Image XObject rasterization draws decoded `DeviceRGB`, `DeviceGray`,
+`DeviceCMYK`, and Indexed images with nearest-neighbor sampling through the
+image placement matrix and the page transform. The native backend resolves page
+`/Resources /XObject` dictionaries, builds image display-list items, and
+composites opaque image samples into the same RGBA raster used for paths.
+Unsupported filters and color spaces still fail during image resource
+resolution with typed errors.
 Inline image streams are tokenized as one borrowed `BI`/`ID`/`EI` object so raw
 sample bytes do not flow through the generic operator tokenizer. The image
 interpreter supports bounded, unfiltered 8-bit `DeviceRGB`/`DeviceGray` inline

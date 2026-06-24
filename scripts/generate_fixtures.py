@@ -212,6 +212,44 @@ def indexed_image_pdf() -> bytes:
     return pdf.render(catalog)
 
 
+def dct_image_pdf() -> bytes:
+    pdf = Pdf()
+    content = b"q 80 0 0 80 20 20 cm /Im1 Do Q"
+    image = bytes.fromhex(
+        "ffd8ffe000104a46494600010100000100010000"
+        "ffdb0043000302020302020303030304030304050805050404050a070706080c0a0c0c0b0a0b0b0d0e12100d0e110e0b0b1016101113141515150c0f171816141812141514"
+        "ffdb00430103040405040509050509140d0b0d1414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414"
+        "ffc00011080004000403011100021101031101"
+        "ffc4001f0000010501010101010100000000000000000102030405060708090a0b"
+        "ffc400b5100002010303020403050504040000017d01020300041105122131410613516107227114328191a1082342b1c11552d1f02433627282090a161718191a25262728292a3435363738393a434445464748494a535455565758595a636465666768696a737475767778797a838485868788898a92939495969798999aa2a3a4a5a6a7a8a9aab2b3b4b5b6b7b8b9bac2c3c4c5c6c7c8c9cad2d3d4d5d6d7d8d9dae1e2e3e4e5e6e7e8e9eaf1f2f3f4f5f6f7f8f9fa"
+        "ffc4001f0100030101010101010101010000000000000102030405060708090a0b"
+        "ffc400b51100020102040403040705040400010277000102031104052131061241510761711322328108144291a1b1c109233352f0156272d10a162434e125f11718191a262728292a35363738393a434445464748494a535455565758595a636465666768696a737475767778797a82838485868788898a92939495969798999aa2a3a4a5a6a7a8a9aab2b3b4b5b6b7b8b9bac2c3c4c5c6c7c8c9cad2d3d4d5d6d7d8d9dae2e3e4e5e6e7e8e9eaf2f3f4f5f6f7f8f9fa"
+        "ffda000c03010002110311003f00f9d2bf0c3fd533ffd9"
+    )
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 120 120] "
+        "/Resources << /XObject << /Im1 4 0 R >> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    image_object = pdf.add(
+        b"<< /Type /XObject /Subtype /Image /Width 4 /Height 4 "
+        b"/ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length "
+        + str(len(image)).encode("ascii")
+        + b" >>\nstream\n"
+        + image
+        + b"\nendstream"
+    )
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert image_object == 4
+    return pdf.render(catalog)
+
+
 def embedded_font_pdf() -> bytes:
     pdf = Pdf()
     content = b"BT /F1 18 Tf 20 60 Td (embedded font fixture) Tj ET"
@@ -361,6 +399,7 @@ def main() -> None:
     write("image-xobject.pdf", image_xobject_pdf())
     write("cmyk-image.pdf", cmyk_image_pdf())
     write("indexed-image.pdf", indexed_image_pdf())
+    write("dct-image.pdf", dct_image_pdf())
     write("embedded-font.pdf", embedded_font_pdf())
     write("tounicode-text.pdf", tounicode_text_pdf())
     write("encoding-differences.pdf", encoding_differences_pdf())

@@ -25,6 +25,7 @@ The initial seed set covers:
 - image placement through an inline image stream
 - image placement through an Image XObject
 - CMYK and Indexed image color spaces
+- DCT/JPEG Image XObject decoding
 - Form XObject invocation
 - embedded TrueType font resource resolution
 - ToUnicode text character-code mapping

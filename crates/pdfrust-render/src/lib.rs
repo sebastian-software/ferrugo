@@ -14,6 +14,10 @@ use pdfrust_object::{
 };
 use pdfrust_syntax::{ByteOffset, PdfBytes, PdfName, PdfNumber, PdfPrimitive, PdfString};
 use pdfrust_thumbnail::{PixelFormat, Rgba};
+use zune_jpeg::{
+    zune_core::{bytestream::ZCursor, colorspace::ColorSpace, options::DecoderOptions},
+    JpegDecoder,
+};
 
 /// Stable crate role used by architecture smoke tests and documentation.
 pub const CRATE_ROLE: &str = "render";
@@ -3854,7 +3858,6 @@ fn decode_image_xobject(
     stream: &StreamObject<'_>,
     max_image_bytes: usize,
 ) -> GraphicsResult<ImageXObject> {
-    require_supported_image_filter(stream.dictionary())?;
     let width = required_u32(stream.dictionary(), b"Width")
         .or_else(|_| required_u32(stream.dictionary(), b"W"))
         .map_err(|_| invalid_image_resource(resource_name.as_bytes()))?;
@@ -3868,14 +3871,15 @@ fn decode_image_xobject(
         return Err(invalid_image_resource(resource_name.as_bytes()));
     }
     let color_space = image_color_space(stream.dictionary())?;
-    let decoded = stream.decode().map_err(|error| {
-        GraphicsError::new(
-            error.offset(),
-            GraphicsErrorKind::ObjectModel {
-                message: error.to_string(),
-            },
-        )
-    })?;
+    let image_filter = image_filter(stream.dictionary())?;
+    let decoded = decode_image_samples(
+        stream,
+        image_filter,
+        width,
+        height,
+        color_space.kind,
+        max_image_bytes,
+    )?;
     if decoded.len() > max_image_bytes {
         return Err(GraphicsError::new(
             None,
@@ -3963,6 +3967,120 @@ fn decode_inline_image(
         color_space: color_space.kind,
         samples: Arc::from(samples),
         indexed_lookup: color_space.indexed_lookup,
+    })
+}
+
+fn decode_image_samples(
+    stream: &StreamObject<'_>,
+    image_filter: ImageFilter,
+    width: u32,
+    height: u32,
+    color_space: ImageColorSpace,
+    max_image_bytes: usize,
+) -> GraphicsResult<Vec<u8>> {
+    match image_filter {
+        ImageFilter::Raw => {
+            if stream.raw().len() > max_image_bytes {
+                return Err(GraphicsError::new(
+                    None,
+                    GraphicsErrorKind::ImageBytesOverflow {
+                        limit: max_image_bytes,
+                    },
+                ));
+            }
+            Ok(stream.raw().to_vec())
+        }
+        ImageFilter::StreamDecoded => stream
+            .decode_with_options(StreamDecodeOptions {
+                max_decoded_len: max_image_bytes,
+            })
+            .map_err(|error| {
+                GraphicsError::new(
+                    error.offset(),
+                    GraphicsErrorKind::ObjectModel {
+                        message: error.to_string(),
+                    },
+                )
+            }),
+        ImageFilter::DctDecode => {
+            decode_dct_image(stream.raw(), width, height, color_space, max_image_bytes)
+        }
+    }
+}
+
+fn decode_dct_image(
+    encoded: &[u8],
+    width: u32,
+    height: u32,
+    color_space: ImageColorSpace,
+    max_image_bytes: usize,
+) -> GraphicsResult<Vec<u8>> {
+    let output_color_space = match color_space {
+        ImageColorSpace::DeviceGray => ColorSpace::Luma,
+        ImageColorSpace::DeviceRgb => ColorSpace::RGB,
+        ImageColorSpace::DeviceCmyk
+        | ImageColorSpace::IndexedGray
+        | ImageColorSpace::IndexedRgb => {
+            return Err(GraphicsError::new(
+                None,
+                GraphicsErrorKind::UnsupportedImageFilter {
+                    filter: b"DCTDecode-color-space".to_vec(),
+                },
+            ));
+        }
+    };
+    let mut decoder = JpegDecoder::new_with_options(
+        ZCursor::new(encoded),
+        DecoderOptions::default().jpeg_set_out_colorspace(output_color_space),
+    );
+    decoder.decode_headers().map_err(|error| {
+        GraphicsError::new(
+            None,
+            GraphicsErrorKind::ObjectModel {
+                message: format!("DCTDecode header error: {error}"),
+            },
+        )
+    })?;
+    let info = decoder.info().ok_or_else(|| {
+        GraphicsError::new(
+            None,
+            GraphicsErrorKind::ObjectModel {
+                message: "DCTDecode did not report image dimensions".to_string(),
+            },
+        )
+    })?;
+    if u32::from(info.width) != width || u32::from(info.height) != height {
+        return Err(GraphicsError::new(
+            None,
+            GraphicsErrorKind::InvalidImageDataLength {
+                expected: expected_image_len(width, height, color_space)?,
+                actual: decoder.output_buffer_size().unwrap_or(0),
+            },
+        ));
+    }
+    let output_size = decoder.output_buffer_size().ok_or_else(|| {
+        GraphicsError::new(
+            None,
+            GraphicsErrorKind::ImageBytesOverflow {
+                limit: max_image_bytes,
+            },
+        )
+    })?;
+    if output_size > max_image_bytes {
+        return Err(GraphicsError::new(
+            None,
+            GraphicsErrorKind::ImageBytesOverflow {
+                limit: max_image_bytes,
+            },
+        ));
+    }
+    decoder.decode().map_err(|error| {
+        GraphicsError::new(
+            None,
+            GraphicsErrorKind::ObjectModel {
+                message: format!("DCTDecode data error: {error}"),
+            },
+        )
     })
 }
 
@@ -4601,22 +4719,24 @@ fn ascii_glyph(character: char) -> [&'static str; 7] {
     }
 }
 
-fn require_supported_image_filter(
-    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
-) -> GraphicsResult<()> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ImageFilter {
+    Raw,
+    StreamDecoded,
+    DctDecode,
+}
+
+fn image_filter(dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)]) -> GraphicsResult<ImageFilter> {
     let Some(filter) =
         dictionary_value(dictionary, b"Filter").or_else(|| dictionary_value(dictionary, b"F"))
     else {
-        return Ok(());
+        return Ok(ImageFilter::Raw);
     };
     match filter {
-        PdfPrimitive::Name(name) if name.as_bytes() == b"FlateDecode" => Ok(()),
-        PdfPrimitive::Name(name) if name.as_bytes() == b"DCTDecode" => Err(GraphicsError::new(
-            None,
-            GraphicsErrorKind::UnsupportedImageFilter {
-                filter: name.as_bytes().to_vec(),
-            },
-        )),
+        PdfPrimitive::Name(name) if name.as_bytes() == b"FlateDecode" => {
+            Ok(ImageFilter::StreamDecoded)
+        }
+        PdfPrimitive::Name(name) if name.as_bytes() == b"DCTDecode" => Ok(ImageFilter::DctDecode),
         PdfPrimitive::Name(name) => Err(GraphicsError::new(
             None,
             GraphicsErrorKind::UnsupportedImageFilter {
@@ -4627,7 +4747,10 @@ fn require_supported_image_filter(
             if filters.len() == 1 {
                 if let PdfPrimitive::Name(name) = filters[0] {
                     if name.as_bytes() == b"FlateDecode" {
-                        return Ok(());
+                        return Ok(ImageFilter::StreamDecoded);
+                    }
+                    if name.as_bytes() == b"DCTDecode" {
+                        return Ok(ImageFilter::DctDecode);
                     }
                     return Err(GraphicsError::new(
                         None,
@@ -7288,6 +7411,19 @@ mod tests {
     }
 
     #[test]
+    fn image_resources_should_decode_dct_rgb_xobject() {
+        let document = generated_fixture_document("dct-image.pdf");
+        let resources = image_resources_from_document(&document).expect("valid DCT image resource");
+        let image = resources.get(PdfName::new(b"Im1")).expect("image resource");
+
+        assert_eq!(image.width, 4);
+        assert_eq!(image.height, 4);
+        assert_eq!(image.color_space, ImageColorSpace::DeviceRgb);
+        assert_eq!(image.samples.len(), 48);
+        assert!(image.samples.chunks_exact(3).all(|pixel| pixel[0] > 240));
+    }
+
+    #[test]
     fn image_resources_should_decode_device_gray_xobject() {
         let document = load_image_xobject_pdf(
             b"q 10 0 0 10 0 0 cm /Im1 Do Q",
@@ -7635,20 +7771,19 @@ mod tests {
     }
 
     #[test]
-    fn image_resources_should_report_unsupported_dct_filter() {
+    fn image_resources_should_report_malformed_dct_filter_data() {
         let document = load_image_xobject_pdf(
             b"q 10 0 0 10 0 0 cm /Im1 Do Q",
             b"<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length 3 >>",
             &[0, 0, 0],
         );
-        let error = image_resources_from_document(&document).expect_err("DCT is not decoded yet");
+        let error =
+            image_resources_from_document(&document).expect_err("malformed DCT should fail");
 
-        assert_eq!(
+        assert!(matches!(
             error.kind(),
-            &GraphicsErrorKind::UnsupportedImageFilter {
-                filter: b"DCTDecode".to_vec(),
-            }
-        );
+            GraphicsErrorKind::ObjectModel { .. }
+        ));
     }
 
     #[test]

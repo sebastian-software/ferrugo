@@ -21,7 +21,6 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
-| 0047 | [Image Filter Coverage](0047-image-filter-coverage.md) | 6 | medium | 0046 |
 | 0048 | [Soft Masks And Transparency Groups](0048-soft-masks-and-transparency-groups.md) | 6 | medium | 0047 |
 | 0049 | [Blend Modes And Overprint Policy](0049-blend-modes-and-overprint-policy.md) | 6 | medium | 0048 |
 | 0050 | [Patterns Shadings And Gradients](0050-patterns-shadings-and-gradients.md) | 6 | medium | 0049 |
@@ -60,6 +59,7 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
+| 0047 | [Image Filter Coverage](0047-image-filter-coverage.md) | 6 | medium | 0046 |
 
 ## Done
 
