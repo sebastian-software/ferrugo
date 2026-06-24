@@ -5,20 +5,33 @@ use std::env;
 use std::ffi::OsString;
 use std::fmt;
 use std::fs;
+#[cfg(feature = "pdfium")]
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, ExitCode, Stdio};
+use std::process::ExitCode;
+#[cfg(feature = "pdfium")]
+use std::process::{Child, Command, Stdio};
+#[cfg(feature = "pdfium")]
 use std::thread;
 use std::time::{Duration, Instant};
 
-use pdfrust_native::{NativeBackend, NativeMemoryDiagnostics};
+use pdfrust_native::NativeBackend;
+#[cfg(any(feature = "pdfium", test))]
+use pdfrust_native::NativeMemoryDiagnostics;
+#[cfg(feature = "pdfium")]
 use pdfrust_pdfium::PdfiumBackend;
+#[cfg(any(feature = "pdfium", test))]
+use pdfrust_thumbnail::PageSize;
 use pdfrust_thumbnail::{
-    DocumentMetadata, DocumentMetadataBackend, PageSize, PdfSource, Rgba, ThumbnailBackend,
-    ThumbnailError, ThumbnailOptions, DEFAULT_MAX_EDGE, DEFAULT_PAGE_INDEX, DEFAULT_TIMEOUT,
+    DocumentMetadata, DocumentMetadataBackend, PdfSource, Rgba, ThumbnailBackend, ThumbnailError,
+    ThumbnailOptions, DEFAULT_MAX_EDGE, DEFAULT_PAGE_INDEX, DEFAULT_TIMEOUT,
 };
 
+#[cfg(feature = "pdfium")]
 const WORKER_POLL_INTERVAL: Duration = Duration::from_millis(10);
+#[cfg(not(feature = "pdfium"))]
+const PDFIUM_FEATURE_MESSAGE: &str =
+    "PDFium support is disabled; rebuild pdfrust-cli with --features pdfium";
 
 fn main() -> ExitCode {
     match run(env::args_os().skip(1).collect()) {
@@ -55,10 +68,25 @@ fn run(args: Vec<OsString>) -> Result<(), CliError> {
 }
 
 fn render_direct_command(args: &[OsString]) -> Result<(), CliError> {
+    #[cfg(not(feature = "pdfium"))]
+    {
+        let _ = args;
+        return Err(pdfium_feature_disabled());
+    }
+
+    #[cfg(feature = "pdfium")]
+    {
+        render_direct_command_pdfium(args)
+    }
+}
+
+#[cfg(feature = "pdfium")]
+fn render_direct_command_pdfium(args: &[OsString]) -> Result<(), CliError> {
     let config = RenderConfig::parse(args)?;
     render_direct(config)
 }
 
+#[cfg(feature = "pdfium")]
 fn render_direct(config: RenderConfig) -> Result<(), CliError> {
     let backend = PdfiumBackend::from_env().map_err(|err| CliError::Backend(err.to_string()))?;
     let options = thumbnail_options(&config);
@@ -110,18 +138,28 @@ fn render_auto_thumbnail(config: &RenderConfig) -> Result<AutoRenderOutcome, Cli
                     message: format!("PDFium fallback denied for {}", reason.as_str()),
                 });
             }
-            let pdfium =
-                PdfiumBackend::from_env().map_err(|err| CliError::Backend(err.to_string()))?;
-            let thumbnail = pdfium
-                .render(PdfSource::from_path(&config.input), &options)
-                .map_err(|err| CliError::Render {
+            #[cfg(not(feature = "pdfium"))]
+            {
+                Err(CliError::Render {
                     class: err.class().as_str(),
-                    message: err.to_string(),
-                })?;
-            Ok(AutoRenderOutcome {
-                thumbnail,
-                backend: AutoRenderBackend::PdfiumFallback { reason },
-            })
+                    message: format!("{} for {}", PDFIUM_FEATURE_MESSAGE, reason.as_str()),
+                })
+            }
+            #[cfg(feature = "pdfium")]
+            {
+                let pdfium =
+                    PdfiumBackend::from_env().map_err(|err| CliError::Backend(err.to_string()))?;
+                let thumbnail = pdfium
+                    .render(PdfSource::from_path(&config.input), &options)
+                    .map_err(|err| CliError::Render {
+                        class: err.class().as_str(),
+                        message: err.to_string(),
+                    })?;
+                Ok(AutoRenderOutcome {
+                    thumbnail,
+                    backend: AutoRenderBackend::PdfiumFallback { reason },
+                })
+            }
         }
         Err(err) => Err(CliError::Render {
             class: err.class().as_str(),
@@ -133,7 +171,10 @@ fn render_auto_thumbnail(config: &RenderConfig) -> Result<AutoRenderOutcome, Cli
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum AutoRenderBackend {
     Native,
-    PdfiumFallback { reason: FallbackReason },
+    #[cfg_attr(not(feature = "pdfium"), allow(dead_code))]
+    PdfiumFallback {
+        reason: FallbackReason,
+    },
 }
 
 impl fmt::Display for AutoRenderBackend {
@@ -239,11 +280,39 @@ fn thumbnail_options(config: &RenderConfig) -> ThumbnailOptions {
 }
 
 fn render_isolated_command(args: &[OsString]) -> Result<(), CliError> {
+    #[cfg(not(feature = "pdfium"))]
+    {
+        let _ = args;
+        return Err(pdfium_feature_disabled());
+    }
+
+    #[cfg(feature = "pdfium")]
+    {
+        render_isolated_command_pdfium(args)
+    }
+}
+
+#[cfg(feature = "pdfium")]
+fn render_isolated_command_pdfium(args: &[OsString]) -> Result<(), CliError> {
     let config = RenderConfig::parse(args)?;
     render_isolated(config)
 }
 
 fn compare_metadata_command(args: &[OsString]) -> Result<(), CliError> {
+    #[cfg(not(feature = "pdfium"))]
+    {
+        let _ = args;
+        return Err(pdfium_feature_disabled());
+    }
+
+    #[cfg(feature = "pdfium")]
+    {
+        compare_metadata_command_pdfium(args)
+    }
+}
+
+#[cfg(feature = "pdfium")]
+fn compare_metadata_command_pdfium(args: &[OsString]) -> Result<(), CliError> {
     let config = CompareMetadataConfig::parse(args)?;
     let pdfium = PdfiumBackend::from_env().map_err(|err| CliError::Backend(err.to_string()))?;
     let native = NativeBackend::new();
@@ -357,6 +426,20 @@ fn benchmark_native_command(args: &[OsString]) -> Result<(), CliError> {
 }
 
 fn benchmark_pdfium_command(args: &[OsString]) -> Result<(), CliError> {
+    #[cfg(not(feature = "pdfium"))]
+    {
+        let _ = args;
+        return Err(pdfium_feature_disabled());
+    }
+
+    #[cfg(feature = "pdfium")]
+    {
+        benchmark_pdfium_command_enabled(args)
+    }
+}
+
+#[cfg(feature = "pdfium")]
+fn benchmark_pdfium_command_enabled(args: &[OsString]) -> Result<(), CliError> {
     let config = BenchmarkConfig::parse(args)?;
     let options = ThumbnailOptions {
         page_index: config.page_index,
@@ -381,6 +464,11 @@ fn benchmark_pdfium_command(args: &[OsString]) -> Result<(), CliError> {
         false,
     );
     write_benchmark_report(config, report)
+}
+
+#[cfg(not(feature = "pdfium"))]
+fn pdfium_feature_disabled() -> CliError {
+    CliError::Usage(PDFIUM_FEATURE_MESSAGE.to_string())
 }
 
 fn write_benchmark_report(
@@ -408,6 +496,7 @@ fn write_benchmark_report(
     }
 }
 
+#[cfg(feature = "pdfium")]
 fn render_isolated(config: RenderConfig) -> Result<(), CliError> {
     let executable = env::current_exe().map_err(|source| {
         CliError::Process(format!("failed to locate current executable: {source}"))
@@ -439,6 +528,7 @@ fn render_isolated(config: RenderConfig) -> Result<(), CliError> {
     }
 }
 
+#[cfg(feature = "pdfium")]
 fn worker_args(config: &RenderConfig, output: &Path) -> Vec<OsString> {
     vec![
         config.input.as_os_str().to_owned(),
@@ -455,6 +545,7 @@ fn worker_args(config: &RenderConfig, output: &Path) -> Vec<OsString> {
     ]
 }
 
+#[cfg(feature = "pdfium")]
 fn wait_for_worker(child: &mut Child, timeout: Duration) -> Result<(), CliError> {
     if timeout.is_zero() {
         terminate_worker(child);
@@ -487,12 +578,14 @@ fn wait_for_worker(child: &mut Child, timeout: Duration) -> Result<(), CliError>
     }
 }
 
+#[cfg(feature = "pdfium")]
 fn terminate_worker(child: &mut Child) {
     let _ = child.kill();
     let _ = child.wait();
     let _ = read_worker_stderr(child);
 }
 
+#[cfg(feature = "pdfium")]
 fn read_worker_stderr(child: &mut Child) -> String {
     let mut stderr = String::new();
     if let Some(mut pipe) = child.stderr.take() {
@@ -501,6 +594,7 @@ fn read_worker_stderr(child: &mut Child) -> String {
     stderr.trim().to_string()
 }
 
+#[cfg(any(feature = "pdfium", test))]
 fn worker_failure(stderr: String, fallback: String) -> CliError {
     parse_worker_render_error(&stderr).unwrap_or_else(|| {
         let message = if stderr.is_empty() { fallback } else { stderr };
@@ -511,6 +605,7 @@ fn worker_failure(stderr: String, fallback: String) -> CliError {
     })
 }
 
+#[cfg(any(feature = "pdfium", test))]
 fn parse_worker_render_error(stderr: &str) -> Option<CliError> {
     let rest = stderr.strip_prefix("render error [")?;
     let (class, message) = rest.split_once("]: ")?;
@@ -520,6 +615,7 @@ fn parse_worker_render_error(stderr: &str) -> Option<CliError> {
     })
 }
 
+#[cfg(any(feature = "pdfium", test))]
 fn stable_error_class(class: &str) -> &'static str {
     match class {
         "encrypted" => "encrypted",
@@ -530,6 +626,7 @@ fn stable_error_class(class: &str) -> &'static str {
     }
 }
 
+#[cfg(feature = "pdfium")]
 fn timeout_error() -> CliError {
     CliError::Render {
         class: ThumbnailError::Timeout.class().as_str(),
@@ -537,6 +634,7 @@ fn timeout_error() -> CliError {
     }
 }
 
+#[cfg(any(feature = "pdfium", test))]
 fn temporary_output_path(output: &Path) -> PathBuf {
     let parent = output.parent().unwrap_or_else(|| Path::new("."));
     let file_name = output
@@ -636,6 +734,7 @@ impl RenderConfig {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(not(feature = "pdfium"), allow(dead_code))]
 struct CompareMetadataConfig {
     input: PathBuf,
     output: Option<PathBuf>,
@@ -896,6 +995,7 @@ impl BenchmarkConfig {
     }
 }
 
+#[cfg(any(feature = "pdfium", test))]
 impl CompareMetadataConfig {
     fn parse(args: &[OsString]) -> Result<Self, CliError> {
         let mut input = None;
@@ -953,6 +1053,7 @@ impl MetadataOutcome {
     }
 }
 
+#[cfg_attr(not(feature = "pdfium"), allow(dead_code))]
 #[derive(Debug, Clone, PartialEq)]
 struct MetadataComparison {
     matches: bool,
@@ -1123,6 +1224,7 @@ enum BenchmarkOutcome {
     },
 }
 
+#[cfg(any(feature = "pdfium", test))]
 fn compare_metadata_results(
     pdfium: MetadataOutcome,
     native: MetadataOutcome,
@@ -1488,6 +1590,7 @@ fn normalize_manifest_path(path: &Path) -> String {
         .unwrap_or(path)
 }
 
+#[cfg(any(feature = "pdfium", test))]
 fn page_sizes_match(expected: PageSize, actual: PageSize) -> bool {
     const EPSILON: f64 = 0.01;
     (expected.width - actual.width).abs() <= EPSILON
@@ -1497,7 +1600,9 @@ fn page_sizes_match(expected: PageSize, actual: PageSize) -> bool {
 #[derive(Debug)]
 enum CliError {
     Usage(String),
+    #[cfg_attr(not(feature = "pdfium"), allow(dead_code))]
     Backend(String),
+    #[cfg_attr(not(feature = "pdfium"), allow(dead_code))]
     Process(String),
     Render {
         class: &'static str,
@@ -1621,6 +1726,7 @@ fn parse_background(value: &str) -> Result<Rgba, CliError> {
     }
 }
 
+#[cfg(any(feature = "pdfium", test))]
 fn format_background(color: Rgba) -> String {
     format!(
         "#{:02x}{:02x}{:02x}{:02x}",
@@ -1628,6 +1734,7 @@ fn format_background(color: Rgba) -> String {
     )
 }
 
+#[cfg(any(feature = "pdfium", test))]
 fn comparison_json(input: &Path, comparison: &MetadataComparison) -> String {
     let status = if comparison.matches {
         "match"
@@ -1661,6 +1768,7 @@ fn comparison_json(input: &Path, comparison: &MetadataComparison) -> String {
     )
 }
 
+#[cfg(any(feature = "pdfium", test))]
 fn native_memory_diagnostics_json(diagnostics: &NativeMemoryDiagnostics) -> String {
     format!(
         concat!(
@@ -2136,9 +2244,28 @@ mod tests {
         assert!(png.starts_with(b"\x89PNG\r\n\x1a\n"));
     }
 
+    #[cfg(not(feature = "pdfium"))]
+    #[test]
+    fn pdfium_commands_should_report_disabled_in_native_only_build() {
+        for command in [
+            "render-pdfium",
+            "render-isolated",
+            "compare-metadata",
+            "benchmark-pdfium",
+        ] {
+            let error = run(vec![OsString::from(command)])
+                .expect_err("PDFium command should be disabled without feature");
+
+            assert_eq!(
+                error.to_string(),
+                format!("usage error: {PDFIUM_FEATURE_MESSAGE}")
+            );
+        }
+    }
+
     #[test]
     fn render_auto_command_should_use_native_for_supported_fixture() {
-        env::remove_var(pdfrust_pdfium::PDFIUM_LIBRARY_ENV);
+        env::remove_var("PDFRUST_PDFIUM_LIBRARY");
         let output =
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/auto-native-vector-test.png");
         let input =
@@ -2163,7 +2290,7 @@ mod tests {
 
     #[test]
     fn render_command_should_default_to_auto_mode() {
-        env::remove_var(pdfrust_pdfium::PDFIUM_LIBRARY_ENV);
+        env::remove_var("PDFRUST_PDFIUM_LIBRARY");
         let output =
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/default-auto-vector-test.png");
         let input =
@@ -2188,7 +2315,7 @@ mod tests {
 
     #[test]
     fn render_auto_thumbnail_should_report_native_backend_choice() {
-        env::remove_var(pdfrust_pdfium::PDFIUM_LIBRARY_ENV);
+        env::remove_var("PDFRUST_PDFIUM_LIBRARY");
         let input =
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/generated/vector-paths.pdf");
         let output = PathBuf::from("target/unused-auto-choice.png");
@@ -2209,7 +2336,7 @@ mod tests {
 
     #[test]
     fn render_auto_thumbnail_should_honor_native_only_policy() {
-        env::remove_var(pdfrust_pdfium::PDFIUM_LIBRARY_ENV);
+        env::remove_var("PDFRUST_PDFIUM_LIBRARY");
         let input = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../fixtures/generated/optional-content-ocmd.pdf");
         let output = PathBuf::from("target/unused-native-only.png");

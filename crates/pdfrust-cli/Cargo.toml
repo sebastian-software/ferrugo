@@ -8,8 +8,12 @@ rust-version.workspace = true
 
 [dependencies]
 pdfrust-native = { path = "../pdfrust-native" }
-pdfrust-pdfium = { path = "../pdfrust-pdfium" }
+pdfrust-pdfium = { path = "../pdfrust-pdfium", optional = true }
 pdfrust-thumbnail = { path = "../pdfrust-thumbnail" }
+
+[features]
+default = []
+pdfium = ["dep:pdfrust-pdfium"]
 
 [lints]
 workspace = true

@@ -10,6 +10,15 @@ members = [
     "crates/pdfrust-thumbnail",
 ]
 resolver = "2"
+default-members = [
+    "crates/pdfrust-cli",
+    "crates/pdfrust-content",
+    "crates/pdfrust-native",
+    "crates/pdfrust-object",
+    "crates/pdfrust-render",
+    "crates/pdfrust-syntax",
+    "crates/pdfrust-thumbnail",
+]
 
 [workspace.package]
 edition = "2021"
