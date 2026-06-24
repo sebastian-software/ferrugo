@@ -74,3 +74,4 @@ full-renderer parity until after those measurements exist.
 - [Attribution policy](docs/policies/attribution.md)
 - [PDFium checkout recipe](docs/build/pdfium-checkout.md)
 - [Minimal PDFium GN args](docs/build/pdfium-gn-args.md)
+- [PDFium build measurement baseline](docs/measurements/pdfium-build-baseline.md)

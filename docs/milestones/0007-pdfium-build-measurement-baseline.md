@@ -1,6 +1,6 @@
 # 0007: PDFium Build Measurement Baseline
 
-Status: todo
+Status: done
 Phase: 0
 Size: medium
 Depends on: 0006
@@ -43,5 +43,10 @@ Build the cut-down PDFium configuration and record baseline measurements.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-24.
 
+- Added `docs/measurements/pdfium-build-baseline.md`.
+- Recorded the pinned revision, GN args, local OS/arch context, measurement
+  commands, and the current blocking condition.
+- A successful PDFium build was not possible in this environment because
+  `depot_tools` tools are not installed.
