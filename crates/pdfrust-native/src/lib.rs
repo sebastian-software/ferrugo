@@ -16,8 +16,9 @@ use pdfrust_render::{
     build_path_display_list_with_graphics_resources, build_text_display_list,
     decode_tiling_pattern, rasterize_images, rasterize_paths, rasterize_paths_into, rasterize_text,
     DisplayListOptions, ExtGraphicsStateResources, FontResources, FormResources, GraphicsError,
-    GraphicsErrorKind, ImageResources, PageGeometry, PageRotation, PageTransform, PathBounds,
-    PathRasterOptions, RasterError, ShadingResources, TilingPatternResources,
+    GraphicsErrorKind, ImageResources, PageGeometry, PageRotation, PageTransform,
+    PageTransformOptions, PathBounds, PathRasterOptions, RasterError, ShadingResources,
+    TilingPatternResources,
 };
 use pdfrust_syntax::{PdfBytes, PdfName, PdfNumber, PdfPrimitive, PdfReference};
 use pdfrust_thumbnail::{
@@ -46,6 +47,44 @@ impl NativeBackend {
     #[must_use]
     pub const fn backend_name(&self) -> &'static str {
         "rust-native"
+    }
+
+    /// Returns the current default memory and cache budget snapshot.
+    #[must_use]
+    pub fn memory_diagnostics(&self) -> NativeMemoryDiagnostics {
+        NativeMemoryDiagnostics::default()
+    }
+}
+
+/// Default Rust-native renderer memory and cache budget diagnostics.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeMemoryDiagnostics {
+    /// Maximum pixels accepted in one page raster buffer.
+    pub max_page_pixels: usize,
+    /// Maximum decoded bytes accepted for one image XObject.
+    pub max_image_bytes: usize,
+    /// Maximum decoded bytes accepted for one embedded font program.
+    pub max_font_program_bytes: usize,
+    /// Maximum decoded bytes accepted for one ToUnicode CMap stream.
+    pub max_cmap_bytes: usize,
+    /// Maximum bytes accepted in one decoded text run.
+    pub max_text_run_bytes: usize,
+    /// Maximum display items accepted in one display list.
+    pub max_display_items: usize,
+}
+
+impl Default for NativeMemoryDiagnostics {
+    fn default() -> Self {
+        let display = DisplayListOptions::default();
+        let page = PageTransformOptions::default();
+        Self {
+            max_page_pixels: page.max_page_pixels,
+            max_image_bytes: display.max_image_bytes,
+            max_font_program_bytes: display.max_font_program_bytes,
+            max_cmap_bytes: display.max_cmap_bytes,
+            max_text_run_bytes: display.max_text_run_bytes,
+            max_display_items: display.max_display_items,
+        }
     }
 }
 
@@ -1129,6 +1168,15 @@ mod tests {
     #[test]
     fn native_backend_name_should_be_backend_neutral() {
         assert_eq!(NativeBackend::new().backend_name(), "rust-native");
+    }
+
+    #[test]
+    fn native_backend_should_expose_memory_diagnostics() {
+        let diagnostics = NativeBackend::new().memory_diagnostics();
+
+        assert_eq!(diagnostics.max_page_pixels, 16 * 1024 * 1024);
+        assert_eq!(diagnostics.max_image_bytes, 32 * 1024 * 1024);
+        assert_eq!(diagnostics.max_display_items, 8_192);
     }
 
     #[test]

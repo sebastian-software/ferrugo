@@ -113,6 +113,14 @@ compare the PDFium oracle against the Rust-native backend in one object:
         "height": 160.000
       }
     ]
+  },
+  "rust_native_memory": {
+    "max_page_pixels": 16777216,
+    "max_image_bytes": 33554432,
+    "max_font_program_bytes": 16777216,
+    "max_cmap_bytes": 1048576,
+    "max_text_run_bytes": 65536,
+    "max_display_items": 8192
   }
 }
 ```
@@ -120,6 +128,8 @@ compare the PDFium oracle against the Rust-native backend in one object:
 `comparison.mismatches` must name the field and backend values, for example a
 page count mismatch or a specific `page N size` mismatch. Error comparisons use
 `status: "error"` with a stable `error_class`.
+The `rust_native_memory` block records the default Rust-native budget snapshot
+used to interpret local comparison results.
 
 Run a local metadata comparison with:
 

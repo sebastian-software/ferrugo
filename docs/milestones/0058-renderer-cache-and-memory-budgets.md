@@ -49,3 +49,6 @@ and PDFium fallback reduction.
 - First slice added `PageTransformOptions` with
   `DEFAULT_PAGE_RASTER_PIXELS_LIMIT`, enforcing a page-raster pixel budget
   before allocation and returning a typed `PageRasterPixelsOverflow` error.
+- Second slice exposed the Rust-native default memory budget snapshot through
+  `NativeBackend::memory_diagnostics()` and the `compare-metadata`
+  `rust_native_memory` JSON block.

@@ -10,7 +10,7 @@ use std::process::{Child, Command, ExitCode, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use pdfrust_native::NativeBackend;
+use pdfrust_native::{NativeBackend, NativeMemoryDiagnostics};
 use pdfrust_pdfium::PdfiumBackend;
 use pdfrust_thumbnail::{
     DocumentMetadata, DocumentMetadataBackend, PageSize, PdfSource, Rgba, ThumbnailBackend,
@@ -600,14 +600,37 @@ fn comparison_json(input: &Path, comparison: &MetadataComparison) -> String {
             "    \"mismatches\": {}\n",
             "  }},\n",
             "  \"pdfium\": {},\n",
-            "  \"rust_native\": {}\n",
+            "  \"rust_native\": {},\n",
+            "  \"rust_native_memory\": {}\n",
             "}}\n"
         ),
         json_string(&input.to_string_lossy()),
         json_string(status),
         json_string_array(&comparison.mismatches),
         metadata_outcome_json(&comparison.pdfium),
-        metadata_outcome_json(&comparison.native)
+        metadata_outcome_json(&comparison.native),
+        native_memory_diagnostics_json(&NativeBackend::new().memory_diagnostics())
+    )
+}
+
+fn native_memory_diagnostics_json(diagnostics: &NativeMemoryDiagnostics) -> String {
+    format!(
+        concat!(
+            "{{",
+            "\"max_page_pixels\":{},",
+            "\"max_image_bytes\":{},",
+            "\"max_font_program_bytes\":{},",
+            "\"max_cmap_bytes\":{},",
+            "\"max_text_run_bytes\":{},",
+            "\"max_display_items\":{}",
+            "}}"
+        ),
+        diagnostics.max_page_pixels,
+        diagnostics.max_image_bytes,
+        diagnostics.max_font_program_bytes,
+        diagnostics.max_cmap_bytes,
+        diagnostics.max_text_run_bytes,
+        diagnostics.max_display_items
     )
 }
 
@@ -901,6 +924,8 @@ mod tests {
 
         assert!(json.contains("\"status\": \"match\""));
         assert!(json.contains("\"page_count\":1"));
+        assert!(json.contains("\"rust_native_memory\""));
+        assert!(json.contains("\"max_page_pixels\":16777216"));
     }
 
     #[test]
