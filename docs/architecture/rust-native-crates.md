@@ -132,3 +132,10 @@ dimension policy intentionally matches the PDFium backend's thumbnail scaling:
 scale down only when the rotated page's largest edge exceeds `max_edge`, then
 round each target dimension and clamp it to `1..=max_edge`. Actual path, image,
 and text rasterization remain later milestones.
+Basic path rasterization now paints path display lists into RGBA rasters using
+bounded line-segment flattening and fixed supersampling. It supports nonzero
+and even-odd fills plus simple stroked line segments, composites opaque device
+gray/RGB colors over the requested background, and is wired through
+`pdfrust-native` for simple path-only Classic PDFs. The CLI exposes this path
+as `render-native` so generated vector fixtures can be compared against the
+PDFium backend during development.

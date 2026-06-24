@@ -7,6 +7,7 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+pdfrust-content = { path = "../pdfrust-content" }
 pdfrust-object = { path = "../pdfrust-object" }
 pdfrust-render = { path = "../pdfrust-render" }
 pdfrust-syntax = { path = "../pdfrust-syntax" }

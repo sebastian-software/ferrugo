@@ -64,6 +64,7 @@ dependencies = [
 name = "pdfrust-native"
 version = "0.1.0"
 dependencies = [
+ "pdfrust-content",
  "pdfrust-object",
  "pdfrust-render",
  "pdfrust-syntax",

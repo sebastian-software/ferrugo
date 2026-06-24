@@ -33,6 +33,7 @@ fn run(args: Vec<OsString>) -> Result<(), CliError> {
     let command = args.first().and_then(|arg| arg.to_str());
     match command {
         Some("render") | Some("render-worker") => render_direct_command(&args[1..]),
+        Some("render-native") => render_native_command(&args[1..]),
         Some("render-isolated") => render_isolated_command(&args[1..]),
         Some("compare-metadata") => compare_metadata_command(&args[1..]),
         Some("--version" | "-V") => {
@@ -54,6 +55,31 @@ fn render_direct_command(args: &[OsString]) -> Result<(), CliError> {
 
 fn render_direct(config: RenderConfig) -> Result<(), CliError> {
     let backend = PdfiumBackend::from_env().map_err(|err| CliError::Backend(err.to_string()))?;
+    let options = ThumbnailOptions {
+        page_index: config.page_index,
+        max_edge: config.max_edge,
+        background: config.background,
+        output_format: pdfrust_thumbnail::OutputFormat::Png,
+        timeout: config.timeout,
+    };
+    let source = PdfSource::from_path(&config.input);
+    let thumbnail = backend
+        .render(source, &options)
+        .map_err(|err| CliError::Render {
+            class: err.class().as_str(),
+            message: err.to_string(),
+        })?;
+    let png = encode_rgba_png(&thumbnail)?;
+    fs::write(&config.output, png).map_err(|source| CliError::Io {
+        path: config.output,
+        source,
+    })?;
+    Ok(())
+}
+
+fn render_native_command(args: &[OsString]) -> Result<(), CliError> {
+    let config = RenderConfig::parse(args)?;
+    let backend = NativeBackend::new();
     let options = ThumbnailOptions {
         page_index: config.page_index,
         max_edge: config.max_edge,
@@ -729,7 +755,7 @@ fn crc32(bytes: impl IntoIterator<Item = u8>) -> u32 {
 
 fn print_usage() {
     println!(
-        "Usage: pdfrust-cli <render|render-isolated|compare-metadata> <input.pdf> \
+        "Usage: pdfrust-cli <render|render-native|render-isolated|compare-metadata> <input.pdf> \
          [--output PATH] [--page-index N] [--max-edge N] [--background #RRGGBB] \
          [--timeout SECONDS]"
     );
@@ -753,6 +779,30 @@ mod tests {
         assert_eq!(config.page_index, 0);
         assert_eq!(config.max_edge, 1024);
         assert_eq!(config.timeout, Duration::from_secs(5));
+    }
+
+    #[test]
+    fn render_native_command_should_write_generated_vector_png() {
+        let output =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/native-vector-test.png");
+        let input =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/generated/vector-paths.pdf");
+        fs::create_dir_all(output.parent().expect("output parent"))
+            .expect("test target directory should be created");
+        let _ = fs::remove_file(&output);
+
+        run(vec![
+            OsString::from("render-native"),
+            input.as_os_str().to_os_string(),
+            OsString::from("--max-edge"),
+            OsString::from("220"),
+            OsString::from("--output"),
+            output.as_os_str().to_os_string(),
+        ])
+        .expect("native vector render should succeed");
+
+        let png = fs::read(&output).expect("native PNG should be written");
+        assert!(png.starts_with(b"\x89PNG\r\n\x1a\n"));
     }
 
     #[test]

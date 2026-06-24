@@ -36,6 +36,9 @@ pub const DEFAULT_IMAGE_BYTES_LIMIT: usize = 32 * 1024 * 1024;
 /// Default maximum Form XObject recursion depth.
 pub const DEFAULT_FORM_RECURSION_DEPTH_LIMIT: usize = 16;
 
+/// Default maximum flattened path line segments for one rasterization pass.
+pub const DEFAULT_FLATTENED_PATH_SEGMENT_LIMIT: usize = 65_536;
+
 /// Result alias for graphics-state interpretation.
 pub type GraphicsResult<T> = Result<T, GraphicsError>;
 
@@ -142,6 +145,12 @@ impl RasterDevice {
         &mut self.pixels
     }
 
+    /// Consumes the raster and returns raw RGBA bytes.
+    #[must_use]
+    pub fn into_pixels(self) -> Vec<u8> {
+        self.pixels
+    }
+
     /// Returns one immutable row by y coordinate.
     ///
     /// # Errors
@@ -204,6 +213,24 @@ impl RasterDevice {
             return Err(RasterError::new(RasterErrorKind::OutOfBounds));
         }
         Ok(y as usize * self.dimensions.stride + x as usize * PixelFormat::Rgba8.bytes_per_pixel())
+    }
+}
+
+/// Path rasterization configuration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PathRasterOptions {
+    /// Uniform supersampling factor per axis.
+    pub supersample: u8,
+    /// Maximum flattened line segments accepted in one rasterization pass.
+    pub max_flattened_segments: usize,
+}
+
+impl Default for PathRasterOptions {
+    fn default() -> Self {
+        Self {
+            supersample: 2,
+            max_flattened_segments: DEFAULT_FLATTENED_PATH_SEGMENT_LIMIT,
+        }
     }
 }
 
@@ -1225,6 +1252,71 @@ pub fn build_form_display_list<'a>(
     Ok(interpreter.display_list)
 }
 
+/// Rasterizes path display-list items into an RGBA raster device.
+///
+/// # Errors
+///
+/// Returns [`RasterError`] when target allocation fails, supersampling is
+/// invalid, or flattened path complexity exceeds configured limits.
+pub fn rasterize_paths(
+    display_list: &DisplayList,
+    transform: PageTransform,
+    background: Rgba,
+    options: PathRasterOptions,
+) -> RasterResult<RasterDevice> {
+    if options.supersample == 0 {
+        return Err(RasterError::new(RasterErrorKind::InvalidSupersampling));
+    }
+    let mut device = transform.create_device(background)?;
+    for item in display_list.items() {
+        let DisplayItem::Path(path) = item else {
+            continue;
+        };
+        let flattened = flatten_path_segments(
+            &path.segments,
+            transform.matrix,
+            options.max_flattened_segments,
+        )?;
+        match path.paint {
+            PaintMode::Fill { rule } => {
+                fill_path(
+                    &mut device,
+                    &flattened,
+                    rule,
+                    path.state.fill_color,
+                    options,
+                )?;
+            }
+            PaintMode::Stroke => {
+                stroke_path(
+                    &mut device,
+                    &flattened,
+                    path.state.line_width * transform.scale,
+                    path.state.stroke_color,
+                    options,
+                )?;
+            }
+            PaintMode::FillStroke { rule } => {
+                fill_path(
+                    &mut device,
+                    &flattened,
+                    rule,
+                    path.state.fill_color,
+                    options,
+                )?;
+                stroke_path(
+                    &mut device,
+                    &flattened,
+                    path.state.line_width * transform.scale,
+                    path.state.stroke_color,
+                    options,
+                )?;
+            }
+        }
+    }
+    Ok(device)
+}
+
 struct GraphicsStateInterpreter {
     current: GraphicsState,
     stack: Vec<GraphicsState>,
@@ -1744,6 +1836,18 @@ impl<'r> DisplayListInterpreter<'r> {
     fn transform_point(&self, x: f64, y: f64) -> Point {
         self.current.ctm.transform_point(x, y)
     }
+}
+
+#[derive(Debug, Default, Clone, PartialEq)]
+struct FlattenedPath {
+    subpaths: Vec<Vec<Point>>,
+    lines: Vec<LineSegment>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct LineSegment {
+    from: Point,
+    to: Point,
 }
 
 struct TextDisplayListInterpreter<'r> {
@@ -2587,6 +2691,318 @@ fn expected_image_len(
         })
 }
 
+fn flatten_path_segments(
+    segments: &[PathSegment],
+    transform: Matrix,
+    limit: usize,
+) -> RasterResult<FlattenedPath> {
+    let mut flattened = FlattenedPath::default();
+    let mut current_subpath: Vec<Point> = Vec::new();
+    let mut current_point: Option<Point> = None;
+    let mut subpath_start: Option<Point> = None;
+
+    for segment in segments {
+        match *segment {
+            PathSegment::MoveTo(point) => {
+                finish_subpath(&mut flattened, &mut current_subpath);
+                let point = transform.transform_point(point.x, point.y);
+                current_subpath.push(point);
+                current_point = Some(point);
+                subpath_start = Some(point);
+            }
+            PathSegment::LineTo(point) => {
+                let Some(from) = current_point else {
+                    continue;
+                };
+                let to = transform.transform_point(point.x, point.y);
+                push_flattened_line(&mut flattened, from, to, limit)?;
+                current_subpath.push(to);
+                current_point = Some(to);
+            }
+            PathSegment::CubicTo { c1, c2, to } => {
+                let Some(from) = current_point else {
+                    continue;
+                };
+                let c1 = transform.transform_point(c1.x, c1.y);
+                let c2 = transform.transform_point(c2.x, c2.y);
+                let to = transform.transform_point(to.x, to.y);
+                let mut previous = from;
+                for step in 1..=16 {
+                    let t = f64::from(step) / 16.0;
+                    let point = cubic_point(from, c1, c2, to, t);
+                    push_flattened_line(&mut flattened, previous, point, limit)?;
+                    current_subpath.push(point);
+                    previous = point;
+                }
+                current_point = Some(to);
+            }
+            PathSegment::Close => {
+                if let (Some(from), Some(to)) = (current_point, subpath_start) {
+                    push_flattened_line(&mut flattened, from, to, limit)?;
+                    current_point = Some(to);
+                }
+            }
+        }
+    }
+    finish_subpath(&mut flattened, &mut current_subpath);
+    Ok(flattened)
+}
+
+fn finish_subpath(flattened: &mut FlattenedPath, current_subpath: &mut Vec<Point>) {
+    if current_subpath.len() >= 2 {
+        flattened.subpaths.push(std::mem::take(current_subpath));
+    } else {
+        current_subpath.clear();
+    }
+}
+
+fn push_flattened_line(
+    flattened: &mut FlattenedPath,
+    from: Point,
+    to: Point,
+    limit: usize,
+) -> RasterResult<()> {
+    if flattened.lines.len() >= limit {
+        return Err(RasterError::new(RasterErrorKind::PathComplexityOverflow {
+            limit,
+        }));
+    }
+    flattened.lines.push(LineSegment { from, to });
+    Ok(())
+}
+
+fn cubic_point(from: Point, c1: Point, c2: Point, to: Point, t: f64) -> Point {
+    let inv = 1.0 - t;
+    let a = inv * inv * inv;
+    let b = 3.0 * inv * inv * t;
+    let c = 3.0 * inv * t * t;
+    let d = t * t * t;
+    Point {
+        x: a.mul_add(from.x, b.mul_add(c1.x, c.mul_add(c2.x, d * to.x))),
+        y: a.mul_add(from.y, b.mul_add(c1.y, c.mul_add(c2.y, d * to.y))),
+    }
+}
+
+fn fill_path(
+    device: &mut RasterDevice,
+    path: &FlattenedPath,
+    rule: FillRule,
+    color: DeviceColor,
+    options: PathRasterOptions,
+) -> RasterResult<()> {
+    let source = device_color_to_rgba(color);
+    let samples = u32::from(options.supersample);
+    let sample_count = samples * samples;
+    let dimensions = device.dimensions();
+    for y in 0..dimensions.height {
+        for x in 0..dimensions.width {
+            let mut covered = 0;
+            for sample_y in 0..samples {
+                for sample_x in 0..samples {
+                    let point = sample_point(x, y, sample_x, sample_y, samples);
+                    if point_in_path(point, path, rule) {
+                        covered += 1;
+                    }
+                }
+            }
+            if covered > 0 {
+                blend_pixel(
+                    device,
+                    x,
+                    y,
+                    source,
+                    f64::from(covered) / f64::from(sample_count),
+                )?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn stroke_path(
+    device: &mut RasterDevice,
+    path: &FlattenedPath,
+    line_width: f64,
+    color: DeviceColor,
+    options: PathRasterOptions,
+) -> RasterResult<()> {
+    let source = device_color_to_rgba(color);
+    let radius = if line_width <= 0.0 {
+        0.5
+    } else {
+        line_width / 2.0
+    };
+    let samples = u32::from(options.supersample);
+    let sample_count = samples * samples;
+    let dimensions = device.dimensions();
+    for y in 0..dimensions.height {
+        for x in 0..dimensions.width {
+            let mut covered = 0;
+            for sample_y in 0..samples {
+                for sample_x in 0..samples {
+                    let point = sample_point(x, y, sample_x, sample_y, samples);
+                    if point_in_stroke(point, &path.lines, radius) {
+                        covered += 1;
+                    }
+                }
+            }
+            if covered > 0 {
+                blend_pixel(
+                    device,
+                    x,
+                    y,
+                    source,
+                    f64::from(covered) / f64::from(sample_count),
+                )?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn sample_point(x: u32, y: u32, sample_x: u32, sample_y: u32, samples: u32) -> Point {
+    Point {
+        x: f64::from(x) + (f64::from(sample_x) + 0.5) / f64::from(samples),
+        y: f64::from(y) + (f64::from(sample_y) + 0.5) / f64::from(samples),
+    }
+}
+
+fn point_in_path(point: Point, path: &FlattenedPath, rule: FillRule) -> bool {
+    match rule {
+        FillRule::EvenOdd => {
+            path.subpaths
+                .iter()
+                .filter(|subpath| point_in_polygon_even_odd(point, subpath))
+                .count()
+                % 2
+                == 1
+        }
+        FillRule::Nonzero => {
+            path.subpaths
+                .iter()
+                .map(|subpath| polygon_winding(point, subpath))
+                .sum::<i32>()
+                != 0
+        }
+    }
+}
+
+fn point_in_polygon_even_odd(point: Point, polygon: &[Point]) -> bool {
+    let mut inside = false;
+    for edge in polygon_edges(polygon) {
+        if (edge.from.y > point.y) != (edge.to.y > point.y) {
+            let intersection_x = (edge.to.x - edge.from.x) * (point.y - edge.from.y)
+                / (edge.to.y - edge.from.y)
+                + edge.from.x;
+            if point.x < intersection_x {
+                inside = !inside;
+            }
+        }
+    }
+    inside
+}
+
+fn polygon_winding(point: Point, polygon: &[Point]) -> i32 {
+    let mut winding = 0;
+    for edge in polygon_edges(polygon) {
+        if edge.from.y <= point.y {
+            if edge.to.y > point.y && is_left(edge.from, edge.to, point) > 0.0 {
+                winding += 1;
+            }
+        } else if edge.to.y <= point.y && is_left(edge.from, edge.to, point) < 0.0 {
+            winding -= 1;
+        }
+    }
+    winding
+}
+
+fn polygon_edges(polygon: &[Point]) -> impl Iterator<Item = LineSegment> + '_ {
+    polygon.iter().enumerate().map(|(index, from)| LineSegment {
+        from: *from,
+        to: polygon[(index + 1) % polygon.len()],
+    })
+}
+
+fn is_left(from: Point, to: Point, point: Point) -> f64 {
+    (to.x - from.x).mul_add(point.y - from.y, -((point.x - from.x) * (to.y - from.y)))
+}
+
+fn point_in_stroke(point: Point, lines: &[LineSegment], radius: f64) -> bool {
+    let radius_squared = radius * radius;
+    lines
+        .iter()
+        .any(|line| distance_to_line_segment_squared(point, *line) <= radius_squared)
+}
+
+fn distance_to_line_segment_squared(point: Point, line: LineSegment) -> f64 {
+    let dx = line.to.x - line.from.x;
+    let dy = line.to.y - line.from.y;
+    let len_squared = dx.mul_add(dx, dy * dy);
+    if len_squared <= f64::EPSILON {
+        let px = point.x - line.from.x;
+        let py = point.y - line.from.y;
+        return px.mul_add(px, py * py);
+    }
+    let t = (((point.x - line.from.x) * dx + (point.y - line.from.y) * dy) / len_squared)
+        .clamp(0.0, 1.0);
+    let projection = Point {
+        x: line.from.x + t * dx,
+        y: line.from.y + t * dy,
+    };
+    let px = point.x - projection.x;
+    let py = point.y - projection.y;
+    px.mul_add(px, py * py)
+}
+
+fn device_color_to_rgba(color: DeviceColor) -> Rgba {
+    match color {
+        DeviceColor::Gray(DeviceGray(value)) => {
+            let channel = normalized_to_u8(value);
+            Rgba {
+                r: channel,
+                g: channel,
+                b: channel,
+                a: 255,
+            }
+        }
+        DeviceColor::Rgb { r, g, b } => Rgba {
+            r: normalized_to_u8(r),
+            g: normalized_to_u8(g),
+            b: normalized_to_u8(b),
+            a: 255,
+        },
+    }
+}
+
+fn normalized_to_u8(value: f64) -> u8 {
+    (value.clamp(0.0, 1.0) * 255.0).round() as u8
+}
+
+fn blend_pixel(
+    device: &mut RasterDevice,
+    x: u32,
+    y: u32,
+    source: Rgba,
+    coverage: f64,
+) -> RasterResult<()> {
+    let dest = device.pixel(x, y)?;
+    let inv = 1.0 - coverage;
+    device.set_pixel(
+        x,
+        y,
+        Rgba {
+            r: blend_channel(source.r, dest.r, coverage, inv),
+            g: blend_channel(source.g, dest.g, coverage, inv),
+            b: blend_channel(source.b, dest.b, coverage, inv),
+            a: 255,
+        },
+    )
+}
+
+fn blend_channel(source: u8, dest: u8, coverage: f64, inv_coverage: f64) -> u8 {
+    (f64::from(source).mul_add(coverage, f64::from(dest) * inv_coverage)).round() as u8
+}
+
 fn require_supported_image_filter(
     dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
 ) -> GraphicsResult<()> {
@@ -2990,6 +3406,8 @@ pub enum RasterErrorKind {
     InvalidDimensions,
     /// `max_edge` was zero.
     InvalidMaxEdge,
+    /// Supersampling factor was zero.
+    InvalidSupersampling,
     /// Page box dimensions are non-finite, empty, or inverted.
     InvalidPageBox,
     /// Rounded output dimension overflowed `u32`.
@@ -2998,6 +3416,11 @@ pub enum RasterErrorKind {
     StrideOverflow,
     /// Pixel buffer length overflowed `usize`.
     BufferOverflow,
+    /// Flattened path complexity exceeded the configured limit.
+    PathComplexityOverflow {
+        /// Configured flattened line segment limit.
+        limit: usize,
+    },
     /// Row or pixel coordinate was outside the raster.
     OutOfBounds,
 }
@@ -3007,10 +3430,14 @@ impl fmt::Display for RasterErrorKind {
         match self {
             Self::InvalidDimensions => f.write_str("raster dimensions must be non-zero"),
             Self::InvalidMaxEdge => f.write_str("max_edge must be greater than zero"),
+            Self::InvalidSupersampling => f.write_str("supersampling must be greater than zero"),
             Self::InvalidPageBox => f.write_str("page box is invalid"),
             Self::DimensionOverflow => f.write_str("raster dimension overflow"),
             Self::StrideOverflow => f.write_str("raster stride overflow"),
             Self::BufferOverflow => f.write_str("raster buffer size overflow"),
+            Self::PathComplexityOverflow { limit } => {
+                write!(f, "flattened path exceeds segment limit {limit}")
+            }
             Self::OutOfBounds => f.write_str("raster coordinate is out of bounds"),
         }
     }
@@ -3508,6 +3935,87 @@ mod tests {
             .expect_err("zero max_edge should fail")
             .kind(),
             &RasterErrorKind::InvalidMaxEdge
+        );
+    }
+
+    #[test]
+    fn path_rasterizer_should_draw_generated_vector_fixture() {
+        let decoded = generated_fixture_content("vector-paths.pdf");
+        let list = build_path_display_list(
+            tokenize_content(PdfBytes::new(&decoded)),
+            DisplayListOptions::default(),
+        )
+        .expect("vector fixture display list");
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 220.0,
+                    max_y: 180.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            220,
+        )
+        .expect("vector fixture transform");
+        let raster = rasterize_paths(&list, transform, Rgba::WHITE, PathRasterOptions::default())
+            .expect("vector fixture should rasterize");
+
+        assert_eq!(raster.dimensions().width, 220);
+        assert_eq!(raster.dimensions().height, 180);
+        assert!(raster
+            .pixels()
+            .chunks_exact(4)
+            .any(|pixel| pixel != [255, 255, 255, 255]));
+        assert_eq!(
+            raster.pixel(100, 100).expect("filled rectangle pixel"),
+            Rgba {
+                r: 230,
+                g: 51,
+                b: 26,
+                a: 255,
+            }
+        );
+    }
+
+    #[test]
+    fn path_rasterizer_should_enforce_flattened_segment_limit() {
+        let decoded = generated_fixture_content("vector-paths.pdf");
+        let list = build_path_display_list(
+            tokenize_content(PdfBytes::new(&decoded)),
+            DisplayListOptions::default(),
+        )
+        .expect("vector fixture display list");
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 220.0,
+                    max_y: 180.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            220,
+        )
+        .expect("vector fixture transform");
+        let error = rasterize_paths(
+            &list,
+            transform,
+            Rgba::WHITE,
+            PathRasterOptions {
+                max_flattened_segments: 1,
+                ..PathRasterOptions::default()
+            },
+        )
+        .expect_err("segment limit should fail");
+
+        assert_eq!(
+            error.kind(),
+            &RasterErrorKind::PathComplexityOverflow { limit: 1 }
         );
     }
 

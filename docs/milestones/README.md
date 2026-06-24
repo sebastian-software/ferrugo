@@ -21,7 +21,6 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
-| 0037 | [Path Rasterization](0037-path-rasterization.md) | 3 | medium | 0036 |
 | 0038 | [Image Rasterization And Alpha](0038-image-rasterization-and-alpha.md) | 3 | medium | 0037 |
 | 0039 | [Basic Text Rasterization](0039-basic-text-rasterization.md) | 3 | medium | 0038 |
 | 0040 | [Typical Document Coverage Gate](0040-typical-document-coverage-gate.md) | 4 | medium | 0039 |
@@ -90,6 +89,7 @@ No milestones are currently in progress.
 | 0034 | [Image XObject Decoding And Placement](0034-image-xobject-decoding-and-placement.md) | 2 | medium | 2026-06-24 |
 | 0035 | [Form XObject Recursion And Budgets](0035-form-xobject-recursion-and-budgets.md) | 2 | medium | 2026-06-24 |
 | 0036 | [Raster Device And Page Transform](0036-raster-device-and-page-transform.md) | 3 | medium | 2026-06-24 |
+| 0037 | [Path Rasterization](0037-path-rasterization.md) | 3 | medium | 2026-06-24 |
 
 ## Update Rules
 
