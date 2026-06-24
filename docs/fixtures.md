@@ -27,6 +27,7 @@ The initial seed set covers:
 - page size
 - text drawing
 - vector path drawing
+- vector-heavy chart stress drawing with nested clips and cubic curves
 - image placement through an inline image stream
 - image placement through an Image XObject
 - CMYK and Indexed image color spaces

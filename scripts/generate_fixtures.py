@@ -659,6 +659,43 @@ def clipped_paths_pdf() -> bytes:
     )
 
 
+def vector_stress_pdf() -> bytes:
+    ops: list[str] = [
+        "q",
+        "8 8 144 104 re W n",
+        "16 16 128 88 re W n",
+        "0.96 0.96 0.96 rg 0 0 160 120 re f",
+        "0.82 0.82 0.82 RG 0.5 w",
+    ]
+    for x in range(20, 145, 10):
+        ops.append(f"{x} 18 m {x} 104 l S")
+    for y in range(20, 105, 10):
+        ops.append(f"18 {y} m 144 {y} l S")
+    bar_colors = [
+        (0.1, 0.45, 0.82),
+        (0.08, 0.62, 0.42),
+        (0.88, 0.42, 0.1),
+        (0.58, 0.28, 0.72),
+    ]
+    for index, height in enumerate([24, 52, 36, 70, 44, 62, 30, 78, 48, 58]):
+        x = 22 + index * 12
+        r, g, b = bar_colors[index % len(bar_colors)]
+        ops.append(f"{r} {g} {b} rg {x} 20 8 {height} re f")
+        ops.append(f"0.12 0.12 0.12 RG 0.8 w {x} 20 8 {height} re S")
+    ops.extend(
+        [
+            "0.95 0.12 0.18 RG 2 w 1 J 1 j",
+            "20 52 m 32 92 44 12 56 52 c 68 92 80 12 92 52 c "
+            "104 92 116 12 128 52 c 136 78 140 36 144 62 c S",
+            "0.05 0.05 0.05 rg",
+        ]
+    )
+    for x, y in [(30, 86), (54, 42), (78, 68), (102, 34), (126, 76)]:
+        ops.append(f"{x} {y} 4 4 re f")
+    ops.append("Q")
+    return page_pdf("[0 0 160 120]", " ".join(ops))
+
+
 def annotation_appearance_pdf() -> bytes:
     pdf = Pdf()
     content = b""
@@ -1442,6 +1479,7 @@ def main() -> None:
     write("line-caps.pdf", line_caps_pdf())
     write("line-joins.pdf", line_joins_pdf())
     write("clipped-paths.pdf", clipped_paths_pdf())
+    write("vector-stress.pdf", vector_stress_pdf())
     write("annotation-appearance.pdf", annotation_appearance_pdf())
     write("annotation-missing-appearance.pdf", annotation_missing_appearance_pdf())
     write("link-annotation-appearance.pdf", link_annotation_appearance_pdf())

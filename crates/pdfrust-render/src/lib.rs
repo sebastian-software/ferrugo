@@ -9424,6 +9424,44 @@ mod tests {
     }
 
     #[test]
+    fn path_rasterizer_should_draw_generated_vector_stress_fixture() {
+        let decoded = generated_fixture_content("vector-stress.pdf");
+        let list = build_path_display_list(
+            tokenize_content(PdfBytes::new(&decoded)),
+            DisplayListOptions::default(),
+        )
+        .expect("vector stress fixture display list");
+        assert!(list.len() > 40);
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 160.0,
+                    max_y: 120.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            160,
+        )
+        .expect("vector stress fixture transform");
+        let raster = rasterize_paths(&list, transform, Rgba::WHITE, PathRasterOptions::default())
+            .expect("vector stress fixture should rasterize");
+
+        assert_eq!(raster.dimensions().width, 160);
+        assert_eq!(raster.dimensions().height, 120);
+        assert!(
+            raster
+                .pixels()
+                .chunks_exact(4)
+                .filter(|pixel| *pixel != [255, 255, 255, 255])
+                .count()
+                > 8_000
+        );
+    }
+
+    #[test]
     fn path_rasterizer_should_enforce_flattened_segment_limit() {
         let decoded = generated_fixture_content("vector-paths.pdf");
         let list = build_path_display_list(
@@ -9459,6 +9497,45 @@ mod tests {
         assert_eq!(
             error.kind(),
             &RasterErrorKind::PathComplexityOverflow { limit: 1 }
+        );
+    }
+
+    #[test]
+    fn path_rasterizer_should_enforce_vector_stress_segment_budget() {
+        let decoded = generated_fixture_content("vector-stress.pdf");
+        let list = build_path_display_list(
+            tokenize_content(PdfBytes::new(&decoded)),
+            DisplayListOptions::default(),
+        )
+        .expect("vector stress fixture display list");
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 160.0,
+                    max_y: 120.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            160,
+        )
+        .expect("vector stress fixture transform");
+        let error = rasterize_paths(
+            &list,
+            transform,
+            Rgba::WHITE,
+            PathRasterOptions {
+                max_flattened_segments: 12,
+                ..PathRasterOptions::default()
+            },
+        )
+        .expect_err("stress curve should exceed configured segment limit");
+
+        assert_eq!(
+            error.kind(),
+            &RasterErrorKind::PathComplexityOverflow { limit: 12 }
         );
     }
 
