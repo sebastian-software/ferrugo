@@ -586,6 +586,8 @@ pub enum ImageColorSpace {
     DeviceGray,
     /// DeviceRGB image samples.
     DeviceRgb,
+    /// DeviceCMYK image samples.
+    DeviceCmyk,
 }
 
 impl ImageColorSpace {
@@ -595,6 +597,7 @@ impl ImageColorSpace {
         match self {
             Self::DeviceGray => 1,
             Self::DeviceRgb => 3,
+            Self::DeviceCmyk => 4,
         }
     }
 }
@@ -4323,7 +4326,26 @@ fn sample_image(image: &ImageXObject, x: f64, y: f64) -> Rgba {
             b: image.samples[index + 2],
             a: 255,
         },
+        ImageColorSpace::DeviceCmyk => cmyk_to_rgba(
+            image.samples[index],
+            image.samples[index + 1],
+            image.samples[index + 2],
+            image.samples[index + 3],
+        ),
     }
+}
+
+fn cmyk_to_rgba(cyan: u8, magenta: u8, yellow: u8, key: u8) -> Rgba {
+    Rgba {
+        r: subtractive_channel_to_rgb(cyan, key),
+        g: subtractive_channel_to_rgb(magenta, key),
+        b: subtractive_channel_to_rgb(yellow, key),
+        a: 255,
+    }
+}
+
+fn subtractive_channel_to_rgb(channel: u8, key: u8) -> u8 {
+    255u8.saturating_sub(channel.saturating_add(key))
 }
 
 fn draw_text_run(
@@ -4613,6 +4635,10 @@ fn image_color_space(
             Ok(ImageColorSpace::DeviceRgb)
         }
         PdfPrimitive::Name(name) if name.as_bytes() == b"RGB" => Ok(ImageColorSpace::DeviceRgb),
+        PdfPrimitive::Name(name) if name.as_bytes() == b"DeviceCMYK" => {
+            Ok(ImageColorSpace::DeviceCmyk)
+        }
+        PdfPrimitive::Name(name) if name.as_bytes() == b"CMYK" => Ok(ImageColorSpace::DeviceCmyk),
         PdfPrimitive::Name(name) if name.as_bytes() == b"DeviceGray" => {
             Ok(ImageColorSpace::DeviceGray)
         }
@@ -7016,6 +7042,21 @@ mod tests {
     }
 
     #[test]
+    fn image_resources_should_decode_device_cmyk_xobject() {
+        let document = load_image_xobject_pdf(
+            b"q 10 0 0 10 0 0 cm /Im1 Do Q",
+            b"<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceCMYK /BitsPerComponent 8 /Length 4 >>",
+            &[0, 255, 255, 0],
+        );
+        let resources =
+            image_resources_from_document(&document).expect("valid CMYK image resource");
+        let image = resources.get(PdfName::new(b"Im1")).expect("image resource");
+
+        assert_eq!(image.color_space, ImageColorSpace::DeviceCmyk);
+        assert_eq!(&*image.samples, &[0, 255, 255, 0]);
+    }
+
+    #[test]
     fn image_display_list_should_place_image_with_ctm_bounds() {
         let document = load_image_xobject_pdf(
             b"q 64 0 0 64 28 28 cm /Im1 Do Q",
@@ -7111,6 +7152,51 @@ mod tests {
     }
 
     #[test]
+    fn image_rasterizer_should_convert_cmyk_samples() {
+        let document = load_image_xobject_pdf(
+            b"q 10 0 0 10 5 5 cm /Im1 Do Q",
+            b"<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceCMYK /BitsPerComponent 8 /Length 4 >>",
+            &[0, 255, 255, 0],
+        );
+        let resources =
+            image_resources_from_document(&document).expect("valid CMYK image resource");
+        let content = content_stream_from_document(&document);
+        let list = build_image_display_list(
+            tokenize_content(PdfBytes::new(&content)),
+            &resources,
+            DisplayListOptions::default(),
+        )
+        .expect("valid CMYK image display list");
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 20.0,
+                    max_y: 20.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            20,
+        )
+        .expect("CMYK image transform");
+        let mut device = transform.create_device(Rgba::WHITE).expect("raster device");
+
+        rasterize_images(&list, &mut device, transform).expect("CMYK image should rasterize");
+
+        assert_eq!(
+            device.pixel(10, 10).expect("CMYK sample pixel"),
+            Rgba {
+                r: 255,
+                g: 0,
+                b: 0,
+                a: 255,
+            }
+        );
+    }
+
+    #[test]
     fn image_display_list_should_report_unsupported_inline_image_filter() {
         let error = build_image_display_list(
             tokenize_content(PdfBytes::new(
@@ -7174,16 +7260,16 @@ mod tests {
     fn image_resources_should_report_unsupported_color_space() {
         let document = load_image_xobject_pdf(
             b"q 10 0 0 10 0 0 cm /Im1 Do Q",
-            b"<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceCMYK /BitsPerComponent 8 /Length 4 >>",
-            &[0, 0, 0, 0],
+            b"<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /Separation /BitsPerComponent 8 /Length 1 >>",
+            &[0],
         );
         let error =
-            image_resources_from_document(&document).expect_err("CMYK is not supported yet");
+            image_resources_from_document(&document).expect_err("Separation is not supported yet");
 
         assert_eq!(
             error.kind(),
             &GraphicsErrorKind::UnsupportedImageColorSpace {
-                color_space: b"DeviceCMYK".to_vec(),
+                color_space: b"Separation".to_vec(),
             }
         );
     }

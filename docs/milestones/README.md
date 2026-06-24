@@ -21,7 +21,6 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
-| 0046 | [Color Spaces And Decode Arrays](0046-color-spaces-and-decode-arrays.md) | 6 | medium | 0045 |
 | 0047 | [Image Filter Coverage](0047-image-filter-coverage.md) | 6 | medium | 0046 |
 | 0048 | [Soft Masks And Transparency Groups](0048-soft-masks-and-transparency-groups.md) | 6 | medium | 0047 |
 | 0049 | [Blend Modes And Overprint Policy](0049-blend-modes-and-overprint-policy.md) | 6 | medium | 0048 |
@@ -41,6 +40,7 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
+| 0046 | [Color Spaces And Decode Arrays](0046-color-spaces-and-decode-arrays.md) | 6 | medium | 0045 |
 
 ## Done
 

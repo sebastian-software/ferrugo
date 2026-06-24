@@ -1,6 +1,6 @@
 # 0046: Color Spaces And Decode Arrays
 
-Status: todo
+Status: in-progress
 Phase: 6
 Size: medium
 Depends on: 0045
@@ -48,3 +48,10 @@ typical thumbnails.
 ## Completion Notes
 
 Empty until done.
+
+## Progress Notes
+
+- Added DeviceCMYK image color-space recognition and allocation-light
+  subtractive CMYK-to-RGB sampling in the rasterizer.
+- Kept unsupported non-process color spaces typed; `Separation` remains an
+  explicit unsupported color-space error.
