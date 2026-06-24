@@ -1316,6 +1316,27 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_render_generated_acroform_signature_placeholder_fixture() {
+        let bytes =
+            include_bytes!("../../../fixtures/generated/acroform-signature-placeholder.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 160,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated AcroForm signature placeholder fixture should render");
+
+        assert_eq!(thumbnail.width, 160);
+        assert_eq!(thumbnail.height, 90);
+        assert_eq!(rgba_at(&thumbnail, 30, 35), [240, 240, 240, 255]);
+        assert_low_intensity(rgba_at(&thumbnail, 20, 25), 96);
+        assert_eq!(rgba_at(&thumbnail, 130, 45), [255, 255, 255, 255]);
+    }
+
+    #[test]
     fn native_backend_should_render_generated_text_fixture() {
         let bytes = include_bytes!("../../../fixtures/generated/text-page.pdf");
         let thumbnail = ThumbnailBackend::render(
