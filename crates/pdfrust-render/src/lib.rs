@@ -481,6 +481,8 @@ impl Default for ExtGraphicsState {
 pub enum Shading {
     /// Axial gradient shading.
     Axial(AxialShading),
+    /// Radial gradient shading.
+    Radial(RadialShading),
 }
 
 /// Axial shading data used by thumbnail rasterization.
@@ -499,6 +501,29 @@ pub struct AxialShading {
     /// Whether samples before the start point extend the start color.
     pub extend_start: bool,
     /// Whether samples after the end point extend the end color.
+    pub extend_end: bool,
+}
+
+/// Radial shading data used by thumbnail rasterization.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RadialShading {
+    /// Start circle center in shading coordinates.
+    pub start_center: Point,
+    /// Start circle radius.
+    pub start_radius: f64,
+    /// End circle center in shading coordinates.
+    pub end_center: Point,
+    /// End circle radius.
+    pub end_radius: f64,
+    /// Start color.
+    pub start_color: DeviceColor,
+    /// End color.
+    pub end_color: DeviceColor,
+    /// Exponent from the sampled Type 2 function.
+    pub exponent: f64,
+    /// Whether samples before the start circle extend the start color.
+    pub extend_start: bool,
+    /// Whether samples after the end circle extend the end color.
     pub extend_end: bool,
 }
 
@@ -2553,6 +2578,9 @@ fn rasterize_shading_item(
 ) -> RasterResult<()> {
     match &item.shading {
         Shading::Axial(shading) => rasterize_axial_shading(*shading, item.state, device, transform),
+        Shading::Radial(shading) => {
+            rasterize_radial_shading(*shading, item.state, device, transform)
+        }
     }
 }
 
@@ -2596,7 +2624,70 @@ fn rasterize_axial_shading(
     Ok(())
 }
 
+fn rasterize_radial_shading(
+    shading: RadialShading,
+    state: GraphicsState,
+    device: &mut RasterDevice,
+    transform: PageTransform,
+) -> RasterResult<()> {
+    let start_center = state
+        .ctm
+        .transform_point(shading.start_center.x, shading.start_center.y);
+    let start_center = transform
+        .matrix
+        .transform_point(start_center.x, start_center.y);
+    let end_center = state
+        .ctm
+        .transform_point(shading.end_center.x, shading.end_center.y);
+    let end_center = transform.matrix.transform_point(end_center.x, end_center.y);
+    let start_radius = shading.start_radius * transform.scale;
+    let end_radius = shading.end_radius * transform.scale;
+    let radius_delta = end_radius - start_radius;
+    if radius_delta.abs() <= f64::EPSILON {
+        return Ok(());
+    }
+    let dimensions = device.dimensions();
+    for y in 0..dimensions.height {
+        for x in 0..dimensions.width {
+            let sample_x = f64::from(x) + 0.5;
+            let sample_y = f64::from(y) + 0.5;
+            let dx = sample_x - end_center.x;
+            let dy = sample_y - end_center.y;
+            let distance = dx.hypot(dy);
+            let center_distance =
+                (start_center.x - end_center.x).hypot(start_center.y - end_center.y);
+            let mut t = (distance + center_distance - start_radius) / radius_delta;
+            if t < 0.0 {
+                if !shading.extend_start {
+                    continue;
+                }
+                t = 0.0;
+            } else if t > 1.0 {
+                if !shading.extend_end {
+                    continue;
+                }
+                t = 1.0;
+            }
+            let source = sample_radial_color(shading, t);
+            blend_pixel(device, x, y, source, state.blend_mode, 1.0)?;
+        }
+    }
+    Ok(())
+}
+
 fn sample_axial_color(shading: AxialShading, t: f64) -> Rgba {
+    let ratio = t.clamp(0.0, 1.0).powf(shading.exponent);
+    let start = device_color_to_rgba(shading.start_color);
+    let end = device_color_to_rgba(shading.end_color);
+    Rgba {
+        r: interpolate_channel(start.r, end.r, ratio),
+        g: interpolate_channel(start.g, end.g, ratio),
+        b: interpolate_channel(start.b, end.b, ratio),
+        a: 255,
+    }
+}
+
+fn sample_radial_color(shading: RadialShading, t: f64) -> Rgba {
     let ratio = t.clamp(0.0, 1.0).powf(shading.exponent);
     let start = device_color_to_rgba(shading.start_color);
     let end = device_color_to_rgba(shading.end_color);
@@ -4480,30 +4571,61 @@ fn reject_enabled_overprint(dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)]) -> G
 }
 
 fn decode_shading(dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)]) -> GraphicsResult<Shading> {
-    let Some(PdfPrimitive::Number(PdfNumber::Integer(2))) =
+    let Some(PdfPrimitive::Number(PdfNumber::Integer(shading_type))) =
         dictionary_value(dictionary, b"ShadingType")
     else {
         return Err(unsupported_shading(b"ShadingType"));
     };
+    if !matches!(shading_type, 2 | 3) {
+        return Err(unsupported_shading(b"ShadingType"));
+    }
     let color_space = shading_color_space(dictionary)?;
-    let coords = required_number_array::<4>(dictionary, b"Coords")?;
     let (start_color, end_color, exponent) = decode_type2_function(dictionary, color_space)?;
     let (extend_start, extend_end) = optional_bool_pair(dictionary, b"Extend")?;
-    Ok(Shading::Axial(AxialShading {
-        start: Point {
-            x: coords[0],
-            y: coords[1],
-        },
-        end: Point {
-            x: coords[2],
-            y: coords[3],
-        },
-        start_color,
-        end_color,
-        exponent,
-        extend_start,
-        extend_end,
-    }))
+    match shading_type {
+        2 => {
+            let coords = required_number_array::<4>(dictionary, b"Coords")?;
+            Ok(Shading::Axial(AxialShading {
+                start: Point {
+                    x: coords[0],
+                    y: coords[1],
+                },
+                end: Point {
+                    x: coords[2],
+                    y: coords[3],
+                },
+                start_color,
+                end_color,
+                exponent,
+                extend_start,
+                extend_end,
+            }))
+        }
+        3 => {
+            let coords = required_number_array::<6>(dictionary, b"Coords")?;
+            if coords[2] < 0.0 || coords[5] < 0.0 {
+                return Err(invalid_shading_resource(b"Coords"));
+            }
+            Ok(Shading::Radial(RadialShading {
+                start_center: Point {
+                    x: coords[0],
+                    y: coords[1],
+                },
+                start_radius: coords[2],
+                end_center: Point {
+                    x: coords[3],
+                    y: coords[4],
+                },
+                end_radius: coords[5],
+                start_color,
+                end_color,
+                exponent,
+                extend_start,
+                extend_end,
+            }))
+        }
+        _ => Err(unsupported_shading(b"ShadingType")),
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -8418,6 +8540,24 @@ mod tests {
     }
 
     #[test]
+    fn shading_resources_should_parse_radial_device_rgb_shading() {
+        let dictionary = vec![(
+            PdfName::new(b"Sh1"),
+            PdfPrimitive::Dictionary(test_radial_shading_dictionary()),
+        )];
+        let resources =
+            ShadingResources::from_shading_dictionary(&dictionary).expect("radial shading");
+
+        let Some(Shading::Radial(shading)) = resources.get(PdfName::new(b"Sh1")) else {
+            panic!("expected radial shading");
+        };
+        assert_eq!(shading.start_center, Point { x: 60.0, y: 60.0 });
+        assert_eq!(shading.start_radius, 0.0);
+        assert_eq!(shading.end_center, Point { x: 60.0, y: 60.0 });
+        assert_eq!(shading.end_radius, 60.0);
+    }
+
+    #[test]
     fn shading_resources_should_reject_unsupported_shading_type() {
         let dictionary = vec![(
             PdfName::new(b"Sh1"),
@@ -8486,6 +8626,39 @@ mod tests {
                 r: 128,
                 g: 0,
                 b: 128,
+                a: 255,
+            }
+        );
+    }
+
+    #[test]
+    fn radial_shading_sampling_should_interpolate_colors() {
+        let shading = RadialShading {
+            start_center: Point { x: 60.0, y: 60.0 },
+            start_radius: 0.0,
+            end_center: Point { x: 60.0, y: 60.0 },
+            end_radius: 60.0,
+            start_color: DeviceColor::Rgb {
+                r: 1.0,
+                g: 1.0,
+                b: 1.0,
+            },
+            end_color: DeviceColor::Rgb {
+                r: 0.0,
+                g: 0.0,
+                b: 1.0,
+            },
+            exponent: 1.0,
+            extend_start: true,
+            extend_end: true,
+        };
+
+        assert_eq!(
+            sample_radial_color(shading, 0.5),
+            Rgba {
+                r: 128,
+                g: 128,
+                b: 255,
                 a: 255,
             }
         );
@@ -10226,6 +10399,66 @@ mod tests {
                             PdfPrimitive::Number(PdfNumber::Integer(1)),
                             PdfPrimitive::Number(PdfNumber::Integer(0)),
                             PdfPrimitive::Number(PdfNumber::Integer(0)),
+                        ]),
+                    ),
+                    (
+                        PdfName::new(b"C1"),
+                        PdfPrimitive::Array(vec![
+                            PdfPrimitive::Number(PdfNumber::Integer(0)),
+                            PdfPrimitive::Number(PdfNumber::Integer(0)),
+                            PdfPrimitive::Number(PdfNumber::Integer(1)),
+                        ]),
+                    ),
+                    (
+                        PdfName::new(b"N"),
+                        PdfPrimitive::Number(PdfNumber::Integer(1)),
+                    ),
+                ]),
+            ),
+            (
+                PdfName::new(b"Extend"),
+                PdfPrimitive::Array(vec![
+                    PdfPrimitive::Boolean(true),
+                    PdfPrimitive::Boolean(true),
+                ]),
+            ),
+        ]
+    }
+
+    fn test_radial_shading_dictionary() -> Vec<(PdfName<'static>, PdfPrimitive<'static>)> {
+        vec![
+            (
+                PdfName::new(b"ShadingType"),
+                PdfPrimitive::Number(PdfNumber::Integer(3)),
+            ),
+            (
+                PdfName::new(b"ColorSpace"),
+                PdfPrimitive::Name(PdfName::new(b"DeviceRGB")),
+            ),
+            (
+                PdfName::new(b"Coords"),
+                PdfPrimitive::Array(vec![
+                    PdfPrimitive::Number(PdfNumber::Integer(60)),
+                    PdfPrimitive::Number(PdfNumber::Integer(60)),
+                    PdfPrimitive::Number(PdfNumber::Integer(0)),
+                    PdfPrimitive::Number(PdfNumber::Integer(60)),
+                    PdfPrimitive::Number(PdfNumber::Integer(60)),
+                    PdfPrimitive::Number(PdfNumber::Integer(60)),
+                ]),
+            ),
+            (
+                PdfName::new(b"Function"),
+                PdfPrimitive::Dictionary(vec![
+                    (
+                        PdfName::new(b"FunctionType"),
+                        PdfPrimitive::Number(PdfNumber::Integer(2)),
+                    ),
+                    (
+                        PdfName::new(b"C0"),
+                        PdfPrimitive::Array(vec![
+                            PdfPrimitive::Number(PdfNumber::Integer(1)),
+                            PdfPrimitive::Number(PdfNumber::Integer(1)),
+                            PdfPrimitive::Number(PdfNumber::Integer(1)),
                         ]),
                     ),
                     (

@@ -57,6 +57,10 @@ In progress:
   samples colors without per-pixel heap allocation.
 - Native rendering now resolves page-level `/Shading` dictionaries for the path
   and form scan passes.
+- Third implementation slice adds `/ShadingType 3` radial shading parsing and
+  rasterization for the common concentric-circle case, sharing the same
+  `DeviceRGB`/`DeviceGray` Type 2 function decoder and direct pixel sampling
+  path.
 - Second fixture slice adds generated `fixtures/generated/axial-gradient.pdf`
   through `scripts/generate_fixtures.py`, covering a full-page red-to-blue
   `DeviceRGB` axial shading.
