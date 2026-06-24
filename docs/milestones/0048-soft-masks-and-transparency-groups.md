@@ -1,6 +1,6 @@
 # 0048: Soft Masks And Transparency Groups
 
-Status: in-progress
+Status: done
 Phase: 6
 Size: medium
 Depends on: 0047
@@ -45,8 +45,6 @@ PDF thumbnails.
 
 ## Completion Notes
 
-In progress:
-
 - First implementation slice adds `/SMask` image support for referenced 8-bit
   DeviceGray Image XObjects with dimensions matching the parent image.
 - Soft-mask sample data is stored beside the decoded image samples as
@@ -70,10 +68,20 @@ In progress:
   back into the page.
 - Added a transparency-group intermediate pixel budget with
   `TransparencyGroupPixelsOverflow` coverage.
+- Final fixture slice adds generated `transparency-group.pdf` plus native
+  backend smoke coverage.
+- PDFium/native comparison for `transparency-group.pdf` at `max-edge 120`:
+  dimensions `120x120`, changed pixels `0`, MAE `0.000`, p95 `0`, max channel
+  delta `0`, native non-white pixels `400`.
 - Validation so far: `cargo fmt --check`, `git diff --check`,
   `cargo test -p pdfrust-render soft_mask -- --nocapture`,
   `cargo test -p pdfrust-render generated_soft_mask -- --nocapture`,
   `cargo test -p pdfrust-render transparency_group -- --nocapture`,
-  `cargo test -p pdfrust-native soft_mask -- --nocapture`, `cargo check`,
-  `cargo test --quiet`, native/PDFium fixture rendering and PNG comparison,
+  `cargo test -p pdfrust-native soft_mask -- --nocapture`,
+  `cargo test -p pdfrust-native transparency_group -- --nocapture`,
+  `cargo check`, `cargo test --quiet`,
+  native/PDFium fixture rendering and PNG comparison,
   `cargo clippy --all-targets --all-features -- -D warnings`.
+- Follow-up: image/text execution inside Form XObject groups, non-normal blend
+  modes, knockout semantics, and broader transparency-stack parity remain
+  later corpus-driven slices.

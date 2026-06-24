@@ -601,6 +601,24 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_render_generated_transparency_group_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/transparency-group.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 120,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated transparency group fixture should render through native backend");
+
+        assert_eq!(thumbnail.width, 120);
+        assert_eq!(thumbnail.height, 120);
+        assert_eq!(rgba_at(&thumbnail, 20, 100), [255, 0, 0, 255]);
+    }
+
+    #[test]
     fn native_backend_should_render_generated_text_fixture() {
         let bytes = include_bytes!("../../../fixtures/generated/text-page.pdf");
         let thumbnail = ThumbnailBackend::render(

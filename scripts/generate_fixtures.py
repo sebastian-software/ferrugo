@@ -336,6 +336,34 @@ def soft_mask_image_pdf() -> bytes:
     return pdf.render(catalog)
 
 
+def transparency_group_pdf() -> bytes:
+    pdf = Pdf()
+    content = b"q 1 0 0 1 10 10 cm /Fm1 Do Q"
+    form = b"1 0 0 rg 0 0 20 20 re f"
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 120 120] "
+        "/Resources << /XObject << /Fm1 4 0 R >> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    form_object = pdf.add(
+        b"<< /Type /XObject /Subtype /Form /BBox [0 0 20 20] "
+        b"/Group << /S /Transparency /I true >> /Length "
+        + str(len(form)).encode("ascii")
+        + b" >>\nstream\n"
+        + form
+        + b"\nendstream"
+    )
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert form_object == 4
+    return pdf.render(catalog)
+
+
 def embedded_font_pdf() -> bytes:
     pdf = Pdf()
     content = b"BT /F1 18 Tf 20 60 Td (embedded font fixture) Tj ET"
@@ -488,6 +516,7 @@ def main() -> None:
     write("dct-image.pdf", dct_image_pdf())
     write("predictor-image.pdf", predictor_image_pdf())
     write("soft-mask-image.pdf", soft_mask_image_pdf())
+    write("transparency-group.pdf", transparency_group_pdf())
     write("embedded-font.pdf", embedded_font_pdf())
     write("tounicode-text.pdf", tounicode_text_pdf())
     write("encoding-differences.pdf", encoding_differences_pdf())

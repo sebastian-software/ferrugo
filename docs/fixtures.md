@@ -29,6 +29,7 @@ The initial seed set covers:
 - Flate image PNG predictor decoding
 - image soft-mask alpha compositing
 - Form XObject invocation
+- path-only Form XObject transparency groups
 - embedded TrueType font resource resolution
 - ToUnicode text character-code mapping
 - Encoding Differences array mapping
