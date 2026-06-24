@@ -1,6 +1,6 @@
 # 0092: AcroForm Field Synthesis For Common Widgets
 
-Status: todo
+Status: completed
 Phase: 15
 Size: medium
 Depends on: 0091
@@ -48,4 +48,14 @@ streams.
 
 ## Completion Notes
 
-Empty until done.
+- Completed 2026-06-25.
+- Added bounded native synthesis for missing-appearance text, choice,
+  checkbox, and radio widgets.
+- Reused the existing annotation fallback content path and rendered optional
+  widget text through page font resource `/F1` when available.
+- Kept JavaScript, XFA, editing, saving, and full viewer-style parity out of
+  scope.
+- Added deterministic missing-appearance AcroForm fixtures.
+- Updated `docs/policies/acroform-appearances.md`.
+- Recorded evidence in
+  `docs/reports/acroform-widget-synthesis-2026-06-25.md`.
