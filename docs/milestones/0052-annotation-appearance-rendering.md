@@ -61,6 +61,9 @@ In progress:
 - Second implementation slice maps each appearance Form XObject `/BBox` onto
   the annotation `/Rect` before invocation, so appearances with smaller local
   coordinate systems scale to their page annotation bounds.
+- Third implementation slice resolves normal appearance state dictionaries by
+  selecting the `/AP /N` entry named by `/AS`; annotations without `/AS` fall
+  back to the first referenced normal appearance.
 - PDFium/native comparison for `annotation-appearance.pdf` at `max-edge 120`:
   `120x120`, changed RGB pixels `0`, RGB MAE `0.0000`, p95 RGB delta `0`,
   max channel delta `0`, native non-white pixels `800`. Filled and outside

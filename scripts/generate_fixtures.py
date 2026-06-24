@@ -518,8 +518,8 @@ def annotation_appearance_pdf() -> bytes:
         + b"\nendstream"
     )
     annotation = pdf.add(
-        "<< /Type /Annot /Subtype /Stamp /Rect [20 80 60 100] "
-        f"/AP << /N {appearance_object} 0 R >> >>"
+        "<< /Type /Annot /Subtype /Stamp /Rect [20 80 60 100] /AS /On "
+        f"/AP << /N << /On {appearance_object} 0 R >> >> >>"
     )
     catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
     assert annotation == 5

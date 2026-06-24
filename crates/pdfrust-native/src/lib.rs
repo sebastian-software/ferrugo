@@ -555,10 +555,28 @@ fn normal_appearance_reference(
     let PdfPrimitive::Dictionary(appearance) = dictionary_value(annotation, b"AP")? else {
         return None;
     };
-    let PdfPrimitive::Reference(reference) = dictionary_value(appearance, b"N")? else {
-        return None;
-    };
-    Some(*reference)
+    match dictionary_value(appearance, b"N")? {
+        PdfPrimitive::Reference(reference) => Some(*reference),
+        PdfPrimitive::Dictionary(states) => normal_appearance_state_reference(annotation, states),
+        _ => None,
+    }
+}
+
+fn normal_appearance_state_reference(
+    annotation: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    states: &[(PdfName<'_>, PdfPrimitive<'_>)],
+) -> Option<PdfReference> {
+    if let Some(PdfPrimitive::Name(active_state)) = dictionary_value(annotation, b"AS") {
+        let PdfPrimitive::Reference(reference) = dictionary_value(states, active_state.as_bytes())?
+        else {
+            return None;
+        };
+        return Some(*reference);
+    }
+    states.iter().find_map(|(_, value)| match value {
+        PdfPrimitive::Reference(reference) => Some(*reference),
+        _ => None,
+    })
 }
 
 fn annotation_rect(annotation: &[(PdfName<'_>, PdfPrimitive<'_>)]) -> Option<PathBounds> {

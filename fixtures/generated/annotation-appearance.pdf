@@ -19,7 +19,7 @@ stream
 endstream
 endobj
 5 0 obj
-<< /Type /Annot /Subtype /Stamp /Rect [20 80 60 100] /AP << /N 4 0 R >> >>
+<< /Type /Annot /Subtype /Stamp /Rect [20 80 60 100] /AS /On /AP << /N << /On 4 0 R >> >> >>
 endobj
 6 0 obj
 << /Type /Catalog /Pages 3 0 R >>
@@ -32,9 +32,9 @@ xref
 0000000167 00000 n 
 0000000224 00000 n 
 0000000345 00000 n 
-0000000435 00000 n 
+0000000453 00000 n 
 trailer
 << /Size 7 /Root 6 0 R >>
 startxref
-484
+502
 %%EOF
