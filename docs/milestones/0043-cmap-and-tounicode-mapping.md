@@ -1,6 +1,6 @@
 # 0043: CMap And ToUnicode Mapping
 
-Status: todo
+Status: done
 Phase: 5
 Size: medium
 Depends on: 0042
@@ -45,4 +45,15 @@ diagnostics are driven by real PDF font metadata.
 
 ## Completion Notes
 
-Empty until done.
+- Implemented a bounded ToUnicode parser for simple `bfchar` and `bfrange`
+  mappings, with byte and entry budgets plus typed unsupported/malformed
+  diagnostics.
+- Added simple single-byte encoding resolution with Differences-array support
+  for common glyph names, and carried source character-code metadata into text
+  display-list items.
+- Added deterministic `tounicode-text.pdf` and `encoding-differences.pdf`
+  fixtures plus native backend smoke coverage.
+- Validation: `cargo fmt --check`, `cargo check`, `cargo test`, native CLI
+  render smoke for both 0043 fixtures,
+  `cargo clippy --all-targets --all-features -- -D warnings`, and
+  `git diff --check`.

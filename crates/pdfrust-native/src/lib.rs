@@ -541,6 +541,48 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_render_generated_tounicode_text_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/tounicode-text.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 160,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated ToUnicode text fixture should render through native backend");
+
+        assert_eq!(thumbnail.width, 160);
+        assert_eq!(thumbnail.height, 100);
+        assert!(thumbnail
+            .bytes
+            .chunks_exact(4)
+            .any(|pixel| pixel != [255, 255, 255, 255]));
+    }
+
+    #[test]
+    fn native_backend_should_render_generated_encoding_differences_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/encoding-differences.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 160,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated encoding differences fixture should render through native backend");
+
+        assert_eq!(thumbnail.width, 160);
+        assert_eq!(thumbnail.height, 100);
+        assert!(thumbnail
+            .bytes
+            .chunks_exact(4)
+            .any(|pixel| pixel != [255, 255, 255, 255]));
+    }
+
+    #[test]
     fn native_backend_should_report_unsupported_missing_page() {
         let bytes = include_bytes!("../../../fixtures/generated/vector-paths.pdf");
         let error = NativeBackend::new()

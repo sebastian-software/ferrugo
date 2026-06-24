@@ -30,6 +30,12 @@ pub const DEFAULT_DISPLAY_ITEM_LIMIT: usize = 8_192;
 /// Default maximum bytes in one decoded text run.
 pub const DEFAULT_TEXT_RUN_BYTES_LIMIT: usize = 64 * 1024;
 
+/// Default maximum decoded bytes for one ToUnicode CMap stream.
+pub const DEFAULT_CMAP_BYTES_LIMIT: usize = 1024 * 1024;
+
+/// Default maximum entries accepted in one parsed ToUnicode CMap.
+pub const DEFAULT_CMAP_ENTRIES_LIMIT: usize = 4_096;
+
 /// Default maximum decoded bytes for one embedded font program.
 pub const DEFAULT_FONT_PROGRAM_BYTES_LIMIT: usize = 16 * 1024 * 1024;
 
@@ -492,6 +498,8 @@ impl PathDisplayItem {
 pub struct TextDisplayItem {
     /// Text decoded through the current lightweight font policy.
     pub text: String,
+    /// Source character-code to Unicode mapping used for this run.
+    pub glyphs: Vec<TextGlyph>,
     /// Font descriptor selected by `Tf`.
     pub font: FontDescriptor,
     /// Font size selected by `Tf`.
@@ -502,6 +510,15 @@ pub struct TextDisplayItem {
     pub text_matrix: Matrix,
     /// Graphics state snapshot at paint time.
     pub state: GraphicsState,
+}
+
+/// Decoded text glyph metadata carried before outline extraction.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TextGlyph {
+    /// Source character code read from the PDF string.
+    pub character_code: u32,
+    /// Unicode text mapped from the source character code.
+    pub unicode: String,
 }
 
 /// Supported image color-space metadata.
@@ -1039,6 +1056,72 @@ pub struct FontProgram {
     pub bytes: Arc<[u8]>,
 }
 
+/// Single-byte font encoding metadata.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct FontEncoding {
+    differences: Vec<(u8, char)>,
+}
+
+impl FontEncoding {
+    /// Creates an encoding with no differences from the ASCII-compatible base.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            differences: Vec::new(),
+        }
+    }
+
+    fn with_differences(differences: Vec<(u8, char)>) -> Self {
+        Self { differences }
+    }
+
+    fn decode_byte(&self, byte: u8) -> Option<char> {
+        self.differences
+            .iter()
+            .find_map(|(code, character)| (*code == byte).then_some(*character))
+            .or_else(|| byte.is_ascii().then_some(byte as char))
+    }
+}
+
+/// Parsed ToUnicode CMap entries for character-code mapping.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToUnicodeMap {
+    entries: Vec<ToUnicodeEntry>,
+    max_code_len: usize,
+}
+
+impl ToUnicodeMap {
+    fn new(entries: Vec<ToUnicodeEntry>) -> Self {
+        let max_code_len = entries
+            .iter()
+            .map(|entry| entry.code.len())
+            .max()
+            .unwrap_or(0);
+        Self {
+            entries,
+            max_code_len,
+        }
+    }
+
+    fn match_code(&self, bytes: &[u8], offset: usize) -> Option<(&str, usize, u32)> {
+        let remaining = bytes.len().saturating_sub(offset);
+        let max_width = self.max_code_len.min(remaining);
+        for width in (1..=max_width).rev() {
+            let code = &bytes[offset..offset + width];
+            if let Some(entry) = self.entries.iter().find(|entry| entry.code == code) {
+                return Some((entry.text.as_str(), width, bytes_to_u32(code)));
+            }
+        }
+        None
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ToUnicodeEntry {
+    code: Vec<u8>,
+    text: String,
+}
+
 /// Font descriptor used by text display-list construction.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FontDescriptor {
@@ -1052,6 +1135,10 @@ pub struct FontDescriptor {
     pub descriptor_reference: Option<Reference>,
     /// Optional loaded embedded font program.
     pub program: Option<FontProgram>,
+    /// Single-byte encoding metadata used when no ToUnicode CMap is present.
+    pub encoding: FontEncoding,
+    /// Optional ToUnicode character-code mapping.
+    pub to_unicode: Option<ToUnicodeMap>,
 }
 
 impl FontDescriptor {
@@ -1064,6 +1151,8 @@ impl FontDescriptor {
             subtype: None,
             descriptor_reference: None,
             program: None,
+            encoding: FontEncoding::new(),
+            to_unicode: None,
         }
     }
 
@@ -1073,6 +1162,8 @@ impl FontDescriptor {
         subtype: Option<FontSubtype>,
         descriptor_reference: Option<Reference>,
         program: Option<FontProgram>,
+        encoding: FontEncoding,
+        to_unicode: Option<ToUnicodeMap>,
     ) -> Self {
         Self {
             resource_name: resource_name.into(),
@@ -1080,6 +1171,8 @@ impl FontDescriptor {
             subtype,
             descriptor_reference,
             program,
+            encoding,
+            to_unicode,
         }
     }
 }
@@ -1122,11 +1215,7 @@ impl FontResources {
         let mut fonts = Vec::new();
         for (name, value) in dictionary {
             fonts.push(decode_font_resource(
-                *name,
-                value,
-                resolver,
-                &mut cache,
-                options.max_font_program_bytes,
+                *name, value, resolver, &mut cache, options,
             )?);
         }
         Ok(Self { fonts })
@@ -1234,7 +1323,7 @@ fn decode_font_resource<'a, R>(
     value: &PdfPrimitive<'a>,
     resolver: &'a R,
     cache: &mut FontProgramCache,
-    max_font_program_bytes: usize,
+    options: DisplayListOptions,
 ) -> GraphicsResult<FontDescriptor>
 where
     R: FontObjectResolver<'a> + ?Sized,
@@ -1254,21 +1343,11 @@ where
             let ObjectValue::Primitive(PdfPrimitive::Dictionary(dictionary)) = object.value else {
                 return Err(invalid_font_resource(resource_name.as_bytes()));
             };
-            decode_font_dictionary(
-                resource_name,
-                &dictionary,
-                resolver,
-                cache,
-                max_font_program_bytes,
-            )
+            decode_font_dictionary(resource_name, &dictionary, resolver, cache, options)
         }
-        PdfPrimitive::Dictionary(dictionary) => decode_font_dictionary(
-            resource_name,
-            dictionary,
-            resolver,
-            cache,
-            max_font_program_bytes,
-        ),
+        PdfPrimitive::Dictionary(dictionary) => {
+            decode_font_dictionary(resource_name, dictionary, resolver, cache, options)
+        }
         _ => Err(invalid_font_resource(resource_name.as_bytes())),
     }
 }
@@ -1278,7 +1357,7 @@ fn decode_font_dictionary<'a, R>(
     dictionary: &[(PdfName<'a>, PdfPrimitive<'a>)],
     resolver: &'a R,
     cache: &mut FontProgramCache,
-    max_font_program_bytes: usize,
+    options: DisplayListOptions,
 ) -> GraphicsResult<FontDescriptor>
 where
     R: FontObjectResolver<'a> + ?Sized,
@@ -1286,13 +1365,17 @@ where
     let base_font = optional_name(dictionary, b"BaseFont");
     let subtype = optional_font_subtype(dictionary);
     let (descriptor_reference, program) =
-        load_font_descriptor_program(dictionary, resolver, cache, max_font_program_bytes)?;
+        load_font_descriptor_program(dictionary, resolver, cache, options.max_font_program_bytes)?;
+    let encoding = font_encoding(dictionary)?;
+    let to_unicode = load_to_unicode_map(dictionary, resolver, options)?;
     Ok(FontDescriptor::loaded(
         resource_name.as_bytes().to_vec(),
         base_font,
         subtype,
         descriptor_reference,
         program,
+        encoding,
+        to_unicode,
     ))
 }
 
@@ -1376,6 +1459,65 @@ where
     };
     let key = FontProgramKey { reference, kind };
     cache.load(key, &stream, max_font_program_bytes).map(Some)
+}
+
+fn load_to_unicode_map<'a, R>(
+    dictionary: &[(PdfName<'a>, PdfPrimitive<'a>)],
+    resolver: &'a R,
+    options: DisplayListOptions,
+) -> GraphicsResult<Option<ToUnicodeMap>>
+where
+    R: FontObjectResolver<'a> + ?Sized,
+{
+    let Some(value) = dictionary_value(dictionary, b"ToUnicode") else {
+        return Ok(None);
+    };
+    let reference = reference_from_primitive(value).ok_or_else(|| {
+        GraphicsError::new(
+            None,
+            GraphicsErrorKind::UnsupportedCMap {
+                feature: b"direct ToUnicode CMap".to_vec(),
+            },
+        )
+    })?;
+    let object = resolver.resolve_font_object(reference)?.ok_or_else(|| {
+        GraphicsError::new(
+            None,
+            GraphicsErrorKind::MissingFontObject {
+                name: b"ToUnicode".to_vec(),
+            },
+        )
+    })?;
+    let ObjectValue::Stream(stream) = object.value else {
+        return Err(invalid_font_resource(b"ToUnicode"));
+    };
+    let decoded = stream
+        .decode_with_options(StreamDecodeOptions {
+            max_decoded_len: options.max_cmap_bytes,
+        })
+        .map_err(|error| match error {
+            pdfrust_object::ObjectError::StreamLimitExceeded { .. } => GraphicsError::new(
+                error.offset(),
+                GraphicsErrorKind::CMapBytesOverflow {
+                    limit: options.max_cmap_bytes,
+                },
+            ),
+            _ => GraphicsError::new(
+                error.offset(),
+                GraphicsErrorKind::ObjectModel {
+                    message: error.to_string(),
+                },
+            ),
+        })?;
+    if decoded.len() > options.max_cmap_bytes {
+        return Err(GraphicsError::new(
+            None,
+            GraphicsErrorKind::CMapBytesOverflow {
+                limit: options.max_cmap_bytes,
+            },
+        ));
+    }
+    parse_to_unicode_cmap(&decoded, options.max_cmap_entries).map(Some)
 }
 
 /// Approximate axis-aligned path bounds.
@@ -1570,6 +1712,10 @@ pub struct DisplayListOptions {
     pub max_display_items: usize,
     /// Maximum bytes accepted in one decoded text run.
     pub max_text_run_bytes: usize,
+    /// Maximum decoded bytes accepted for one ToUnicode CMap stream.
+    pub max_cmap_bytes: usize,
+    /// Maximum parsed entries accepted for one ToUnicode CMap.
+    pub max_cmap_entries: usize,
     /// Maximum decoded bytes accepted for one embedded font program.
     pub max_font_program_bytes: usize,
     /// Maximum decoded bytes accepted for one image XObject.
@@ -1585,6 +1731,8 @@ impl Default for DisplayListOptions {
             max_path_segments: DEFAULT_PATH_SEGMENT_LIMIT,
             max_display_items: DEFAULT_DISPLAY_ITEM_LIMIT,
             max_text_run_bytes: DEFAULT_TEXT_RUN_BYTES_LIMIT,
+            max_cmap_bytes: DEFAULT_CMAP_BYTES_LIMIT,
+            max_cmap_entries: DEFAULT_CMAP_ENTRIES_LIMIT,
             max_font_program_bytes: DEFAULT_FONT_PROGRAM_BYTES_LIMIT,
             max_image_bytes: DEFAULT_IMAGE_BYTES_LIMIT,
             max_form_recursion_depth: DEFAULT_FORM_RECURSION_DEPTH_LIMIT,
@@ -2539,8 +2687,10 @@ impl<'r> TextDisplayListInterpreter<'r> {
     ) -> GraphicsResult<()> {
         self.require_text_object(offset, b"Tj")?;
         expect_operand_count(offset, b"Tj", operands, 1)?;
+        let font = self.selected_font(offset)?;
         let text = decode_pdf_text_string(
             string_operand(offset, b"Tj", operands, 0)?,
+            &font,
             offset,
             self.options.max_text_run_bytes,
         )?;
@@ -2557,14 +2707,20 @@ impl<'r> TextDisplayListInterpreter<'r> {
         let Some(PdfPrimitive::Array(values)) = operands.first() else {
             return Err(invalid_operand(offset, b"TJ"));
         };
+        let font = self.selected_font(offset)?;
         let mut text = String::new();
+        let mut glyphs = Vec::new();
         let mut adjustment = 0.0;
         for value in values {
             match value {
                 PdfPrimitive::String(string) => {
-                    let chunk =
-                        decode_pdf_text_string(*string, offset, self.options.max_text_run_bytes)?;
-                    if text.len() + chunk.len() > self.options.max_text_run_bytes {
+                    let chunk = decode_pdf_text_string(
+                        *string,
+                        &font,
+                        offset,
+                        self.options.max_text_run_bytes,
+                    )?;
+                    if text.len() + chunk.text.len() > self.options.max_text_run_bytes {
                         return Err(GraphicsError::new(
                             Some(offset),
                             GraphicsErrorKind::TextRunOverflow {
@@ -2572,7 +2728,8 @@ impl<'r> TextDisplayListInterpreter<'r> {
                             },
                         ));
                     }
-                    text.push_str(&chunk);
+                    text.push_str(&chunk.text);
+                    glyphs.extend(chunk.glyphs);
                 }
                 PdfPrimitive::Number(PdfNumber::Integer(value)) => {
                     adjustment += *value as f64;
@@ -2583,22 +2740,20 @@ impl<'r> TextDisplayListInterpreter<'r> {
                 _ => return Err(invalid_operand(offset, b"TJ")),
             }
         }
-        self.push_text(offset, text)?;
+        self.push_text(offset, DecodedTextRun { text, glyphs })?;
         self.advance_text(-adjustment / 1000.0 * self.text.font_size);
         Ok(())
     }
 
-    fn push_text(&mut self, offset: ByteOffset, text: String) -> GraphicsResult<()> {
-        let byte_len = text.len();
-        let font =
-            self.text.font.clone().ok_or_else(|| {
-                GraphicsError::new(Some(offset), GraphicsErrorKind::FontNotSelected)
-            })?;
+    fn push_text(&mut self, offset: ByteOffset, text: DecodedTextRun) -> GraphicsResult<()> {
+        let glyph_count = text.glyphs.len();
+        let font = self.selected_font(offset)?;
         let origin_matrix = self.current.ctm.multiply(self.text.text_matrix);
         let origin = origin_matrix.transform_point(0.0, 0.0);
         self.display_list.push(
             DisplayItem::Text(TextDisplayItem {
-                text,
+                text: text.text,
+                glyphs: text.glyphs,
                 font,
                 font_size: self.text.font_size,
                 origin,
@@ -2608,8 +2763,15 @@ impl<'r> TextDisplayListInterpreter<'r> {
             self.options.max_display_items,
             offset,
         )?;
-        self.advance_text(byte_len as f64 * self.text.font_size * 0.5);
+        self.advance_text(glyph_count as f64 * self.text.font_size * 0.5);
         Ok(())
+    }
+
+    fn selected_font(&self, offset: ByteOffset) -> GraphicsResult<FontDescriptor> {
+        self.text
+            .font
+            .clone()
+            .ok_or_else(|| GraphicsError::new(Some(offset), GraphicsErrorKind::FontNotSelected))
     }
 
     fn advance_text(&mut self, advance: f64) {
@@ -3073,14 +3235,31 @@ fn string_operand<'a>(
 
 fn decode_pdf_text_string(
     string: PdfString<'_>,
+    font: &FontDescriptor,
     offset: ByteOffset,
     limit: usize,
-) -> GraphicsResult<String> {
-    let PdfString::Literal(bytes) = string else {
-        return Err(GraphicsError::new(
-            Some(offset),
-            GraphicsErrorKind::UnsupportedTextEncoding,
-        ));
+) -> GraphicsResult<DecodedTextRun> {
+    let bytes = decode_pdf_string_bytes(string, offset, limit)?;
+    if let Some(to_unicode) = &font.to_unicode {
+        return decode_with_to_unicode(&bytes, to_unicode, offset, limit);
+    }
+    decode_with_font_encoding(&bytes, &font.encoding, offset, limit)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DecodedTextRun {
+    text: String,
+    glyphs: Vec<TextGlyph>,
+}
+
+fn decode_pdf_string_bytes(
+    string: PdfString<'_>,
+    offset: ByteOffset,
+    limit: usize,
+) -> GraphicsResult<Vec<u8>> {
+    let bytes = match string {
+        PdfString::Literal(bytes) => bytes.to_vec(),
+        PdfString::Hex(bytes) => decode_hex_bytes(bytes)?,
     };
     if bytes.len() > limit {
         return Err(GraphicsError::new(
@@ -3088,14 +3267,72 @@ fn decode_pdf_text_string(
             GraphicsErrorKind::TextRunOverflow { limit },
         ));
     }
-    if !bytes.is_ascii() {
-        return Err(GraphicsError::new(
-            Some(offset),
-            GraphicsErrorKind::UnsupportedTextEncoding,
-        ));
+    Ok(bytes)
+}
+
+fn decode_with_to_unicode(
+    bytes: &[u8],
+    to_unicode: &ToUnicodeMap,
+    offset: ByteOffset,
+    limit: usize,
+) -> GraphicsResult<DecodedTextRun> {
+    let mut text = String::new();
+    let mut glyphs = Vec::new();
+    let mut byte_offset = 0;
+    while byte_offset < bytes.len() {
+        let Some((mapped, width, character_code)) = to_unicode.match_code(bytes, byte_offset)
+        else {
+            return Err(GraphicsError::new(
+                Some(offset),
+                GraphicsErrorKind::MissingTextMapping {
+                    code: vec![bytes[byte_offset]],
+                },
+            ));
+        };
+        if text.len() + mapped.len() > limit {
+            return Err(GraphicsError::new(
+                Some(offset),
+                GraphicsErrorKind::TextRunOverflow { limit },
+            ));
+        }
+        text.push_str(mapped);
+        glyphs.push(TextGlyph {
+            character_code,
+            unicode: mapped.to_string(),
+        });
+        byte_offset += width;
     }
-    String::from_utf8(bytes.to_vec())
-        .map_err(|_| GraphicsError::new(Some(offset), GraphicsErrorKind::UnsupportedTextEncoding))
+    Ok(DecodedTextRun { text, glyphs })
+}
+
+fn decode_with_font_encoding(
+    bytes: &[u8],
+    encoding: &FontEncoding,
+    offset: ByteOffset,
+    limit: usize,
+) -> GraphicsResult<DecodedTextRun> {
+    let mut text = String::new();
+    let mut glyphs = Vec::with_capacity(bytes.len());
+    for byte in bytes {
+        let Some(character) = encoding.decode_byte(*byte) else {
+            return Err(GraphicsError::new(
+                Some(offset),
+                GraphicsErrorKind::UnsupportedTextEncoding,
+            ));
+        };
+        if text.len() + character.len_utf8() > limit {
+            return Err(GraphicsError::new(
+                Some(offset),
+                GraphicsErrorKind::TextRunOverflow { limit },
+            ));
+        }
+        text.push(character);
+        glyphs.push(TextGlyph {
+            character_code: u32::from(*byte),
+            unicode: character.to_string(),
+        });
+    }
+    Ok(DecodedTextRun { text, glyphs })
 }
 
 fn decode_form_xobject(
@@ -4076,6 +4313,309 @@ fn xobject_references(dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)]) -> Vec<XOb
 
 type EmbeddedFontEntry<'a> = (&'static [u8], &'a PdfPrimitive<'a>, Option<FontProgramKind>);
 
+fn font_encoding(dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)]) -> GraphicsResult<FontEncoding> {
+    let Some(encoding) = dictionary_value(dictionary, b"Encoding") else {
+        return Ok(FontEncoding::new());
+    };
+    match encoding {
+        PdfPrimitive::Name(name)
+            if matches!(
+                name.as_bytes(),
+                b"WinAnsiEncoding" | b"MacRomanEncoding" | b"MacExpertEncoding"
+            ) =>
+        {
+            Ok(FontEncoding::new())
+        }
+        PdfPrimitive::Dictionary(dictionary) => encoding_dictionary(dictionary),
+        _ => Err(GraphicsError::new(
+            None,
+            GraphicsErrorKind::UnsupportedTextEncodingFeature {
+                feature: b"font Encoding".to_vec(),
+            },
+        )),
+    }
+}
+
+fn encoding_dictionary(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+) -> GraphicsResult<FontEncoding> {
+    if let Some(PdfPrimitive::Name(name)) = dictionary_value(dictionary, b"BaseEncoding") {
+        if !matches!(
+            name.as_bytes(),
+            b"WinAnsiEncoding" | b"MacRomanEncoding" | b"MacExpertEncoding"
+        ) {
+            return Err(GraphicsError::new(
+                None,
+                GraphicsErrorKind::UnsupportedTextEncodingFeature {
+                    feature: name.as_bytes().to_vec(),
+                },
+            ));
+        }
+    }
+    let Some(PdfPrimitive::Array(values)) = dictionary_value(dictionary, b"Differences") else {
+        return Ok(FontEncoding::new());
+    };
+    let mut code: Option<u8> = None;
+    let mut differences = Vec::new();
+    for value in values {
+        match value {
+            PdfPrimitive::Number(PdfNumber::Integer(next_code))
+                if (0..=255).contains(next_code) =>
+            {
+                code = Some(*next_code as u8);
+            }
+            PdfPrimitive::Name(name) => {
+                let Some(current_code) = code else {
+                    return Err(invalid_font_resource(b"Encoding"));
+                };
+                let character = glyph_name_to_char(name.as_bytes()).ok_or_else(|| {
+                    GraphicsError::new(
+                        None,
+                        GraphicsErrorKind::UnsupportedTextEncodingFeature {
+                            feature: name.as_bytes().to_vec(),
+                        },
+                    )
+                })?;
+                differences.push((current_code, character));
+                code = current_code.checked_add(1);
+            }
+            _ => return Err(invalid_font_resource(b"Encoding")),
+        }
+    }
+    Ok(FontEncoding::with_differences(differences))
+}
+
+fn glyph_name_to_char(name: &[u8]) -> Option<char> {
+    match name {
+        [b'A'..=b'Z'] | [b'a'..=b'z'] | [b'0'..=b'9'] => Some(name[0] as char),
+        b"space" => Some(' '),
+        b"hyphen" => Some('-'),
+        b"period" => Some('.'),
+        b"comma" => Some(','),
+        b"colon" => Some(':'),
+        b"semicolon" => Some(';'),
+        b"parenleft" => Some('('),
+        b"parenright" => Some(')'),
+        _ => None,
+    }
+}
+
+fn parse_to_unicode_cmap(bytes: &[u8], entry_limit: usize) -> GraphicsResult<ToUnicodeMap> {
+    let mut entries = Vec::new();
+    let mut mode = CMapSection::None;
+    for raw_line in bytes.split(|byte| matches!(byte, b'\n' | b'\r')) {
+        let line = trim_cmap_comment(raw_line);
+        if line.is_empty() {
+            continue;
+        }
+        if contains_word(line, b"beginbfchar") {
+            mode = CMapSection::BfChar;
+            continue;
+        }
+        if contains_word(line, b"beginbfrange") {
+            mode = CMapSection::BfRange;
+            continue;
+        }
+        if contains_word(line, b"endbfchar") || contains_word(line, b"endbfrange") {
+            mode = CMapSection::None;
+            continue;
+        }
+        match mode {
+            CMapSection::None => {
+                if contains_word(line, b"usecmap") {
+                    return Err(GraphicsError::new(
+                        None,
+                        GraphicsErrorKind::UnsupportedCMap {
+                            feature: b"usecmap".to_vec(),
+                        },
+                    ));
+                }
+            }
+            CMapSection::BfChar => {
+                let hex_values = collect_hex_strings(line)?;
+                for pair in hex_values.chunks_exact(2) {
+                    push_cmap_entry(&mut entries, pair[0].clone(), &pair[1], entry_limit)?;
+                }
+            }
+            CMapSection::BfRange => {
+                let hex_values = collect_hex_strings(line)?;
+                if hex_values.len() >= 3 {
+                    push_cmap_range(&mut entries, &hex_values, entry_limit)?;
+                }
+            }
+        }
+    }
+    Ok(ToUnicodeMap::new(entries))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CMapSection {
+    None,
+    BfChar,
+    BfRange,
+}
+
+fn push_cmap_range(
+    entries: &mut Vec<ToUnicodeEntry>,
+    hex_values: &[Vec<u8>],
+    entry_limit: usize,
+) -> GraphicsResult<()> {
+    let start = bytes_to_u32(&hex_values[0]);
+    let end = bytes_to_u32(&hex_values[1]);
+    if end < start || hex_values[0].len() != hex_values[1].len() {
+        return Err(invalid_cmap());
+    }
+    let count = end - start + 1;
+    if hex_values.len() == 3 {
+        let Some(first_char) = unicode_hex_to_string(&hex_values[2])?.chars().next() else {
+            return Err(invalid_cmap());
+        };
+        for offset in 0..count {
+            let code = u32_to_sized_bytes(start + offset, hex_values[0].len());
+            let Some(character) = char::from_u32(first_char as u32 + offset) else {
+                return Err(invalid_cmap());
+            };
+            push_cmap_entry(entries, code, &char_to_utf16be(character), entry_limit)?;
+        }
+    } else {
+        if count as usize != hex_values.len() - 2 {
+            return Err(invalid_cmap());
+        }
+        for (offset, destination) in hex_values[2..].iter().enumerate() {
+            let code = u32_to_sized_bytes(start + offset as u32, hex_values[0].len());
+            push_cmap_entry(entries, code, destination, entry_limit)?;
+        }
+    }
+    Ok(())
+}
+
+fn push_cmap_entry(
+    entries: &mut Vec<ToUnicodeEntry>,
+    code: Vec<u8>,
+    destination: &[u8],
+    entry_limit: usize,
+) -> GraphicsResult<()> {
+    if entries.len() >= entry_limit {
+        return Err(GraphicsError::new(
+            None,
+            GraphicsErrorKind::CMapEntriesOverflow { limit: entry_limit },
+        ));
+    }
+    if code.is_empty() {
+        return Err(invalid_cmap());
+    }
+    let text = unicode_hex_to_string(destination)?;
+    entries.push(ToUnicodeEntry { code, text });
+    Ok(())
+}
+
+fn collect_hex_strings(line: &[u8]) -> GraphicsResult<Vec<Vec<u8>>> {
+    let mut values = Vec::new();
+    let mut index = 0;
+    while index < line.len() {
+        if line[index] == b'<' && line.get(index + 1) != Some(&b'<') {
+            let start = index + 1;
+            let Some(end_offset) = line[start..].iter().position(|byte| *byte == b'>') else {
+                return Err(invalid_cmap());
+            };
+            let end = start + end_offset;
+            values.push(decode_hex_bytes(&line[start..end])?);
+            index = end + 1;
+        } else {
+            index += 1;
+        }
+    }
+    Ok(values)
+}
+
+fn decode_hex_bytes(hex: &[u8]) -> GraphicsResult<Vec<u8>> {
+    let mut bytes = Vec::with_capacity(hex.len().div_ceil(2));
+    let mut high_nibble = None;
+    for byte in hex
+        .iter()
+        .copied()
+        .filter(|byte| !byte.is_ascii_whitespace())
+    {
+        let nibble = hex_nibble(byte).ok_or_else(invalid_cmap)?;
+        if let Some(high) = high_nibble.take() {
+            bytes.push((high << 4) | nibble);
+        } else {
+            high_nibble = Some(nibble);
+        }
+    }
+    if let Some(high) = high_nibble {
+        bytes.push(high << 4);
+    }
+    Ok(bytes)
+}
+
+fn unicode_hex_to_string(bytes: &[u8]) -> GraphicsResult<String> {
+    if bytes.is_empty() || bytes.len() % 2 != 0 {
+        return Err(invalid_cmap());
+    }
+    let units = bytes
+        .chunks_exact(2)
+        .map(|chunk| u16::from_be_bytes([chunk[0], chunk[1]]));
+    char::decode_utf16(units)
+        .collect::<Result<String, _>>()
+        .map_err(|_| invalid_cmap())
+}
+
+fn char_to_utf16be(character: char) -> Vec<u8> {
+    let mut units = [0; 2];
+    character
+        .encode_utf16(&mut units)
+        .iter()
+        .flat_map(|unit| unit.to_be_bytes())
+        .collect()
+}
+
+fn trim_cmap_comment(line: &[u8]) -> &[u8] {
+    let uncommented = line
+        .iter()
+        .position(|byte| *byte == b'%')
+        .map_or(line, |index| &line[..index]);
+    trim_ascii(uncommented)
+}
+
+fn trim_ascii(bytes: &[u8]) -> &[u8] {
+    let start = bytes
+        .iter()
+        .position(|byte| !byte.is_ascii_whitespace())
+        .unwrap_or(bytes.len());
+    let end = bytes
+        .iter()
+        .rposition(|byte| !byte.is_ascii_whitespace())
+        .map_or(start, |index| index + 1);
+    &bytes[start..end]
+}
+
+fn contains_word(line: &[u8], word: &[u8]) -> bool {
+    line.windows(word.len()).any(|window| window == word)
+}
+
+fn hex_nibble(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
+    }
+}
+
+fn bytes_to_u32(bytes: &[u8]) -> u32 {
+    bytes
+        .iter()
+        .fold(0u32, |value, byte| (value << 8) | u32::from(*byte))
+}
+
+fn u32_to_sized_bytes(value: u32, size: usize) -> Vec<u8> {
+    (0..size)
+        .rev()
+        .map(|index| ((value >> (index * 8)) & 0xff) as u8)
+        .collect()
+}
+
 fn embedded_font_program_entry<'a>(
     descriptor: &'a [(PdfName<'a>, PdfPrimitive<'a>)],
 ) -> Option<EmbeddedFontEntry<'a>> {
@@ -4259,6 +4799,10 @@ fn invalid_font_resource(name: &[u8]) -> GraphicsError {
             name: name.to_vec(),
         },
     )
+}
+
+fn invalid_cmap() -> GraphicsError {
+    GraphicsError::new(None, GraphicsErrorKind::InvalidCMap)
 }
 
 fn missing_current_point(offset: ByteOffset, operator: &'static [u8]) -> GraphicsError {
@@ -4487,6 +5031,33 @@ pub enum GraphicsErrorKind {
     },
     /// Text string uses an encoding outside the current ASCII stub policy.
     UnsupportedTextEncoding,
+    /// Font encoding metadata uses a feature outside the current support.
+    UnsupportedTextEncodingFeature {
+        /// Unsupported encoding feature name.
+        feature: Vec<u8>,
+    },
+    /// ToUnicode CMap uses a feature outside the current support.
+    UnsupportedCMap {
+        /// Unsupported CMap feature name.
+        feature: Vec<u8>,
+    },
+    /// ToUnicode CMap syntax is malformed for the supported subset.
+    InvalidCMap,
+    /// Decoded ToUnicode CMap exceeds the configured byte limit.
+    CMapBytesOverflow {
+        /// Configured decoded CMap byte limit.
+        limit: usize,
+    },
+    /// Parsed ToUnicode CMap exceeds the configured entry limit.
+    CMapEntriesOverflow {
+        /// Configured CMap entry limit.
+        limit: usize,
+    },
+    /// No text mapping exists for a source character code.
+    MissingTextMapping {
+        /// Unmapped source character-code bytes.
+        code: Vec<u8>,
+    },
     /// Decoded text run exceeds the configured limit.
     TextRunOverflow {
         /// Configured text run byte limit.
@@ -4621,6 +5192,28 @@ impl fmt::Display for GraphicsErrorKind {
                 write!(f, "decoded font program exceeds byte limit {limit}")
             }
             Self::UnsupportedTextEncoding => f.write_str("unsupported text encoding"),
+            Self::UnsupportedTextEncodingFeature { feature } => write!(
+                f,
+                "unsupported text encoding feature {}",
+                String::from_utf8_lossy(feature)
+            ),
+            Self::UnsupportedCMap { feature } => {
+                write!(
+                    f,
+                    "unsupported ToUnicode CMap feature {}",
+                    String::from_utf8_lossy(feature)
+                )
+            }
+            Self::InvalidCMap => f.write_str("invalid ToUnicode CMap"),
+            Self::CMapBytesOverflow { limit } => {
+                write!(f, "decoded ToUnicode CMap exceeds byte limit {limit}")
+            }
+            Self::CMapEntriesOverflow { limit } => {
+                write!(f, "ToUnicode CMap exceeds entry limit {limit}")
+            }
+            Self::MissingTextMapping { code } => {
+                write!(f, "missing text mapping for character code {code:x?}")
+            }
             Self::TextRunOverflow { limit } => {
                 write!(f, "decoded text run exceeds byte limit {limit}")
             }
@@ -5469,15 +6062,113 @@ mod tests {
     }
 
     #[test]
-    fn text_display_list_should_report_unsupported_hex_text() {
-        let error = build_text_display_list(
+    fn text_display_list_should_decode_hex_text_with_default_encoding() {
+        let list = build_text_display_list(
             tokenize_content(PdfBytes::new(b"BT /F1 12 Tf <4869> Tj ET")),
             &test_font_resources(),
             DisplayListOptions::default(),
         )
-        .expect_err("hex strings are unsupported in this milestone");
+        .expect("hex strings with ASCII bytes should decode through default encoding");
 
-        assert_eq!(error.kind(), &GraphicsErrorKind::UnsupportedTextEncoding);
+        let DisplayItem::Text(text) = &list.items()[0] else {
+            panic!("expected text display item");
+        };
+        assert_eq!(text.text, "Hi");
+        assert_eq!(text.glyphs[0].character_code, 0x48);
+    }
+
+    #[test]
+    fn text_display_list_should_decode_tounicode_hex_text() {
+        let document = load_tounicode_text_pdf(
+            b"BT /F1 12 Tf <01> Tj ET",
+            b"<< /Type /Font /Subtype /Type1 /BaseFont /SubsetFont /ToUnicode 6 0 R >>",
+            b"/CIDInit /ProcSet findresource begin\n1 beginbfchar\n<01> <005a>\nendbfchar\nend",
+        );
+        let resources =
+            font_resources_from_document(&document, &[("F1", 4)]).expect("valid font resources");
+        let content = content_stream_from_document(&document);
+        let list = build_text_display_list(
+            tokenize_content(PdfBytes::new(&content)),
+            &resources,
+            DisplayListOptions::default(),
+        )
+        .expect("ToUnicode text should decode");
+
+        let DisplayItem::Text(text) = &list.items()[0] else {
+            panic!("expected text display item");
+        };
+        assert_eq!(text.text, "Z");
+        assert_eq!(
+            text.glyphs,
+            vec![TextGlyph {
+                character_code: 1,
+                unicode: "Z".to_string(),
+            }]
+        );
+    }
+
+    #[test]
+    fn text_display_list_should_decode_encoding_differences() {
+        let document = generated_fixture_document("text-page.pdf");
+        let resources = FontResources::from_font_dictionary(
+            &[(
+                PdfName::new(b"F1"),
+                PdfPrimitive::Dictionary(vec![
+                    (
+                        PdfName::new(b"Subtype"),
+                        PdfPrimitive::Name(PdfName::new(b"Type1")),
+                    ),
+                    (
+                        PdfName::new(b"Encoding"),
+                        PdfPrimitive::Dictionary(vec![(
+                            PdfName::new(b"Differences"),
+                            PdfPrimitive::Array(vec![
+                                PdfPrimitive::Number(PdfNumber::Integer(65)),
+                                PdfPrimitive::Name(PdfName::new(b"Z")),
+                            ]),
+                        )]),
+                    ),
+                ]),
+            )],
+            &document,
+            DisplayListOptions::default(),
+        )
+        .expect("differences encoding should resolve");
+        let list = build_text_display_list(
+            tokenize_content(PdfBytes::new(b"BT /F1 12 Tf (A) Tj ET")),
+            &resources,
+            DisplayListOptions::default(),
+        )
+        .expect("differences text should decode");
+
+        let DisplayItem::Text(text) = &list.items()[0] else {
+            panic!("expected text display item");
+        };
+        assert_eq!(text.text, "Z");
+        assert_eq!(text.glyphs[0].character_code, 65);
+    }
+
+    #[test]
+    fn font_resources_should_enforce_tounicode_cmap_byte_budget() {
+        let document = load_tounicode_text_pdf(
+            b"BT /F1 12 Tf <01> Tj ET",
+            b"<< /Type /Font /Subtype /Type1 /BaseFont /SubsetFont /ToUnicode 6 0 R >>",
+            b"1 beginbfchar\n<01> <005a>\nendbfchar",
+        );
+        let error = font_resources_from_document_with_options(
+            &document,
+            &[("F1", 4)],
+            DisplayListOptions {
+                max_cmap_bytes: 3,
+                ..DisplayListOptions::default()
+            },
+        )
+        .expect_err("CMap should exceed configured budget");
+
+        assert_eq!(
+            error.kind(),
+            &GraphicsErrorKind::CMapBytesOverflow { limit: 3 }
+        );
     }
 
     #[test]
@@ -6226,6 +6917,29 @@ mod tests {
         let pdf = build_classic_pdf_from_objects(&objects);
         let leaked = Box::leak(pdf.into_boxed_slice());
         load_classic_document(PdfBytes::new(leaked)).expect("font program PDF should load")
+    }
+
+    fn load_tounicode_text_pdf(
+        content_stream: &[u8],
+        font_dictionary: &[u8],
+        cmap_stream: &[u8],
+    ) -> ClassicDocument<'static> {
+        let content_dictionary = format!("<< /Length {} >>", content_stream.len());
+        let cmap_dictionary = format!("<< /Length {} >>", cmap_stream.len());
+        let objects = vec![
+            stream_object_bytes(1, content_dictionary.as_bytes(), content_stream),
+            indirect_object_bytes(
+                2,
+                b"<< /Type /Page /Parent 3 0 R /MediaBox [0 0 120 120] /Resources << /Font << /F1 4 0 R >> >> /Contents 1 0 R >>",
+            ),
+            indirect_object_bytes(3, b"<< /Type /Pages /Kids [2 0 R] /Count 1 >>"),
+            indirect_object_bytes(4, font_dictionary),
+            indirect_object_bytes(5, b"<< /Type /Catalog /Pages 3 0 R >>"),
+            stream_object_bytes(6, cmap_dictionary.as_bytes(), cmap_stream),
+        ];
+        let pdf = build_classic_pdf_from_objects(&objects);
+        let leaked = Box::leak(pdf.into_boxed_slice());
+        load_classic_document(PdfBytes::new(leaked)).expect("ToUnicode text PDF should load")
     }
 
     fn indirect_object_bytes(number: u32, body: &[u8]) -> Vec<u8> {

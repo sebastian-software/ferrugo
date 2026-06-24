@@ -170,6 +170,70 @@ def embedded_font_pdf() -> bytes:
     return pdf.render(catalog)
 
 
+def tounicode_text_pdf() -> bytes:
+    pdf = Pdf()
+    content = b"BT /F1 24 Tf 30 60 Td <0102> Tj ET"
+    cmap = (
+        b"/CIDInit /ProcSet findresource begin\n"
+        b"1 begincmap\n"
+        b"2 beginbfchar\n"
+        b"<01> <0041>\n"
+        b"<02> <005a>\n"
+        b"endbfchar\n"
+        b"endcmap\n"
+        b"CMapName currentdict /CMap defineresource pop\n"
+        b"end"
+    )
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 160 100] "
+        "/Resources << /Font << /F1 4 0 R >> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    font = pdf.add(
+        "<< /Type /Font /Subtype /Type1 /BaseFont /SubsetFont /ToUnicode 6 0 R >>"
+    )
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    cmap_stream = pdf.add(
+        b"<< /Length "
+        + str(len(cmap)).encode("ascii")
+        + b" >>\nstream\n"
+        + cmap
+        + b"\nendstream"
+    )
+    assert font == 4
+    assert cmap_stream == 6
+    return pdf.render(catalog)
+
+
+def encoding_differences_pdf() -> bytes:
+    pdf = Pdf()
+    content = b"BT /F1 24 Tf 30 60 Td (A) Tj ET"
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 160 100] "
+        "/Resources << /Font << /F1 4 0 R >> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    font = pdf.add(
+        "<< /Type /Font /Subtype /Type1 /BaseFont /DifferencesFont "
+        "/Encoding << /Differences [65 /Z] >> >>"
+    )
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert font == 4
+    return pdf.render(catalog)
+
+
 def write(name: str, data: bytes) -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     (OUT / name).write_bytes(data)
@@ -206,6 +270,8 @@ def main() -> None:
     write("form-xobject.pdf", form_xobject_pdf())
     write("image-xobject.pdf", image_xobject_pdf())
     write("embedded-font.pdf", embedded_font_pdf())
+    write("tounicode-text.pdf", tounicode_text_pdf())
+    write("encoding-differences.pdf", encoding_differences_pdf())
 
 
 if __name__ == "__main__":

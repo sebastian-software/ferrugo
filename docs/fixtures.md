@@ -26,6 +26,8 @@ The initial seed set covers:
 - image placement through an Image XObject
 - Form XObject invocation
 - embedded TrueType font resource resolution
+- ToUnicode text character-code mapping
+- Encoding Differences array mapping
 
 ## Local Corpora
 

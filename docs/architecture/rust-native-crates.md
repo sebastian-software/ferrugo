@@ -106,10 +106,11 @@ and RGB fill/stroke color, and clipping placeholders. It also builds bounded
 path display lists for `m`, `l`, `c`, `h`, `re`, `S`, `s`, `f`, `F`, `f*`,
 `B`, and `B*`. Unsupported path construction operators return typed errors.
 Text display-list support interprets `BT`, `ET`, `Tf`, `Td`, `Tm`, `Tj`, and
-`TJ` into positioned `TextDisplayItem` values with lightweight
-`FontDescriptor` stubs. The first text policy accepts simple ASCII literal
-strings only; CMaps, embedded font shaping, glyph outlines, and searchable text
-extraction remain later milestones. Rasterization remains a later milestone.
+`TJ` into positioned `TextDisplayItem` values. Font descriptors carry simple
+single-byte encodings, Differences arrays, and bounded ToUnicode CMaps for the
+first character-code mapping layer. Embedded font shaping, glyph outlines, and
+searchable text extraction remain later milestones. Rasterization remains a
+later milestone.
 Image XObject support resolves `/XObject` resources from the object model,
 decodes unfiltered and `FlateDecode` `DeviceRGB`/`DeviceGray` image streams
 within an explicit byte budget, and stores `ImageDisplayItem` placements using
@@ -161,6 +162,7 @@ visible text milestone. It renders positioned text display-list runs using the
 captured text origin, font size, and fill color. `pdfrust-native` resolves page
 `/Resources /Font` entries into font descriptors, and the render layer loads
 bounded embedded Type1, TrueType, and CFF font program streams behind a small
-object-identity cache. The current rasterizer still uses the visible fallback
-font; CMaps, glyph outlines, and true font-backed rasterization remain later
-milestones.
+object-identity cache. Text strings are decoded through simple font encodings
+or ToUnicode CMaps and carry their source character codes forward. The current
+rasterizer still uses the visible fallback font; glyph outlines and true
+font-backed rasterization remain later milestones.

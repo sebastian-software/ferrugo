@@ -21,7 +21,6 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
-| 0043 | [CMap And ToUnicode Mapping](0043-cmap-and-tounicode-mapping.md) | 5 | medium | 0042 |
 | 0044 | [Glyph Outline Extraction](0044-glyph-outline-extraction.md) | 5 | medium | 0043 |
 | 0045 | [Complex Text Positioning Baseline](0045-complex-text-positioning-baseline.md) | 5 | medium | 0044 |
 | 0046 | [Color Spaces And Decode Arrays](0046-color-spaces-and-decode-arrays.md) | 6 | medium | 0045 |
@@ -92,6 +91,7 @@ No milestones are currently in progress.
 | 0041a | [Inline Image Stream Execution](0041a-inline-image-stream-execution.md) | 5 | small | 2026-06-24 |
 | 0041b | [Form XObject Native Composition](0041b-form-xobject-native-composition.md) | 5 | small | 2026-06-24 |
 | 0042 | [Font Program Loading](0042-font-program-loading.md) | 5 | medium | 2026-06-24 |
+| 0043 | [CMap And ToUnicode Mapping](0043-cmap-and-tounicode-mapping.md) | 5 | medium | 2026-06-24 |
 
 ## Update Rules
 
