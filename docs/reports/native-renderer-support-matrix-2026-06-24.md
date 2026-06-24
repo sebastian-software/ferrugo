@@ -94,3 +94,20 @@ Release blockers from 0080:
 
 The native renderer can remain native-first for controlled categories, but
 PDFium is still required as oracle and fallback until these blockers are closed.
+
+## 0089 Codec Policy Update
+
+Milestone 0089 makes specialized image codec handling explicit:
+
+| Codec/filter | Native level | Feature bucket | Policy |
+| --- | --- | --- | --- |
+| `FlateDecode`, `Fl` | `rendered` | none | Existing safe stream decoder and predictor path. |
+| `DCTDecode`, `DCT` | `rendered` | none | Existing safe Rust JPEG decoder path. |
+| `CCITTFaxDecode`, `CCF` | `unsupported` | `image.filter` | Deferred until safe decoder selection and scan corpus evidence. |
+| `JPXDecode` | `unsupported` | `image.filter` | Deferred until safe or isolated JPEG 2000 decoder selection. |
+| `JBIG2Decode` | `unsupported` | `image.filter` | Deferred until sandboxed or strongly isolated decoder strategy. |
+
+The generated corpus now includes `unsupported-ccitt-image.pdf`,
+`unsupported-jbig2-image.pdf`, and `unsupported-jpx-image.pdf` as deterministic
+codec-policy blockers. They are expected native fallbacks, not malformed-input
+errors.

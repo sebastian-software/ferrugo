@@ -1,6 +1,6 @@
 # 0089: JPX JBIG2 And Specialized Image Codec Policy
 
-Status: todo
+Status: completed
 Phase: 15
 Size: medium
 Depends on: 0088
@@ -46,4 +46,30 @@ block native rendering of scanned and office-exported PDFs.
 
 ## Completion Notes
 
-Empty until done.
+- Added image filter alias handling for `/Fl` and `/DCT`.
+- Kept `CCITTFaxDecode`/`CCF`, `JPXDecode`, and `JBIG2Decode` as explicit
+  deferred codecs that map to `UnsupportedImageFilter`.
+- Added generated unsupported-codec fixtures for CCITT, JBIG2, and JPX.
+- Added native backend tests proving those fixtures map to `unsupported` with
+  feature bucket `image.filter`.
+- Recorded the policy in
+  `docs/decisions/0006-specialized-image-codec-policy.md`.
+- Wrote `docs/reports/specialized-image-codec-policy-2026-06-25.md`.
+
+Validation completed:
+
+- `cargo fmt --check`
+- `cargo test -p pdfrust-render image_resources_should_decode_flate_alias_xobject`
+- `cargo test -p pdfrust-render image_resources_should_route_dct_alias_to_jpeg_decoder`
+- `cargo test -p pdfrust-render image_resources_should_report_unsupported_deferred_image_codecs`
+- `cargo test -p pdfrust-native unsupported_`
+- `cargo check --workspace --no-default-features`
+- `cargo test --workspace --no-default-features`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --output target/codec-policy-summary-0089.json`
+- `cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/codec-policy-benchmark-0089.json`
+
+The updated generated corpus reported 64 fixtures total: 59 native renders, 4
+fallbacks, and 1 encrypted error. Three fallbacks are intentional `image.filter`
+codec-policy fixtures; the remaining fallback is the known optional-content
+policy case.
