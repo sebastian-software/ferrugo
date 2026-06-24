@@ -57,10 +57,22 @@ In progress:
   samples colors without per-pixel heap allocation.
 - Native rendering now resolves page-level `/Shading` dictionaries for the path
   and form scan passes.
+- Second fixture slice adds generated `fixtures/generated/axial-gradient.pdf`
+  through `scripts/generate_fixtures.py`, covering a full-page red-to-blue
+  `DeviceRGB` axial shading.
+- PDFium/native comparison for `axial-gradient.pdf` at `max-edge 120`:
+  `120x120`, changed pixels `14400`, MAE `1.992`, p95 `3`, max channel delta
+  `3`, native non-white pixels `14400`.
+  Sample pixels: left PDFium `(224,0,31,255)` vs native `(222,0,33,255)`,
+  center PDFium `(128,0,127,255)` vs native `(126,0,129,255)`, right PDFium
+  `(33,0,222,255)` vs native `(31,0,224,255)`.
 - Current validation:
   - `cargo fmt --check`
   - `git diff --check`
   - `cargo check`
   - `cargo test --quiet`
+  - `cargo test -p pdfrust-native axial_gradient -- --nocapture`
   - `cargo test -p pdfrust-render shading -- --nocapture`
+  - `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render fixtures/generated/axial-gradient.pdf --max-edge 120 --output target/pdfrust-thumbnails/axial-gradient-pdfium-0050.png`
+  - `cargo run -p pdfrust-cli -- render-native fixtures/generated/axial-gradient.pdf --max-edge 120 --output target/pdfrust-thumbnails/axial-gradient-native-0050.png`
   - `cargo clippy --all-targets --all-features -- -D warnings`

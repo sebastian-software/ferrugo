@@ -723,6 +723,31 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_render_generated_axial_gradient_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/axial-gradient.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 120,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated axial-gradient fixture should render through native backend");
+
+        assert_eq!(thumbnail.width, 120);
+        assert_eq!(thumbnail.height, 120);
+        let left = rgba_at(&thumbnail, 15, 60);
+        let center = rgba_at(&thumbnail, 60, 60);
+        let right = rgba_at(&thumbnail, 105, 60);
+        assert!(left[0] > 200);
+        assert!(left[2] < 60);
+        assert!(center[0].abs_diff(center[2]) <= 5);
+        assert!(right[0] < 60);
+        assert!(right[2] > 200);
+    }
+
+    #[test]
     fn native_backend_should_render_generated_text_fixture() {
         let bytes = include_bytes!("../../../fixtures/generated/text-page.pdf");
         let thumbnail = ThumbnailBackend::render(
