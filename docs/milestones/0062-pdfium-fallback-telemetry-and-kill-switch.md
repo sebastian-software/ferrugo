@@ -1,6 +1,6 @@
 # 0062: PDFium Fallback Telemetry And Kill Switch
 
-Status: todo
+Status: done
 Phase: 9
 Size: small
 Depends on: 0061
@@ -45,4 +45,21 @@ visible and reversible.
 
 ## Completion Notes
 
-Empty until done.
+- Added optional native unsupported-feature buckets while preserving the public
+  `unsupported` class.
+- Automatic native-first rendering now reports structured fallback diagnostics
+  (`fallback_reason` and `fallback_category`).
+- Added `--native-only` / `--no-pdfium-fallback`,
+  `--deny-fallback-reason <bucket>`, `PDFRUST_NATIVE_ONLY=1`, and
+  `PDFRUST_DENY_FALLBACK_REASONS=...` to block all or targeted PDFium
+  fallbacks.
+- Added `summarize-fallbacks` for local corpus runs. On 2026-06-24,
+  `fixtures/generated` at `--max-edge 120` reported 39 total PDFs, 37 native
+  renders, 1 fallback required in `graphics.optional-content`, and 1 encrypted
+  input.
+- Validation: `cargo fmt --check`, `cargo check`,
+  `cargo clippy --all-targets --all-features -- -D warnings`,
+  `cargo test --quiet`,
+  `cargo run -p pdfrust-cli -- render fixtures/generated/vector-paths.pdf --native-only --max-edge 120 --output target/native-only-vector.png`,
+  and
+  `cargo run -p pdfrust-cli -- summarize-fallbacks fixtures/generated --max-edge 120 --output target/fallback-summary.json`.

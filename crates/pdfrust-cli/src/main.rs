@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+use std::collections::BTreeMap;
 use std::env;
 use std::ffi::OsString;
 use std::fmt;
@@ -37,6 +38,7 @@ fn run(args: Vec<OsString>) -> Result<(), CliError> {
         Some("render-native") => render_native_command(&args[1..]),
         Some("render-isolated") => render_isolated_command(&args[1..]),
         Some("compare-metadata") => compare_metadata_command(&args[1..]),
+        Some("summarize-fallbacks") => summarize_fallbacks_command(&args[1..]),
         Some("--version" | "-V") => {
             println!("pdfrust-cli {}", env!("CARGO_PKG_VERSION"));
             Ok(())
@@ -263,6 +265,38 @@ fn compare_metadata_command(args: &[OsString]) -> Result<(), CliError> {
         Ok(())
     } else {
         Err(CliError::Compare(comparison.mismatches.join("; ")))
+    }
+}
+
+fn summarize_fallbacks_command(args: &[OsString]) -> Result<(), CliError> {
+    let config = FallbackSummaryConfig::parse(args)?;
+    let options = ThumbnailOptions {
+        page_index: config.page_index,
+        max_edge: config.max_edge,
+        background: config.background,
+        output_format: pdfrust_thumbnail::OutputFormat::Png,
+        timeout: config.timeout,
+    };
+    let fixtures = pdf_inputs(&config.input)?;
+    let summary = summarize_native_fallbacks(&fixtures, &options);
+    let json = fallback_summary_json(&summary);
+
+    if let Some(output) = config.output {
+        fs::write(&output, &json).map_err(|source| CliError::Io {
+            path: output,
+            source,
+        })?;
+    } else {
+        println!("{json}");
+    }
+
+    if config.fail_on_fallback && summary.fallback_required > 0 {
+        Err(CliError::Compare(format!(
+            "{} native fallback(s) required",
+            summary.fallback_required
+        )))
+    } else {
+        Ok(())
     }
 }
 
@@ -499,6 +533,89 @@ struct CompareMetadataConfig {
     output: Option<PathBuf>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct FallbackSummaryConfig {
+    input: PathBuf,
+    output: Option<PathBuf>,
+    page_index: u32,
+    max_edge: u32,
+    background: Rgba,
+    timeout: Duration,
+    fail_on_fallback: bool,
+}
+
+impl FallbackSummaryConfig {
+    fn parse(args: &[OsString]) -> Result<Self, CliError> {
+        let mut input = None;
+        let mut output = None;
+        let mut page_index = DEFAULT_PAGE_INDEX;
+        let mut max_edge = DEFAULT_MAX_EDGE;
+        let mut background = Rgba::WHITE;
+        let mut timeout = DEFAULT_TIMEOUT;
+        let mut fail_on_fallback = false;
+
+        let mut index = 0;
+        while index < args.len() {
+            let arg = args[index]
+                .to_str()
+                .ok_or_else(|| CliError::Usage("arguments must be valid UTF-8".to_string()))?;
+            match arg {
+                "--output" | "-o" => {
+                    index += 1;
+                    output = Some(required_path(args, index, "--output")?);
+                }
+                "--page-index" => {
+                    index += 1;
+                    page_index = parse_u32(args, index, "--page-index")?;
+                }
+                "--max-edge" => {
+                    index += 1;
+                    max_edge = parse_u32(args, index, "--max-edge")?;
+                }
+                "--background" => {
+                    index += 1;
+                    background = parse_background(required_str(args, index, "--background")?)?;
+                }
+                "--timeout" => {
+                    index += 1;
+                    let seconds = parse_u64(args, index, "--timeout")?;
+                    timeout = Duration::from_secs(seconds);
+                }
+                "--fail-on-fallback" => {
+                    fail_on_fallback = true;
+                }
+                value if value.starts_with('-') => {
+                    return Err(CliError::Usage(format!("unknown option `{value}`")));
+                }
+                value => {
+                    if input.replace(PathBuf::from(value)).is_some() {
+                        return Err(CliError::Usage(
+                            "only one input path is supported".to_string(),
+                        ));
+                    }
+                }
+            }
+            index += 1;
+        }
+
+        if max_edge == 0 {
+            return Err(CliError::Usage(
+                "--max-edge must be greater than zero".to_string(),
+            ));
+        }
+
+        Ok(Self {
+            input: input.ok_or_else(|| CliError::Usage("missing input path".to_string()))?,
+            output,
+            page_index,
+            max_edge,
+            background,
+            timeout,
+            fail_on_fallback,
+        })
+    }
+}
+
 impl CompareMetadataConfig {
     fn parse(args: &[OsString]) -> Result<Self, CliError> {
         let mut input = None;
@@ -564,6 +681,27 @@ struct MetadataComparison {
     mismatches: Vec<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct FallbackSummary {
+    total: usize,
+    native_rendered: usize,
+    fallback_required: usize,
+    errors: BTreeMap<&'static str, usize>,
+    fallback_categories: BTreeMap<&'static str, usize>,
+}
+
+impl FallbackSummary {
+    fn new(total: usize) -> Self {
+        Self {
+            total,
+            native_rendered: 0,
+            fallback_required: 0,
+            errors: BTreeMap::new(),
+            fallback_categories: BTreeMap::new(),
+        }
+    }
+}
+
 fn compare_metadata_results(
     pdfium: MetadataOutcome,
     native: MetadataOutcome,
@@ -625,6 +763,61 @@ fn compare_metadata_results(
     }
 }
 
+fn pdf_inputs(input: &Path) -> Result<Vec<PathBuf>, CliError> {
+    if input.is_file() {
+        return Ok(vec![input.to_path_buf()]);
+    }
+    if !input.is_dir() {
+        return Err(CliError::Usage(format!(
+            "input path `{}` is not a file or directory",
+            input.display()
+        )));
+    }
+
+    let mut paths = Vec::new();
+    for entry in fs::read_dir(input).map_err(|source| CliError::ReadDir {
+        path: input.to_path_buf(),
+        source,
+    })? {
+        let entry = entry.map_err(|source| CliError::ReadDir {
+            path: input.to_path_buf(),
+            source,
+        })?;
+        let path = entry.path();
+        if path.extension().and_then(|extension| extension.to_str()) == Some("pdf") {
+            paths.push(path);
+        }
+    }
+    paths.sort();
+    Ok(paths)
+}
+
+fn summarize_native_fallbacks(paths: &[PathBuf], options: &ThumbnailOptions) -> FallbackSummary {
+    let native = NativeBackend::new();
+    let mut summary = FallbackSummary::new(paths.len());
+
+    for path in paths {
+        match native.render(PdfSource::from_path(path), options) {
+            Ok(_) => {
+                summary.native_rendered += 1;
+            }
+            Err(error) if error.class() == pdfrust_thumbnail::ThumbnailErrorClass::Unsupported => {
+                summary.fallback_required += 1;
+                let reason = FallbackReason::from_native_error(&error);
+                *summary
+                    .fallback_categories
+                    .entry(reason.category())
+                    .or_insert(0) += 1;
+            }
+            Err(error) => {
+                *summary.errors.entry(error.class().as_str()).or_insert(0) += 1;
+            }
+        }
+    }
+
+    summary
+}
+
 fn page_sizes_match(expected: PageSize, actual: PageSize) -> bool {
     const EPSILON: f64 = 0.01;
     (expected.width - actual.width).abs() <= EPSILON
@@ -646,6 +839,10 @@ enum CliError {
         path: PathBuf,
         source: std::io::Error,
     },
+    ReadDir {
+        path: PathBuf,
+        source: std::io::Error,
+    },
 }
 
 impl fmt::Display for CliError {
@@ -659,6 +856,9 @@ impl fmt::Display for CliError {
             Self::Encode(message) => write!(f, "PNG encode error: {message}"),
             Self::Io { path, source } => {
                 write!(f, "failed to write `{}`: {source}", path.display())
+            }
+            Self::ReadDir { path, source } => {
+                write!(f, "failed to read `{}`: {source}", path.display())
             }
         }
     }
@@ -795,6 +995,35 @@ fn native_memory_diagnostics_json(diagnostics: &NativeMemoryDiagnostics) -> Stri
         diagnostics.max_text_run_bytes,
         diagnostics.max_display_items
     )
+}
+
+fn fallback_summary_json(summary: &FallbackSummary) -> String {
+    format!(
+        concat!(
+            "{{\n",
+            "  \"schema_version\": 1,\n",
+            "  \"total\": {},\n",
+            "  \"native_rendered\": {},\n",
+            "  \"fallback_required\": {},\n",
+            "  \"fallback_categories\": {},\n",
+            "  \"errors\": {}\n",
+            "}}\n"
+        ),
+        summary.total,
+        summary.native_rendered,
+        summary.fallback_required,
+        count_map_json(&summary.fallback_categories),
+        count_map_json(&summary.errors)
+    )
+}
+
+fn count_map_json(counts: &BTreeMap<&'static str, usize>) -> String {
+    let values = counts
+        .iter()
+        .map(|(key, value)| format!("{}:{}", json_string(key), value))
+        .collect::<Vec<_>>()
+        .join(",");
+    format!("{{{values}}}")
 }
 
 fn metadata_outcome_json(outcome: &MetadataOutcome) -> String {
@@ -941,7 +1170,7 @@ fn crc32(bytes: impl IntoIterator<Item = u8>) -> u32 {
 
 fn print_usage() {
     println!(
-        "Usage: pdfrust-cli <render|render-auto|render-native|render-pdfium|render-isolated|compare-metadata> <input.pdf> \
+        "Usage: pdfrust-cli <render|render-auto|render-native|render-pdfium|render-isolated|compare-metadata|summarize-fallbacks> <input.pdf> \
          [--output PATH] [--page-index N] [--max-edge N] [--background #RRGGBB] \
          [--timeout SECONDS] [--native-only] [--deny-fallback-reason BUCKET]"
     );
@@ -1101,6 +1330,51 @@ mod tests {
             FallbackReason::NativeUnsupportedFeature("graphics.optional-content")
         );
         assert_eq!(reason.category(), "graphics.optional-content");
+    }
+
+    #[test]
+    fn fallback_summary_should_count_native_and_fallback_categories() {
+        let fixture_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/generated");
+        let paths = vec![
+            fixture_root.join("vector-paths.pdf"),
+            fixture_root.join("optional-content-ocmd.pdf"),
+            fixture_root.join("encrypted-placeholder.pdf"),
+        ];
+        let options = ThumbnailOptions {
+            page_index: 0,
+            max_edge: 120,
+            background: Rgba::WHITE,
+            output_format: pdfrust_thumbnail::OutputFormat::Png,
+            timeout: Duration::from_secs(5),
+        };
+
+        let summary = summarize_native_fallbacks(&paths, &options);
+
+        assert_eq!(summary.total, 3);
+        assert_eq!(summary.native_rendered, 1);
+        assert_eq!(summary.fallback_required, 1);
+        assert_eq!(
+            summary.fallback_categories.get("graphics.optional-content"),
+            Some(&1)
+        );
+        assert_eq!(summary.errors.get("encrypted"), Some(&1));
+    }
+
+    #[test]
+    fn fallback_summary_json_should_emit_stable_counts() {
+        let mut summary = FallbackSummary::new(2);
+        summary.native_rendered = 1;
+        summary.fallback_required = 1;
+        summary
+            .fallback_categories
+            .insert("graphics.optional-content", 1);
+
+        let json = fallback_summary_json(&summary);
+
+        assert!(json.contains("\"schema_version\": 1"));
+        assert!(json.contains("\"native_rendered\": 1"));
+        assert!(json.contains("\"fallback_required\": 1"));
+        assert!(json.contains("\"graphics.optional-content\":1"));
     }
 
     #[test]
