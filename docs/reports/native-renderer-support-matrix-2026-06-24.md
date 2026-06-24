@@ -31,8 +31,8 @@ Milestone: 0041.
 | Office export | `unsupported` or `degraded` | fonts, CMaps, Form XObjects, transparency | 0042-0045, 0048 |
 | Browser PDF | `unsupported` or `degraded` | inline images, fonts, transparency, clipping | pull forward inline images, 0042-0045, 0048, 0051 |
 | Invoice | `degraded` | fonts, barcodes/images, annotation appearances | 0042-0047, 0052 |
-| Scanned page | `unsupported` | CCITT/JPX/JBIG2 filters, soft masks, memory limits | 0047, 0048, 0058 |
-| Image-heavy | `unsupported` | codecs, color spaces, soft masks | 0046-0048 |
+| Scanned page | `unsupported` | CCITT/JPX/JBIG2 filters, large-image memory limits | 0047, 0058 |
+| Image-heavy | `unsupported` | codecs, color spaces, transparency groups | 0046-0048 |
 | Vector-heavy | `degraded` | clipping fidelity, stroke joins/caps, patterns | 0050-0051 |
 | Encrypted | `encrypted` | security handler and permission policy | 0056 |
 | Malformed | `malformed` or `unsupported` | repair budget, hybrid refs, incremental updates | 0055, 0057 |

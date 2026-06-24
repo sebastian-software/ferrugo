@@ -542,6 +542,26 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_render_generated_soft_mask_image_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/soft-mask-image.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 120,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated soft-mask image fixture should render through native backend");
+
+        assert_eq!(thumbnail.width, 120);
+        assert_eq!(thumbnail.height, 120);
+        assert_eq!(rgba_at(&thumbnail, 44, 44), [255, 255, 255, 255]);
+        assert_eq!(rgba_at(&thumbnail, 76, 44), [127, 255, 127, 255]);
+        assert_eq!(rgba_at(&thumbnail, 44, 76), [0, 0, 255, 255]);
+    }
+
+    #[test]
     fn native_backend_should_render_generated_inline_image_fixture() {
         let bytes = include_bytes!("../../../fixtures/generated/inline-image.pdf");
         let thumbnail = ThumbnailBackend::render(

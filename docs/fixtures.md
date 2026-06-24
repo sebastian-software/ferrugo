@@ -27,6 +27,7 @@ The initial seed set covers:
 - CMYK and Indexed image color spaces
 - DCT/JPEG Image XObject decoding
 - Flate image PNG predictor decoding
+- image soft-mask alpha compositing
 - Form XObject invocation
 - embedded TrueType font resource resolution
 - ToUnicode text character-code mapping

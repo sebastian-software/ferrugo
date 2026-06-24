@@ -41,7 +41,7 @@ preserving the public `unsupported` class:
 | `text.glyph-outline` | Page requires real glyph outline extraction. | 0044 |
 | `image.color-space` | Image or fill uses unsupported color-space conversion or decode arrays. | 0046 |
 | `image.filter` | Stream uses unsupported image codecs or predictors. | 0047 |
-| `graphics.transparency` | Page requires soft masks, transparency groups, or blend modes. | 0048-0049 |
+| `graphics.transparency` | Page requires unsupported soft-mask forms, transparency groups, or blend modes. | 0048-0049 |
 | `graphics.pattern-shading` | Page requires tiling patterns or shadings. | 0050 |
 | `graphics.stroke-clip` | Page depends on stroke joins, caps, dashes, or clipping fidelity. | 0051 |
 

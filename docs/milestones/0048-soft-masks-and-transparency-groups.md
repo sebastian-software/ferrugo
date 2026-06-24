@@ -57,7 +57,15 @@ In progress:
 - The image raster path keeps the direct overwrite fast path for opaque pixels
   and uses source-over compositing only for pixels whose soft-mask alpha is
   below `255`.
+- Second implementation slice adds the generated `soft-mask-image.pdf` fixture,
+  render-layer fixture coverage, native backend smoke coverage, fixture policy
+  documentation, and support-matrix updates for simple image soft masks.
+- PDFium/native comparison for `soft-mask-image.pdf` at `max-edge 120`:
+  dimensions `120x120`, changed pixels `0`, MAE `0.000`, p95 `0`, max channel
+  delta `0`, native non-white pixels `4800`.
 - Validation so far: `cargo fmt --check`, `git diff --check`,
-  `cargo test -p pdfrust-render soft_mask -- --nocapture`, `cargo check`,
-  `cargo test --quiet`,
+  `cargo test -p pdfrust-render soft_mask -- --nocapture`,
+  `cargo test -p pdfrust-render generated_soft_mask -- --nocapture`,
+  `cargo test -p pdfrust-native soft_mask -- --nocapture`, `cargo check`,
+  `cargo test --quiet`, native/PDFium fixture rendering and PNG comparison,
   `cargo clippy --all-targets --all-features -- -D warnings`.

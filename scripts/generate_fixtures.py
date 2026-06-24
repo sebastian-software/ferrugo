@@ -283,6 +283,59 @@ def predictor_image_pdf() -> bytes:
     return pdf.render(catalog)
 
 
+def soft_mask_image_pdf() -> bytes:
+    pdf = Pdf()
+    content = b"q 80 0 0 80 20 20 cm /Im1 Do Q"
+    image = bytes(
+        [
+            255,
+            0,
+            0,
+            0,
+            255,
+            0,
+            0,
+            0,
+            255,
+            255,
+            255,
+            0,
+        ]
+    )
+    mask = bytes([0, 128, 255, 64])
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 120 120] "
+        "/Resources << /XObject << /Im1 4 0 R >> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    image_object = pdf.add(
+        b"<< /Type /XObject /Subtype /Image /Width 2 /Height 2 "
+        b"/ColorSpace /DeviceRGB /BitsPerComponent 8 /SMask 6 0 R /Length "
+        + str(len(image)).encode("ascii")
+        + b" >>\nstream\n"
+        + image
+        + b"\nendstream"
+    )
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    mask_object = pdf.add(
+        b"<< /Type /XObject /Subtype /Image /Width 2 /Height 2 "
+        b"/ColorSpace /DeviceGray /BitsPerComponent 8 /Length "
+        + str(len(mask)).encode("ascii")
+        + b" >>\nstream\n"
+        + mask
+        + b"\nendstream"
+    )
+    assert image_object == 4
+    assert mask_object == 6
+    return pdf.render(catalog)
+
+
 def embedded_font_pdf() -> bytes:
     pdf = Pdf()
     content = b"BT /F1 18 Tf 20 60 Td (embedded font fixture) Tj ET"
@@ -434,6 +487,7 @@ def main() -> None:
     write("indexed-image.pdf", indexed_image_pdf())
     write("dct-image.pdf", dct_image_pdf())
     write("predictor-image.pdf", predictor_image_pdf())
+    write("soft-mask-image.pdf", soft_mask_image_pdf())
     write("embedded-font.pdf", embedded_font_pdf())
     write("tounicode-text.pdf", tounicode_text_pdf())
     write("encoding-differences.pdf", encoding_differences_pdf())

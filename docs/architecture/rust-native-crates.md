@@ -118,9 +118,12 @@ stores `ImageDisplayItem` placements using the active CTM. Decoded image
 samples are reference-counted so repeated `Do` placements share sample bytes.
 `FlateDecode` image streams also apply PNG-style `/DecodeParms /Predictor`
 values `10..=15` when the predictor metadata matches the image dimensions and
-8-bit component layout. Broader filter chains, CCITT/JPX, unsupported
-predictors, JBIG2, and full color management return typed unsupported errors
-until later corpus-driven image-filter and color-space milestones.
+8-bit component layout. Image `/SMask` references are supported for 8-bit
+DeviceGray Image XObjects with dimensions matching the parent image; mask
+sample bytes are reference-counted and bounded by a dedicated soft-mask depth
+limit. Broader filter chains, CCITT/JPX, unsupported predictors, JBIG2, and
+full color management return typed unsupported errors until later corpus-driven
+image-filter and color-space milestones.
 Form XObject support resolves form streams from `/XObject` resource
 dictionaries, decodes form content, applies form matrices, emits bounding-box
 clip placeholders, and recursively reuses the path display-list interpreter

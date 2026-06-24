@@ -7036,6 +7036,60 @@ mod tests {
     }
 
     #[test]
+    fn image_rasterizer_should_draw_generated_soft_mask_fixture() {
+        let document = generated_fixture_document("soft-mask-image.pdf");
+        let resources =
+            image_resources_from_document(&document).expect("generated soft-mask image resource");
+        let content = content_stream_from_document(&document);
+        let list = build_image_display_list(
+            tokenize_content(PdfBytes::new(&content)),
+            &resources,
+            DisplayListOptions::default(),
+        )
+        .expect("generated soft-mask image display list");
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 120.0,
+                    max_y: 120.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            120,
+        )
+        .expect("soft-mask image fixture transform");
+        let mut device = transform.create_device(Rgba::WHITE).expect("raster device");
+
+        rasterize_images(&list, &mut device, transform).expect("soft-mask image should rasterize");
+
+        assert_eq!(
+            device.pixel(44, 44).expect("transparent sample"),
+            Rgba::WHITE
+        );
+        assert_eq!(
+            device.pixel(76, 44).expect("half-alpha sample"),
+            Rgba {
+                r: 127,
+                g: 255,
+                b: 127,
+                a: 255,
+            }
+        );
+        assert_eq!(
+            device.pixel(44, 76).expect("opaque sample"),
+            Rgba {
+                r: 0,
+                g: 0,
+                b: 255,
+                a: 255,
+            }
+        );
+    }
+
+    #[test]
     fn text_rasterizer_should_draw_generated_text_fixture() {
         let decoded = generated_fixture_content("text-page.pdf");
         let list = build_text_display_list(
