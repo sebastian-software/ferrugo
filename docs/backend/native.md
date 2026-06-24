@@ -83,13 +83,15 @@ Summarize a local corpus without rendering PDFium output:
 
 ```sh
 cargo run -p pdfrust-cli -- summarize-fallbacks fixtures/generated \
+  --manifest fixtures/corpus-manifest.tsv \
   --max-edge 120 \
   --output target/pdfrust-thumbnails/fallback-summary.json
 ```
 
 The summary counts `native_rendered`, `fallback_required`,
-`fallback_categories`, and non-fallback `errors`. Add `--fail-on-fallback` for
-CI subsets that must stay native-only.
+`fallback_categories`, non-fallback `errors`, and per-family pass rates when a
+manifest is provided. Add `--fail-on-fallback` for CI subsets that must stay
+native-only.
 
 Compare metadata with PDFium when the local PDFium environment is available:
 

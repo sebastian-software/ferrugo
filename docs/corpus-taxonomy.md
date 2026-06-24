@@ -53,3 +53,15 @@ Recommended private sampling fields:
 
 Use aggregated pass rates by family and fallback category when sharing local
 results.
+
+## Local Reporting
+
+Use the manifest with the fallback summary command to report native pass rates
+by family:
+
+```sh
+cargo run -p pdfrust-cli -- summarize-fallbacks fixtures/generated \
+  --manifest fixtures/corpus-manifest.tsv \
+  --max-edge 120 \
+  --output target/pdfrust-thumbnails/fallback-summary.json
+```

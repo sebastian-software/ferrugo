@@ -278,7 +278,11 @@ fn summarize_fallbacks_command(args: &[OsString]) -> Result<(), CliError> {
         timeout: config.timeout,
     };
     let fixtures = pdf_inputs(&config.input)?;
-    let summary = summarize_native_fallbacks(&fixtures, &options);
+    let manifest = match &config.manifest {
+        Some(path) => Some(read_corpus_manifest(path)?),
+        None => None,
+    };
+    let summary = summarize_native_fallbacks(&fixtures, &options, manifest.as_ref());
     let json = fallback_summary_json(&summary);
 
     if let Some(output) = config.output {
@@ -536,6 +540,7 @@ struct CompareMetadataConfig {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct FallbackSummaryConfig {
     input: PathBuf,
+    manifest: Option<PathBuf>,
     output: Option<PathBuf>,
     page_index: u32,
     max_edge: u32,
@@ -547,6 +552,7 @@ struct FallbackSummaryConfig {
 impl FallbackSummaryConfig {
     fn parse(args: &[OsString]) -> Result<Self, CliError> {
         let mut input = None;
+        let mut manifest = None;
         let mut output = None;
         let mut page_index = DEFAULT_PAGE_INDEX;
         let mut max_edge = DEFAULT_MAX_EDGE;
@@ -563,6 +569,10 @@ impl FallbackSummaryConfig {
                 "--output" | "-o" => {
                     index += 1;
                     output = Some(required_path(args, index, "--output")?);
+                }
+                "--manifest" => {
+                    index += 1;
+                    manifest = Some(required_path(args, index, "--manifest")?);
                 }
                 "--page-index" => {
                     index += 1;
@@ -606,6 +616,7 @@ impl FallbackSummaryConfig {
 
         Ok(Self {
             input: input.ok_or_else(|| CliError::Usage("missing input path".to_string()))?,
+            manifest,
             output,
             page_index,
             max_edge,
@@ -688,6 +699,7 @@ struct FallbackSummary {
     fallback_required: usize,
     errors: BTreeMap<&'static str, usize>,
     fallback_categories: BTreeMap<&'static str, usize>,
+    families: BTreeMap<String, FamilyFallbackSummary>,
 }
 
 impl FallbackSummary {
@@ -698,8 +710,51 @@ impl FallbackSummary {
             fallback_required: 0,
             errors: BTreeMap::new(),
             fallback_categories: BTreeMap::new(),
+            families: BTreeMap::new(),
         }
     }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct FamilyFallbackSummary {
+    total: usize,
+    native_rendered: usize,
+    fallback_required: usize,
+    errors: BTreeMap<&'static str, usize>,
+    fallback_categories: BTreeMap<&'static str, usize>,
+}
+
+impl FamilyFallbackSummary {
+    fn record(&mut self, outcome: CorpusOutcome) {
+        self.total += 1;
+        match outcome {
+            CorpusOutcome::NativeRendered => {
+                self.native_rendered += 1;
+            }
+            CorpusOutcome::FallbackRequired(reason) => {
+                self.fallback_required += 1;
+                *self
+                    .fallback_categories
+                    .entry(reason.category())
+                    .or_insert(0) += 1;
+            }
+            CorpusOutcome::Error(class) => {
+                *self.errors.entry(class).or_insert(0) += 1;
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CorpusOutcome {
+    NativeRendered,
+    FallbackRequired(FallbackReason),
+    Error(&'static str),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CorpusManifest {
+    families_by_path: BTreeMap<String, String>,
 }
 
 fn compare_metadata_results(
@@ -792,14 +847,19 @@ fn pdf_inputs(input: &Path) -> Result<Vec<PathBuf>, CliError> {
     Ok(paths)
 }
 
-fn summarize_native_fallbacks(paths: &[PathBuf], options: &ThumbnailOptions) -> FallbackSummary {
+fn summarize_native_fallbacks(
+    paths: &[PathBuf],
+    options: &ThumbnailOptions,
+    manifest: Option<&CorpusManifest>,
+) -> FallbackSummary {
     let native = NativeBackend::new();
     let mut summary = FallbackSummary::new(paths.len());
 
     for path in paths {
-        match native.render(PdfSource::from_path(path), options) {
+        let outcome = match native.render(PdfSource::from_path(path), options) {
             Ok(_) => {
                 summary.native_rendered += 1;
+                CorpusOutcome::NativeRendered
             }
             Err(error) if error.class() == pdfrust_thumbnail::ThumbnailErrorClass::Unsupported => {
                 summary.fallback_required += 1;
@@ -808,14 +868,60 @@ fn summarize_native_fallbacks(paths: &[PathBuf], options: &ThumbnailOptions) -> 
                     .fallback_categories
                     .entry(reason.category())
                     .or_insert(0) += 1;
+                CorpusOutcome::FallbackRequired(reason)
             }
             Err(error) => {
-                *summary.errors.entry(error.class().as_str()).or_insert(0) += 1;
+                let class = error.class().as_str();
+                *summary.errors.entry(class).or_insert(0) += 1;
+                CorpusOutcome::Error(class)
             }
-        }
+        };
+
+        let family = manifest
+            .and_then(|manifest| manifest.family_for_path(path))
+            .unwrap_or("unclassified");
+        summary
+            .families
+            .entry(family.to_string())
+            .or_default()
+            .record(outcome);
     }
 
     summary
+}
+
+impl CorpusManifest {
+    fn family_for_path(&self, path: &Path) -> Option<&str> {
+        let path = normalize_manifest_path(path);
+        self.families_by_path.get(&path).map(String::as_str)
+    }
+}
+
+fn read_corpus_manifest(path: &Path) -> Result<CorpusManifest, CliError> {
+    let content = fs::read_to_string(path).map_err(|source| CliError::ReadFile {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    let mut families_by_path = BTreeMap::new();
+    for (line_index, line) in content.lines().enumerate() {
+        if line_index == 0 {
+            continue;
+        }
+        let columns = line.split('\t').collect::<Vec<_>>();
+        if columns.len() != 7 {
+            return Err(CliError::Usage(format!(
+                "manifest line {} must have 7 tab-separated columns",
+                line_index + 1
+            )));
+        }
+        families_by_path.insert(columns[0].to_string(), columns[1].to_string());
+    }
+
+    Ok(CorpusManifest { families_by_path })
+}
+
+fn normalize_manifest_path(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
 }
 
 fn page_sizes_match(expected: PageSize, actual: PageSize) -> bool {
@@ -839,6 +945,10 @@ enum CliError {
         path: PathBuf,
         source: std::io::Error,
     },
+    ReadFile {
+        path: PathBuf,
+        source: std::io::Error,
+    },
     ReadDir {
         path: PathBuf,
         source: std::io::Error,
@@ -856,6 +966,9 @@ impl fmt::Display for CliError {
             Self::Encode(message) => write!(f, "PNG encode error: {message}"),
             Self::Io { path, source } => {
                 write!(f, "failed to write `{}`: {source}", path.display())
+            }
+            Self::ReadFile { path, source } => {
+                write!(f, "failed to read `{}`: {source}", path.display())
             }
             Self::ReadDir { path, source } => {
                 write!(f, "failed to read `{}`: {source}", path.display())
@@ -1006,14 +1119,16 @@ fn fallback_summary_json(summary: &FallbackSummary) -> String {
             "  \"native_rendered\": {},\n",
             "  \"fallback_required\": {},\n",
             "  \"fallback_categories\": {},\n",
-            "  \"errors\": {}\n",
+            "  \"errors\": {},\n",
+            "  \"families\": {}\n",
             "}}\n"
         ),
         summary.total,
         summary.native_rendered,
         summary.fallback_required,
         count_map_json(&summary.fallback_categories),
-        count_map_json(&summary.errors)
+        count_map_json(&summary.errors),
+        family_summary_map_json(&summary.families)
     )
 }
 
@@ -1024,6 +1139,43 @@ fn count_map_json(counts: &BTreeMap<&'static str, usize>) -> String {
         .collect::<Vec<_>>()
         .join(",");
     format!("{{{values}}}")
+}
+
+fn family_summary_map_json(families: &BTreeMap<String, FamilyFallbackSummary>) -> String {
+    let values = families
+        .iter()
+        .map(|(family, summary)| {
+            format!("{}:{}", json_string(family), family_summary_json(summary))
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    format!("{{{values}}}")
+}
+
+fn family_summary_json(summary: &FamilyFallbackSummary) -> String {
+    let pass_rate = if summary.total == 0 {
+        0.0
+    } else {
+        summary.native_rendered as f64 / summary.total as f64
+    };
+    format!(
+        concat!(
+            "{{",
+            "\"total\":{},",
+            "\"native_rendered\":{},",
+            "\"native_pass_rate\":{:.3},",
+            "\"fallback_required\":{},",
+            "\"fallback_categories\":{},",
+            "\"errors\":{}",
+            "}}"
+        ),
+        summary.total,
+        summary.native_rendered,
+        pass_rate,
+        summary.fallback_required,
+        count_map_json(&summary.fallback_categories),
+        count_map_json(&summary.errors)
+    )
 }
 
 fn metadata_outcome_json(outcome: &MetadataOutcome) -> String {
@@ -1348,7 +1500,7 @@ mod tests {
             timeout: Duration::from_secs(5),
         };
 
-        let summary = summarize_native_fallbacks(&paths, &options);
+        let summary = summarize_native_fallbacks(&paths, &options, None);
 
         assert_eq!(summary.total, 3);
         assert_eq!(summary.native_rendered, 1);
@@ -1358,6 +1510,13 @@ mod tests {
             Some(&1)
         );
         assert_eq!(summary.errors.get("encrypted"), Some(&1));
+        assert_eq!(
+            summary
+                .families
+                .get("unclassified")
+                .map(|family| family.total),
+            Some(3)
+        );
     }
 
     #[test]
@@ -1368,6 +1527,13 @@ mod tests {
         summary
             .fallback_categories
             .insert("graphics.optional-content", 1);
+        summary
+            .families
+            .entry("presentation".to_string())
+            .or_default()
+            .record(CorpusOutcome::FallbackRequired(
+                FallbackReason::NativeUnsupportedFeature("graphics.optional-content"),
+            ));
 
         let json = fallback_summary_json(&summary);
 
@@ -1375,6 +1541,18 @@ mod tests {
         assert!(json.contains("\"native_rendered\": 1"));
         assert!(json.contains("\"fallback_required\": 1"));
         assert!(json.contains("\"graphics.optional-content\":1"));
+        assert!(json.contains("\"presentation\""));
+        assert!(json.contains("\"native_pass_rate\":0.000"));
+    }
+
+    #[test]
+    fn corpus_manifest_should_assign_fixture_families() {
+        let fixture_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let manifest_path = fixture_root.join("fixtures/corpus-manifest.tsv");
+        let manifest = read_corpus_manifest(&manifest_path).expect("manifest should parse");
+        let input = PathBuf::from("fixtures/generated/optional-content-ocmd.pdf");
+
+        assert_eq!(manifest.family_for_path(&input), Some("presentation"));
     }
 
     #[test]
