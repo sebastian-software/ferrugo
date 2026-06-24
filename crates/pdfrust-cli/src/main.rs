@@ -33,6 +33,7 @@ fn run(args: Vec<OsString>) -> Result<(), CliError> {
     let command = args.first().and_then(|arg| arg.to_str());
     match command {
         Some("render") | Some("render-worker") => render_direct_command(&args[1..]),
+        Some("render-auto") => render_auto_command(&args[1..]),
         Some("render-native") => render_native_command(&args[1..]),
         Some("render-isolated") => render_isolated_command(&args[1..]),
         Some("compare-metadata") => compare_metadata_command(&args[1..]),
@@ -55,13 +56,7 @@ fn render_direct_command(args: &[OsString]) -> Result<(), CliError> {
 
 fn render_direct(config: RenderConfig) -> Result<(), CliError> {
     let backend = PdfiumBackend::from_env().map_err(|err| CliError::Backend(err.to_string()))?;
-    let options = ThumbnailOptions {
-        page_index: config.page_index,
-        max_edge: config.max_edge,
-        background: config.background,
-        output_format: pdfrust_thumbnail::OutputFormat::Png,
-        timeout: config.timeout,
-    };
+    let options = thumbnail_options(&config);
     let source = PdfSource::from_path(&config.input);
     let thumbnail = backend
         .render(source, &options)
@@ -77,16 +72,46 @@ fn render_direct(config: RenderConfig) -> Result<(), CliError> {
     Ok(())
 }
 
+fn render_auto_command(args: &[OsString]) -> Result<(), CliError> {
+    let config = RenderConfig::parse(args)?;
+    render_auto(config)
+}
+
+fn render_auto(config: RenderConfig) -> Result<(), CliError> {
+    let options = thumbnail_options(&config);
+    let source = PdfSource::from_path(&config.input);
+    let native = NativeBackend::new();
+    let thumbnail = match native.render(source, &options) {
+        Ok(thumbnail) => thumbnail,
+        Err(ThumbnailError::Unsupported) => {
+            let pdfium =
+                PdfiumBackend::from_env().map_err(|err| CliError::Backend(err.to_string()))?;
+            pdfium
+                .render(PdfSource::from_path(&config.input), &options)
+                .map_err(|err| CliError::Render {
+                    class: err.class().as_str(),
+                    message: err.to_string(),
+                })?
+        }
+        Err(err) => {
+            return Err(CliError::Render {
+                class: err.class().as_str(),
+                message: err.to_string(),
+            });
+        }
+    };
+    let png = encode_rgba_png(&thumbnail)?;
+    fs::write(&config.output, png).map_err(|source| CliError::Io {
+        path: config.output,
+        source,
+    })?;
+    Ok(())
+}
+
 fn render_native_command(args: &[OsString]) -> Result<(), CliError> {
     let config = RenderConfig::parse(args)?;
     let backend = NativeBackend::new();
-    let options = ThumbnailOptions {
-        page_index: config.page_index,
-        max_edge: config.max_edge,
-        background: config.background,
-        output_format: pdfrust_thumbnail::OutputFormat::Png,
-        timeout: config.timeout,
-    };
+    let options = thumbnail_options(&config);
     let source = PdfSource::from_path(&config.input);
     let thumbnail = backend
         .render(source, &options)
@@ -100,6 +125,16 @@ fn render_native_command(args: &[OsString]) -> Result<(), CliError> {
         source,
     })?;
     Ok(())
+}
+
+fn thumbnail_options(config: &RenderConfig) -> ThumbnailOptions {
+    ThumbnailOptions {
+        page_index: config.page_index,
+        max_edge: config.max_edge,
+        background: config.background,
+        output_format: pdfrust_thumbnail::OutputFormat::Png,
+        timeout: config.timeout,
+    }
 }
 
 fn render_isolated_command(args: &[OsString]) -> Result<(), CliError> {
@@ -778,7 +813,7 @@ fn crc32(bytes: impl IntoIterator<Item = u8>) -> u32 {
 
 fn print_usage() {
     println!(
-        "Usage: pdfrust-cli <render|render-native|render-isolated|compare-metadata> <input.pdf> \
+        "Usage: pdfrust-cli <render|render-auto|render-native|render-isolated|compare-metadata> <input.pdf> \
          [--output PATH] [--page-index N] [--max-edge N] [--background #RRGGBB] \
          [--timeout SECONDS]"
     );
@@ -825,6 +860,31 @@ mod tests {
         .expect("native vector render should succeed");
 
         let png = fs::read(&output).expect("native PNG should be written");
+        assert!(png.starts_with(b"\x89PNG\r\n\x1a\n"));
+    }
+
+    #[test]
+    fn render_auto_command_should_use_native_for_supported_fixture() {
+        env::remove_var(pdfrust_pdfium::PDFIUM_LIBRARY_ENV);
+        let output =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/auto-native-vector-test.png");
+        let input =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/generated/vector-paths.pdf");
+        fs::create_dir_all(output.parent().expect("output parent"))
+            .expect("test target directory should be created");
+        let _ = fs::remove_file(&output);
+
+        run(vec![
+            OsString::from("render-auto"),
+            input.as_os_str().to_os_string(),
+            OsString::from("--max-edge"),
+            OsString::from("220"),
+            OsString::from("--output"),
+            output.as_os_str().to_os_string(),
+        ])
+        .expect("auto render should use native without requiring PDFium");
+
+        let png = fs::read(&output).expect("auto PNG should be written");
         assert!(png.starts_with(b"\x89PNG\r\n\x1a\n"));
     }
 

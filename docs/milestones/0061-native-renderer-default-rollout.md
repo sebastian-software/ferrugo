@@ -1,6 +1,6 @@
 # 0061: Native Renderer Default Rollout
 
-Status: todo
+Status: in-progress
 Phase: 9
 Size: medium
 Depends on: 0060
@@ -45,4 +45,7 @@ PDFium retirement gate, while keeping fallback behavior explicit.
 
 ## Completion Notes
 
-Empty until done.
+- First slice added `pdfrust-cli render-auto`, a native-first render path that
+  falls back to PDFium only for public `unsupported` native outcomes. Forced
+  native remains `render-native`; forced PDFium remains `render` or
+  `render-isolated`.
