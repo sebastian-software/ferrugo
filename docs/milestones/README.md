@@ -48,6 +48,26 @@ Allowed statuses:
 | 0078 | [Renderer Benchmark Suite And Budgets](0078-renderer-benchmark-suite-and-budgets.md) | 13 | medium | 0077 |
 | 0079 | [Optional PDFium Build Feature Split](0079-optional-pdfium-build-feature-split.md) | 13 | medium | 0078 |
 | 0080 | [Native Renderer Release Candidate Gate](0080-native-renderer-release-candidate-gate.md) | 13 | medium | 0079 |
+| 0081 | [RC Gap Synthesis And PDFium Retirement Backlog](0081-rc-gap-synthesis-and-pdfium-retirement-backlog.md) | 14 | small | 0080 |
+| 0082 | [Native Default API And CLI Stabilization](0082-native-default-api-and-cli-stabilization.md) | 14 | medium | 0081 |
+| 0083 | [Real-World Corpus Ingestion And Classification](0083-real-world-corpus-ingestion-and-classification.md) | 14 | medium | 0082 |
+| 0084 | [Visual Diff Dashboard And Review Workflow](0084-visual-diff-dashboard-and-review-workflow.md) | 14 | medium | 0083 |
+| 0085 | [Page Geometry Boxes Rotation And User Units](0085-page-geometry-boxes-rotation-and-user-units.md) | 15 | medium | 0084 |
+| 0086 | [Type3 Font And CharProc Rendering](0086-type3-font-and-charproc-rendering.md) | 15 | medium | 0085 |
+| 0087 | [Font Hinting Glyph Cache And Subpixel Policy](0087-font-hinting-glyph-cache-and-subpixel-policy.md) | 15 | medium | 0086 |
+| 0088 | [Image Mask Stencil And Bitmap Edge Cases](0088-image-mask-stencil-and-bitmap-edge-cases.md) | 15 | medium | 0087 |
+| 0089 | [JPX JBIG2 And Specialized Image Codec Policy](0089-jpx-jbig2-and-specialized-image-codec-policy.md) | 15 | medium | 0088 |
+| 0090 | [Shading Mesh Gradient And Pattern Fidelity](0090-shading-mesh-gradient-and-pattern-fidelity.md) | 15 | medium | 0089 |
+| 0091 | [Annotation Without Appearance Fallbacks](0091-annotation-without-appearance-fallbacks.md) | 15 | medium | 0090 |
+| 0092 | [AcroForm Field Synthesis For Common Widgets](0092-acroform-field-synthesis-for-common-widgets.md) | 15 | medium | 0091 |
+| 0093 | [Incremental Update Edge Case Hardening](0093-incremental-update-edge-case-hardening.md) | 16 | medium | 0092 |
+| 0094 | [Structure Outline Metadata And Page Labels](0094-structure-outline-metadata-and-page-labels.md) | 16 | small | 0093 |
+| 0095 | [Large Document Memory Eviction And Spooling](0095-large-document-memory-eviction-and-spooling.md) | 16 | medium | 0094 |
+| 0096 | [Hot Path Profiling And Raster Optimization](0096-hot-path-profiling-and-raster-optimization.md) | 16 | medium | 0095 |
+| 0097 | [Fuzzing And Adversarial PDF Hardening](0097-fuzzing-and-adversarial-pdf-hardening.md) | 16 | medium | 0096 |
+| 0098 | [Native-Only Packaging And Consumer Migration](0098-native-only-packaging-and-consumer-migration.md) | 17 | medium | 0097 |
+| 0099 | [PDFium Fallback Removal Drill](0099-pdfium-fallback-removal-drill.md) | 17 | medium | 0098 |
+| 0100 | [Native Renderer General Availability Gate](0100-native-renderer-general-availability-gate.md) | 17 | medium | 0099 |
 
 ## In Progress
 
