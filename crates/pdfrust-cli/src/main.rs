@@ -132,10 +132,13 @@ fn render_auto_thumbnail(config: &RenderConfig) -> Result<AutoRenderOutcome, Cli
         }),
         Err(err) if err.class() == pdfrust_thumbnail::ThumbnailErrorClass::Unsupported => {
             let reason = FallbackReason::from_native_error(&err);
-            if config.fallback_policy.denies(reason) {
+            if !config.fallback_policy.allows(reason) {
                 return Err(CliError::Render {
                     class: err.class().as_str(),
-                    message: format!("PDFium fallback denied for {}", reason.as_str()),
+                    message: format!(
+                        "PDFium fallback not enabled for {}; pass --allow-pdfium-fallback to opt in",
+                        reason.as_str()
+                    ),
                 });
             }
             #[cfg(not(feature = "pdfium"))]
@@ -221,14 +224,14 @@ impl FallbackReason {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct FallbackPolicy {
-    native_only: bool,
+    allow_pdfium: bool,
     denied_reasons: Vec<String>,
 }
 
 impl FallbackPolicy {
-    fn denies(&self, reason: FallbackReason) -> bool {
-        self.native_only
-            || self
+    fn allows(&self, reason: FallbackReason) -> bool {
+        self.allow_pdfium
+            && !self
                 .denied_reasons
                 .iter()
                 .any(|denied| denied == reason.as_str())
@@ -238,7 +241,8 @@ impl FallbackPolicy {
 impl Default for FallbackPolicy {
     fn default() -> Self {
         Self {
-            native_only: env_flag("PDFRUST_NATIVE_ONLY"),
+            allow_pdfium: env_flag("PDFRUST_ALLOW_PDFIUM_FALLBACK")
+                && !env_flag("PDFRUST_NATIVE_ONLY"),
             denied_reasons: env_list("PDFRUST_DENY_FALLBACK_REASONS"),
         }
     }
@@ -692,8 +696,11 @@ impl RenderConfig {
                     let seconds = parse_u64(args, index, "--timeout")?;
                     timeout = Duration::from_secs(seconds);
                 }
+                "--allow-pdfium-fallback" => {
+                    fallback_policy.allow_pdfium = true;
+                }
                 "--native-only" | "--no-pdfium-fallback" => {
-                    fallback_policy.native_only = true;
+                    fallback_policy.allow_pdfium = false;
                 }
                 "--deny-fallback-reason" => {
                     index += 1;
@@ -2196,7 +2203,7 @@ fn print_usage() {
         "Usage: pdfrust-cli <render|render-auto|render-native|render-pdfium|render-isolated|compare-metadata|summarize-fallbacks|extract-corpus-metadata|benchmark-native|benchmark-pdfium> <input.pdf> \
          [--output PATH] [--page-index N] [--max-edge N] [--background #RRGGBB] \
          [--timeout SECONDS] [--iterations N] [--max-ms N] [--max-output-bytes N] \
-         [--native-only] [--deny-fallback-reason BUCKET] [--manifest PATH]"
+         [--allow-pdfium-fallback] [--native-only] [--deny-fallback-reason BUCKET] [--manifest PATH]"
     );
 }
 
@@ -2335,11 +2342,11 @@ mod tests {
     }
 
     #[test]
-    fn render_auto_thumbnail_should_honor_native_only_policy() {
+    fn render_auto_thumbnail_should_require_explicit_fallback() {
         env::remove_var("PDFRUST_PDFIUM_LIBRARY");
         let input = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../fixtures/generated/optional-content-ocmd.pdf");
-        let output = PathBuf::from("target/unused-native-only.png");
+        let output = PathBuf::from("target/unused-default-fallback.png");
         let config = RenderConfig {
             input,
             output,
@@ -2347,19 +2354,33 @@ mod tests {
             max_edge: 220,
             background: Rgba::WHITE,
             timeout: Duration::from_secs(5),
-            fallback_policy: FallbackPolicy {
-                native_only: true,
-                denied_reasons: Vec::new(),
-            },
+            fallback_policy: FallbackPolicy::default(),
         };
 
         let error = render_auto_thumbnail(&config)
-            .expect_err("native-only mode should deny PDFium fallback");
+            .expect_err("default auto mode should require explicit PDFium fallback");
 
         assert_eq!(
             error.to_string(),
-            "render error [unsupported]: PDFium fallback denied for graphics.optional-content"
+            "render error [unsupported]: PDFium fallback not enabled for graphics.optional-content; pass --allow-pdfium-fallback to opt in"
         );
+    }
+
+    #[test]
+    fn render_config_should_accept_explicit_pdfium_fallback_flag() {
+        let config = RenderConfig::parse(&[
+            OsString::from("fixtures/generated/optional-content-ocmd.pdf"),
+            OsString::from("--output"),
+            OsString::from("target/ocmd.png"),
+            OsString::from("--allow-pdfium-fallback"),
+        ])
+        .expect("valid config");
+
+        assert!(config
+            .fallback_policy
+            .allows(FallbackReason::NativeUnsupportedFeature(
+                "graphics.optional-content"
+            )));
     }
 
     #[test]
