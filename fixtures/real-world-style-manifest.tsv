@@ -1,0 +1,11 @@
+path	family	source	license	page_count	features	notes
+fixtures/generated/office-table.pdf	invoice	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	invoice,table,text,expected:native	Synthetic invoice-like table layout for native default retirement checks.
+fixtures/generated/multi-page-report.pdf	statement	scripts/generate_fixtures.py	MIT OR Apache-2.0	2	statement,multipage,table,text,expected:native	Synthetic multi-page statement/report export with repeated headers.
+fixtures/generated/scanned-page.pdf	scanned-packet	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	scan,page-image,devicegray,expected:native	Synthetic scan-like packet page for image-dominant corpus coverage.
+fixtures/generated/acroform-text-field.pdf	form	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	form,acroform,text-field,appearance,expected:native	Synthetic form field appearance for static form corpus coverage.
+fixtures/generated/vector-paths.pdf	browser-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	browser-export,vector,path,expected:native	Synthetic browser-print style vector path page.
+fixtures/generated/text-page.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	office-export,text,type1,expected:native	Synthetic office export text page for baseline text behavior.
+fixtures/generated/vector-stress.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	report,vector,chart,perf-risk,expected:native	Synthetic report/dashboard vector stress case; native renders but exceeds smoke time budget.
+fixtures/generated/optional-content-ocmd.pdf	presentation	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	presentation,optional-content,ocmd,expected:pdfium-fallback	Synthetic layered presentation case that still requires PDFium fallback.
+fixtures/generated/encrypted-placeholder.pdf	secure-document	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	encryption,security,expected:error-encrypted	Synthetic encrypted placeholder for stable security error classification.
+fixtures/generated/malformed-xref-offset-drift.pdf	malformed-recovery	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	xref,recovery,expected:native	Synthetic malformed offset-drift recovery case.

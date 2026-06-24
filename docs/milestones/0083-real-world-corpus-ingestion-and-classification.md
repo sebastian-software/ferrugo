@@ -1,6 +1,6 @@
 # 0083: Real-World Corpus Ingestion And Classification
 
-Status: todo
+Status: done
 Phase: 14
 Size: medium
 Depends on: 0082
@@ -45,4 +45,21 @@ native renderer coverage reflects typical production inputs.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-24.
+
+- Added privacy-safe corpus intake policy at `docs/policies/corpus-intake.md`.
+- Added `fixtures/real-world-style-manifest.tsv` with 10 synthetic-realistic
+  seed entries across invoice, statement, scanned packet, form, browser export,
+  office export, report, presentation, secure document, and malformed recovery
+  categories.
+- Updated `docs/corpus-taxonomy.md` with the real-world-style manifest contract
+  and `expected:*` backend tags.
+- Published `docs/reports/real-world-corpus-ingestion-2026-06-24.md`.
+
+Validation passed:
+
+- manifest path and `expected:*` tag validation for all 10 rows,
+- `extract-corpus-metadata` with the new manifest,
+- native `summarize-fallbacks` with the new manifest,
+- PDFium-enabled benchmark comparison with the new manifest,
+- fixture size review confirmed no new PDF binaries.
