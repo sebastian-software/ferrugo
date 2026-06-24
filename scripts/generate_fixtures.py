@@ -468,6 +468,16 @@ def dashed_stroke_pdf() -> bytes:
     )
 
 
+def line_caps_pdf() -> bytes:
+    return page_pdf(
+        "[0 0 120 120]",
+        "0 0 0 RG 4 w "
+        "0 J 20 90 m 100 90 l S "
+        "1 J 20 60 m 100 60 l S "
+        "2 J 20 30 m 100 30 l S",
+    )
+
+
 def embedded_font_pdf() -> bytes:
     pdf = Pdf()
     content = b"BT /F1 18 Tf 20 60 Td (embedded font fixture) Tj ET"
@@ -626,6 +636,7 @@ def main() -> None:
     write("radial-gradient.pdf", radial_gradient_pdf())
     write("tiling-pattern.pdf", tiling_pattern_pdf())
     write("dashed-stroke.pdf", dashed_stroke_pdf())
+    write("line-caps.pdf", line_caps_pdf())
     write("embedded-font.pdf", embedded_font_pdf())
     write("tounicode-text.pdf", tounicode_text_pdf())
     write("encoding-differences.pdf", encoding_differences_pdf())

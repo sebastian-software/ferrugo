@@ -65,9 +65,20 @@ In progress:
   rasterizes Butt, Round, and Square caps during stroke sampling. Butt caps now
   stop at path endpoints, Round caps use endpoint radius coverage, and Square
   caps extend strokes by half the line width.
+- Fourth fixture slice adds generated `fixtures/generated/line-caps.pdf`
+  through `scripts/generate_fixtures.py`, covering Butt, Round, and Square caps
+  on otherwise identical horizontal strokes.
+- PDFium/native comparison for `line-caps.pdf` at `max-edge 120`: `120x120`,
+  changed RGB pixels `12`, RGB MAE `0.0369`, p95 RGB delta `0`, max channel
+  delta `56`, native non-white pixels `992`. Samples before the left endpoint
+  show matching Butt white and Square black coverage; the Round cap differs
+  only by antialiasing intensity at that pixel.
 - Current validation:
   - `cargo test -p pdfrust-render dash -- --nocapture`
   - `cargo test -p pdfrust-render line_cap -- --nocapture`
   - `cargo test -p pdfrust-native dashed_stroke -- --nocapture`
+  - `cargo test -p pdfrust-native line_caps -- --nocapture`
   - `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render fixtures/generated/dashed-stroke.pdf --max-edge 120 --output target/pdfrust-thumbnails/dashed-stroke-pdfium-0051.png`
   - `cargo run -p pdfrust-cli -- render-native fixtures/generated/dashed-stroke.pdf --max-edge 120 --output target/pdfrust-thumbnails/dashed-stroke-native-0051.png`
+  - `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render fixtures/generated/line-caps.pdf --max-edge 120 --output target/pdfrust-thumbnails/line-caps-pdfium-0051.png`
+  - `cargo run -p pdfrust-cli -- render-native fixtures/generated/line-caps.pdf --max-edge 120 --output target/pdfrust-thumbnails/line-caps-native-0051.png`
