@@ -7989,10 +7989,12 @@ fn image_filter(dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)]) -> GraphicsResul
         return Ok(ImageFilter::Raw);
     };
     match filter {
-        PdfPrimitive::Name(name) if name.as_bytes() == b"FlateDecode" => {
+        PdfPrimitive::Name(name) if is_flate_image_filter(name.as_bytes()) => {
             Ok(ImageFilter::StreamDecoded)
         }
-        PdfPrimitive::Name(name) if name.as_bytes() == b"DCTDecode" => Ok(ImageFilter::DctDecode),
+        PdfPrimitive::Name(name) if is_dct_image_filter(name.as_bytes()) => {
+            Ok(ImageFilter::DctDecode)
+        }
         PdfPrimitive::Name(name) if is_deferred_image_codec(name.as_bytes()) => {
             Err(unsupported_image_filter(name.as_bytes()))
         }
@@ -8005,10 +8007,10 @@ fn image_filter(dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)]) -> GraphicsResul
         PdfPrimitive::Array(filters) => {
             if filters.len() == 1 {
                 if let PdfPrimitive::Name(name) = filters[0] {
-                    if name.as_bytes() == b"FlateDecode" {
+                    if is_flate_image_filter(name.as_bytes()) {
                         return Ok(ImageFilter::StreamDecoded);
                     }
-                    if name.as_bytes() == b"DCTDecode" {
+                    if is_dct_image_filter(name.as_bytes()) {
                         return Ok(ImageFilter::DctDecode);
                     }
                     if is_deferred_image_codec(name.as_bytes()) {
@@ -8036,6 +8038,14 @@ fn image_filter(dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)]) -> GraphicsResul
             },
         )),
     }
+}
+
+fn is_flate_image_filter(filter: &[u8]) -> bool {
+    matches!(filter, b"FlateDecode" | b"Fl")
+}
+
+fn is_dct_image_filter(filter: &[u8]) -> bool {
+    matches!(filter, b"DCTDecode" | b"DCT")
 }
 
 fn is_deferred_image_codec(filter: &[u8]) -> bool {
@@ -12124,6 +12134,19 @@ mod tests {
     }
 
     #[test]
+    fn image_resources_should_decode_flate_alias_xobject() {
+        let document = load_image_xobject_pdf(
+            b"q 64 0 0 64 28 28 cm /Im1 Do Q",
+            b"<< /Type /XObject /Subtype /Image /Width 2 /Height 2 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /Fl /Length 16 >>",
+            &[120, 156, 251, 207, 192, 192, 240, 31, 132, 129, 0, 0, 29, 238, 5, 251],
+        );
+        let resources = image_resources_from_document(&document).expect("valid image resources");
+        let image = resources.get(PdfName::new(b"Im1")).expect("image resource");
+
+        assert_eq!(image.samples.len(), 12);
+    }
+
+    #[test]
     fn image_resources_should_decode_one_bit_image_mask() {
         let document = load_image_xobject_pdf(
             b"q 2 0 0 1 0 0 cm /Im1 Do Q",
@@ -12767,6 +12790,22 @@ mod tests {
     }
 
     #[test]
+    fn image_resources_should_route_dct_alias_to_jpeg_decoder() {
+        let document = load_image_xobject_pdf(
+            b"q 10 0 0 10 0 0 cm /Im1 Do Q",
+            b"<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCT /Length 3 >>",
+            &[0, 0, 0],
+        );
+        let error =
+            image_resources_from_document(&document).expect_err("malformed DCT should fail");
+
+        assert!(matches!(
+            error.kind(),
+            GraphicsErrorKind::ObjectModel { .. }
+        ));
+    }
+
+    #[test]
     fn image_resources_should_report_unsupported_predictor() {
         let document = load_image_xobject_pdf(
             b"q 10 0 0 10 0 0 cm /Im1 Do Q",
@@ -12786,7 +12825,12 @@ mod tests {
 
     #[test]
     fn image_resources_should_report_unsupported_deferred_image_codecs() {
-        for filter in [b"CCITTFaxDecode".as_slice(), b"JPXDecode", b"JBIG2Decode"] {
+        for filter in [
+            b"CCITTFaxDecode".as_slice(),
+            b"CCF",
+            b"JPXDecode",
+            b"JBIG2Decode",
+        ] {
             let dictionary = format!(
                 "<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /{} /Length 1 >>",
                 String::from_utf8_lossy(filter)

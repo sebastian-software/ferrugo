@@ -613,6 +613,35 @@ def image_mask_inverted_icon_pdf() -> bytes:
     return image_mask_pdf("[0 0 120 120]", content, rows, extra=b"/Decode [1 0] ")
 
 
+def unsupported_image_codec_pdf(filter_name: str) -> bytes:
+    pdf = Pdf()
+    content = b"q 40 0 0 40 40 40 cm /Im1 Do Q"
+    image = b"\x00"
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 120 120] "
+        "/Resources << /XObject << /Im1 4 0 R >> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    image_object = pdf.add(
+        (
+            f"<< /Type /XObject /Subtype /Image /Width 1 /Height 1 "
+            f"/ColorSpace /DeviceGray /BitsPerComponent 8 /Filter /{filter_name} "
+            f"/Length {len(image)} >>\nstream\n"
+        ).encode("ascii")
+        + image
+        + b"\nendstream"
+    )
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert image_object == 4
+    return pdf.render(catalog)
+
+
 def scanned_page_pdf() -> bytes:
     pdf = Pdf()
     width = 64
@@ -1989,6 +2018,9 @@ def main() -> None:
     write("image-mask-signature.pdf", image_mask_signature_pdf())
     write("image-mask-monochrome-icon.pdf", image_mask_monochrome_icon_pdf())
     write("image-mask-logo.pdf", image_mask_logo_pdf())
+    write("unsupported-ccitt-image.pdf", unsupported_image_codec_pdf("CCITTFaxDecode"))
+    write("unsupported-jbig2-image.pdf", unsupported_image_codec_pdf("JBIG2Decode"))
+    write("unsupported-jpx-image.pdf", unsupported_image_codec_pdf("JPXDecode"))
     write("scanned-page.pdf", scanned_page_pdf())
     write("mixed-text-image.pdf", mixed_text_image_pdf())
     write("transparency-group.pdf", transparency_group_pdf())

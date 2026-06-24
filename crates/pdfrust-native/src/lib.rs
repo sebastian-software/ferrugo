@@ -1878,6 +1878,24 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_report_generated_unsupported_ccitt_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/unsupported-ccitt-image.pdf");
+        assert_unsupported_image_filter_fixture(bytes);
+    }
+
+    #[test]
+    fn native_backend_should_report_generated_unsupported_jbig2_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/unsupported-jbig2-image.pdf");
+        assert_unsupported_image_filter_fixture(bytes);
+    }
+
+    #[test]
+    fn native_backend_should_report_generated_unsupported_jpx_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/unsupported-jpx-image.pdf");
+        assert_unsupported_image_filter_fixture(bytes);
+    }
+
+    #[test]
     fn native_backend_should_render_generated_scanned_page_fixture() {
         let bytes = include_bytes!("../../../fixtures/generated/scanned-page.pdf");
         let thumbnail = ThumbnailBackend::render(
@@ -3165,6 +3183,21 @@ mod tests {
             thumbnail.bytes[offset + 2],
             thumbnail.bytes[offset + 3],
         ]
+    }
+
+    fn assert_unsupported_image_filter_fixture(bytes: &[u8]) {
+        let error = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions::default(),
+        )
+        .expect_err("unsupported image codec fixture should not render natively");
+
+        assert_eq!(
+            error.class(),
+            pdfrust_thumbnail::ThumbnailErrorClass::Unsupported
+        );
+        assert_eq!(error.unsupported_feature_bucket(), Some("image.filter"));
     }
 
     fn assert_dark(rgba: [u8; 4]) {
