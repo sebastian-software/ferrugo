@@ -31,6 +31,7 @@ The initial seed set covers:
 - Form XObject invocation
 - path-only Form XObject transparency groups
 - ExtGState Multiply and Screen path blend modes
+- dashed vector strokes
 - axial DeviceRGB shading gradients
 - radial DeviceRGB shading gradients
 - colored tiling patterns

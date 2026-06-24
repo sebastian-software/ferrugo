@@ -53,5 +53,16 @@ In progress:
   representation, captured in path display-list items, and expanded into
   painted stroke segments once per rasterized path. Overlong dash arrays fail
   with a typed unsupported error instead of growing state allocations.
+- Second fixture slice adds generated `fixtures/generated/dashed-stroke.pdf`
+  through `scripts/generate_fixtures.py`, covering a horizontal `[10 10]`
+  dashed vector stroke.
+- PDFium/native comparison for `dashed-stroke.pdf` at `max-edge 120`:
+  `120x120`, changed RGB pixels `80`, RGB MAE `1.2181`, p95 RGB delta `0`,
+  max channel delta `255`, native non-white pixels `280`. Mid-dash and mid-gap
+  samples at x `15/25/35/45/55/65`, y `60` match PDFium and native:
+  black, white, black, white, black, white.
 - Current validation:
   - `cargo test -p pdfrust-render dash -- --nocapture`
+  - `cargo test -p pdfrust-native dashed_stroke -- --nocapture`
+  - `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render fixtures/generated/dashed-stroke.pdf --max-edge 120 --output target/pdfrust-thumbnails/dashed-stroke-pdfium-0051.png`
+  - `cargo run -p pdfrust-cli -- render-native fixtures/generated/dashed-stroke.pdf --max-edge 120 --output target/pdfrust-thumbnails/dashed-stroke-native-0051.png`
