@@ -20,6 +20,9 @@ fixtures/generated/encrypted-placeholder.pdf	mixed-layout	scripts/generate_fixtu
 fixtures/generated/form-xobject.pdf	presentation	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	form-xobject,vector	Generated path-only Form XObject fixture.
 fixtures/generated/highlight-annotation-appearance.pdf	mixed-layout	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	annotation,highlight,appearance	Generated text-markup highlight appearance fixture.
 fixtures/generated/hybrid-reference.pdf	mixed-layout	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	xref,hybrid-reference	Generated hybrid classic xref plus xref stream fixture.
+fixtures/generated/image-mask-logo.pdf	scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,image-mask,flate,stencil	Generated Flate-compressed ImageMask logo fixture.
+fixtures/generated/image-mask-monochrome-icon.pdf	scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,image-mask,icon,stencil	Generated monochrome ImageMask icon fixture.
+fixtures/generated/image-mask-signature.pdf	form	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,image-mask,signature,stencil	Generated signature-style ImageMask stencil fixture.
 fixtures/generated/image-xobject.pdf	scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,xobject,rgb	Generated unfiltered Image XObject fixture.
 fixtures/generated/incremental-update.pdf	mixed-layout	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	xref,incremental-update	Generated classic incremental update fixture.
 fixtures/generated/indexed-image.pdf	scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,indexed-color	Generated Indexed image color-space fixture.

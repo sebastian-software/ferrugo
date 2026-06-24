@@ -889,10 +889,24 @@ pub struct ImageXObject {
     pub color_space: ImageColorSpace,
     /// Decoded image samples.
     pub samples: Arc<[u8]>,
+    /// Image rendering mode.
+    pub kind: ImageKind,
     /// Indexed color lookup bytes for Indexed images.
     pub indexed_lookup: Option<Arc<[u8]>>,
     /// Optional 8-bit alpha mask samples matching the image dimensions.
     pub soft_mask: Option<Arc<[u8]>>,
+}
+
+/// Decoded image rendering mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImageKind {
+    /// Normal sampled image with its own color samples.
+    Color,
+    /// One-bit stencil image painted with the current fill color.
+    StencilMask {
+        /// Whether a set bit paints the current fill color.
+        paint_one_bits: bool,
+    },
 }
 
 /// One placed image item captured before rasterization.
@@ -4916,6 +4930,8 @@ impl<'r> ImageDisplayListInterpreter<'r> {
             b"q" => self.save_state(offset, operands),
             b"Q" => self.restore_state(offset, operands),
             b"cm" => self.concatenate_matrix(offset, operands),
+            b"g" => self.set_fill_gray(offset, operands),
+            b"rg" => self.set_fill_rgb(offset, operands),
             b"Do" => self.place_image(offset, operands),
             _ => Ok(()),
         }
@@ -4966,6 +4982,36 @@ impl<'r> ImageDisplayListInterpreter<'r> {
             number_operand(offset, b"cm", operands, 4)?,
             number_operand(offset, b"cm", operands, 5)?,
         ));
+        Ok(())
+    }
+
+    fn set_fill_gray(
+        &mut self,
+        offset: ByteOffset,
+        operands: &[PdfPrimitive<'_>],
+    ) -> GraphicsResult<()> {
+        expect_operand_count(offset, b"g", operands, 1)?;
+        let gray = DeviceGray(number_operand(offset, b"g", operands, 0)?.clamp(0.0, 1.0));
+        self.current.fill_gray = gray;
+        self.current.fill_color = DeviceColor::Gray(gray);
+        self.current.fill_color_space = FillColorSpace::Device;
+        self.current.fill_pattern = None;
+        Ok(())
+    }
+
+    fn set_fill_rgb(
+        &mut self,
+        offset: ByteOffset,
+        operands: &[PdfPrimitive<'_>],
+    ) -> GraphicsResult<()> {
+        expect_operand_count(offset, b"rg", operands, 3)?;
+        self.current.fill_color = DeviceColor::Rgb {
+            r: number_operand(offset, b"rg", operands, 0)?.clamp(0.0, 1.0),
+            g: number_operand(offset, b"rg", operands, 1)?.clamp(0.0, 1.0),
+            b: number_operand(offset, b"rg", operands, 2)?.clamp(0.0, 1.0),
+        };
+        self.current.fill_color_space = FillColorSpace::Device;
+        self.current.fill_pattern = None;
         Ok(())
     }
 
@@ -5974,13 +6020,27 @@ where
     let height = required_u32(stream.dictionary(), b"Height")
         .or_else(|_| required_u32(stream.dictionary(), b"H"))
         .map_err(|_| invalid_image_resource(resource_name.as_bytes()))?;
-    let bits_per_component = required_u8(stream.dictionary(), b"BitsPerComponent")
-        .or_else(|_| required_u8(stream.dictionary(), b"BPC"))
-        .map_err(|_| invalid_image_resource(resource_name.as_bytes()))?;
-    if bits_per_component != 8 {
+    let image_mask = image_mask_flag(stream.dictionary())?;
+    let bits_per_component = if image_mask {
+        optional_image_u8(stream.dictionary(), b"BitsPerComponent")?
+            .or(optional_image_u8(stream.dictionary(), b"BPC")?)
+            .unwrap_or(1)
+    } else {
+        required_u8(stream.dictionary(), b"BitsPerComponent")
+            .or_else(|_| required_u8(stream.dictionary(), b"BPC"))
+            .map_err(|_| invalid_image_resource(resource_name.as_bytes()))?
+    };
+    if image_mask && bits_per_component != 1 {
         return Err(invalid_image_resource(resource_name.as_bytes()));
     }
-    let color_space = image_color_space(stream.dictionary())?;
+    if !image_mask && bits_per_component != 8 {
+        return Err(invalid_image_resource(resource_name.as_bytes()));
+    }
+    let color_space = if image_mask {
+        ImageColorSpaceInfo::new(ImageColorSpace::DeviceGray)
+    } else {
+        image_color_space(stream.dictionary())?
+    };
     let image_filter = image_filter(stream.dictionary())?;
     let decoded = decode_image_samples(
         stream,
@@ -5999,7 +6059,11 @@ where
             },
         ));
     }
-    let expected_len = expected_image_len(width, height, color_space.kind)?;
+    let expected_len = if image_mask {
+        expected_image_mask_len(width, height)?
+    } else {
+        expected_image_len(width, height, color_space.kind)?
+    };
     if decoded.len() != expected_len {
         return Err(GraphicsError::new(
             None,
@@ -6010,20 +6074,32 @@ where
         ));
     }
     let mut decoded = decoded;
-    apply_image_decode(
-        &mut decoded,
-        color_space.kind,
-        image_decode_ranges(stream.dictionary())?,
-    )?;
-    let soft_mask = soft_mask_samples(
-        stream.dictionary(),
-        resolver,
-        width,
-        height,
-        max_image_bytes,
-        max_soft_mask_depth,
-        soft_mask_depth,
-    )?;
+    let (kind, soft_mask) = if image_mask {
+        (
+            ImageKind::StencilMask {
+                paint_one_bits: image_mask_paints_one_bits(stream.dictionary())?,
+            },
+            None,
+        )
+    } else {
+        apply_image_decode(
+            &mut decoded,
+            color_space.kind,
+            image_decode_ranges(stream.dictionary())?,
+        )?;
+        (
+            ImageKind::Color,
+            soft_mask_samples(
+                stream.dictionary(),
+                resolver,
+                width,
+                height,
+                max_image_bytes,
+                max_soft_mask_depth,
+                soft_mask_depth,
+            )?,
+        )
+    };
     Ok(ImageXObject {
         resource_name: resource_name.as_bytes().to_vec(),
         width,
@@ -6031,9 +6107,54 @@ where
         bits_per_component,
         color_space: color_space.kind,
         samples: Arc::from(decoded),
+        kind,
         indexed_lookup: color_space.indexed_lookup,
         soft_mask,
     })
+}
+
+fn image_mask_flag(dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)]) -> GraphicsResult<bool> {
+    let Some(value) =
+        dictionary_value(dictionary, b"ImageMask").or_else(|| dictionary_value(dictionary, b"IM"))
+    else {
+        return Ok(false);
+    };
+    let PdfPrimitive::Boolean(value) = value else {
+        return Err(invalid_image_resource(b"ImageMask"));
+    };
+    Ok(*value)
+}
+
+fn optional_image_u8(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    key: &[u8],
+) -> GraphicsResult<Option<u8>> {
+    let Some(value) = dictionary_value(dictionary, key) else {
+        return Ok(None);
+    };
+    let number = primitive_number(value).ok_or_else(|| invalid_image_resource(key))?;
+    if number.fract() != 0.0 {
+        return Err(invalid_image_resource(key));
+    }
+    u8::try_from(number as i64)
+        .map(Some)
+        .map_err(|_| invalid_image_resource(key))
+}
+
+fn image_mask_paints_one_bits(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+) -> GraphicsResult<bool> {
+    let Some(decode) = image_decode_ranges(dictionary)? else {
+        return Ok(false);
+    };
+    if decode.len != 1 {
+        return Err(invalid_image_resource(b"Decode"));
+    }
+    match decode.ranges[0] {
+        (0.0, 1.0) => Ok(false),
+        (1.0, 0.0) => Ok(true),
+        _ => Err(invalid_image_resource(b"Decode")),
+    }
 }
 
 fn soft_mask_samples<'a, R>(
@@ -6162,6 +6283,7 @@ fn decode_inline_image(
         bits_per_component,
         color_space: color_space.kind,
         samples: Arc::from(samples),
+        kind: ImageKind::Color,
         indexed_lookup: color_space.indexed_lookup,
         soft_mask: None,
     })
@@ -6579,6 +6701,18 @@ fn expected_image_len(
     (width as usize)
         .checked_mul(height as usize)
         .and_then(|pixels| pixels.checked_mul(color_space.bytes_per_pixel()))
+        .ok_or_else(|| {
+            GraphicsError::new(
+                None,
+                GraphicsErrorKind::ImageBytesOverflow { limit: usize::MAX },
+            )
+        })
+}
+
+fn expected_image_mask_len(width: u32, height: u32) -> GraphicsResult<usize> {
+    let row_bytes = (width as usize).checked_add(7).map(|bits| bits / 8);
+    row_bytes
+        .and_then(|row_bytes| row_bytes.checked_mul(height as usize))
         .ok_or_else(|| {
             GraphicsError::new(
                 None,
@@ -7438,7 +7572,7 @@ fn draw_image(
             if !(0.0..1.0).contains(&sample.x) || !(0.0..1.0).contains(&sample.y) {
                 continue;
             }
-            let pixel = sample_image(&image.image, sample.x, sample.y);
+            let pixel = sample_image(&image.image, sample.x, sample.y, image.state.fill_color);
             composite_image_pixel(device, x, y, pixel)?;
         }
     }
@@ -7468,9 +7602,17 @@ fn transform_bounds(bounds: PathBounds, transform: Matrix) -> PathBounds {
     include_point(Some(bounds), p3)
 }
 
-fn sample_image(image: &ImageXObject, x: f64, y: f64) -> Rgba {
+fn sample_image(image: &ImageXObject, x: f64, y: f64, stencil_color: DeviceColor) -> Rgba {
     let sample_x = ((x * f64::from(image.width)).floor() as u32).min(image.width - 1);
     let sample_y = (((1.0 - y) * f64::from(image.height)).floor() as u32).min(image.height - 1);
+    if let ImageKind::StencilMask { paint_one_bits } = image.kind {
+        let paints = sample_image_mask_bit(image, sample_x, sample_y) == paint_one_bits;
+        let mut color = device_color_to_rgba(stencil_color);
+        if !paints {
+            color.a = 0;
+        }
+        return color;
+    }
     let index = (sample_y as usize * image.width as usize + sample_x as usize)
         * image.color_space.bytes_per_pixel();
     let alpha = sample_soft_mask(image, sample_x, sample_y);
@@ -7527,6 +7669,16 @@ fn sample_image(image: &ImageXObject, x: f64, y: f64) -> Rgba {
             }
         }
     }
+}
+
+fn sample_image_mask_bit(image: &ImageXObject, sample_x: u32, sample_y: u32) -> bool {
+    let row_bytes = (image.width as usize).div_ceil(8);
+    let byte_index = sample_y as usize * row_bytes + sample_x as usize / 8;
+    let bit_index = 7 - (sample_x % 8);
+    image
+        .samples
+        .get(byte_index)
+        .is_some_and(|byte| (byte & (1 << bit_index)) != 0)
 }
 
 fn sample_soft_mask(image: &ImageXObject, sample_x: u32, sample_y: u32) -> u8 {
@@ -11972,6 +12124,56 @@ mod tests {
     }
 
     #[test]
+    fn image_resources_should_decode_one_bit_image_mask() {
+        let document = load_image_xobject_pdf(
+            b"q 2 0 0 1 0 0 cm /Im1 Do Q",
+            b"<< /Type /XObject /Subtype /Image /Width 2 /Height 1 /ImageMask true /Length 1 >>",
+            &[0b1000_0000],
+        );
+        let resources = image_resources_from_document(&document).expect("image mask resource");
+        let image = resources.get(PdfName::new(b"Im1")).expect("image mask");
+
+        assert_eq!(image.bits_per_component, 1);
+        assert_eq!(
+            image.kind,
+            ImageKind::StencilMask {
+                paint_one_bits: false,
+            }
+        );
+        assert_eq!(image.samples.as_ref(), &[0b1000_0000]);
+    }
+
+    #[test]
+    fn image_resources_should_decode_inverted_image_mask() {
+        let document = load_image_xobject_pdf(
+            b"q 2 0 0 1 0 0 cm /Im1 Do Q",
+            b"<< /Type /XObject /Subtype /Image /Width 2 /Height 1 /ImageMask true /Decode [1 0] /Length 1 >>",
+            &[0b1000_0000],
+        );
+        let resources =
+            image_resources_from_document(&document).expect("inverted image mask resource");
+        let image = resources.get(PdfName::new(b"Im1")).expect("image mask");
+
+        assert_eq!(
+            image.kind,
+            ImageKind::StencilMask {
+                paint_one_bits: true,
+            }
+        );
+    }
+
+    #[test]
+    fn image_resources_should_reject_unsupported_image_mask_decode() {
+        let document = load_image_xobject_pdf(
+            b"q 2 0 0 1 0 0 cm /Im1 Do Q",
+            b"<< /Type /XObject /Subtype /Image /Width 2 /Height 1 /ImageMask true /Decode [0 0] /Length 1 >>",
+            &[0b1000_0000],
+        );
+
+        assert!(image_resources_from_document(&document).is_err());
+    }
+
+    #[test]
     fn image_resources_should_decode_dct_rgb_xobject() {
         let document = generated_fixture_document("dct-image.pdf");
         let resources = image_resources_from_document(&document).expect("valid DCT image resource");
@@ -12037,6 +12239,28 @@ mod tests {
     }
 
     #[test]
+    fn image_resources_should_enforce_image_mask_byte_budget() {
+        let document = load_image_xobject_pdf(
+            b"q 16 0 0 1 0 0 cm /Im1 Do Q",
+            b"<< /Type /XObject /Subtype /Image /Width 16 /Height 1 /ImageMask true /Length 2 >>",
+            &[0xff, 0x00],
+        );
+        let error = image_resources_from_document_with_options(
+            &document,
+            DisplayListOptions {
+                max_image_bytes: 1,
+                ..DisplayListOptions::default()
+            },
+        )
+        .expect_err("image mask samples should exceed configured budget");
+
+        assert_eq!(
+            error.kind(),
+            &GraphicsErrorKind::ImageBytesOverflow { limit: 1 }
+        );
+    }
+
+    #[test]
     fn image_resources_should_decode_device_gray_soft_mask() {
         let document = load_image_xobject_pdf_with_soft_mask(
             b"q 10 0 0 10 0 0 cm /Im1 Do Q",
@@ -12087,6 +12311,7 @@ mod tests {
                 bits_per_component: 8,
                 color_space: ImageColorSpace::DeviceRgb,
                 samples: Arc::from([255, 0, 0, 0, 0, 255].as_slice()),
+                kind: ImageKind::Color,
                 indexed_lookup: None,
                 soft_mask: Some(Arc::from([0, 128].as_slice())),
             },
@@ -12371,6 +12596,54 @@ mod tests {
 
         assert_eq!(
             device.pixel(10, 10).expect("CMYK sample pixel"),
+            Rgba {
+                r: 255,
+                g: 0,
+                b: 0,
+                a: 255,
+            }
+        );
+    }
+
+    #[test]
+    fn image_rasterizer_should_apply_image_mask_with_fill_color() {
+        let document = load_image_xobject_pdf(
+            b"q 2 0 0 1 0 0 cm 1 0 0 rg /Im1 Do Q",
+            b"<< /Type /XObject /Subtype /Image /Width 2 /Height 1 /ImageMask true /Length 1 >>",
+            &[0b1000_0000],
+        );
+        let resources = image_resources_from_document(&document).expect("image mask resource");
+        let content = content_stream_from_document(&document);
+        let list = build_image_display_list(
+            tokenize_content(PdfBytes::new(&content)),
+            &resources,
+            DisplayListOptions::default(),
+        )
+        .expect("image mask display list");
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 2.0,
+                    max_y: 1.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            2,
+        )
+        .expect("image mask transform");
+        let mut device = transform.create_device(Rgba::WHITE).expect("raster device");
+
+        rasterize_images(&list, &mut device, transform).expect("image mask should rasterize");
+
+        assert_eq!(
+            device.pixel(0, 0).expect("transparent mask pixel"),
+            Rgba::WHITE
+        );
+        assert_eq!(
+            device.pixel(1, 0).expect("painted mask pixel"),
             Rgba {
                 r: 255,
                 g: 0,

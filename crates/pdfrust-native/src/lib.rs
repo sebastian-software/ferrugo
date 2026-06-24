@@ -1809,6 +1809,75 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_render_generated_image_mask_signature_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/image-mask-signature.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 180,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated ImageMask signature fixture should render through native backend");
+
+        assert_eq!(thumbnail.width, 120);
+        assert_eq!(thumbnail.height, 80);
+        assert!(
+            thumbnail
+                .bytes
+                .chunks_exact(4)
+                .filter(|pixel| pixel[0] < 16 && pixel[1] < 48 && pixel[2] < 96)
+                .count()
+                > 500
+        );
+    }
+
+    #[test]
+    fn native_backend_should_render_generated_monochrome_image_mask_icon_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/image-mask-monochrome-icon.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 120,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated monochrome ImageMask icon fixture should render through native backend");
+
+        assert_eq!(thumbnail.width, 120);
+        assert_eq!(thumbnail.height, 120);
+        assert_eq!(rgba_at(&thumbnail, 44, 44), [10, 115, 56, 255]);
+        assert_eq!(rgba_at(&thumbnail, 60, 60), [240, 245, 250, 255]);
+    }
+
+    #[test]
+    fn native_backend_should_render_generated_compressed_image_mask_logo_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/image-mask-logo.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 150,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated compressed ImageMask logo fixture should render through native backend");
+
+        assert_eq!(thumbnail.width, 150);
+        assert_eq!(thumbnail.height, 100);
+        assert!(
+            thumbnail
+                .bytes
+                .chunks_exact(4)
+                .filter(|pixel| pixel[0] > 220 && pixel[1] > 160 && pixel[2] < 80)
+                .count()
+                > 1_000
+        );
+    }
+
+    #[test]
     fn native_backend_should_render_generated_scanned_page_fixture() {
         let bytes = include_bytes!("../../../fixtures/generated/scanned-page.pdf");
         let thumbnail = ThumbnailBackend::render(

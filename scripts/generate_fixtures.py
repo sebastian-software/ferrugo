@@ -453,6 +453,166 @@ def soft_mask_image_pdf() -> bytes:
     return pdf.render(catalog)
 
 
+def pack_one_bit_rows(rows: list[str]) -> bytes:
+    width = len(rows[0])
+    row_bytes = (width + 7) // 8
+    packed = bytearray()
+    for row in rows:
+        assert len(row) == width
+        value = 0
+        used = 0
+        for bit in row:
+            value = (value << 1) | (1 if bit == "1" else 0)
+            used += 1
+            if used == 8:
+                packed.append(value)
+                value = 0
+                used = 0
+        if used:
+            packed.append(value << (8 - used))
+        while len(packed) % row_bytes != 0:
+            packed.append(0)
+    return bytes(packed)
+
+
+def expand_one_bit_rows(rows: list[str], x_factor: int, y_factor: int) -> list[str]:
+    expanded = []
+    for row in rows:
+        wide = "".join(bit * x_factor for bit in row)
+        expanded.extend([wide] * y_factor)
+    return expanded
+
+
+def image_mask_pdf(
+    media_box: str,
+    content: bytes,
+    rows: list[str],
+    *,
+    extra: bytes = b"",
+    compressed: bool = False,
+) -> bytes:
+    pdf = Pdf()
+    mask = pack_one_bit_rows(rows)
+    image_data = zlib.compress(mask) if compressed else mask
+    width = len(rows[0])
+    height = len(rows)
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R "
+        f"/MediaBox {media_box} /Resources << /XObject << /Im1 4 0 R >> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    filter_entry = b"/Filter /FlateDecode " if compressed else b""
+    image_object = pdf.add(
+        (
+            f"<< /Type /XObject /Subtype /Image /Width {width} /Height {height} "
+            "/ImageMask true /BitsPerComponent 1 "
+        ).encode("ascii")
+        + extra
+        + filter_entry
+        + f"/Length {len(image_data)} >>\nstream\n".encode("ascii")
+        + image_data
+        + b"\nendstream"
+    )
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert image_object == 4
+    return pdf.render(catalog)
+
+
+def image_mask_signature_pdf() -> bytes:
+    rows = expand_one_bit_rows(
+        [
+            "000000000000000000000000",
+            "001110001100011100011000",
+            "010001010010100010100100",
+            "010001100000100010100100",
+            "001110011100111100111000",
+            "000001000010100000100100",
+            "111110111100100000100100",
+            "000000000000000000000000",
+        ],
+        4,
+        3,
+    )
+    content = (
+        b"0.98 0.97 0.94 rg 0 0 120 80 re f "
+        b"0.75 0.72 0.66 RG 1 w 12 28 m 108 28 l S "
+        b"q 0.02 0.15 0.30 rg 96 0 0 24 12 32 cm /Im1 Do Q"
+    )
+    return image_mask_pdf("[0 0 120 80]", content, rows)
+
+
+def image_mask_monochrome_icon_pdf() -> bytes:
+    rows = expand_one_bit_rows(
+        [
+            "00000000",
+            "00111100",
+            "01000010",
+            "01011010",
+            "01011010",
+            "01000010",
+            "00111100",
+            "00000000",
+        ],
+        4,
+        4,
+    )
+    content = (
+        b"0.94 0.96 0.98 rg 0 0 120 120 re f "
+        b"q 0.04 0.45 0.22 rg 32 0 0 32 44 44 cm /Im1 Do Q"
+    )
+    return image_mask_pdf("[0 0 120 120]", content, rows)
+
+
+def image_mask_logo_pdf() -> bytes:
+    rows = expand_one_bit_rows(
+        [
+            "0000000000000000",
+            "0011110000111100",
+            "0110011001100110",
+            "1100001111000011",
+            "1100001111000011",
+            "0110011001100110",
+            "0011110000111100",
+            "0001100000011000",
+            "0001100000011000",
+            "0011110000111100",
+            "0110011001100110",
+            "0000000000000000",
+        ],
+        4,
+        4,
+    )
+    content = (
+        b"0.12 0.13 0.15 rg 0 0 150 100 re f "
+        b"q 0.95 0.76 0.18 rg 64 0 0 48 43 26 cm /Im1 Do Q"
+    )
+    return image_mask_pdf("[0 0 150 100]", content, rows, compressed=True)
+
+
+def image_mask_inverted_icon_pdf() -> bytes:
+    rows = [
+        "000000000000000000000000",
+        "001110001100011100011000",
+        "010001010010100010100100",
+        "010001100000100010100100",
+        "001110011100111100111000",
+        "000001000010100000100100",
+        "111110111100100000100100",
+        "000000000000000000000000",
+    ]
+    content = (
+        b"0.94 0.96 0.98 rg 0 0 120 120 re f "
+        b"q 0.04 0.45 0.22 rg 64 0 0 64 28 28 cm /Im1 Do Q"
+    )
+    return image_mask_pdf("[0 0 120 120]", content, rows, extra=b"/Decode [1 0] ")
+
+
 def scanned_page_pdf() -> bytes:
     pdf = Pdf()
     width = 64
@@ -1826,6 +1986,9 @@ def main() -> None:
     write("dct-image.pdf", dct_image_pdf())
     write("predictor-image.pdf", predictor_image_pdf())
     write("soft-mask-image.pdf", soft_mask_image_pdf())
+    write("image-mask-signature.pdf", image_mask_signature_pdf())
+    write("image-mask-monochrome-icon.pdf", image_mask_monochrome_icon_pdf())
+    write("image-mask-logo.pdf", image_mask_logo_pdf())
     write("scanned-page.pdf", scanned_page_pdf())
     write("mixed-text-image.pdf", mixed_text_image_pdf())
     write("transparency-group.pdf", transparency_group_pdf())
