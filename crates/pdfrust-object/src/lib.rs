@@ -2,6 +2,7 @@
 
 #![forbid(unsafe_code)]
 
+use std::collections::HashSet;
 use std::fmt;
 use std::io::Read;
 
@@ -351,6 +352,18 @@ pub struct ClassicDocument<'a> {
     pub objects: ObjectTable<'a>,
 }
 
+impl ClassicDocument<'_> {
+    /// Resolves the document catalog and page tree.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ObjectError`] when the trailer root, catalog, page tree, or
+    /// inherited page metadata is malformed.
+    pub fn page_tree(&self) -> ObjectResult<PageTree> {
+        resolve_page_tree(self)
+    }
+}
+
 /// Loaded xref-stream PDF document.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ModernDocument<'a> {
@@ -380,6 +393,103 @@ impl<'a> ModernDocument<'a> {
         }
         Ok(None)
     }
+
+    /// Resolves the document catalog and page tree.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ObjectError`] when the trailer root, catalog, page tree, or
+    /// inherited page metadata is malformed.
+    pub fn page_tree(&self) -> ObjectResult<PageTree> {
+        resolve_page_tree(self)
+    }
+}
+
+/// Resolved document page tree.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PageTree {
+    pages: Vec<PageMetadata>,
+}
+
+impl PageTree {
+    /// Returns all pages in document order.
+    #[must_use]
+    pub fn pages(&self) -> &[PageMetadata] {
+        &self.pages
+    }
+
+    /// Returns the number of resolved pages.
+    #[must_use]
+    pub fn page_count(&self) -> usize {
+        self.pages.len()
+    }
+
+    /// Returns the first page metadata when the document has pages.
+    #[must_use]
+    pub fn first_page(&self) -> Option<&PageMetadata> {
+        self.pages.first()
+    }
+
+    /// Returns the first page size when the document has pages.
+    #[must_use]
+    pub fn first_page_size(&self) -> Option<PageSize> {
+        self.first_page().map(PageMetadata::size)
+    }
+}
+
+/// Resolved page metadata needed before content interpretation.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PageMetadata {
+    /// Page object ID.
+    pub id: ObjectId,
+    /// Media box inherited or declared on the page.
+    pub media_box: PageBox,
+    /// Crop box inherited or declared on the page.
+    pub crop_box: Option<PageBox>,
+    /// Resource dictionary reference inherited or declared on the page.
+    pub resources: Option<Reference>,
+}
+
+impl PageMetadata {
+    /// Returns the visible page size using `CropBox` when present, otherwise
+    /// `MediaBox`.
+    #[must_use]
+    pub fn size(&self) -> PageSize {
+        self.crop_box.unwrap_or(self.media_box).size()
+    }
+}
+
+/// Four-number PDF page box.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PageBox {
+    /// Lower-left x coordinate.
+    pub left: f64,
+    /// Lower-left y coordinate.
+    pub bottom: f64,
+    /// Upper-right x coordinate.
+    pub right: f64,
+    /// Upper-right y coordinate.
+    pub top: f64,
+}
+
+impl PageBox {
+    /// Returns the box width and height.
+    #[must_use]
+    pub fn size(self) -> PageSize {
+        PageSize {
+            width: self.right - self.left,
+            height: self.top - self.bottom,
+        }
+    }
+}
+
+/// Page size in PDF user-space units.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PageSize {
+    /// Page width.
+    pub width: f64,
+    /// Page height.
+    pub height: f64,
 }
 
 /// Parses one indirect reference such as `12 0 R`.
@@ -565,6 +675,219 @@ pub fn load_modern_document(input: PdfBytes<'_>) -> ObjectResult<ModernDocument<
         objects,
         object_streams,
     })
+}
+
+trait DocumentObjects {
+    fn trailer(&self) -> &Trailer<'_>;
+    fn get_object_owned(&self, id: ObjectId) -> ObjectResult<Option<IndirectObject<'_>>>;
+}
+
+impl DocumentObjects for ClassicDocument<'_> {
+    fn trailer(&self) -> &Trailer<'_> {
+        &self.trailer
+    }
+
+    fn get_object_owned(&self, id: ObjectId) -> ObjectResult<Option<IndirectObject<'_>>> {
+        Ok(self.objects.get(id).cloned())
+    }
+}
+
+impl DocumentObjects for ModernDocument<'_> {
+    fn trailer(&self) -> &Trailer<'_> {
+        &self.trailer
+    }
+
+    fn get_object_owned(&self, id: ObjectId) -> ObjectResult<Option<IndirectObject<'_>>> {
+        self.get_object(id)
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct InheritedPageState {
+    media_box: Option<PageBox>,
+    crop_box: Option<PageBox>,
+    resources: Option<Reference>,
+}
+
+fn resolve_page_tree(document: &impl DocumentObjects) -> ObjectResult<PageTree> {
+    let catalog_id = required_reference(document.trailer().entries(), b"Root", "Root")?.id;
+    let catalog = required_object(document, catalog_id)?;
+    let catalog_dictionary = object_dictionary(&catalog)?;
+    if !dictionary_name_is(catalog_dictionary, b"Type", b"Catalog") {
+        return Err(ObjectError::MissingPageTreeField { field: "Type" });
+    }
+    let pages_id = required_reference(catalog_dictionary, b"Pages", "Pages")?.id;
+    let mut pages = Vec::new();
+    let mut visited = HashSet::new();
+    traverse_page_tree(
+        document,
+        pages_id,
+        InheritedPageState::default(),
+        &mut visited,
+        &mut pages,
+    )?;
+    Ok(PageTree { pages })
+}
+
+fn traverse_page_tree(
+    document: &impl DocumentObjects,
+    id: ObjectId,
+    inherited: InheritedPageState,
+    visited: &mut HashSet<ObjectId>,
+    pages: &mut Vec<PageMetadata>,
+) -> ObjectResult<()> {
+    if !visited.insert(id) {
+        return Err(ObjectError::PageTreeCycle { id });
+    }
+
+    let object = required_object(document, id)?;
+    let dictionary = object_dictionary(&object)?;
+    let node_type = dictionary_name(dictionary, b"Type")
+        .ok_or(ObjectError::MissingPageTreeField { field: "Type" })?;
+    let inherited = inherit_page_state(dictionary, inherited)?;
+
+    match node_type {
+        b"Pages" => {
+            required_usize(dictionary, b"Count")?;
+            let kids = required_reference_array(dictionary, b"Kids", "Kids")?;
+            for kid in kids {
+                traverse_page_tree(document, kid.id, inherited, visited, pages)?;
+            }
+        }
+        b"Page" => {
+            let media_box = inherited
+                .media_box
+                .ok_or(ObjectError::MissingPageTreeField { field: "MediaBox" })?;
+            pages.push(PageMetadata {
+                id,
+                media_box,
+                crop_box: inherited.crop_box,
+                resources: inherited.resources,
+            });
+        }
+        _ => return Err(ObjectError::MissingPageTreeField { field: "Type" }),
+    }
+    Ok(())
+}
+
+fn required_object(
+    document: &impl DocumentObjects,
+    id: ObjectId,
+) -> ObjectResult<IndirectObject<'_>> {
+    document
+        .get_object_owned(id)?
+        .ok_or(ObjectError::MissingObject { id })
+}
+
+fn object_dictionary<'a>(
+    object: &'a IndirectObject<'a>,
+) -> ObjectResult<&'a [(PdfName<'a>, PdfPrimitive<'a>)]> {
+    let ObjectValue::Primitive(PdfPrimitive::Dictionary(dictionary)) = &object.value else {
+        return Err(ObjectError::MissingPageTreeField {
+            field: "Dictionary",
+        });
+    };
+    Ok(dictionary)
+}
+
+fn inherit_page_state(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    mut inherited: InheritedPageState,
+) -> ObjectResult<InheritedPageState> {
+    if let Some(value) = dictionary_value(dictionary, b"MediaBox") {
+        inherited.media_box = Some(page_box(value)?);
+    }
+    if let Some(value) = dictionary_value(dictionary, b"CropBox") {
+        inherited.crop_box = Some(page_box(value)?);
+    }
+    if let Some(value) = dictionary_value(dictionary, b"Resources") {
+        inherited.resources = resource_reference(value)?;
+    }
+    Ok(inherited)
+}
+
+fn required_reference(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    key: &'static [u8],
+    field: &'static str,
+) -> ObjectResult<Reference> {
+    dictionary_value(dictionary, key)
+        .ok_or(ObjectError::MissingPageTreeField { field })
+        .and_then(reference_from_primitive)
+}
+
+fn required_reference_array(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    key: &'static [u8],
+    field: &'static str,
+) -> ObjectResult<Vec<Reference>> {
+    let value =
+        dictionary_value(dictionary, key).ok_or(ObjectError::MissingPageTreeField { field })?;
+    let PdfPrimitive::Array(values) = value else {
+        return Err(ObjectError::MissingPageTreeField { field });
+    };
+    values.iter().map(reference_from_primitive).collect()
+}
+
+fn resource_reference(value: &PdfPrimitive<'_>) -> ObjectResult<Option<Reference>> {
+    match value {
+        PdfPrimitive::Reference(_) => reference_from_primitive(value).map(Some),
+        PdfPrimitive::Dictionary(_) => Ok(None),
+        _ => Err(ObjectError::MissingPageTreeField { field: "Resources" }),
+    }
+}
+
+fn reference_from_primitive(value: &PdfPrimitive<'_>) -> ObjectResult<Reference> {
+    let PdfPrimitive::Reference(reference) = value else {
+        return Err(ObjectError::MissingPageTreeField { field: "Reference" });
+    };
+    let number = ObjectNumber::new(reference.object)?;
+    Ok(Reference::new(ObjectId::new(
+        number,
+        GenerationNumber::new(reference.generation),
+    )))
+}
+
+fn dictionary_name<'a>(
+    dictionary: &'a [(PdfName<'a>, PdfPrimitive<'a>)],
+    key: &[u8],
+) -> Option<&'a [u8]> {
+    let Some(PdfPrimitive::Name(name)) = dictionary_value(dictionary, key) else {
+        return None;
+    };
+    Some(name.as_bytes())
+}
+
+fn page_box(value: &PdfPrimitive<'_>) -> ObjectResult<PageBox> {
+    let PdfPrimitive::Array(values) = value else {
+        return Err(ObjectError::InvalidPageBox);
+    };
+    if values.len() != 4 {
+        return Err(ObjectError::InvalidPageBox);
+    }
+    let box_value = PageBox {
+        left: page_box_number(&values[0])?,
+        bottom: page_box_number(&values[1])?,
+        right: page_box_number(&values[2])?,
+        top: page_box_number(&values[3])?,
+    };
+    let size = box_value.size();
+    if !size.width.is_finite()
+        || !size.height.is_finite()
+        || size.width <= 0.0
+        || size.height <= 0.0
+    {
+        return Err(ObjectError::InvalidPageBox);
+    }
+    Ok(box_value)
+}
+
+fn page_box_number(value: &PdfPrimitive<'_>) -> ObjectResult<f64> {
+    match value {
+        PdfPrimitive::Number(PdfNumber::Integer(value)) => Ok(*value as f64),
+        PdfPrimitive::Number(PdfNumber::Real(value)) if value.is_finite() => Ok(*value),
+        _ => Err(ObjectError::InvalidPageBox),
+    }
 }
 
 fn parse_object_at_offset<'a>(
@@ -1567,6 +1890,23 @@ pub enum ObjectError {
         /// Zero-based index inside the object stream.
         index: usize,
     },
+    /// Required indirect object is missing.
+    MissingObject {
+        /// Missing object ID.
+        id: ObjectId,
+    },
+    /// Required catalog or page tree field is missing or malformed.
+    MissingPageTreeField {
+        /// Field name.
+        field: &'static str,
+    },
+    /// Page tree traversal encountered a cycle.
+    PageTreeCycle {
+        /// Repeated object ID.
+        id: ObjectId,
+    },
+    /// Page box is missing, malformed, or not positive-sized.
+    InvalidPageBox,
     /// Duplicate indirect object ID.
     DuplicateObject {
         /// Duplicated object ID.
@@ -1599,7 +1939,11 @@ impl ObjectError {
             | Self::Decode { .. }
             | Self::StreamLimitExceeded { .. }
             | Self::MissingObjectStream { .. }
-            | Self::ObjectStreamMismatch { .. } => None,
+            | Self::ObjectStreamMismatch { .. }
+            | Self::MissingObject { .. }
+            | Self::MissingPageTreeField { .. }
+            | Self::PageTreeCycle { .. }
+            | Self::InvalidPageBox => None,
             Self::DuplicateObject { .. } => None,
             Self::XrefOffsetMismatch { offset, .. } => Some(*offset),
         }
@@ -1659,6 +2003,22 @@ impl fmt::Display for ObjectError {
                 }
                 Ok(())
             }
+            Self::MissingObject { id } => write!(
+                f,
+                "missing object {} {}",
+                id.number.get(),
+                id.generation.get()
+            ),
+            Self::MissingPageTreeField { field } => {
+                write!(f, "missing or malformed page tree field {field}")
+            }
+            Self::PageTreeCycle { id } => write!(
+                f,
+                "page tree cycle at object {} {}",
+                id.number.get(),
+                id.generation.get()
+            ),
+            Self::InvalidPageBox => f.write_str("invalid page box"),
             Self::DuplicateObject { id } => write!(
                 f,
                 "duplicate object {} {}",
@@ -1958,6 +2318,77 @@ mod tests {
     }
 
     #[test]
+    fn page_tree_should_resolve_classic_inherited_metadata() {
+        let pdf = build_classic_page_tree_pdf(false, false);
+        let document = load_classic_document(PdfBytes::new(&pdf)).expect("classic document");
+
+        let page_tree = document.page_tree().expect("page tree");
+
+        assert_eq!(page_tree.page_count(), 2);
+        assert_eq!(
+            page_tree.first_page_size(),
+            Some(PageSize {
+                width: 300.0,
+                height: 160.0
+            })
+        );
+        assert_eq!(
+            page_tree.pages()[0].resources,
+            Some(Reference::new(ObjectId::new(
+                ObjectNumber::new(5).expect("object number"),
+                GenerationNumber::new(0)
+            )))
+        );
+        assert_eq!(
+            page_tree.pages()[1].size(),
+            PageSize {
+                width: 100.0,
+                height: 100.0
+            }
+        );
+    }
+
+    #[test]
+    fn page_tree_should_resolve_modern_compressed_page_metadata() {
+        let pdf = build_modern_pdf(false);
+        let document = load_modern_document(PdfBytes::new(&pdf)).expect("modern document");
+
+        let page_tree = document.page_tree().expect("page tree");
+
+        assert_eq!(page_tree.page_count(), 1);
+        assert_eq!(
+            page_tree.first_page_size(),
+            Some(PageSize {
+                width: 300.0,
+                height: 160.0
+            })
+        );
+    }
+
+    #[test]
+    fn page_tree_should_reject_missing_media_box() {
+        let pdf = build_classic_page_tree_pdf(true, false);
+        let document = load_classic_document(PdfBytes::new(&pdf)).expect("classic document");
+
+        let error = document.page_tree().expect_err("missing media box");
+
+        assert_eq!(
+            error,
+            ObjectError::MissingPageTreeField { field: "MediaBox" }
+        );
+    }
+
+    #[test]
+    fn page_tree_should_reject_cycles() {
+        let pdf = build_classic_page_tree_pdf(false, true);
+        let document = load_classic_document(PdfBytes::new(&pdf)).expect("classic document");
+
+        let error = document.page_tree().expect_err("cycle");
+
+        assert!(matches!(error, ObjectError::PageTreeCycle { .. }));
+    }
+
+    #[test]
     fn load_modern_document_should_reject_bad_object_stream_index() {
         let pdf = build_modern_pdf(true);
 
@@ -2048,6 +2479,55 @@ mod tests {
         pdf
     }
 
+    fn build_classic_page_tree_pdf(missing_media_box: bool, cycle: bool) -> Vec<u8> {
+        let page_tree_dictionary = if missing_media_box {
+            b"<< /Type /Pages /Kids [3 0 R] /Count 1 /Resources 5 0 R >>".to_vec()
+        } else if cycle {
+            b"<< /Type /Pages /Kids [2 0 R] /Count 1 /MediaBox [0 0 300 160] >>".to_vec()
+        } else {
+            b"<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 /MediaBox [0 0 300 160] /Resources 5 0 R >>".to_vec()
+        };
+        let objects = vec![
+            b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n".to_vec(),
+            indirect_object_bytes(2, &page_tree_dictionary),
+            b"3 0 obj\n<< /Type /Page /Parent 2 0 R >>\nendobj\n".to_vec(),
+            b"4 0 obj\n<< /Type /Page /Parent 2 0 R /CropBox [10 20 110 120] >>\nendobj\n".to_vec(),
+            b"5 0 obj\n<< /Font << >> >>\nendobj\n".to_vec(),
+        ];
+        build_classic_pdf_from_objects(&objects)
+    }
+
+    fn indirect_object_bytes(number: u32, dictionary: &[u8]) -> Vec<u8> {
+        let mut object = format!("{number} 0 obj\n").into_bytes();
+        object.extend_from_slice(dictionary);
+        object.extend_from_slice(b"\nendobj\n");
+        object
+    }
+
+    fn build_classic_pdf_from_objects(objects: &[Vec<u8>]) -> Vec<u8> {
+        let mut pdf = b"%PDF-1.7\n".to_vec();
+        let mut offsets = Vec::with_capacity(objects.len());
+        for object in objects {
+            offsets.push(pdf.len());
+            pdf.extend_from_slice(object);
+        }
+        let xref_offset = pdf.len();
+        pdf.extend_from_slice(
+            format!("xref\n0 {}\n0000000000 65535 f \n", objects.len() + 1).as_bytes(),
+        );
+        for offset in offsets {
+            pdf.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
+        }
+        pdf.extend_from_slice(
+            format!(
+                "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF\n",
+                objects.len() + 1
+            )
+            .as_bytes(),
+        );
+        pdf
+    }
+
     fn build_modern_pdf(use_bad_compressed_index: bool) -> Vec<u8> {
         let mut pdf = b"%PDF-1.7\n".to_vec();
         let object_1 = append_object(
@@ -2056,7 +2536,7 @@ mod tests {
         );
         let object_2 = append_object(
             &mut pdf,
-            b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n",
+            b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox [0 0 300 160] >>\nendobj\n",
         );
         let object_4 = append_object(
             &mut pdf,

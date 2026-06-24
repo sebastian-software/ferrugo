@@ -79,3 +79,9 @@ stream objects. It decodes `/W` and `/Index` entries, loads direct objects from
 offset entries, and stores decoded `/ObjStm` buffers separately so compressed
 objects can be parsed on demand without self-referential borrows. Hybrid xref
 files, indirect stream lengths, and repair mode remain separate milestones.
+
+Both classic and modern document loaders expose `page_tree()`, which resolves
+the trailer `/Root`, catalog `/Pages`, page tree `Kids`, inherited page boxes,
+and inherited resource references into `PageTree` and `PageMetadata` values.
+Content streams, rendering, and full metadata extraction remain later
+milestones.

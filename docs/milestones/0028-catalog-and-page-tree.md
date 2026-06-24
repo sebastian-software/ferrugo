@@ -1,6 +1,6 @@
 # 0028: Catalog And Page Tree
 
-Status: todo
+Status: done
 Phase: 1
 Size: medium
 Depends on: 0027
@@ -45,4 +45,15 @@ Resolve the document catalog and page tree into safe page metadata.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-24.
+
+- Added `PageTree`, `PageMetadata`, `PageBox`, and `PageSize`.
+- Added `ClassicDocument::page_tree` and `ModernDocument::page_tree`.
+- Resolved trailer `/Root`, catalog `/Pages`, page tree `Kids`, and page leaf
+  metadata.
+- Added inherited `MediaBox`, `CropBox`, and resource-reference handling.
+- Added typed errors for missing objects, malformed page-tree fields, page-tree
+  cycles, and invalid page boxes.
+- Added tests for classic page metadata inheritance, modern compressed page
+  metadata, missing media boxes, and page-tree cycles.
+- Content stream interpretation and rendering remain later milestones.

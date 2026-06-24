@@ -21,7 +21,6 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
-| 0028 | [Catalog And Page Tree](0028-catalog-and-page-tree.md) | 1 | medium | 0027 |
 | 0029 | [Rust Backend Differential Harness](0029-rust-backend-differential-harness.md) | 1 | medium | 0028 |
 | 0030 | [Content Stream Tokenizer](0030-content-stream-tokenizer.md) | 2 | medium | 0029 |
 | 0031 | [Graphics State And Transforms](0031-graphics-state-and-transforms.md) | 2 | medium | 0030 |
@@ -90,6 +89,7 @@ No milestones are currently in progress.
 | 0025 | [Classic Xref And Trailer Loader](0025-classic-xref-and-trailer-loader.md) | 1 | medium | 2026-06-24 |
 | 0026 | [Streams And Basic Filters](0026-streams-and-basic-filters.md) | 1 | medium | 2026-06-24 |
 | 0027 | [Xref Streams And Object Streams](0027-xref-streams-and-object-streams.md) | 1 | medium | 2026-06-24 |
+| 0028 | [Catalog And Page Tree](0028-catalog-and-page-tree.md) | 1 | medium | 2026-06-24 |
 
 ## Update Rules
 
