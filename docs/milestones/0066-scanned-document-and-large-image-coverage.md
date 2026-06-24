@@ -1,6 +1,6 @@
 # 0066: Scanned Document And Large Image Coverage
 
-Status: todo
+Status: done
 Phase: 10
 Size: medium
 Depends on: 0065
@@ -44,4 +44,21 @@ Make image-heavy and scanned PDFs render natively within bounded memory.
 
 ## Completion Notes
 
-Empty until done.
+- Added generated `fixtures/generated/scanned-page.pdf`, a page-sized
+  DeviceGray image placement fixture.
+- Added `scanned-page.pdf` to the `scan` corpus family in
+  `fixtures/corpus-manifest.tsv` with source, license, page-count, feature, and
+  note metadata.
+- Added native backend smoke coverage for the scan-like page fixture.
+- Added `docs/reports/scanned-document-coverage-2026-06-24.md`.
+- Scan corpus summary at `--max-edge 120` reported 7 total fixtures, 7 native
+  renders, 1.000 native pass rate, 0 fallbacks, and 0 errors.
+- PDFium differential smoke at `--max-edge 200` rendered all 7 scan fixtures
+  successfully through native and direct PDFium with matching PNG dimensions.
+- Memory diagnostics for `scanned-page.pdf` were captured through
+  `compare-metadata`; native page metadata matched PDFium and reported current
+  page, image, font, CMap, text-run, and display-item budgets.
+- Validation: `cargo fmt --check`, `cargo check`,
+  `cargo clippy --all-targets --all-features -- -D warnings`,
+  `cargo test --quiet`, manifest/PDF set comparison, scan corpus summary,
+  PDFium differential smoke, and scan metadata/memory diagnostics.
