@@ -1,6 +1,6 @@
 # 0068: Complex Font Subsetting And CID Fonts
 
-Status: todo
+Status: done
 Phase: 11
 Size: medium
 Depends on: 0067
@@ -44,4 +44,25 @@ Handle common subset and CID font patterns found in real-world PDFs.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-24.
+
+- Added explicit Type0/CID descendant font metadata decoding, including
+  `CIDFontType0`/`CIDFontType2` subtype validation and `/DW` default widths.
+- Accepted `Identity-H` composite font encoding when ToUnicode supplies character
+  mapping.
+- Applied CID `/DW` as fallback text advance width for Type0/CID text runs.
+- Added `fixtures/generated/cid-font-text.pdf`, a generated Type0 CID font
+  fixture with two-byte character codes, ToUnicode mapping, and `/DW 600`.
+- Added render and native backend tests for Type0/CID decoding and the generated
+  fixture.
+- Recorded fallback and PDFium comparison results in
+  `docs/reports/cid-font-coverage-2026-06-24.md`.
+- Validation:
+  - `cargo fmt --check`
+  - `cargo check`
+  - `cargo test`
+  - `cargo test -p pdfrust-render`
+  - `cargo test -p pdfrust-native`
+  - `cargo clippy --all-targets --all-features -- -D warnings`
+  - font-heavy fallback summary through the office-export family
+  - native/PDFium render comparison for `cid-font-text.pdf`
