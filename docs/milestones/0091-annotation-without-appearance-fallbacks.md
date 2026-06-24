@@ -1,6 +1,6 @@
 # 0091: Annotation Without Appearance Fallbacks
 
-Status: todo
+Status: completed
 Phase: 15
 Size: medium
 Depends on: 0090
@@ -46,4 +46,14 @@ on PDFium to synthesize them.
 
 ## Completion Notes
 
-Empty until done.
+- Completed 2026-06-25.
+- Added native appearance-free annotation fallbacks for `/Highlight`,
+  `/Underline`, `/Square`, `/Circle`, and `/Text`.
+- Kept `/Link` annotations without appearance streams non-visual to avoid
+  misleading link rectangle artifacts.
+- Preserved existing `/AP /N` appearance streams as authoritative.
+- Added deterministic fixtures for highlight, review markup, link, and text
+  note annotations without appearance streams.
+- Documented the policy in `docs/policies/annotation-fallbacks.md`.
+- Recorded evidence in
+  `docs/reports/annotation-fallback-coverage-2026-06-25.md`.
