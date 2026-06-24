@@ -116,8 +116,11 @@ decodes unfiltered, `FlateDecode`, and first-slice `DCTDecode`
 `DeviceRGB`/`DeviceGray` image streams within an explicit byte budget, and
 stores `ImageDisplayItem` placements using the active CTM. Decoded image
 samples are reference-counted so repeated `Do` placements share sample bytes.
-Broader filter chains, CCITT/JPX, predictors, and full color management return
-typed unsupported errors until later image-filter and color-space milestones.
+`FlateDecode` image streams also apply PNG-style `/DecodeParms /Predictor`
+values `10..=15` when the predictor metadata matches the image dimensions and
+8-bit component layout. Broader filter chains, CCITT/JPX, unsupported
+predictors, and full color management return typed unsupported errors until
+later image-filter and color-space milestones.
 Form XObject support resolves form streams from `/XObject` resource
 dictionaries, decodes form content, applies form matrices, emits bounding-box
 clip placeholders, and recursively reuses the path display-list interpreter

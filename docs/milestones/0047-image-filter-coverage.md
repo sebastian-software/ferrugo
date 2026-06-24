@@ -55,10 +55,18 @@ In progress:
   `MIT OR Apache-2.0 OR Zlib`.
 - Added a generated `dct-image.pdf` fixture and native backend smoke coverage
   for JPEG-backed Image XObjects.
+- Second implementation slice adds PNG-style `/DecodeParms /Predictor` handling
+  for `FlateDecode` Image XObjects with predictors `10..=15`, matching
+  dimensions, matching color component count, and 8-bit components.
+- Added a generated `predictor-image.pdf` fixture, render-layer predictor tests,
+  unsupported predictor coverage, and native backend smoke coverage.
 - Validation so far: `cargo fmt --check`, `git diff --check`, `cargo check`,
   `cargo test`, `cargo clippy --all-targets --all-features -- -D warnings`.
 - PDFium/native comparison for `dct-image.pdf` at `max-edge 120`: dimensions
   `120x120`, changed pixels `0`, MAE `0.000`, max channel delta `0`,
   native non-white pixels `6400`.
-- Left filter chains, CCITT/JPX policy, PNG predictors, and broader JPEG color
-  cases for follow-up slices inside this milestone.
+- PDFium/native comparison for `predictor-image.pdf` at `max-edge 120`:
+  dimensions `120x120`, changed pixels `0`, MAE `0.000`, max channel delta
+  `0`, native non-white pixels `6400`.
+- Left filter chains, CCITT/JPX policy, and broader JPEG color cases for
+  follow-up slices inside this milestone.

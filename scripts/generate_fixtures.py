@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import zlib
 from pathlib import Path
 
 
@@ -250,6 +251,38 @@ def dct_image_pdf() -> bytes:
     return pdf.render(catalog)
 
 
+def predictor_image_pdf() -> bytes:
+    pdf = Pdf()
+    content = b"q 80 0 0 80 20 20 cm /Im1 Do Q"
+    row0 = bytes([255, 0, 0, 0, 255, 0])
+    row1 = bytes([0, 0, 255, 255, 255, 0])
+    encoded_row1 = bytes((current - previous) % 256 for current, previous in zip(row1, row0))
+    image = zlib.compress(b"\x00" + row0 + b"\x02" + encoded_row1)
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 120 120] "
+        "/Resources << /XObject << /Im1 4 0 R >> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    image_object = pdf.add(
+        b"<< /Type /XObject /Subtype /Image /Width 2 /Height 2 "
+        b"/ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode "
+        b"/DecodeParms << /Predictor 15 /Colors 3 /Columns 2 /BitsPerComponent 8 >> /Length "
+        + str(len(image)).encode("ascii")
+        + b" >>\nstream\n"
+        + image
+        + b"\nendstream"
+    )
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert image_object == 4
+    return pdf.render(catalog)
+
+
 def embedded_font_pdf() -> bytes:
     pdf = Pdf()
     content = b"BT /F1 18 Tf 20 60 Td (embedded font fixture) Tj ET"
@@ -400,6 +433,7 @@ def main() -> None:
     write("cmyk-image.pdf", cmyk_image_pdf())
     write("indexed-image.pdf", indexed_image_pdf())
     write("dct-image.pdf", dct_image_pdf())
+    write("predictor-image.pdf", predictor_image_pdf())
     write("embedded-font.pdf", embedded_font_pdf())
     write("tounicode-text.pdf", tounicode_text_pdf())
     write("encoding-differences.pdf", encoding_differences_pdf())

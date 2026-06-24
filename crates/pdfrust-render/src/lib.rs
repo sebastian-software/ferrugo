@@ -3878,6 +3878,7 @@ fn decode_image_xobject(
         width,
         height,
         color_space.kind,
+        bits_per_component,
         max_image_bytes,
     )?;
     if decoded.len() > max_image_bytes {
@@ -3976,6 +3977,7 @@ fn decode_image_samples(
     width: u32,
     height: u32,
     color_space: ImageColorSpace,
+    bits_per_component: u8,
     max_image_bytes: usize,
 ) -> GraphicsResult<Vec<u8>> {
     match image_filter {
@@ -3990,21 +3992,310 @@ fn decode_image_samples(
             }
             Ok(stream.raw().to_vec())
         }
-        ImageFilter::StreamDecoded => stream
-            .decode_with_options(StreamDecodeOptions {
-                max_decoded_len: max_image_bytes,
-            })
-            .map_err(|error| {
-                GraphicsError::new(
-                    error.offset(),
-                    GraphicsErrorKind::ObjectModel {
-                        message: error.to_string(),
+        ImageFilter::StreamDecoded => {
+            let predictor = image_predictor(
+                stream.dictionary(),
+                width,
+                height,
+                color_space,
+                bits_per_component,
+            )?;
+            let max_decoded_len = predictor
+                .map(|predictor| predictor.encoded_len())
+                .unwrap_or(max_image_bytes)
+                .max(if predictor.is_some() {
+                    stream.raw().len()
+                } else {
+                    max_image_bytes
+                });
+            let decoded = stream
+                .decode_with_options(StreamDecodeOptions { max_decoded_len })
+                .map_err(|error| {
+                    GraphicsError::new(
+                        error.offset(),
+                        GraphicsErrorKind::ObjectModel {
+                            message: error.to_string(),
+                        },
+                    )
+                })?;
+            let Some(predictor) = predictor else {
+                return Ok(decoded);
+            };
+            if predictor.decoded_len() > max_image_bytes {
+                return Err(GraphicsError::new(
+                    None,
+                    GraphicsErrorKind::ImageBytesOverflow {
+                        limit: max_image_bytes,
                     },
-                )
-            }),
+                ));
+            }
+            apply_png_predictor(&decoded, predictor)
+        }
         ImageFilter::DctDecode => {
             decode_dct_image(stream.raw(), width, height, color_space, max_image_bytes)
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ImagePredictor {
+    kind: PngPredictorKind,
+    row_count: usize,
+    row_len: usize,
+    bytes_per_pixel: usize,
+    decoded_len: usize,
+    encoded_len: usize,
+}
+
+impl ImagePredictor {
+    const fn decoded_len(self) -> usize {
+        self.decoded_len
+    }
+
+    const fn encoded_len(self) -> usize {
+        self.encoded_len
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PngPredictorKind {
+    Fixed(PngFilter),
+    Adaptive,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PngFilter {
+    None,
+    Sub,
+    Up,
+    Average,
+    Paeth,
+}
+
+fn image_predictor(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    width: u32,
+    height: u32,
+    color_space: ImageColorSpace,
+    bits_per_component: u8,
+) -> GraphicsResult<Option<ImagePredictor>> {
+    let Some(params) = image_decode_parms(dictionary)? else {
+        return Ok(None);
+    };
+    let predictor = decode_parms_u32(params, b"Predictor")?.unwrap_or(1);
+    if predictor == 1 {
+        return Ok(None);
+    }
+    let colors = decode_parms_u32(params, b"Colors")?.unwrap_or(1);
+    let columns = decode_parms_u32(params, b"Columns")?.unwrap_or(1);
+    let bits = decode_parms_u32(params, b"BitsPerComponent")?.unwrap_or(8);
+    if colors != color_space.bytes_per_pixel() as u32
+        || columns != width
+        || bits != u32::from(bits_per_component)
+        || bits != 8
+    {
+        return Err(GraphicsError::new(
+            None,
+            GraphicsErrorKind::InvalidImageResource {
+                name: b"DecodeParms".to_vec(),
+            },
+        ));
+    }
+    let row_len = (columns as usize)
+        .checked_mul(colors as usize)
+        .ok_or_else(|| {
+            GraphicsError::new(
+                None,
+                GraphicsErrorKind::ImageBytesOverflow { limit: usize::MAX },
+            )
+        })?;
+    let row_count = usize::try_from(height).map_err(|_| {
+        GraphicsError::new(
+            None,
+            GraphicsErrorKind::ImageBytesOverflow { limit: usize::MAX },
+        )
+    })?;
+    let bytes_per_pixel = usize::try_from(colors).map_err(|_| {
+        GraphicsError::new(
+            None,
+            GraphicsErrorKind::ImageBytesOverflow { limit: usize::MAX },
+        )
+    })?;
+    let kind = match predictor {
+        10 => PngPredictorKind::Fixed(PngFilter::None),
+        11 => PngPredictorKind::Fixed(PngFilter::Sub),
+        12 => PngPredictorKind::Fixed(PngFilter::Up),
+        13 => PngPredictorKind::Fixed(PngFilter::Average),
+        14 => PngPredictorKind::Fixed(PngFilter::Paeth),
+        15 => PngPredictorKind::Adaptive,
+        _ => {
+            return Err(GraphicsError::new(
+                None,
+                GraphicsErrorKind::UnsupportedImageFilter {
+                    filter: b"Predictor".to_vec(),
+                },
+            ));
+        }
+    };
+    let decoded_len = row_count.checked_mul(row_len).ok_or_else(|| {
+        GraphicsError::new(
+            None,
+            GraphicsErrorKind::ImageBytesOverflow { limit: usize::MAX },
+        )
+    })?;
+    let encoded_len = match kind {
+        PngPredictorKind::Fixed(_) => decoded_len,
+        PngPredictorKind::Adaptive => decoded_len.checked_add(row_count).ok_or_else(|| {
+            GraphicsError::new(
+                None,
+                GraphicsErrorKind::ImageBytesOverflow { limit: usize::MAX },
+            )
+        })?,
+    };
+    Ok(Some(ImagePredictor {
+        kind,
+        row_count,
+        row_len,
+        bytes_per_pixel,
+        decoded_len,
+        encoded_len,
+    }))
+}
+
+fn image_decode_parms<'a>(
+    dictionary: &'a [(PdfName<'a>, PdfPrimitive<'a>)],
+) -> GraphicsResult<Option<&'a [(PdfName<'a>, PdfPrimitive<'a>)]>> {
+    let Some(value) = dictionary_value(dictionary, b"DecodeParms")
+        .or_else(|| dictionary_value(dictionary, b"DP"))
+    else {
+        return Ok(None);
+    };
+    match value {
+        PdfPrimitive::Dictionary(params) => Ok(Some(params.as_slice())),
+        PdfPrimitive::Array(values) if values.len() == 1 => {
+            let PdfPrimitive::Dictionary(params) = &values[0] else {
+                return Err(invalid_image_resource(b"DecodeParms"));
+            };
+            Ok(Some(params.as_slice()))
+        }
+        _ => Err(invalid_image_resource(b"DecodeParms")),
+    }
+}
+
+fn decode_parms_u32(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    key: &[u8],
+) -> GraphicsResult<Option<u32>> {
+    let Some(value) = dictionary_value(dictionary, key) else {
+        return Ok(None);
+    };
+    let PdfPrimitive::Number(PdfNumber::Integer(value)) = value else {
+        return Err(invalid_image_resource(b"DecodeParms"));
+    };
+    u32::try_from(*value)
+        .map(Some)
+        .map_err(|_| invalid_image_resource(b"DecodeParms"))
+}
+
+fn apply_png_predictor(encoded: &[u8], predictor: ImagePredictor) -> GraphicsResult<Vec<u8>> {
+    if encoded.len() != predictor.encoded_len() {
+        return Err(GraphicsError::new(
+            None,
+            GraphicsErrorKind::InvalidImageDataLength {
+                expected: predictor.encoded_len(),
+                actual: encoded.len(),
+            },
+        ));
+    }
+    let mut decoded = Vec::with_capacity(predictor.decoded_len());
+    for row_index in 0..predictor.row_count {
+        let (filter, row) = predictor_row(encoded, predictor, row_index)?;
+        apply_png_predictor_row(&mut decoded, row, filter, predictor);
+    }
+    Ok(decoded)
+}
+
+fn predictor_row(
+    encoded: &[u8],
+    predictor: ImagePredictor,
+    row_index: usize,
+) -> GraphicsResult<(PngFilter, &[u8])> {
+    match predictor.kind {
+        PngPredictorKind::Fixed(filter) => {
+            let start = row_index * predictor.row_len;
+            Ok((filter, &encoded[start..start + predictor.row_len]))
+        }
+        PngPredictorKind::Adaptive => {
+            let encoded_row_len = predictor.row_len + 1;
+            let start = row_index * encoded_row_len;
+            let filter = match encoded[start] {
+                0 => PngFilter::None,
+                1 => PngFilter::Sub,
+                2 => PngFilter::Up,
+                3 => PngFilter::Average,
+                4 => PngFilter::Paeth,
+                _ => {
+                    return Err(GraphicsError::new(
+                        None,
+                        GraphicsErrorKind::InvalidImageResource {
+                            name: b"DecodeParms".to_vec(),
+                        },
+                    ));
+                }
+            };
+            Ok((filter, &encoded[start + 1..start + encoded_row_len]))
+        }
+    }
+}
+
+fn apply_png_predictor_row(
+    decoded: &mut Vec<u8>,
+    row: &[u8],
+    filter: PngFilter,
+    predictor: ImagePredictor,
+) {
+    let row_start = decoded.len();
+    for (index, sample) in row.iter().copied().enumerate() {
+        let left = if index >= predictor.bytes_per_pixel {
+            decoded[row_start + index - predictor.bytes_per_pixel]
+        } else {
+            0
+        };
+        let up = if row_start >= predictor.row_len {
+            decoded[row_start - predictor.row_len + index]
+        } else {
+            0
+        };
+        let up_left = if row_start >= predictor.row_len && index >= predictor.bytes_per_pixel {
+            decoded[row_start - predictor.row_len + index - predictor.bytes_per_pixel]
+        } else {
+            0
+        };
+        let predicted = match filter {
+            PngFilter::None => 0,
+            PngFilter::Sub => left,
+            PngFilter::Up => up,
+            PngFilter::Average => ((u16::from(left) + u16::from(up)) / 2) as u8,
+            PngFilter::Paeth => paeth_predictor(left, up, up_left),
+        };
+        decoded.push(sample.wrapping_add(predicted));
+    }
+}
+
+fn paeth_predictor(left: u8, up: u8, up_left: u8) -> u8 {
+    let left = i16::from(left);
+    let up = i16::from(up);
+    let up_left = i16::from(up_left);
+    let estimate = left + up - up_left;
+    let left_distance = (estimate - left).abs();
+    let up_distance = (estimate - up).abs();
+    let up_left_distance = (estimate - up_left).abs();
+    if left_distance <= up_distance && left_distance <= up_left_distance {
+        left as u8
+    } else if up_distance <= up_left_distance {
+        up as u8
+    } else {
+        up_left as u8
     }
 }
 
@@ -7424,6 +7715,22 @@ mod tests {
     }
 
     #[test]
+    fn image_resources_should_apply_png_predictor_xobject() {
+        let document = generated_fixture_document("predictor-image.pdf");
+        let resources =
+            image_resources_from_document(&document).expect("valid predictor image resource");
+        let image = resources.get(PdfName::new(b"Im1")).expect("image resource");
+
+        assert_eq!(image.width, 2);
+        assert_eq!(image.height, 2);
+        assert_eq!(image.color_space, ImageColorSpace::DeviceRgb);
+        assert_eq!(
+            &*image.samples,
+            &[255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 0]
+        );
+    }
+
+    #[test]
     fn image_resources_should_decode_device_gray_xobject() {
         let document = load_image_xobject_pdf(
             b"q 10 0 0 10 0 0 cm /Im1 Do Q",
@@ -7784,6 +8091,24 @@ mod tests {
             error.kind(),
             GraphicsErrorKind::ObjectModel { .. }
         ));
+    }
+
+    #[test]
+    fn image_resources_should_report_unsupported_predictor() {
+        let document = load_image_xobject_pdf(
+            b"q 10 0 0 10 0 0 cm /Im1 Do Q",
+            b"<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode /DecodeParms << /Predictor 2 /Colors 3 /Columns 1 /BitsPerComponent 8 >> /Length 1 >>",
+            &[0],
+        );
+        let error =
+            image_resources_from_document(&document).expect_err("TIFF predictor is unsupported");
+
+        assert_eq!(
+            error.kind(),
+            &GraphicsErrorKind::UnsupportedImageFilter {
+                filter: b"Predictor".to_vec(),
+            }
+        );
     }
 
     #[test]
