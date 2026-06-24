@@ -38,6 +38,26 @@ Allowed statuses:
 | 0098 | [Native-Only Packaging And Consumer Migration](0098-native-only-packaging-and-consumer-migration.md) | 17 | medium | 0097 |
 | 0099 | [PDFium Fallback Removal Drill](0099-pdfium-fallback-removal-drill.md) | 17 | medium | 0098 |
 | 0100 | [Native Renderer General Availability Gate](0100-native-renderer-general-availability-gate.md) | 17 | medium | 0099 |
+| 0101 | [Common Font Fallback And System Font Policy](0101-common-font-fallback-and-system-font-policy.md) | 18 | medium | 0100 |
+| 0102 | [CFF Type1 Charstring Interpreter Hardening](0102-cff-type1-charstring-interpreter-hardening.md) | 18 | medium | 0101 |
+| 0103 | [OpenType Layout Feature Coverage For PDFs](0103-opentype-layout-feature-coverage-for-pdfs.md) | 18 | medium | 0102 |
+| 0104 | [Advanced CMap Encodings And Identity Mapping](0104-advanced-cmap-encodings-and-identity-mapping.md) | 18 | medium | 0103 |
+| 0105 | [Separation DeviceN And Spot Color Approximation](0105-separation-devicen-and-spot-color-approximation.md) | 19 | medium | 0104 |
+| 0106 | [ICC Profile Cache And Transform Optimization](0106-icc-profile-cache-and-transform-optimization.md) | 19 | medium | 0105 |
+| 0107 | [Tiling Patterns And Pattern Color Spaces](0107-tiling-patterns-and-pattern-color-spaces.md) | 19 | medium | 0106 |
+| 0108 | [Advanced Shading Mesh Tessellation](0108-advanced-shading-mesh-tessellation.md) | 19 | medium | 0107 |
+| 0109 | [Transparency Isolation Knockout And Luminosity Masks](0109-transparency-isolation-knockout-and-luminosity-masks.md) | 19 | medium | 0108 |
+| 0110 | [Overprint Simulation For Print-Oriented PDFs](0110-overprint-simulation-for-print-oriented-pdfs.md) | 19 | medium | 0109 |
+| 0111 | [XFA And Dynamic Form Fallback Policy](0111-xfa-and-dynamic-form-fallback-policy.md) | 20 | small | 0110 |
+| 0112 | [Digital Signature Appearance And Validation Boundary](0112-digital-signature-appearance-and-validation-boundary.md) | 20 | small | 0111 |
+| 0113 | [Embedded Files Portfolio And Attachment Visibility](0113-embedded-files-portfolio-and-attachment-visibility.md) | 20 | medium | 0112 |
+| 0114 | [Linearized PDF Fast First Page Loading](0114-linearized-pdf-fast-first-page-loading.md) | 20 | medium | 0113 |
+| 0115 | [Multi-Page Document Scheduler And Cancellation](0115-multi-page-document-scheduler-and-cancellation.md) | 20 | medium | 0114 |
+| 0116 | [OCR Text Layer And Invisible Text Handling](0116-ocr-text-layer-and-invisible-text-handling.md) | 21 | medium | 0115 |
+| 0117 | [Tagged PDF Metadata And Accessibility Signals](0117-tagged-pdf-metadata-and-accessibility-signals.md) | 21 | medium | 0116 |
+| 0118 | [Real Corpus Acquisition And Privacy Review Loop](0118-real-corpus-acquisition-and-privacy-review-loop.md) | 21 | medium | 0117 |
+| 0119 | [Cross-Platform Rendering Determinism Gate](0119-cross-platform-rendering-determinism-gate.md) | 21 | medium | 0118 |
+| 0120 | [PDFium-Free Maintenance Gate And Deletion Backlog](0120-pdfium-free-maintenance-gate-and-deletion-backlog.md) | 21 | medium | 0119 |
 
 ## In Progress
 
