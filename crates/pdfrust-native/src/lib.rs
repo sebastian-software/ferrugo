@@ -14,11 +14,11 @@ use pdfrust_object::{
 use pdfrust_render::{
     build_form_display_list_with_graphics_resources, build_image_display_list,
     build_path_display_list_with_graphics_resources, build_text_display_list,
-    decode_tiling_pattern, rasterize_images, rasterize_paths, rasterize_paths_into, rasterize_text,
-    DisplayListOptions, ExtGraphicsStateResources, FontResources, FormResources, GraphicsError,
-    GraphicsErrorKind, ImageResources, PageGeometry, PageRotation, PageTransform,
-    PageTransformOptions, PathBounds, PathRasterOptions, RasterError, RasterErrorKind,
-    ShadingResources, TilingPatternResources,
+    decode_tiling_pattern, rasterize_display_list_into, rasterize_images, rasterize_paths_into,
+    rasterize_text, DisplayItem, DisplayList, DisplayListOptions, ExtGraphicsStateResources,
+    FontResources, FormResources, GraphicsError, GraphicsErrorKind, ImageResources, PageGeometry,
+    PageRotation, PageTransform, PageTransformOptions, PathBounds, PathRasterOptions, RasterError,
+    RasterErrorKind, ShadingResources, TilingPatternResources,
 };
 use pdfrust_syntax::{PdfBytes, PdfName, PdfNumber, PdfPrimitive, PdfReference};
 use pdfrust_thumbnail::{
@@ -174,13 +174,6 @@ fn render_bytes(bytes: &[u8], options: &ThumbnailOptions) -> Result<Thumbnail, T
     .map_err(map_graphics_error)?;
     let transform =
         PageTransform::new(page_geometry(*page), options.max_edge).map_err(map_raster_error)?;
-    let mut raster = rasterize_paths(
-        &display_list,
-        transform,
-        options.background,
-        PathRasterOptions::default(),
-    )
-    .map_err(map_raster_error)?;
     let form_resources = page_form_resources(&document, page)?;
     let form_list = build_form_display_list_with_graphics_resources(
         tokenize_content(PdfBytes::new(&content)),
@@ -191,13 +184,6 @@ fn render_bytes(bytes: &[u8], options: &ThumbnailOptions) -> Result<Thumbnail, T
         DisplayListOptions::default(),
     )
     .map_err(map_graphics_error)?;
-    rasterize_paths_into(
-        &form_list,
-        &mut raster,
-        transform,
-        PathRasterOptions::default(),
-    )
-    .map_err(map_raster_error)?;
     let image_resources = page_image_resources(&document, page)?;
     let image_list = build_image_display_list(
         tokenize_content(PdfBytes::new(&content)),
@@ -205,7 +191,6 @@ fn render_bytes(bytes: &[u8], options: &ThumbnailOptions) -> Result<Thumbnail, T
         DisplayListOptions::default(),
     )
     .map_err(map_graphics_error)?;
-    rasterize_images(&image_list, &mut raster, transform).map_err(map_raster_error)?;
     let font_resources = page_font_resources(&document, page)?;
     let text_list = build_text_display_list(
         tokenize_content(PdfBytes::new(&content)),
@@ -213,7 +198,53 @@ fn render_bytes(bytes: &[u8], options: &ThumbnailOptions) -> Result<Thumbnail, T
         DisplayListOptions::default(),
     )
     .map_err(map_graphics_error)?;
-    rasterize_text(&text_list, &mut raster, transform).map_err(map_raster_error)?;
+    let mut raster = transform
+        .create_device(options.background)
+        .map_err(map_raster_error)?;
+    let paint_order = should_scan_content_order(&display_list, &image_list, &text_list)
+        .then(|| page_paint_order(&content, &image_resources, &form_resources))
+        .transpose()?;
+    if let Some(paint_order) = paint_order.filter(|paint_order| {
+        should_rasterize_in_content_order(
+            paint_order,
+            &display_list,
+            &form_list,
+            &image_list,
+            &text_list,
+        )
+    }) {
+        let ordered_list = ordered_display_list(
+            &paint_order,
+            &display_list,
+            &form_list,
+            &image_list,
+            &text_list,
+        );
+        rasterize_display_list_into(
+            &ordered_list,
+            &mut raster,
+            transform,
+            PathRasterOptions::default(),
+        )
+        .map_err(map_raster_error)?;
+    } else {
+        rasterize_paths_into(
+            &display_list,
+            &mut raster,
+            transform,
+            PathRasterOptions::default(),
+        )
+        .map_err(map_raster_error)?;
+        rasterize_paths_into(
+            &form_list,
+            &mut raster,
+            transform,
+            PathRasterOptions::default(),
+        )
+        .map_err(map_raster_error)?;
+        rasterize_images(&image_list, &mut raster, transform).map_err(map_raster_error)?;
+        rasterize_text(&text_list, &mut raster, transform).map_err(map_raster_error)?;
+    }
     let (annotation_forms, annotation_content) =
         page_annotation_appearance_resources(&document, page)?;
     if !annotation_content.is_empty() {
@@ -236,6 +267,155 @@ fn render_bytes(bytes: &[u8], options: &ThumbnailOptions) -> Result<Thumbnail, T
     }
     let dimensions = raster.dimensions();
     Thumbnail::rgba(dimensions.width, dimensions.height, raster.into_pixels())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PagePaintKind {
+    PagePathLike,
+    FormPathLike,
+    Image,
+    Text,
+}
+
+fn should_scan_content_order(
+    page_paths: &DisplayList,
+    images: &DisplayList,
+    text: &DisplayList,
+) -> bool {
+    let categories = [
+        has_visible_path_like_item(page_paths),
+        !images.is_empty(),
+        !text.is_empty(),
+    ];
+    categories
+        .into_iter()
+        .filter(|has_items| *has_items)
+        .count()
+        > 1
+}
+
+fn should_rasterize_in_content_order(
+    paint_order: &[PagePaintKind],
+    page_paths: &DisplayList,
+    form_paths: &DisplayList,
+    images: &DisplayList,
+    text: &DisplayList,
+) -> bool {
+    let has_form_invocations = paint_order.contains(&PagePaintKind::FormPathLike);
+    let categories = [
+        has_visible_path_like_item(page_paths),
+        has_form_invocations && has_visible_path_like_item(form_paths),
+        !images.is_empty(),
+        !text.is_empty(),
+    ];
+    categories
+        .into_iter()
+        .filter(|has_items| *has_items)
+        .count()
+        > 1
+}
+
+fn has_visible_path_like_item(display_list: &DisplayList) -> bool {
+    display_list.items().iter().any(|item| {
+        matches!(
+            item,
+            DisplayItem::Path(_) | DisplayItem::TransparencyGroup(_) | DisplayItem::Shading(_)
+        )
+    })
+}
+
+fn page_paint_order(
+    content: &[u8],
+    image_resources: &ImageResources,
+    form_resources: &FormResources,
+) -> Result<Vec<PagePaintKind>, ThumbnailError> {
+    let mut paint_order = Vec::new();
+    let mut operands = Vec::new();
+    for token in spanned_content_tokens(content)? {
+        match token.kind {
+            SpannedContentTokenKind::Operand(value) => operands.push(value),
+            SpannedContentTokenKind::Operator(name) => {
+                match name.as_slice() {
+                    b"W" | b"W*" | b"S" | b"s" | b"f" | b"F" | b"f*" | b"B" | b"B*" | b"b"
+                    | b"b*" | b"sh" => paint_order.push(PagePaintKind::PagePathLike),
+                    b"Do" => {
+                        if let [PdfPrimitive::Name(resource)] = operands.as_slice() {
+                            let name = PdfName::new(resource.as_bytes());
+                            if image_resources.get(name).is_some() {
+                                paint_order.push(PagePaintKind::Image);
+                            } else if form_resources.get(name).is_some() {
+                                paint_order.push(PagePaintKind::FormPathLike);
+                            }
+                        }
+                    }
+                    b"Tj" | b"TJ" => paint_order.push(PagePaintKind::Text),
+                    _ => {}
+                }
+                operands.clear();
+            }
+            SpannedContentTokenKind::InlineImage => {
+                paint_order.push(PagePaintKind::Image);
+                operands.clear();
+            }
+        }
+    }
+    Ok(paint_order)
+}
+
+fn ordered_display_list(
+    paint_order: &[PagePaintKind],
+    page_paths: &DisplayList,
+    form_paths: &DisplayList,
+    images: &DisplayList,
+    text: &DisplayList,
+) -> DisplayList {
+    let mut items =
+        Vec::with_capacity(page_paths.len() + form_paths.len() + images.len() + text.len());
+    let mut page_index = 0;
+    let mut form_index = 0;
+    let mut image_index = 0;
+    let mut text_index = 0;
+    let form_invocations = paint_order
+        .iter()
+        .filter(|kind| **kind == PagePaintKind::FormPathLike)
+        .count();
+
+    for kind in paint_order {
+        match kind {
+            PagePaintKind::PagePathLike => {
+                append_next_item(&mut items, page_paths.items(), &mut page_index);
+            }
+            PagePaintKind::FormPathLike if form_invocations == 1 => {
+                items.extend(form_paths.items()[form_index..].iter().cloned());
+                form_index = form_paths.len();
+            }
+            PagePaintKind::FormPathLike => {
+                append_next_item(&mut items, form_paths.items(), &mut form_index);
+            }
+            PagePaintKind::Image => {
+                append_next_item(&mut items, images.items(), &mut image_index);
+            }
+            PagePaintKind::Text => {
+                append_next_item(&mut items, text.items(), &mut text_index);
+            }
+        }
+    }
+
+    items.extend(page_paths.items()[page_index..].iter().cloned());
+    if form_invocations > 0 {
+        items.extend(form_paths.items()[form_index..].iter().cloned());
+    }
+    items.extend(images.items()[image_index..].iter().cloned());
+    items.extend(text.items()[text_index..].iter().cloned());
+
+    DisplayList::from_items(items)
+}
+
+fn append_next_item(items: &mut Vec<DisplayItem>, source: &[DisplayItem], index: &mut usize) {
+    if let Some(item) = source.get(*index) {
+        items.push(item.clone());
+        *index += 1;
+    }
 }
 
 fn page_content_stream(
@@ -2118,6 +2298,25 @@ mod tests {
             .bytes
             .chunks_exact(4)
             .any(|pixel| pixel != [255, 255, 255, 255]));
+    }
+
+    #[test]
+    fn native_backend_should_render_generated_mixed_text_image_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/mixed-text-image.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 220,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated mixed text/image fixture should render through native backend");
+
+        assert_eq!(thumbnail.width, 220);
+        assert_eq!(thumbnail.height, 160);
+        assert_eq!(rgba_at(&thumbnail, 160, 64), [180, 210, 245, 255]);
+        assert_eq!(rgba_at(&thumbnail, 160, 96), [230, 51, 26, 255]);
     }
 
     #[test]

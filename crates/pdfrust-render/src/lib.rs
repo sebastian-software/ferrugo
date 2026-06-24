@@ -991,6 +991,12 @@ impl DisplayList {
         Self { items: Vec::new() }
     }
 
+    /// Creates a display list from already ordered items.
+    #[must_use]
+    pub fn from_items(items: Vec<DisplayItem>) -> Self {
+        Self { items }
+    }
+
     /// Returns display items in content order.
     #[must_use]
     pub fn items(&self) -> &[DisplayItem] {
@@ -2821,6 +2827,58 @@ pub fn rasterize_paths_into(
                 rasterize_transparency_group(group, device, transform, options)?;
             }
             DisplayItem::Text(_) | DisplayItem::Image(_) => {}
+        }
+    }
+    Ok(())
+}
+
+/// Rasterizes all supported display-list items into an existing RGBA raster device.
+///
+/// This preserves the item order in the display list, so mixed path, image, and
+/// text content is composited in content-stream paint order.
+///
+/// # Errors
+///
+/// Returns [`RasterError`] when path, image, or text rasterization fails.
+pub fn rasterize_display_list_into(
+    display_list: &DisplayList,
+    device: &mut RasterDevice,
+    transform: PageTransform,
+    options: PathRasterOptions,
+) -> RasterResult<()> {
+    if options.supersample == 0 {
+        return Err(RasterError::new(RasterErrorKind::InvalidSupersampling));
+    }
+    let mut active_clips = Vec::new();
+    for item in display_list.items() {
+        match item {
+            DisplayItem::Path(path) => {
+                rasterize_path_item(
+                    path,
+                    device,
+                    PathRasterContext {
+                        transform,
+                        options,
+                        clips: &active_clips,
+                    },
+                )?;
+            }
+            DisplayItem::ClipPlaceholder { segments, rule, .. } => {
+                active_clips.push(ActiveClip {
+                    path: flatten_path_segments(
+                        segments,
+                        transform.matrix,
+                        options.max_flattened_segments,
+                    )?,
+                    rule: *rule,
+                });
+            }
+            DisplayItem::Shading(shading) => rasterize_shading_item(shading, device, transform)?,
+            DisplayItem::TransparencyGroup(group) => {
+                rasterize_transparency_group(group, device, transform, options)?;
+            }
+            DisplayItem::Image(image) => draw_image(device, image, transform)?,
+            DisplayItem::Text(text) => draw_text_run(device, text, transform)?,
         }
     }
     Ok(())

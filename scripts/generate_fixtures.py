@@ -386,6 +386,94 @@ def scanned_page_pdf() -> bytes:
     return pdf.render(catalog)
 
 
+def mixed_text_image_pdf() -> bytes:
+    pdf = Pdf()
+    image = bytes(
+        [
+            235,
+            245,
+            255,
+            235,
+            245,
+            255,
+            180,
+            210,
+            245,
+            180,
+            210,
+            245,
+            180,
+            210,
+            245,
+            235,
+            245,
+            255,
+            235,
+            245,
+            255,
+            180,
+            210,
+            245,
+            180,
+            210,
+            245,
+            235,
+            245,
+            255,
+            235,
+            245,
+            255,
+            180,
+            210,
+            245,
+            180,
+            210,
+            245,
+            235,
+            245,
+            255,
+            235,
+            245,
+            255,
+            180,
+            210,
+            245,
+        ]
+    )
+    content = (
+        b"q 0.96 0.96 0.96 rg 0 0 220 160 re f Q "
+        b"q 150 0 0 84 35 36 cm /Im1 Do Q "
+        b"q 0.1 0.35 0.7 RG 2 w 35 36 150 84 re S Q "
+        b"q 0.9 0.2 0.1 rg 148 52 24 24 re f Q "
+        b"BT /F1 18 Tf 42 116 Td (Quarterly handout) Tj "
+        b"/F1 12 Tf 0 -82 Td (image + vector + text) Tj ET"
+    )
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 220 160] "
+        "/Resources << /Font << /F1 5 0 R >> /XObject << /Im1 4 0 R >> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    image_object = pdf.add(
+        b"<< /Type /XObject /Subtype /Image /Width 4 /Height 4 "
+        b"/ColorSpace /DeviceRGB /BitsPerComponent 8 /Length "
+        + str(len(image)).encode("ascii")
+        + b" >>\nstream\n"
+        + image
+        + b"\nendstream"
+    )
+    font = pdf.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert image_object == 4
+    assert font == 5
+    return pdf.render(catalog)
+
+
 def transparency_group_pdf() -> bytes:
     pdf = Pdf()
     content = b"q 1 0 0 1 10 10 cm /Fm1 Do Q"
@@ -1176,6 +1264,7 @@ def main() -> None:
     write("predictor-image.pdf", predictor_image_pdf())
     write("soft-mask-image.pdf", soft_mask_image_pdf())
     write("scanned-page.pdf", scanned_page_pdf())
+    write("mixed-text-image.pdf", mixed_text_image_pdf())
     write("transparency-group.pdf", transparency_group_pdf())
     write("blend-modes.pdf", blend_modes_pdf())
     write("axial-gradient.pdf", axial_gradient_pdf())
