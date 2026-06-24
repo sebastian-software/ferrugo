@@ -39,6 +39,7 @@ fn run(args: Vec<OsString>) -> Result<(), CliError> {
         Some("render-isolated") => render_isolated_command(&args[1..]),
         Some("compare-metadata") => compare_metadata_command(&args[1..]),
         Some("summarize-fallbacks") => summarize_fallbacks_command(&args[1..]),
+        Some("extract-corpus-metadata") => extract_corpus_metadata_command(&args[1..]),
         Some("--version" | "-V") => {
             println!("pdfrust-cli {}", env!("CARGO_PKG_VERSION"));
             Ok(())
@@ -302,6 +303,28 @@ fn summarize_fallbacks_command(args: &[OsString]) -> Result<(), CliError> {
     } else {
         Ok(())
     }
+}
+
+fn extract_corpus_metadata_command(args: &[OsString]) -> Result<(), CliError> {
+    let config = CorpusMetadataConfig::parse(args)?;
+    let fixtures = pdf_inputs(&config.input)?;
+    let manifest = match &config.manifest {
+        Some(path) => Some(read_corpus_manifest(path)?),
+        None => None,
+    };
+    let records = extract_native_corpus_metadata(&fixtures, manifest.as_ref());
+    let json = corpus_metadata_json(&records);
+
+    if let Some(output) = config.output {
+        fs::write(&output, &json).map_err(|source| CliError::Io {
+            path: output,
+            source,
+        })?;
+    } else {
+        println!("{json}");
+    }
+
+    Ok(())
 }
 
 fn render_isolated(config: RenderConfig) -> Result<(), CliError> {
@@ -627,6 +650,55 @@ impl FallbackSummaryConfig {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CorpusMetadataConfig {
+    input: PathBuf,
+    manifest: Option<PathBuf>,
+    output: Option<PathBuf>,
+}
+
+impl CorpusMetadataConfig {
+    fn parse(args: &[OsString]) -> Result<Self, CliError> {
+        let mut input = None;
+        let mut manifest = None;
+        let mut output = None;
+
+        let mut index = 0;
+        while index < args.len() {
+            let arg = args[index]
+                .to_str()
+                .ok_or_else(|| CliError::Usage("arguments must be valid UTF-8".to_string()))?;
+            match arg {
+                "--output" | "-o" => {
+                    index += 1;
+                    output = Some(required_path(args, index, "--output")?);
+                }
+                "--manifest" => {
+                    index += 1;
+                    manifest = Some(required_path(args, index, "--manifest")?);
+                }
+                value if value.starts_with('-') => {
+                    return Err(CliError::Usage(format!("unknown option `{value}`")));
+                }
+                value => {
+                    if input.replace(PathBuf::from(value)).is_some() {
+                        return Err(CliError::Usage(
+                            "only one input path is supported".to_string(),
+                        ));
+                    }
+                }
+            }
+            index += 1;
+        }
+
+        Ok(Self {
+            input: input.ok_or_else(|| CliError::Usage("missing input path".to_string()))?,
+            manifest,
+            output,
+        })
+    }
+}
+
 impl CompareMetadataConfig {
     fn parse(args: &[OsString]) -> Result<Self, CliError> {
         let mut input = None;
@@ -754,7 +826,25 @@ enum CorpusOutcome {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct CorpusManifest {
-    families_by_path: BTreeMap<String, String>,
+    entries_by_path: BTreeMap<String, CorpusManifestEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CorpusManifestEntry {
+    path: String,
+    family: String,
+    source: String,
+    license: String,
+    page_count: usize,
+    features: Vec<String>,
+    notes: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct CorpusMetadataRecord {
+    path: String,
+    manifest: Option<CorpusManifestEntry>,
+    metadata: MetadataOutcome,
 }
 
 fn compare_metadata_results(
@@ -890,10 +980,37 @@ fn summarize_native_fallbacks(
     summary
 }
 
+fn extract_native_corpus_metadata(
+    paths: &[PathBuf],
+    manifest: Option<&CorpusManifest>,
+) -> Vec<CorpusMetadataRecord> {
+    let native = NativeBackend::new();
+    paths
+        .iter()
+        .map(|path| {
+            let path_key = normalize_manifest_path(path);
+            let manifest = manifest
+                .and_then(|manifest| manifest.entry_for_path(path_key.as_str()))
+                .cloned();
+            let metadata = MetadataOutcome::from_result(native.inspect(PdfSource::from_path(path)));
+            CorpusMetadataRecord {
+                path: path_key,
+                manifest,
+                metadata,
+            }
+        })
+        .collect()
+}
+
 impl CorpusManifest {
     fn family_for_path(&self, path: &Path) -> Option<&str> {
         let path = normalize_manifest_path(path);
-        self.families_by_path.get(&path).map(String::as_str)
+        self.entry_for_path(path.as_str())
+            .map(|entry| entry.family.as_str())
+    }
+
+    fn entry_for_path(&self, path: &str) -> Option<&CorpusManifestEntry> {
+        self.entries_by_path.get(path)
     }
 }
 
@@ -902,7 +1019,7 @@ fn read_corpus_manifest(path: &Path) -> Result<CorpusManifest, CliError> {
         path: path.to_path_buf(),
         source,
     })?;
-    let mut families_by_path = BTreeMap::new();
+    let mut entries_by_path = BTreeMap::new();
     for (line_index, line) in content.lines().enumerate() {
         if line_index == 0 {
             continue;
@@ -914,14 +1031,38 @@ fn read_corpus_manifest(path: &Path) -> Result<CorpusManifest, CliError> {
                 line_index + 1
             )));
         }
-        families_by_path.insert(columns[0].to_string(), columns[1].to_string());
+        let page_count = columns[4].parse().map_err(|_| {
+            CliError::Usage(format!(
+                "manifest line {} page_count must be an unsigned integer",
+                line_index + 1
+            ))
+        })?;
+        let entry = CorpusManifestEntry {
+            path: columns[0].to_string(),
+            family: columns[1].to_string(),
+            source: columns[2].to_string(),
+            license: columns[3].to_string(),
+            page_count,
+            features: columns[5]
+                .split(',')
+                .filter_map(|feature| {
+                    let feature = feature.trim();
+                    (!feature.is_empty()).then(|| feature.to_string())
+                })
+                .collect(),
+            notes: columns[6].to_string(),
+        };
+        entries_by_path.insert(entry.path.clone(), entry);
     }
 
-    Ok(CorpusManifest { families_by_path })
+    Ok(CorpusManifest { entries_by_path })
 }
 
 fn normalize_manifest_path(path: &Path) -> String {
-    path.to_string_lossy().replace('\\', "/")
+    let path = path.to_string_lossy().replace('\\', "/");
+    path.find("fixtures/")
+        .map(|index| path[index..].to_string())
+        .unwrap_or(path)
 }
 
 fn page_sizes_match(expected: PageSize, actual: PageSize) -> bool {
@@ -1132,6 +1273,65 @@ fn fallback_summary_json(summary: &FallbackSummary) -> String {
     )
 }
 
+fn corpus_metadata_json(records: &[CorpusMetadataRecord]) -> String {
+    let fixtures = records
+        .iter()
+        .map(corpus_metadata_record_json)
+        .collect::<Vec<_>>()
+        .join(",");
+    format!(
+        concat!(
+            "{{\n",
+            "  \"schema_version\": 1,\n",
+            "  \"total\": {},\n",
+            "  \"fixtures\": [{}]\n",
+            "}}\n"
+        ),
+        records.len(),
+        fixtures
+    )
+}
+
+fn corpus_metadata_record_json(record: &CorpusMetadataRecord) -> String {
+    format!(
+        concat!(
+            "{{",
+            "\"path\":{},",
+            "\"manifest\":{},",
+            "\"metadata\":{}",
+            "}}"
+        ),
+        json_string(&record.path),
+        manifest_entry_json(record.manifest.as_ref()),
+        metadata_outcome_json(&record.metadata)
+    )
+}
+
+fn manifest_entry_json(entry: Option<&CorpusManifestEntry>) -> String {
+    match entry {
+        Some(entry) => format!(
+            concat!(
+                "{{",
+                "\"status\":\"matched\",",
+                "\"family\":{},",
+                "\"source\":{},",
+                "\"license\":{},",
+                "\"page_count\":{},",
+                "\"features\":{},",
+                "\"notes\":{}",
+                "}}"
+            ),
+            json_string(&entry.family),
+            json_string(&entry.source),
+            json_string(&entry.license),
+            entry.page_count,
+            json_string_array(&entry.features),
+            json_string(&entry.notes)
+        ),
+        None => "{\"status\":\"missing\"}".to_string(),
+    }
+}
+
 fn count_map_json(counts: &BTreeMap<&'static str, usize>) -> String {
     let values = counts
         .iter()
@@ -1322,9 +1522,9 @@ fn crc32(bytes: impl IntoIterator<Item = u8>) -> u32 {
 
 fn print_usage() {
     println!(
-        "Usage: pdfrust-cli <render|render-auto|render-native|render-pdfium|render-isolated|compare-metadata|summarize-fallbacks> <input.pdf> \
+        "Usage: pdfrust-cli <render|render-auto|render-native|render-pdfium|render-isolated|compare-metadata|summarize-fallbacks|extract-corpus-metadata> <input.pdf> \
          [--output PATH] [--page-index N] [--max-edge N] [--background #RRGGBB] \
-         [--timeout SECONDS] [--native-only] [--deny-fallback-reason BUCKET]"
+         [--timeout SECONDS] [--native-only] [--deny-fallback-reason BUCKET] [--manifest PATH]"
     );
 }
 
@@ -1551,8 +1751,33 @@ mod tests {
         let manifest_path = fixture_root.join("fixtures/corpus-manifest.tsv");
         let manifest = read_corpus_manifest(&manifest_path).expect("manifest should parse");
         let input = PathBuf::from("fixtures/generated/optional-content-ocmd.pdf");
+        let entry = manifest
+            .entry_for_path("fixtures/generated/optional-content-ocmd.pdf")
+            .expect("fixture should have manifest entry");
 
         assert_eq!(manifest.family_for_path(&input), Some("presentation"));
+        assert_eq!(entry.source, "scripts/generate_fixtures.py");
+        assert_eq!(entry.license, "MIT OR Apache-2.0");
+        assert_eq!(entry.page_count, 1);
+        assert!(entry.features.iter().any(|feature| feature == "ocmd"));
+    }
+
+    #[test]
+    fn corpus_metadata_json_should_include_manifest_and_page_size() {
+        let fixture_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let manifest_path = fixture_root.join("fixtures/corpus-manifest.tsv");
+        let manifest = read_corpus_manifest(&manifest_path).expect("manifest should parse");
+        let paths = vec![fixture_root.join("fixtures/generated/vector-paths.pdf")];
+
+        let records = extract_native_corpus_metadata(&paths, Some(&manifest));
+        let json = corpus_metadata_json(&records);
+
+        assert_eq!(records.len(), 1);
+        assert!(json.contains("\"family\":\"browser-print\""));
+        assert!(json.contains("\"source\":\"scripts/generate_fixtures.py\""));
+        assert!(json.contains("\"status\":\"success\""));
+        assert!(json.contains("\"width\":220.000"));
+        assert!(json.contains("\"height\":180.000"));
     }
 
     #[test]

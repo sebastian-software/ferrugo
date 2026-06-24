@@ -93,6 +93,14 @@ The summary counts `native_rendered`, `fallback_required`,
 manifest is provided. Add `--fail-on-fallback` for CI subsets that must stay
 native-only.
 
+Extract committed fixture metadata with page sizes and manifest tags:
+
+```sh
+cargo run -p pdfrust-cli -- extract-corpus-metadata fixtures/generated \
+  --manifest fixtures/corpus-manifest.tsv \
+  --output target/pdfrust-thumbnails/corpus-metadata.json
+```
+
 Compare metadata with PDFium when the local PDFium environment is available:
 
 ```sh

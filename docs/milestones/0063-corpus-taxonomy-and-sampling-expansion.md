@@ -1,6 +1,6 @@
 # 0063: Corpus Taxonomy And Sampling Expansion
 
-Status: todo
+Status: done
 Phase: 9
 Size: medium
 Depends on: 0062
@@ -47,4 +47,26 @@ against realistic document families instead of isolated fixtures only.
 
 ## Completion Notes
 
-Empty until done.
+- Added `docs/corpus-taxonomy.md` with committed corpus families:
+  `office-export`, `browser-print`, `scan`, `report`, `form`,
+  `presentation`, and `mixed-layout`.
+- Added `fixtures/corpus-manifest.tsv` with one row for each of the 39
+  committed generated PDFs. Each row records path, family, reproducible source,
+  license, page count, feature tags, and notes.
+- Documented private local corpus sampling rules that avoid filenames,
+  customer names, text extraction, hashes, screenshots, and rendered outputs.
+- Extended `summarize-fallbacks` with `--manifest` so corpus runs report
+  native pass rates per document family.
+- Added `extract-corpus-metadata` to capture committed fixture metadata:
+  manifest source/license/features plus native page count and page sizes.
+- Validation: manifest TSV has 7 columns on every row, covers exactly the
+  39 committed `fixtures/generated/*.pdf` files, and
+  `cargo run -p pdfrust-cli -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 120 --output target/fallback-summary-with-families.json`
+  reported 37 native renders, 1 `graphics.optional-content` fallback, and 1
+  encrypted input.
+- Validation:
+  `cargo run -p pdfrust-cli -- extract-corpus-metadata fixtures/generated --manifest fixtures/corpus-manifest.tsv --output target/corpus-metadata.json`
+  produced 39 metadata records.
+- Validation: `cargo fmt --check`, `cargo check`,
+  `cargo clippy --all-targets --all-features -- -D warnings`, and
+  `cargo test --quiet`.

@@ -65,3 +65,12 @@ cargo run -p pdfrust-cli -- summarize-fallbacks fixtures/generated \
   --max-edge 120 \
   --output target/pdfrust-thumbnails/fallback-summary.json
 ```
+
+Use metadata extraction to capture page count, page size, source/license notes,
+and coarse feature tags for committed fixtures:
+
+```sh
+cargo run -p pdfrust-cli -- extract-corpus-metadata fixtures/generated \
+  --manifest fixtures/corpus-manifest.tsv \
+  --output target/pdfrust-thumbnails/corpus-metadata.json
+```
