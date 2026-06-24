@@ -1442,7 +1442,7 @@ fn page_geometry(page: ObjectPageMetadata) -> PageGeometry {
     PageGeometry {
         media_box: page_box_bounds(page.media_box),
         crop_box: page.crop_box.map(page_box_bounds),
-        rotation: PageRotation::Deg0,
+        rotation: page_rotation(page.rotation_degrees),
     }
 }
 
@@ -1452,6 +1452,15 @@ fn page_box_bounds(page_box: PageBox) -> PathBounds {
         min_y: page_box.bottom.min(page_box.top),
         max_x: page_box.left.max(page_box.right),
         max_y: page_box.bottom.max(page_box.top),
+    }
+}
+
+const fn page_rotation(rotation_degrees: u16) -> PageRotation {
+    match rotation_degrees {
+        90 => PageRotation::Deg90,
+        180 => PageRotation::Deg180,
+        270 => PageRotation::Deg270,
+        _ => PageRotation::Deg0,
     }
 }
 
@@ -1814,6 +1823,69 @@ mod tests {
 
         assert_eq!(thumbnail.width, 160);
         assert_eq!(thumbnail.height, 200);
+        assert!(thumbnail
+            .bytes
+            .chunks_exact(4)
+            .any(|pixel| pixel != [255, 255, 255, 255]));
+    }
+
+    #[test]
+    fn native_backend_should_render_generated_cropped_scan_page_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/cropped-scan-page.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 200,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated cropped scan fixture should render through native backend");
+
+        assert_eq!(thumbnail.width, 120);
+        assert_eq!(thumbnail.height, 120);
+        assert!(thumbnail
+            .bytes
+            .chunks_exact(4)
+            .any(|pixel| pixel != [255, 255, 255, 255]));
+    }
+
+    #[test]
+    fn native_backend_should_render_generated_rotated_office_export_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/rotated-office-export.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 200,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated rotated office fixture should render through native backend");
+
+        assert_eq!(thumbnail.width, 100);
+        assert_eq!(thumbnail.height, 160);
+        assert!(thumbnail
+            .bytes
+            .chunks_exact(4)
+            .any(|pixel| pixel != [255, 255, 255, 255]));
+    }
+
+    #[test]
+    fn native_backend_should_render_generated_user_unit_page_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/user-unit-page.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 200,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated user-unit fixture should render through native backend");
+
+        assert_eq!(thumbnail.width, 80);
+        assert_eq!(thumbnail.height, 60);
         assert!(thumbnail
             .bytes
             .chunks_exact(4)
@@ -2704,6 +2776,47 @@ mod tests {
                 height: 180.0,
             }
         );
+    }
+
+    #[test]
+    fn page_geometry_should_apply_rotation_and_user_unit() {
+        let page = ObjectPageMetadata {
+            id: ObjectId::new(
+                ObjectNumber::new(3).expect("object number"),
+                GenerationNumber::new(0),
+            ),
+            media_box: PageBox {
+                left: 0.0,
+                bottom: 0.0,
+                right: 300.0,
+                top: 160.0,
+            },
+            crop_box: Some(PageBox {
+                left: 10.0,
+                bottom: 20.0,
+                right: 60.0,
+                top: 120.0,
+            }),
+            rotation_degrees: 90,
+            user_unit: 2.0,
+            resources: None,
+        };
+
+        let geometry = page_geometry(page);
+        let transform = PageTransform::new(geometry, 120).expect("valid transform");
+
+        assert_eq!(geometry.rotation, PageRotation::Deg90);
+        assert_eq!(
+            geometry.visible_box(),
+            PathBounds {
+                min_x: 10.0,
+                min_y: 20.0,
+                max_x: 60.0,
+                max_y: 120.0,
+            }
+        );
+        assert_eq!(transform.dimensions.width, 100);
+        assert_eq!(transform.dimensions.height, 50);
     }
 
     #[test]

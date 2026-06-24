@@ -66,6 +66,75 @@ def page_pdf(media_box: str, content: str | bytes) -> bytes:
     return pdf.render(catalog)
 
 
+def rotated_office_export_pdf() -> bytes:
+    pdf = Pdf()
+    content = (
+        b"q 0.95 0.95 0.95 rg 0 0 160 100 re f "
+        b"0.1 0.3 0.7 rg 12 62 136 22 re f "
+        b"0 0 0 RG 1 w 12 20 136 64 re S 12 42 m 148 42 l S Q "
+        b"BT /F1 12 Tf 18 76 Td (Rotated office export) Tj "
+        b"0 -24 Td (Amount: 120.00) Tj ET"
+    )
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 160 100] /Rotate 90 "
+        f"/Resources << /Font << /F1 4 0 R >> >> /Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    font = pdf.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert font == 4
+    return pdf.render(catalog)
+
+
+def cropped_scan_page_pdf() -> bytes:
+    pdf = Pdf()
+    content = (
+        b"q 0.86 g 0 0 180 180 re f "
+        b"0.65 g 30 20 120 120 re f "
+        b"0.2 g 40 40 100 16 re f 45 70 90 12 re f 40 96 100 16 re f Q"
+    )
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 180 180] "
+        f"/CropBox [30 20 150 140] /Resources << >> /Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    return pdf.render(catalog)
+
+
+def user_unit_page_pdf() -> bytes:
+    pdf = Pdf()
+    content = (
+        b"q 0.9 0.95 1 rg 0 0 80 60 re f "
+        b"0.1 0.45 0.2 rg 10 12 60 24 re f Q "
+        b"BT /F1 8 Tf 12 45 Td (UserUnit 2.0) Tj ET"
+    )
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 80 60] /UserUnit 2 "
+        f"/Resources << /Font << /F1 4 0 R >> >> /Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    font = pdf.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert font == 4
+    return pdf.render(catalog)
+
+
 def malformed_xref_offset_drift_pdf() -> bytes:
     pdf = Pdf()
     content = b"q 0.9 0 0 rg 10 10 60 40 re f Q"
@@ -1651,6 +1720,9 @@ def main() -> None:
         "page-size-letter.pdf",
         page_pdf("[0 0 612 792]", "q 0.9 0.9 0.9 rg 0 0 612 792 re f Q"),
     )
+    write("rotated-office-export.pdf", rotated_office_export_pdf())
+    write("cropped-scan-page.pdf", cropped_scan_page_pdf())
+    write("user-unit-page.pdf", user_unit_page_pdf())
     write(
         "text-page.pdf",
         page_pdf(

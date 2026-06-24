@@ -1999,7 +1999,13 @@ fn visual_diff_subsystem(path: &str, family: &str) -> &'static str {
     {
         return "vector-graphics";
     }
-    if path.contains("page") || path.contains("crop") || path.contains("rotation") {
+    if path.contains("page")
+        || path.contains("crop")
+        || path.contains("rotation")
+        || path.contains("rotated")
+        || path.contains("user-unit")
+        || path.contains("userunit")
+    {
         return "page-geometry";
     }
     if path.contains("hybrid") || path.contains("xref") || path.contains("incremental") {

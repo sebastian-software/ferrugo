@@ -11,6 +11,7 @@ fixtures/generated/blend-modes.pdf	report	scripts/generate_fixtures.py	MIT OR Ap
 fixtures/generated/cid-font-text.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,type0,cid,tounicode	Generated Type0 CID font ToUnicode fixture.
 fixtures/generated/clipped-paths.pdf	browser-print	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	vector,clipping	Generated even-odd clipping path fixture.
 fixtures/generated/cmyk-image.pdf	scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,cmyk	Generated CMYK image color-space fixture.
+fixtures/generated/cropped-scan-page.pdf	scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	geometry,cropbox,scan	Generated cropped scan-like page using CropBox selection.
 fixtures/generated/dashed-stroke.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	vector,stroke,dash	Generated dashed stroke fixture.
 fixtures/generated/dct-image.pdf	scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,dct,jpeg	Generated DCTDecode Image XObject fixture.
 fixtures/generated/embedded-font.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	font,truetype	Generated embedded TrueType font fixture.
@@ -38,6 +39,7 @@ fixtures/generated/page-size-letter.pdf	browser-print	scripts/generate_fixtures.
 fixtures/generated/page-targeted-stream.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	2	streaming,page-targeted,malformed-secondary-page	Generated two-page fixture proving page zero renders without decoding a malformed second-page stream.
 fixtures/generated/predictor-image.pdf	scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,flate,predictor	Generated Flate image PNG predictor fixture.
 fixtures/generated/radial-gradient.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	shading,radial-gradient	Generated DeviceRGB radial shading fixture.
+fixtures/generated/rotated-office-export.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	geometry,rotate,office-export	Generated rotated office-export page geometry fixture.
 fixtures/generated/scanned-page.pdf	scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,page-sized,devicegray	Generated page-sized scan-like DeviceGray image fixture.
 fixtures/generated/shaped-rtl-text.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,type0,cid,rtl,prepositioned	Generated pre-positioned RTL Type0 CID text fixture.
 fixtures/generated/soft-mask-image.pdf	scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,soft-mask,alpha	Generated soft-mask image alpha fixture.
@@ -47,6 +49,7 @@ fixtures/generated/tiling-pattern.pdf	report	scripts/generate_fixtures.py	MIT OR
 fixtures/generated/tounicode-text.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,tounicode	Generated ToUnicode character-code mapping fixture.
 fixtures/generated/transparency-alpha.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	transparency,alpha,extgstate	Generated ExtGState fill and stroke alpha fixture.
 fixtures/generated/transparency-group.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	transparency,form-xobject	Generated path-only transparency group fixture.
+fixtures/generated/user-unit-page.pdf	browser-print	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	geometry,userunit	Generated non-default UserUnit page geometry fixture.
 fixtures/generated/vector-paths.pdf	browser-print	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	vector,path	Generated vector path drawing fixture.
 fixtures/generated/vector-stress.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	vector,stress,clipping,curve,chart	Generated vector-heavy chart stress fixture with nested clips and cubic curves.
 fixtures/generated/vertical-cjk-text.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,type0,cid,cjk,vertical	Generated vertical CJK Type0 CID font fixture.

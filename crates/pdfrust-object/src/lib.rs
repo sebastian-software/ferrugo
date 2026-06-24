@@ -452,6 +452,10 @@ pub struct PageMetadata {
     pub media_box: PageBox,
     /// Crop box inherited or declared on the page.
     pub crop_box: Option<PageBox>,
+    /// Page rotation in clockwise degrees, normalized to 0, 90, 180, or 270.
+    pub rotation_degrees: u16,
+    /// PDF user unit multiplier. Defaults to 1.0.
+    pub user_unit: f64,
     /// Resource dictionary reference inherited or declared on the page.
     pub resources: Option<Reference>,
 }
@@ -461,7 +465,15 @@ impl PageMetadata {
     /// `MediaBox`.
     #[must_use]
     pub fn size(&self) -> PageSize {
-        self.crop_box.unwrap_or(self.media_box).size()
+        let size = self.crop_box.unwrap_or(self.media_box).size();
+        if page_rotation_swaps_axes(self.rotation_degrees) {
+            PageSize {
+                width: size.height,
+                height: size.width,
+            }
+        } else {
+            size
+        }
     }
 }
 
@@ -715,11 +727,25 @@ impl DocumentObjects for ModernDocument<'_> {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy)]
 struct InheritedPageState {
     media_box: Option<PageBox>,
     crop_box: Option<PageBox>,
+    rotation_degrees: u16,
+    user_unit: f64,
     resources: Option<Reference>,
+}
+
+impl Default for InheritedPageState {
+    fn default() -> Self {
+        Self {
+            media_box: None,
+            crop_box: None,
+            rotation_degrees: 0,
+            user_unit: 1.0,
+            resources: None,
+        }
+    }
 }
 
 fn resolve_page_tree(document: &impl DocumentObjects) -> ObjectResult<PageTree> {
@@ -804,6 +830,8 @@ fn traverse_page_tree(
                 id,
                 media_box,
                 crop_box: inherited.crop_box,
+                rotation_degrees: inherited.rotation_degrees,
+                user_unit: inherited.user_unit,
                 resources: inherited.resources,
             });
         }
@@ -841,6 +869,12 @@ fn inherit_page_state(
     }
     if let Some(value) = dictionary_value(dictionary, b"CropBox") {
         inherited.crop_box = Some(page_box(value)?);
+    }
+    if let Some(value) = dictionary_value(dictionary, b"Rotate") {
+        inherited.rotation_degrees = page_rotation(value)?;
+    }
+    if let Some(value) = dictionary_value(dictionary, b"UserUnit") {
+        inherited.user_unit = page_user_unit(value)?;
     }
     if let Some(value) = dictionary_value(dictionary, b"Resources") {
         inherited.resources = resource_reference(value)?;
@@ -930,6 +964,33 @@ fn page_box_number(value: &PdfPrimitive<'_>) -> ObjectResult<f64> {
         PdfPrimitive::Number(PdfNumber::Real(value)) if value.is_finite() => Ok(*value),
         _ => Err(ObjectError::InvalidPageBox),
     }
+}
+
+fn page_rotation(value: &PdfPrimitive<'_>) -> ObjectResult<u16> {
+    let PdfPrimitive::Number(PdfNumber::Integer(value)) = value else {
+        return Err(ObjectError::InvalidPageRotation);
+    };
+    if value % 90 != 0 {
+        return Err(ObjectError::InvalidPageRotation);
+    }
+    let normalized = value.rem_euclid(360);
+    u16::try_from(normalized).map_err(|_| ObjectError::InvalidPageRotation)
+}
+
+fn page_rotation_swaps_axes(rotation_degrees: u16) -> bool {
+    matches!(rotation_degrees, 90 | 270)
+}
+
+fn page_user_unit(value: &PdfPrimitive<'_>) -> ObjectResult<f64> {
+    let unit = match value {
+        PdfPrimitive::Number(PdfNumber::Integer(value)) => *value as f64,
+        PdfPrimitive::Number(PdfNumber::Real(value)) if value.is_finite() => *value,
+        _ => return Err(ObjectError::InvalidUserUnit),
+    };
+    if unit <= 0.0 || unit > 75_000.0 {
+        return Err(ObjectError::InvalidUserUnit);
+    }
+    Ok(unit)
 }
 
 fn parse_object_at_offset<'a>(
@@ -2093,6 +2154,10 @@ pub enum ObjectError {
     },
     /// Page box is missing, malformed, or not positive-sized.
     InvalidPageBox,
+    /// Page rotation is malformed or not a multiple of 90 degrees.
+    InvalidPageRotation,
+    /// Page user-unit value is malformed or outside the supported range.
+    InvalidUserUnit,
     /// Incremental update `/Prev` chain points back to an already parsed xref.
     IncrementalUpdateCycle {
         /// Repeated xref byte offset.
@@ -2141,6 +2206,8 @@ impl ObjectError {
             | Self::MissingPageTreeField { .. }
             | Self::PageTreeCycle { .. }
             | Self::InvalidPageBox
+            | Self::InvalidPageRotation
+            | Self::InvalidUserUnit
             | Self::IncrementalUpdateDepthExceeded { .. } => None,
             Self::IncrementalUpdateCycle { offset } => Some(*offset),
             Self::DuplicateObject { .. } => None,
@@ -2219,6 +2286,8 @@ impl fmt::Display for ObjectError {
                 id.generation.get()
             ),
             Self::InvalidPageBox => f.write_str("invalid page box"),
+            Self::InvalidPageRotation => f.write_str("invalid page rotation"),
+            Self::InvalidUserUnit => f.write_str("invalid page user unit"),
             Self::IncrementalUpdateCycle { offset } => {
                 write!(f, "incremental update cycle at {offset}")
             }
@@ -2640,6 +2709,62 @@ mod tests {
                 height: 100.0
             }
         );
+    }
+
+    #[test]
+    fn page_tree_should_resolve_rotation_and_user_unit_metadata() {
+        let objects = vec![
+            b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n".to_vec(),
+            b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox [0 0 300 160] /Rotate -270 >>\nendobj\n".to_vec(),
+            b"3 0 obj\n<< /Type /Page /Parent 2 0 R /CropBox [0 0 100 50] /UserUnit 2 >>\nendobj\n".to_vec(),
+        ];
+        let pdf = build_classic_pdf_from_objects(&objects);
+        let document = load_classic_document(PdfBytes::new(&pdf)).expect("classic document");
+
+        let page_tree = document.page_tree().expect("page tree");
+        let page = page_tree.first_page().expect("first page");
+
+        assert_eq!(page.rotation_degrees, 90);
+        assert_eq!(page.user_unit, 2.0);
+        assert_eq!(
+            page.size(),
+            PageSize {
+                width: 50.0,
+                height: 100.0,
+            }
+        );
+    }
+
+    #[test]
+    fn page_tree_should_reject_invalid_rotation() {
+        let objects = vec![
+            b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n".to_vec(),
+            b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox [0 0 300 160] >>\nendobj\n"
+                .to_vec(),
+            b"3 0 obj\n<< /Type /Page /Parent 2 0 R /Rotate 45 >>\nendobj\n".to_vec(),
+        ];
+        let pdf = build_classic_pdf_from_objects(&objects);
+        let document = load_classic_document(PdfBytes::new(&pdf)).expect("classic document");
+
+        let error = document.page_tree().expect_err("invalid rotation");
+
+        assert_eq!(error, ObjectError::InvalidPageRotation);
+    }
+
+    #[test]
+    fn page_tree_should_reject_invalid_user_unit() {
+        let objects = vec![
+            b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n".to_vec(),
+            b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox [0 0 300 160] >>\nendobj\n"
+                .to_vec(),
+            b"3 0 obj\n<< /Type /Page /Parent 2 0 R /UserUnit 0 >>\nendobj\n".to_vec(),
+        ];
+        let pdf = build_classic_pdf_from_objects(&objects);
+        let document = load_classic_document(PdfBytes::new(&pdf)).expect("classic document");
+
+        let error = document.page_tree().expect_err("invalid user unit");
+
+        assert_eq!(error, ObjectError::InvalidUserUnit);
     }
 
     #[test]
