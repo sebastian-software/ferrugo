@@ -68,6 +68,15 @@ In progress:
   `fixtures/generated/annotation-missing-appearance.pdf` and verifies that an
   annotation without usable `/AP` does not abort otherwise renderable page
   content.
+- Fifth fixture slice adds generated
+  `fixtures/generated/link-annotation-appearance.pdf`, covering a `/Subtype
+  /Link` annotation with a normal appearance stream and inert border/action
+  handling.
+- PDFium/native comparison for `link-annotation-appearance.pdf` at
+  `max-edge 120`: `120x120`, changed RGB pixels `14`, RGB MAE `0.1065`, p95
+  RGB delta `0`, max channel delta `255`, native non-white pixels `322`. Border
+  and interior sample pixels match PDFium exactly; differences are confined to
+  antialiasing along the stroked rectangle.
 - PDFium/native comparison for `annotation-appearance.pdf` at `max-edge 120`:
   `120x120`, changed RGB pixels `0`, RGB MAE `0.0000`, p95 RGB delta `0`,
   max channel delta `0`, native non-white pixels `800`. Filled and outside
@@ -75,5 +84,8 @@ In progress:
 - Current validation:
   - `cargo test -p pdfrust-native annotation_appearance -- --nocapture`
   - `cargo test -p pdfrust-native annotation_without_appearance -- --nocapture`
+  - `cargo test -p pdfrust-native link_annotation_appearance -- --nocapture`
   - `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render fixtures/generated/annotation-appearance.pdf --max-edge 120 --output target/pdfrust-thumbnails/annotation-appearance-pdfium-0052.png`
   - `cargo run -p pdfrust-cli -- render-native fixtures/generated/annotation-appearance.pdf --max-edge 120 --output target/pdfrust-thumbnails/annotation-appearance-native-0052.png`
+  - `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render fixtures/generated/link-annotation-appearance.pdf --max-edge 120 --output target/pdfrust-thumbnails/link-annotation-appearance-pdfium-0052.png`
+  - `cargo run -p pdfrust-cli -- render-native fixtures/generated/link-annotation-appearance.pdf --max-edge 120 --output target/pdfrust-thumbnails/link-annotation-appearance-native-0052.png`

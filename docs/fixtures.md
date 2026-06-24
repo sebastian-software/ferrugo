@@ -37,6 +37,7 @@ The initial seed set covers:
 - even-odd path clipping
 - normal annotation appearance streams
 - annotations without usable appearance streams
+- link annotation appearance streams
 - axial DeviceRGB shading gradients
 - radial DeviceRGB shading gradients
 - colored tiling patterns
