@@ -2761,14 +2761,35 @@ pub fn rasterize_paths_into(
     if options.supersample == 0 {
         return Err(RasterError::new(RasterErrorKind::InvalidSupersampling));
     }
+    let mut active_clips = Vec::new();
     for item in display_list.items() {
         match item {
-            DisplayItem::Path(path) => rasterize_path_item(path, device, transform, options)?,
+            DisplayItem::Path(path) => {
+                rasterize_path_item(
+                    path,
+                    device,
+                    PathRasterContext {
+                        transform,
+                        options,
+                        clips: &active_clips,
+                    },
+                )?;
+            }
+            DisplayItem::ClipPlaceholder { segments, rule, .. } => {
+                active_clips.push(ActiveClip {
+                    path: flatten_path_segments(
+                        segments,
+                        transform.matrix,
+                        options.max_flattened_segments,
+                    )?,
+                    rule: *rule,
+                });
+            }
             DisplayItem::Shading(shading) => rasterize_shading_item(shading, device, transform)?,
             DisplayItem::TransparencyGroup(group) => {
                 rasterize_transparency_group(group, device, transform, options)?;
             }
-            DisplayItem::ClipPlaceholder { .. } | DisplayItem::Text(_) | DisplayItem::Image(_) => {}
+            DisplayItem::Text(_) | DisplayItem::Image(_) => {}
         }
     }
     Ok(())
@@ -2911,19 +2932,18 @@ fn interpolate_channel(start: u8, end: u8, ratio: f64) -> u8 {
 fn rasterize_path_item(
     path: &PathDisplayItem,
     device: &mut RasterDevice,
-    transform: PageTransform,
-    options: PathRasterOptions,
+    context: PathRasterContext<'_>,
 ) -> RasterResult<()> {
     let flattened = flatten_path_segments(
         &path.segments,
-        transform.matrix,
-        options.max_flattened_segments,
+        context.transform.matrix,
+        context.options.max_flattened_segments,
     )?;
     match path.paint {
         PaintMode::Fill { rule } => {
             if let Some(pattern) = &path.fill_pattern {
                 fill_path_with_tiling_pattern(
-                    device, &flattened, rule, pattern, path.state, transform, options,
+                    device, &flattened, rule, pattern, path.state, context,
                 )?;
             } else {
                 fill_path(
@@ -2932,7 +2952,7 @@ fn rasterize_path_item(
                     rule,
                     path.state.fill_color,
                     path.state.blend_mode,
-                    options,
+                    context,
                 )?;
             }
         }
@@ -2941,22 +2961,22 @@ fn rasterize_path_item(
                 device,
                 &flattened,
                 StrokeRasterState {
-                    line_width: path.state.line_width * transform.scale,
+                    line_width: path.state.line_width * context.transform.scale,
                     color: path.state.stroke_color,
                     blend_mode: path.state.blend_mode,
                     dash_pattern: path.state.stroke_dash,
-                    dash_scale: transform.scale,
+                    dash_scale: context.transform.scale,
                     line_cap: path.state.line_cap,
                     line_join: path.state.line_join,
                     miter_limit: path.state.miter_limit,
                 },
-                options,
+                context,
             )?;
         }
         PaintMode::FillStroke { rule } => {
             if let Some(pattern) = &path.fill_pattern {
                 fill_path_with_tiling_pattern(
-                    device, &flattened, rule, pattern, path.state, transform, options,
+                    device, &flattened, rule, pattern, path.state, context,
                 )?;
             } else {
                 fill_path(
@@ -2965,23 +2985,23 @@ fn rasterize_path_item(
                     rule,
                     path.state.fill_color,
                     path.state.blend_mode,
-                    options,
+                    context,
                 )?;
             }
             stroke_path(
                 device,
                 &flattened,
                 StrokeRasterState {
-                    line_width: path.state.line_width * transform.scale,
+                    line_width: path.state.line_width * context.transform.scale,
                     color: path.state.stroke_color,
                     blend_mode: path.state.blend_mode,
                     dash_pattern: path.state.stroke_dash,
-                    dash_scale: transform.scale,
+                    dash_scale: context.transform.scale,
                     line_cap: path.state.line_cap,
                     line_join: path.state.line_join,
                     miter_limit: path.state.miter_limit,
                 },
-                options,
+                context,
             )?;
         }
     }
@@ -3859,6 +3879,19 @@ struct StrokeJoin {
     previous: LineSegment,
     next: LineSegment,
     point: Point,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct ActiveClip {
+    path: FlattenedPath,
+    rule: FillRule,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct PathRasterContext<'a> {
+    transform: PageTransform,
+    options: PathRasterOptions,
+    clips: &'a [ActiveClip],
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -6089,10 +6122,10 @@ fn fill_path(
     rule: FillRule,
     color: DeviceColor,
     blend_mode: BlendMode,
-    options: PathRasterOptions,
+    context: PathRasterContext<'_>,
 ) -> RasterResult<()> {
     let source = device_color_to_rgba(color);
-    let samples = u32::from(options.supersample);
+    let samples = u32::from(context.options.supersample);
     let sample_count = samples * samples;
     let dimensions = device.dimensions();
     for y in 0..dimensions.height {
@@ -6101,7 +6134,9 @@ fn fill_path(
             for sample_y in 0..samples {
                 for sample_x in 0..samples {
                     let point = sample_point(x, y, sample_x, sample_y, samples);
-                    if point_in_path(point, path, rule) {
+                    if point_in_active_clips(point, context.clips)
+                        && point_in_path(point, path, rule)
+                    {
                         covered += 1;
                     }
                 }
@@ -6134,19 +6169,19 @@ fn fill_path_with_tiling_pattern(
     rule: FillRule,
     pattern: &TilingPattern,
     state: GraphicsState,
-    transform: PageTransform,
-    options: PathRasterOptions,
+    context: PathRasterContext<'_>,
 ) -> RasterResult<()> {
-    validate_pattern_tile_budget(path, pattern, options)?;
-    let pattern_samples = pattern_samples(pattern, options)?;
+    validate_pattern_tile_budget(path, pattern, context.options)?;
+    let pattern_samples = pattern_samples(pattern, context.options)?;
     if pattern_samples.is_empty() {
         return Ok(());
     }
-    let inverse = transform
+    let inverse = context
+        .transform
         .matrix
         .inverse()
         .ok_or_else(|| RasterError::new(RasterErrorKind::InvalidPageBox))?;
-    let samples = u32::from(options.supersample);
+    let samples = u32::from(context.options.supersample);
     let sample_count = samples * samples;
     let dimensions = device.dimensions();
     for y in 0..dimensions.height {
@@ -6155,7 +6190,9 @@ fn fill_path_with_tiling_pattern(
             for sample_y in 0..samples {
                 for sample_x in 0..samples {
                     let point = sample_point(x, y, sample_x, sample_y, samples);
-                    if point_in_path(point, path, rule) {
+                    if point_in_active_clips(point, context.clips)
+                        && point_in_path(point, path, rule)
+                    {
                         covered += 1;
                     }
                 }
@@ -6271,7 +6308,7 @@ fn stroke_path(
     device: &mut RasterDevice,
     path: &FlattenedPath,
     state: StrokeRasterState,
-    options: PathRasterOptions,
+    context: PathRasterContext<'_>,
 ) -> RasterResult<()> {
     let source = device_color_to_rgba(state.color);
     let radius = if state.line_width <= 0.0 {
@@ -6286,11 +6323,11 @@ fn stroke_path(
         dashed_lines = dashed_line_segments(
             &path.lines,
             state.dash_pattern.scaled(state.dash_scale),
-            options.max_flattened_segments,
+            context.options.max_flattened_segments,
         )?;
         (dashed_lines.as_slice(), &[])
     };
-    let samples = u32::from(options.supersample);
+    let samples = u32::from(context.options.supersample);
     let sample_count = samples * samples;
     let dimensions = device.dimensions();
     for y in 0..dimensions.height {
@@ -6299,8 +6336,15 @@ fn stroke_path(
             for sample_y in 0..samples {
                 for sample_x in 0..samples {
                     let point = sample_point(x, y, sample_x, sample_y, samples);
-                    if point_in_stroke(point, stroke_lines, radius, state.line_cap)
-                        || point_in_join(point, joins, radius, state.line_join, state.miter_limit)
+                    if point_in_active_clips(point, context.clips)
+                        && (point_in_stroke(point, stroke_lines, radius, state.line_cap)
+                            || point_in_join(
+                                point,
+                                joins,
+                                radius,
+                                state.line_join,
+                                state.miter_limit,
+                            ))
                     {
                         covered += 1;
                     }
@@ -6389,6 +6433,12 @@ fn sample_point(x: u32, y: u32, sample_x: u32, sample_y: u32, samples: u32) -> P
         x: f64::from(x) + (f64::from(sample_x) + 0.5) / f64::from(samples),
         y: f64::from(y) + (f64::from(sample_y) + 0.5) / f64::from(samples),
     }
+}
+
+fn point_in_active_clips(point: Point, clips: &[ActiveClip]) -> bool {
+    clips
+        .iter()
+        .all(|clip| point_in_path(point, &clip.path, clip.rule))
 }
 
 fn point_in_path(point: Point, path: &FlattenedPath, rule: FillRule) -> bool {
@@ -9982,6 +10032,39 @@ mod tests {
     }
 
     #[test]
+    fn rasterize_paths_should_apply_nonzero_clip() {
+        let raster = rasterize_clip_stream(b"4 4 8 8 re W n 0 0 0 rg 0 0 20 20 re f");
+        let black = Rgba {
+            r: 0,
+            g: 0,
+            b: 0,
+            a: 255,
+        };
+
+        assert_eq!(raster.pixel(6, 10).expect("inside clip"), black);
+        assert_eq!(raster.pixel(2, 10).expect("left of clip"), Rgba::WHITE);
+        assert_eq!(raster.pixel(6, 4).expect("above clip"), Rgba::WHITE);
+    }
+
+    #[test]
+    fn rasterize_paths_should_apply_even_odd_clip() {
+        let raster = rasterize_clip_stream(b"2 2 16 16 re 6 6 8 8 re W* n 0 0 0 rg 0 0 20 20 re f");
+        let black = Rgba {
+            r: 0,
+            g: 0,
+            b: 0,
+            a: 255,
+        };
+
+        assert_eq!(raster.pixel(4, 4).expect("inside outer clip"), black);
+        assert_eq!(
+            raster.pixel(10, 10).expect("inside even-odd hole"),
+            Rgba::WHITE
+        );
+        assert_eq!(raster.pixel(1, 1).expect("outside clip"), Rgba::WHITE);
+    }
+
+    #[test]
     fn display_list_should_capture_clip_placeholder() {
         let list = build_path_display_list(
             tokenize_content(PdfBytes::new(b"10 10 20 20 re W n")),
@@ -11654,6 +11737,39 @@ mod tests {
             },
         )
         .expect("line-cap stroke should rasterize")
+    }
+
+    fn rasterize_clip_stream(content: &[u8]) -> RasterDevice {
+        let list = build_path_display_list(
+            tokenize_content(PdfBytes::new(content)),
+            DisplayListOptions::default(),
+        )
+        .expect("valid clipped stream");
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 20.0,
+                    max_y: 20.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            20,
+        )
+        .expect("clip transform");
+
+        rasterize_paths(
+            &list,
+            transform,
+            Rgba::WHITE,
+            PathRasterOptions {
+                supersample: 1,
+                ..PathRasterOptions::default()
+            },
+        )
+        .expect("clipped paths should rasterize")
     }
 
     fn rasterize_line_join_stream(content: &[u8]) -> RasterDevice {

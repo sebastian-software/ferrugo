@@ -85,10 +85,15 @@ In progress:
   changed RGB pixels `21`, RGB MAE `0.1730`, p95 RGB delta `0`, max channel
   delta `255`, native non-white pixels `1427`. Bevel and Miter sample pixels
   match PDFium exactly; the Round sample differs only by antialiasing intensity.
+- Seventh implementation slice turns `W` and `W*` placeholders into active
+  path-rasterizer clips. The rasterizer keeps a cumulative list of flattened
+  clips and samples fills, strokes, and tiling-pattern fills only when the
+  sample is inside every active clip, avoiding a full-page clip mask allocation.
 - Current validation:
   - `cargo test -p pdfrust-render dash -- --nocapture`
   - `cargo test -p pdfrust-render line_cap -- --nocapture`
   - `cargo test -p pdfrust-render line_join -- --nocapture`
+  - `cargo test -p pdfrust-render clip -- --nocapture`
   - `cargo test -p pdfrust-native dashed_stroke -- --nocapture`
   - `cargo test -p pdfrust-native line_caps -- --nocapture`
   - `cargo test -p pdfrust-native line_joins -- --nocapture`
