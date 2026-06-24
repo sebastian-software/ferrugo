@@ -745,6 +745,35 @@ def acroform_signature_placeholder_pdf() -> bytes:
     return pdf.render(catalog)
 
 
+def optional_content_layer_pdf(visible: bool) -> bytes:
+    pdf = Pdf()
+    content = (
+        b"0 0.6 0 rg 10 10 40 40 re f "
+        b"/OC /Layer BDC "
+        b"0.9 0 0 rg 60 10 40 40 re f "
+        b"EMC"
+    )
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 120 80] "
+        "/Resources << /Properties << /Layer 4 0 R >> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    layer = pdf.add("<< /Type /OCG /Name (Fixture Layer) >>")
+    off = "" if visible else "/OFF [4 0 R] "
+    catalog = pdf.add(
+        f"<< /Type /Catalog /Pages {pages} 0 R "
+        f"/OCProperties << /OCGs [{layer} 0 R] /D << /BaseState /ON {off}>> >> >>"
+    )
+    assert layer == 4
+    return pdf.render(catalog)
+
+
 def embedded_font_pdf() -> bytes:
     pdf = Pdf()
     content = b"BT /F1 18 Tf 20 60 Td (embedded font fixture) Tj ET"
@@ -914,6 +943,8 @@ def main() -> None:
     write("acroform-text-field.pdf", acroform_text_field_pdf())
     write("acroform-checkbox.pdf", acroform_checkbox_pdf())
     write("acroform-signature-placeholder.pdf", acroform_signature_placeholder_pdf())
+    write("optional-content-layer-on.pdf", optional_content_layer_pdf(visible=True))
+    write("optional-content-layer-off.pdf", optional_content_layer_pdf(visible=False))
     write("embedded-font.pdf", embedded_font_pdf())
     write("tounicode-text.pdf", tounicode_text_pdf())
     write("encoding-differences.pdf", encoding_differences_pdf())

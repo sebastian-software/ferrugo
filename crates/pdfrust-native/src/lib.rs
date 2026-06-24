@@ -5,7 +5,7 @@
 use std::borrow::Cow;
 use std::fs;
 
-use pdfrust_content::tokenize_content;
+use pdfrust_content::{tokenize_content, ContentToken};
 use pdfrust_object::{
     load_classic_document, load_modern_document, ClassicDocument, GenerationNumber, ObjectId,
     ObjectNumber, ObjectValue, PageBox, PageMetadata as ObjectPageMetadata, PageTree, Reference,
@@ -105,6 +105,9 @@ fn render_bytes(bytes: &[u8], options: &ThumbnailOptions) -> Result<Thumbnail, T
         .get(options.page_index as usize)
         .ok_or(ThumbnailError::Unsupported)?;
     let content = page_content_stream(&document, page)?;
+    let optional_content = page_optional_content_properties(&document, page)?;
+    let optional_content_state = document_optional_content_state(&document)?;
+    let content = filter_optional_content(&content, &optional_content, &optional_content_state)?;
     let display_options = DisplayListOptions::default();
     let ext_graphics_states = page_ext_graphics_state_resources(&document, page)?;
     let shadings = page_shading_resources(&document, page)?;
@@ -474,6 +477,297 @@ fn page_annotation_appearance_resources(
     Ok((resources, content))
 }
 
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+struct OptionalContentState {
+    base_visible: bool,
+    on: Vec<PdfReference>,
+    off: Vec<PdfReference>,
+}
+
+impl OptionalContentState {
+    fn visible(&self, reference: PdfReference) -> bool {
+        if self.off.contains(&reference) {
+            return false;
+        }
+        if self.on.contains(&reference) {
+            return true;
+        }
+        self.base_visible
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct OptionalContentProperty {
+    name: Vec<u8>,
+    policy: OptionalContentPolicy,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OptionalContentPolicy {
+    Group(PdfReference),
+    Unsupported,
+}
+
+fn document_optional_content_state(
+    document: &ClassicDocument<'_>,
+) -> Result<OptionalContentState, ThumbnailError> {
+    let Some(catalog) = document_catalog(document)? else {
+        return Ok(OptionalContentState {
+            base_visible: true,
+            ..OptionalContentState::default()
+        });
+    };
+    let Some(PdfPrimitive::Dictionary(properties)) = dictionary_value(catalog, b"OCProperties")
+    else {
+        return Ok(OptionalContentState {
+            base_visible: true,
+            ..OptionalContentState::default()
+        });
+    };
+    let Some(PdfPrimitive::Dictionary(default_config)) = dictionary_value(properties, b"D") else {
+        return Ok(OptionalContentState {
+            base_visible: true,
+            ..OptionalContentState::default()
+        });
+    };
+    if dictionary_value(default_config, b"AS").is_some() {
+        return Err(ThumbnailError::Unsupported);
+    }
+    let base_visible = match dictionary_value(default_config, b"BaseState") {
+        Some(PdfPrimitive::Name(name)) if name.as_bytes() == b"OFF" => false,
+        Some(PdfPrimitive::Name(name)) if name.as_bytes() == b"ON" => true,
+        Some(PdfPrimitive::Name(name)) if name.as_bytes() == b"Unchanged" => true,
+        Some(_) => return Err(ThumbnailError::Malformed),
+        None => true,
+    };
+    Ok(OptionalContentState {
+        base_visible,
+        on: optional_content_reference_array(default_config, b"ON")?,
+        off: optional_content_reference_array(default_config, b"OFF")?,
+    })
+}
+
+fn document_catalog<'a>(
+    document: &'a ClassicDocument<'a>,
+) -> Result<Option<&'a [(PdfName<'a>, PdfPrimitive<'a>)]>, ThumbnailError> {
+    let Some(PdfPrimitive::Reference(reference)) =
+        dictionary_value(document.trailer.entries(), b"Root")
+    else {
+        return Ok(None);
+    };
+    let reference = object_reference(*reference)?;
+    let object = document
+        .objects
+        .get(reference.id)
+        .ok_or(ThumbnailError::Malformed)?;
+    Ok(Some(object_dictionary(&object.value)?))
+}
+
+fn optional_content_reference_array(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    key: &[u8],
+) -> Result<Vec<PdfReference>, ThumbnailError> {
+    let Some(value) = dictionary_value(dictionary, key) else {
+        return Ok(Vec::new());
+    };
+    let PdfPrimitive::Array(items) = value else {
+        return Err(ThumbnailError::Malformed);
+    };
+    let mut references = Vec::new();
+    for item in items {
+        let PdfPrimitive::Reference(reference) = item else {
+            return Err(ThumbnailError::Malformed);
+        };
+        references.push(*reference);
+    }
+    Ok(references)
+}
+
+fn page_optional_content_properties(
+    document: &ClassicDocument<'_>,
+    page: &ObjectPageMetadata,
+) -> Result<Vec<OptionalContentProperty>, ThumbnailError> {
+    let object = document
+        .objects
+        .get(page.id)
+        .ok_or(ThumbnailError::Malformed)?;
+    let dictionary = object_dictionary(&object.value)?;
+    let Some(resources) = dictionary_value(dictionary, b"Resources") else {
+        return Ok(Vec::new());
+    };
+    let resource_dictionary = resource_dictionary(document, resources)?;
+    let Some(PdfPrimitive::Dictionary(properties)) =
+        dictionary_value(resource_dictionary, b"Properties")
+    else {
+        return Ok(Vec::new());
+    };
+    let mut resolved = Vec::new();
+    for (name, value) in properties {
+        let policy = optional_content_policy(document, value)?;
+        resolved.push(OptionalContentProperty {
+            name: name.as_bytes().to_vec(),
+            policy,
+        });
+    }
+    Ok(resolved)
+}
+
+fn optional_content_policy(
+    document: &ClassicDocument<'_>,
+    value: &PdfPrimitive<'_>,
+) -> Result<OptionalContentPolicy, ThumbnailError> {
+    match value {
+        PdfPrimitive::Reference(reference) => {
+            let reference_id = object_reference(*reference)?;
+            let object = document
+                .objects
+                .get(reference_id.id)
+                .ok_or(ThumbnailError::Malformed)?;
+            let dictionary = object_dictionary(&object.value)?;
+            if dictionary_name_is(dictionary, b"Type", b"OCG") {
+                return Ok(OptionalContentPolicy::Group(*reference));
+            }
+            if dictionary_name_is(dictionary, b"Type", b"OCMD") {
+                return Ok(OptionalContentPolicy::Unsupported);
+            }
+            Err(ThumbnailError::Malformed)
+        }
+        PdfPrimitive::Dictionary(dictionary)
+            if dictionary_name_is(dictionary, b"Type", b"OCMD") =>
+        {
+            Ok(OptionalContentPolicy::Unsupported)
+        }
+        PdfPrimitive::Dictionary(dictionary) if dictionary_name_is(dictionary, b"Type", b"OCG") => {
+            Err(ThumbnailError::Unsupported)
+        }
+        _ => Err(ThumbnailError::Malformed),
+    }
+}
+
+fn filter_optional_content(
+    content: &[u8],
+    properties: &[OptionalContentProperty],
+    state: &OptionalContentState,
+) -> Result<Vec<u8>, ThumbnailError> {
+    if properties.is_empty() {
+        return Ok(content.to_vec());
+    }
+    let tokens = spanned_content_tokens(content)?;
+    let mut filtered = Vec::with_capacity(content.len());
+    let mut operands = Vec::new();
+    let mut visibility_stack = Vec::new();
+
+    for token in &tokens {
+        match &token.kind {
+            SpannedContentTokenKind::Operand(value) => operands.push((value.clone(), token.start)),
+            SpannedContentTokenKind::Operator(name) => {
+                let operation_start = operands.first().map_or(token.start, |(_, start)| *start);
+                match name.as_slice() {
+                    b"BDC" => {
+                        visibility_stack.push(optional_content_marker_visible(
+                            &operands, properties, state,
+                        )?);
+                    }
+                    b"BMC" => visibility_stack.push(true),
+                    b"EMC" => {
+                        if visibility_stack.pop().is_none() {
+                            return Err(ThumbnailError::Malformed);
+                        }
+                    }
+                    _ if visibility_stack.iter().all(|visible| *visible) => {
+                        filtered.extend_from_slice(&content[operation_start..token.end]);
+                    }
+                    _ => {}
+                }
+                operands.clear();
+            }
+            SpannedContentTokenKind::InlineImage => {
+                if visibility_stack.iter().all(|visible| *visible) {
+                    filtered.extend_from_slice(&content[token.start..token.end]);
+                }
+                operands.clear();
+            }
+        }
+    }
+
+    if !visibility_stack.is_empty() {
+        return Err(ThumbnailError::Malformed);
+    }
+    Ok(filtered)
+}
+
+#[derive(Debug, Clone)]
+struct SpannedContentToken<'a> {
+    start: usize,
+    end: usize,
+    kind: SpannedContentTokenKind<'a>,
+}
+
+#[derive(Debug, Clone)]
+enum SpannedContentTokenKind<'a> {
+    Operand(PdfPrimitive<'a>),
+    Operator(Vec<u8>),
+    InlineImage,
+}
+
+fn spanned_content_tokens(content: &[u8]) -> Result<Vec<SpannedContentToken<'_>>, ThumbnailError> {
+    let mut raw = Vec::new();
+    for token in tokenize_content(PdfBytes::new(content)) {
+        let token = token.map_err(|_| ThumbnailError::Malformed)?;
+        let start = match &token {
+            ContentToken::Operand { offset, .. }
+            | ContentToken::Operator { offset, .. }
+            | ContentToken::InlineImage { offset, .. } => offset.get(),
+        };
+        raw.push((start, token));
+    }
+    let starts = raw.iter().map(|(start, _)| *start).collect::<Vec<_>>();
+    let mut spanned = Vec::with_capacity(raw.len());
+    for (index, (start, token)) in raw.iter().enumerate() {
+        let end = starts.get(index + 1).copied().unwrap_or(content.len());
+        let kind = match token {
+            ContentToken::Operand { value, .. } => SpannedContentTokenKind::Operand(value.clone()),
+            ContentToken::Operator { name, .. } => {
+                SpannedContentTokenKind::Operator(name.as_bytes().to_vec())
+            }
+            ContentToken::InlineImage { .. } => SpannedContentTokenKind::InlineImage,
+        };
+        spanned.push(SpannedContentToken {
+            start: *start,
+            end,
+            kind,
+        });
+    }
+    Ok(spanned)
+}
+
+fn optional_content_marker_visible(
+    operands: &[(PdfPrimitive<'_>, usize)],
+    properties: &[OptionalContentProperty],
+    state: &OptionalContentState,
+) -> Result<bool, ThumbnailError> {
+    if operands.len() != 2 {
+        return Err(ThumbnailError::Malformed);
+    }
+    let PdfPrimitive::Name(tag) = operands[0].0 else {
+        return Err(ThumbnailError::Malformed);
+    };
+    if tag.as_bytes() != b"OC" {
+        return Ok(true);
+    }
+    let PdfPrimitive::Name(property_name) = operands[1].0 else {
+        return Err(ThumbnailError::Unsupported);
+    };
+    let property = properties
+        .iter()
+        .find(|property| property.name.as_slice() == property_name.as_bytes())
+        .ok_or(ThumbnailError::Unsupported)?;
+    match property.policy {
+        OptionalContentPolicy::Group(reference) => Ok(state.visible(reference)),
+        OptionalContentPolicy::Unsupported => Err(ThumbnailError::Unsupported),
+    }
+}
+
 fn page_font_resources(
     document: &ClassicDocument<'_>,
     page: &ObjectPageMetadata,
@@ -708,6 +1002,24 @@ fn object_dictionary<'a>(
     Ok(dictionary)
 }
 
+fn resource_dictionary<'a>(
+    document: &'a ClassicDocument<'a>,
+    value: &'a PdfPrimitive<'a>,
+) -> Result<&'a [(PdfName<'a>, PdfPrimitive<'a>)], ThumbnailError> {
+    match value {
+        PdfPrimitive::Dictionary(dictionary) => Ok(dictionary),
+        PdfPrimitive::Reference(reference) => {
+            let reference = object_reference(*reference)?;
+            let object = document
+                .objects
+                .get(reference.id)
+                .ok_or(ThumbnailError::Malformed)?;
+            object_dictionary(&object.value)
+        }
+        _ => Err(ThumbnailError::Malformed),
+    }
+}
+
 fn dictionary_value<'a>(
     dictionary: &'a [(PdfName<'a>, PdfPrimitive<'a>)],
     key: &[u8],
@@ -715,6 +1027,17 @@ fn dictionary_value<'a>(
     dictionary
         .iter()
         .find_map(|(name, value)| (name.as_bytes() == key).then_some(value))
+}
+
+fn dictionary_name_is(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    key: &[u8],
+    expected: &[u8],
+) -> bool {
+    matches!(
+        dictionary_value(dictionary, key),
+        Some(PdfPrimitive::Name(name)) if name.as_bytes() == expected
+    )
 }
 
 fn page_geometry(page: ObjectPageMetadata) -> PageGeometry {
@@ -1334,6 +1657,44 @@ mod tests {
         assert_eq!(rgba_at(&thumbnail, 30, 35), [240, 240, 240, 255]);
         assert_low_intensity(rgba_at(&thumbnail, 20, 25), 96);
         assert_eq!(rgba_at(&thumbnail, 130, 45), [255, 255, 255, 255]);
+    }
+
+    #[test]
+    fn native_backend_should_render_generated_optional_content_layer_on_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/optional-content-layer-on.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 120,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated optional-content layer-on fixture should render");
+
+        assert_eq!(thumbnail.width, 120);
+        assert_eq!(thumbnail.height, 80);
+        assert_eq!(rgba_at(&thumbnail, 20, 50), [0, 153, 0, 255]);
+        assert_eq!(rgba_at(&thumbnail, 70, 50), [230, 0, 0, 255]);
+    }
+
+    #[test]
+    fn native_backend_should_hide_generated_optional_content_layer_off_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/optional-content-layer-off.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 120,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated optional-content layer-off fixture should render");
+
+        assert_eq!(thumbnail.width, 120);
+        assert_eq!(thumbnail.height, 80);
+        assert_eq!(rgba_at(&thumbnail, 20, 50), [0, 153, 0, 255]);
+        assert_eq!(rgba_at(&thumbnail, 70, 50), [255, 255, 255, 255]);
     }
 
     #[test]
