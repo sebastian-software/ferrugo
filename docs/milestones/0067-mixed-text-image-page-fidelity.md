@@ -1,6 +1,6 @@
 # 0067: Mixed Text Image Page Fidelity
 
-Status: todo
+Status: done
 Phase: 10
 Size: medium
 Depends on: 0066
@@ -45,4 +45,24 @@ marks, and clipping.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-24.
+
+- Added `fixtures/generated/mixed-text-image.pdf`, a deterministic generated
+  page combining a page background, image XObject, vector stroke/fill marks, and
+  selectable text.
+- Added native regression coverage for the mixed fixture. The test checks that
+  an image pixel remains visible and a later vector marker paints over the
+  image in content-stream order.
+- Added ordered mixed display-list rasterization for page-level path, image, and
+  text items while keeping the passwise path for simple pages.
+- Recorded fallback and PDFium comparison results in
+  `docs/reports/mixed-text-image-coverage-2026-06-24.md`.
+- Validation:
+  - `cargo fmt --check`
+  - `cargo check`
+  - `cargo test`
+  - `cargo test -p pdfrust-render`
+  - `cargo test -p pdfrust-native`
+  - `cargo clippy --all-targets --all-features -- -D warnings`
+  - mixed-layout fallback summary with `fixtures/corpus-manifest.tsv`
+  - native/PDFium render comparison for `mixed-text-image.pdf`
