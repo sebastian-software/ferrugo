@@ -23,6 +23,8 @@ The initial seed set covers:
 - text drawing
 - vector path drawing
 - image placement through an inline image stream
+- image placement through an Image XObject
+- Form XObject invocation
 
 ## Local Corpora
 
