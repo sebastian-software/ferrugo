@@ -57,12 +57,26 @@ In progress:
   unsupported errors instead of silently rendering incorrect thumbnails.
 - Native rendering now resolves page-level `/Resources /ExtGState` dictionaries
   for the path pass.
+- Second fixture slice adds generated `fixtures/generated/blend-modes.pdf`
+  through `scripts/generate_fixtures.py`, covering a gray backdrop with red
+  `Multiply` and blue `Screen` path fills.
+- The Form XObject scan path now accepts the same page-level `/ExtGState`
+  resources as the primary path pass, so repeated content scans do not reject
+  otherwise supported blend-mode content.
+- PDFium/native comparison for `blend-modes.pdf` at `max-edge 120`:
+  `120x120`, changed pixels `0`, MAE `0.000`, p95 `0`, max channel delta `0`,
+  native non-white pixels `14400`.
+  Sample pixels: background `(128,128,128,255)`, multiply `(128,0,0,255)`,
+  screen `(128,128,255,255)`.
 - Current validation:
   - `cargo fmt --check`
   - `git diff --check`
   - `cargo check`
   - `cargo test --quiet`
+  - `cargo test -p pdfrust-native blend_modes -- --nocapture`
   - `cargo test -p pdfrust-render ext_graphics_state -- --nocapture`
   - `cargo test -p pdfrust-render blend_source_with_backdrop -- --nocapture`
   - `cargo test -p pdfrust-render display_list_should_apply_external_graphics_state_blend_mode -- --nocapture`
+  - `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render fixtures/generated/blend-modes.pdf --max-edge 120 --output target/pdfrust-thumbnails/blend-modes-pdfium-0049.png`
+  - `cargo run -p pdfrust-cli -- render-native fixtures/generated/blend-modes.pdf --max-edge 120 --output target/pdfrust-thumbnails/blend-modes-native-0049.png`
   - `cargo clippy --all-targets --all-features -- -D warnings`

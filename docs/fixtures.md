@@ -30,6 +30,7 @@ The initial seed set covers:
 - image soft-mask alpha compositing
 - Form XObject invocation
 - path-only Form XObject transparency groups
+- ExtGState Multiply and Screen path blend modes
 - embedded TrueType font resource resolution
 - ToUnicode text character-code mapping
 - Encoding Differences array mapping

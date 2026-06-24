@@ -2346,10 +2346,28 @@ pub fn build_form_display_list<'a>(
     forms: &FormResources,
     options: DisplayListOptions,
 ) -> GraphicsResult<DisplayList> {
+    let ext_graphics_states = ExtGraphicsStateResources::empty();
+    build_form_display_list_with_ext_graphics_states(tokens, forms, &ext_graphics_states, options)
+}
+
+/// Builds display-list items from Form XObject invocations with graphics resources.
+///
+/// # Errors
+///
+/// Returns [`GraphicsError`] when tokenization fails, a named form or external
+/// graphics state is missing, form recursion exceeds the configured limit, or
+/// display limits are exceeded.
+pub fn build_form_display_list_with_ext_graphics_states<'a>(
+    tokens: impl IntoIterator<Item = ContentResult<ContentToken<'a>>>,
+    forms: &FormResources,
+    ext_graphics_states: &ExtGraphicsStateResources,
+    options: DisplayListOptions,
+) -> GraphicsResult<DisplayList> {
     let mut interpreter = DisplayListInterpreter::new_with_forms(
         GraphicsState::default(),
         options,
         forms,
+        Some(ext_graphics_states),
         FormResourceScope::page(),
         0,
     );
@@ -2653,6 +2671,7 @@ impl<'r> DisplayListInterpreter<'r> {
         current: GraphicsState,
         options: DisplayListOptions,
         forms: &'r FormResources,
+        ext_graphics_states: Option<&'r ExtGraphicsStateResources>,
         scope: FormResourceScope<'r>,
         recursion_depth: usize,
     ) -> Self {
@@ -2662,7 +2681,7 @@ impl<'r> DisplayListInterpreter<'r> {
             current_path: CurrentPath::default(),
             display_list: DisplayList::new(),
             options,
-            ext_graphics_states: None,
+            ext_graphics_states,
             forms: Some(FormInterpreterContext {
                 resources: forms,
                 scope,
@@ -2811,6 +2830,7 @@ impl<'r> DisplayListInterpreter<'r> {
             nested_state,
             self.options,
             context.resources,
+            self.ext_graphics_states,
             FormResourceScope::for_form(form),
             context.recursion_depth + 1,
         );

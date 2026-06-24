@@ -141,8 +141,11 @@ the combined renderer in later rasterization milestones.
 The native backend now resolves page-level Form XObjects and paints their path
 display-list items into the same page raster. Image and Form resource maps also
 track known opposite XObject subtype names so independent image and form passes
-do not fail when they encounter each other's `Do` invocations. Mixed ordering
-and image/text execution inside forms remain later facade-parity work.
+do not fail when they encounter each other's `Do` invocations. The form scan
+path shares page-level ExtGState resources with the primary path pass so
+supported `gs` blend-mode operations remain accepted during repeated content
+passes. Mixed ordering and image/text execution inside forms remain later
+facade-parity work.
 The first raster setup layer defines checked RGBA raster dimensions, an owned
 `RasterDevice` with safe row and pixel accessors, and `PageTransform` for
 mapping media/crop boxes, rotation, and `max_edge` into device pixels. The

@@ -11,7 +11,7 @@ use pdfrust_object::{
     ObjectNumber, ObjectValue, PageBox, PageMetadata as ObjectPageMetadata, PageTree, Reference,
 };
 use pdfrust_render::{
-    build_form_display_list, build_image_display_list,
+    build_form_display_list_with_ext_graphics_states, build_image_display_list,
     build_path_display_list_with_ext_graphics_states, build_text_display_list, rasterize_images,
     rasterize_paths, rasterize_paths_into, rasterize_text, DisplayListOptions,
     ExtGraphicsStateResources, FontResources, FormResources, GraphicsError, GraphicsErrorKind,
@@ -123,9 +123,10 @@ fn render_bytes(bytes: &[u8], options: &ThumbnailOptions) -> Result<Thumbnail, T
     )
     .map_err(map_raster_error)?;
     let form_resources = page_form_resources(&document, page)?;
-    let form_list = build_form_display_list(
+    let form_list = build_form_display_list_with_ext_graphics_states(
         tokenize_content(PdfBytes::new(&content)),
         &form_resources,
+        &ext_graphics_states,
         DisplayListOptions::default(),
     )
     .map_err(map_graphics_error)?;
@@ -659,6 +660,26 @@ mod tests {
         assert_eq!(thumbnail.width, 120);
         assert_eq!(thumbnail.height, 120);
         assert_eq!(rgba_at(&thumbnail, 20, 100), [255, 0, 0, 255]);
+    }
+
+    #[test]
+    fn native_backend_should_render_generated_blend_modes_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/blend-modes.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 120,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated blend mode fixture should render through native backend");
+
+        assert_eq!(thumbnail.width, 120);
+        assert_eq!(thumbnail.height, 120);
+        assert_eq!(rgba_at(&thumbnail, 60, 60), [128, 128, 128, 255]);
+        assert_eq!(rgba_at(&thumbnail, 20, 100), [128, 0, 0, 255]);
+        assert_eq!(rgba_at(&thumbnail, 80, 100), [128, 128, 255, 255]);
     }
 
     #[test]
