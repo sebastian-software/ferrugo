@@ -1,6 +1,6 @@
 # 0015: Differential Baseline Format
 
-Status: todo
+Status: done
 Phase: 0
 Size: small
 Depends on: 0012, 0014
@@ -43,5 +43,10 @@ against PDFium-backed thumbnail output.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-24.
 
+- Added `docs/baselines.md`.
+- Added success and failure example records under `baselines/examples/`.
+- Ignored `baselines/artifacts/` for large local pixel outputs.
+- Example success dimensions and digest are placeholders until a local PDFium
+  render can be run.

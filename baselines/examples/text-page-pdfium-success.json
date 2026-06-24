@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "fixture": {
+    "id": "text-page",
+    "path": "fixtures/generated/text-page.pdf",
+    "sha256": "c88d9b13ae24f10969f32db2afdebac3587654c5767c831e37ecc49df0b5650d"
+  },
+  "backend": {
+    "id": "pdfium",
+    "revision": "573758fe2dd928279cd52b5a4bc955a6938aab39",
+    "configuration": "pdfrust-thumb"
+  },
+  "request": {
+    "page_index": 0,
+    "max_edge": 256,
+    "background": "#ffffffff",
+    "output_format": "rgba"
+  },
+  "result": {
+    "status": "success",
+    "dimensions": {
+      "width": 256,
+      "height": 137,
+      "stride": 1024,
+      "pixel_format": "rgba8"
+    },
+    "pixel_sha256": "replace-after-local-render",
+    "artifact_path": "baselines/artifacts/text-page-pdfium-256.rgba"
+  },
+  "tolerance": {
+    "policy": "exact-for-pdfium-baseline",
+    "max_changed_pixels": 0,
+    "max_channel_delta": 0
+  }
+}

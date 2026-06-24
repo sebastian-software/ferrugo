@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "fixture": {
+    "id": "malformed-empty",
+    "path": "fixtures/local-corpus/malformed-empty.pdf",
+    "sha256": "local-only"
+  },
+  "backend": {
+    "id": "pdfium",
+    "revision": "573758fe2dd928279cd52b5a4bc955a6938aab39",
+    "configuration": "pdfrust-thumb"
+  },
+  "request": {
+    "page_index": 0,
+    "max_edge": 256,
+    "background": "#ffffffff",
+    "output_format": "rgba"
+  },
+  "result": {
+    "status": "error",
+    "error_class": "malformed"
+  },
+  "tolerance": {
+    "policy": "not-applicable",
+    "max_changed_pixels": null,
+    "max_channel_delta": null
+  }
+}
