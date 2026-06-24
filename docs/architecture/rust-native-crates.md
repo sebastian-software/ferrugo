@@ -145,3 +145,10 @@ transform. The native backend resolves page `/Resources /XObject` dictionaries,
 builds image display-list items, and composites opaque image samples into the
 same RGBA raster used for paths. Unsupported filters and color spaces still
 fail during image resource resolution with typed errors.
+Basic text rasterization uses an internal 5x7 ASCII fallback font for the first
+visible text milestone. It renders positioned text display-list runs using the
+captured text origin, font size, and fill color, and `pdfrust-native` resolves
+simple page `/Resources /Font` entries into lightweight font descriptors. This
+is intentionally a visible fallback rather than true Base14/embedded-font
+rasterization; full font program loading, CMaps, and glyph outlines remain
+later milestones.

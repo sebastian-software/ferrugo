@@ -1355,6 +1355,25 @@ pub fn rasterize_images(
     Ok(())
 }
 
+/// Rasterizes text display-list items using the built-in ASCII fallback font.
+///
+/// # Errors
+///
+/// Returns [`RasterError`] when device access fails.
+pub fn rasterize_text(
+    display_list: &DisplayList,
+    device: &mut RasterDevice,
+    transform: PageTransform,
+) -> RasterResult<()> {
+    for item in display_list.items() {
+        let DisplayItem::Text(text) = item else {
+            continue;
+        };
+        draw_text_run(device, text, transform)?;
+    }
+    Ok(())
+}
+
 struct GraphicsStateInterpreter {
     current: GraphicsState,
     stack: Vec<GraphicsState>,
@@ -3105,6 +3124,199 @@ fn sample_image(image: &ImageXObject, x: f64, y: f64) -> Rgba {
     }
 }
 
+fn draw_text_run(
+    device: &mut RasterDevice,
+    text: &TextDisplayItem,
+    page_transform: PageTransform,
+) -> RasterResult<()> {
+    let color = device_color_to_rgba(text.state.fill_color);
+    let cell = text.font_size / 7.0;
+    let glyph_advance = cell * 6.0;
+    let mut cursor_x = text.origin.x;
+    for character in text.text.chars() {
+        if character == ' ' {
+            cursor_x += glyph_advance;
+            continue;
+        }
+        draw_ascii_glyph(
+            device,
+            page_transform,
+            character,
+            cursor_x,
+            text.origin.y,
+            cell,
+            color,
+        )?;
+        cursor_x += glyph_advance;
+    }
+    Ok(())
+}
+
+fn draw_ascii_glyph(
+    device: &mut RasterDevice,
+    page_transform: PageTransform,
+    character: char,
+    x: f64,
+    baseline_y: f64,
+    cell: f64,
+    color: Rgba,
+) -> RasterResult<()> {
+    let glyph = ascii_glyph(character);
+    for (row, pattern) in glyph.iter().enumerate() {
+        for (col, byte) in pattern.as_bytes().iter().enumerate() {
+            if *byte != b'#' {
+                continue;
+            }
+            let left = x + col as f64 * cell;
+            let right = left + cell;
+            let top = baseline_y + (7 - row) as f64 * cell;
+            let bottom = top - cell;
+            fill_device_rect(
+                device,
+                page_transform.matrix.transform_point(left, top),
+                page_transform.matrix.transform_point(right, bottom),
+                color,
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn fill_device_rect(
+    device: &mut RasterDevice,
+    p0: Point,
+    p1: Point,
+    color: Rgba,
+) -> RasterResult<()> {
+    let dimensions = device.dimensions();
+    let min_x = p0.x.min(p1.x).floor().max(0.0) as u32;
+    let max_x = p0.x.max(p1.x).ceil().min(f64::from(dimensions.width)) as u32;
+    let min_y = p0.y.min(p1.y).floor().max(0.0) as u32;
+    let max_y = p0.y.max(p1.y).ceil().min(f64::from(dimensions.height)) as u32;
+    for y in min_y..max_y {
+        for x in min_x..max_x {
+            device.set_pixel(x, y, color)?;
+        }
+    }
+    Ok(())
+}
+
+fn ascii_glyph(character: char) -> [&'static str; 7] {
+    match character.to_ascii_lowercase() {
+        'a' => [
+            " ### ", "#   #", "#   #", "#####", "#   #", "#   #", "#   #",
+        ],
+        'b' => [
+            "#### ", "#   #", "#   #", "#### ", "#   #", "#   #", "#### ",
+        ],
+        'c' => [
+            " ####", "#    ", "#    ", "#    ", "#    ", "#    ", " ####",
+        ],
+        'd' => [
+            "#### ", "#   #", "#   #", "#   #", "#   #", "#   #", "#### ",
+        ],
+        'e' => [
+            "#####", "#    ", "#    ", "#### ", "#    ", "#    ", "#####",
+        ],
+        'f' => [
+            "#####", "#    ", "#    ", "#### ", "#    ", "#    ", "#    ",
+        ],
+        'g' => [
+            " ####", "#    ", "#    ", "#  ##", "#   #", "#   #", " ####",
+        ],
+        'h' => [
+            "#   #", "#   #", "#   #", "#####", "#   #", "#   #", "#   #",
+        ],
+        'i' => [
+            "#####", "  #  ", "  #  ", "  #  ", "  #  ", "  #  ", "#####",
+        ],
+        'j' => [
+            "#####", "    #", "    #", "    #", "#   #", "#   #", " ### ",
+        ],
+        'k' => [
+            "#   #", "#  # ", "# #  ", "##   ", "# #  ", "#  # ", "#   #",
+        ],
+        'l' => [
+            "#    ", "#    ", "#    ", "#    ", "#    ", "#    ", "#####",
+        ],
+        'm' => [
+            "#   #", "## ##", "# # #", "#   #", "#   #", "#   #", "#   #",
+        ],
+        'n' => [
+            "#   #", "##  #", "# # #", "#  ##", "#   #", "#   #", "#   #",
+        ],
+        'o' => [
+            " ### ", "#   #", "#   #", "#   #", "#   #", "#   #", " ### ",
+        ],
+        'p' => [
+            "#### ", "#   #", "#   #", "#### ", "#    ", "#    ", "#    ",
+        ],
+        'q' => [
+            " ### ", "#   #", "#   #", "#   #", "# # #", "#  # ", " ## #",
+        ],
+        'r' => [
+            "#### ", "#   #", "#   #", "#### ", "# #  ", "#  # ", "#   #",
+        ],
+        's' => [
+            " ####", "#    ", "#    ", " ### ", "    #", "    #", "#### ",
+        ],
+        't' => [
+            "#####", "  #  ", "  #  ", "  #  ", "  #  ", "  #  ", "  #  ",
+        ],
+        'u' => [
+            "#   #", "#   #", "#   #", "#   #", "#   #", "#   #", " ### ",
+        ],
+        'v' => [
+            "#   #", "#   #", "#   #", "#   #", "#   #", " # # ", "  #  ",
+        ],
+        'w' => [
+            "#   #", "#   #", "#   #", "# # #", "# # #", "## ##", "#   #",
+        ],
+        'x' => [
+            "#   #", "#   #", " # # ", "  #  ", " # # ", "#   #", "#   #",
+        ],
+        'y' => [
+            "#   #", "#   #", " # # ", "  #  ", "  #  ", "  #  ", "  #  ",
+        ],
+        'z' => [
+            "#####", "    #", "   # ", "  #  ", " #   ", "#    ", "#####",
+        ],
+        '0' => [
+            " ### ", "#   #", "#  ##", "# # #", "##  #", "#   #", " ### ",
+        ],
+        '1' => [
+            "  #  ", " ##  ", "# #  ", "  #  ", "  #  ", "  #  ", "#####",
+        ],
+        '2' => [
+            " ### ", "#   #", "    #", "   # ", "  #  ", " #   ", "#####",
+        ],
+        '3' => [
+            "#### ", "    #", "    #", " ### ", "    #", "    #", "#### ",
+        ],
+        '4' => [
+            "#   #", "#   #", "#   #", "#####", "    #", "    #", "    #",
+        ],
+        '5' => [
+            "#####", "#    ", "#    ", "#### ", "    #", "    #", "#### ",
+        ],
+        '6' => [
+            " ####", "#    ", "#    ", "#### ", "#   #", "#   #", " ### ",
+        ],
+        '7' => [
+            "#####", "    #", "   # ", "  #  ", " #   ", " #   ", " #   ",
+        ],
+        '8' => [
+            " ### ", "#   #", "#   #", " ### ", "#   #", "#   #", " ### ",
+        ],
+        '9' => [
+            " ### ", "#   #", "#   #", " ####", "    #", "    #", " ### ",
+        ],
+        _ => [
+            "#####", "#   #", "   # ", "  #  ", "     ", "  #  ", "  #  ",
+        ],
+    }
+}
+
 fn require_supported_image_filter(
     dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
 ) -> GraphicsResult<()> {
@@ -4180,6 +4392,39 @@ mod tests {
                 a: 255,
             }
         );
+    }
+
+    #[test]
+    fn text_rasterizer_should_draw_generated_text_fixture() {
+        let decoded = generated_fixture_content("text-page.pdf");
+        let list = build_text_display_list(
+            tokenize_content(PdfBytes::new(&decoded)),
+            &test_font_resources(),
+            DisplayListOptions::default(),
+        )
+        .expect("generated text display list");
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 300.0,
+                    max_y: 160.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            300,
+        )
+        .expect("text fixture transform");
+        let mut device = transform.create_device(Rgba::WHITE).expect("raster device");
+
+        rasterize_text(&list, &mut device, transform).expect("text should rasterize");
+
+        assert!(device
+            .pixels()
+            .chunks_exact(4)
+            .any(|pixel| pixel != [255, 255, 255, 255]));
     }
 
     #[test]

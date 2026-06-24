@@ -11,9 +11,10 @@ use pdfrust_object::{
     ObjectNumber, ObjectValue, PageBox, PageMetadata as ObjectPageMetadata, PageTree, Reference,
 };
 use pdfrust_render::{
-    build_image_display_list, build_path_display_list, rasterize_images, rasterize_paths,
-    DisplayListOptions, GraphicsError, GraphicsErrorKind, ImageResources, PageGeometry,
-    PageRotation, PageTransform, PathBounds, PathRasterOptions, RasterError,
+    build_image_display_list, build_path_display_list, build_text_display_list, rasterize_images,
+    rasterize_paths, rasterize_text, DisplayListOptions, FontDescriptor, FontResources,
+    GraphicsError, GraphicsErrorKind, ImageResources, PageGeometry, PageRotation, PageTransform,
+    PathBounds, PathRasterOptions, RasterError,
 };
 use pdfrust_syntax::{PdfBytes, PdfName, PdfPrimitive};
 use pdfrust_thumbnail::{
@@ -123,6 +124,14 @@ fn render_bytes(bytes: &[u8], options: &ThumbnailOptions) -> Result<Thumbnail, T
     )
     .map_err(map_graphics_error)?;
     rasterize_images(&image_list, &mut raster, transform).map_err(map_raster_error)?;
+    let font_resources = page_font_resources(&document, page)?;
+    let text_list = build_text_display_list(
+        tokenize_content(PdfBytes::new(&content)),
+        &font_resources,
+        DisplayListOptions::default(),
+    )
+    .map_err(map_graphics_error)?;
+    rasterize_text(&text_list, &mut raster, transform).map_err(map_raster_error)?;
     let dimensions = raster.dimensions();
     Thumbnail::rgba(dimensions.width, dimensions.height, raster.into_pixels())
 }
@@ -176,6 +185,63 @@ fn page_image_resources(
     };
     ImageResources::from_xobject_dictionary(xobjects, document, DisplayListOptions::default())
         .map_err(map_graphics_error)
+}
+
+fn page_font_resources(
+    document: &ClassicDocument<'_>,
+    page: &ObjectPageMetadata,
+) -> Result<FontResources, ThumbnailError> {
+    let object = document
+        .objects
+        .get(page.id)
+        .ok_or(ThumbnailError::Malformed)?;
+    let dictionary = object_dictionary(&object.value)?;
+    let Some(resources) = dictionary_value(dictionary, b"Resources") else {
+        return Ok(FontResources::empty());
+    };
+    let resource_dictionary = match resources {
+        PdfPrimitive::Dictionary(dictionary) => dictionary.as_slice(),
+        _ => return Ok(FontResources::empty()),
+    };
+    let Some(PdfPrimitive::Dictionary(fonts)) = dictionary_value(resource_dictionary, b"Font")
+    else {
+        return Ok(FontResources::empty());
+    };
+    let mut descriptors = Vec::new();
+    for (name, value) in fonts {
+        let base_font = match value {
+            PdfPrimitive::Reference(reference) => {
+                let object_number =
+                    ObjectNumber::new(reference.object).map_err(|_| ThumbnailError::Malformed)?;
+                let reference = Reference::new(ObjectId::new(
+                    object_number,
+                    GenerationNumber::new(reference.generation),
+                ));
+                document
+                    .objects
+                    .get(reference.id)
+                    .and_then(|object| font_base_name(&object.value))
+            }
+            PdfPrimitive::Dictionary(dictionary) => dictionary_value(dictionary, b"BaseFont")
+                .and_then(|value| match value {
+                    PdfPrimitive::Name(name) => Some(name.as_bytes().to_vec()),
+                    _ => None,
+                }),
+            _ => None,
+        };
+        descriptors.push(FontDescriptor::new(name.as_bytes().to_vec(), base_font));
+    }
+    Ok(FontResources::new(descriptors))
+}
+
+fn font_base_name(value: &ObjectValue<'_>) -> Option<Vec<u8>> {
+    let ObjectValue::Primitive(PdfPrimitive::Dictionary(dictionary)) = value else {
+        return None;
+    };
+    match dictionary_value(dictionary, b"BaseFont") {
+        Some(PdfPrimitive::Name(name)) => Some(name.as_bytes().to_vec()),
+        _ => None,
+    }
 }
 
 fn decode_contents(
@@ -359,6 +425,27 @@ mod tests {
         assert_eq!(rgba_at(&thumbnail, 44, 44), [255, 0, 0, 255]);
         assert_eq!(rgba_at(&thumbnail, 76, 44), [0, 255, 0, 255]);
         assert_eq!(rgba_at(&thumbnail, 44, 76), [0, 0, 255, 255]);
+    }
+
+    #[test]
+    fn native_backend_should_render_generated_text_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/text-page.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 300,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated text fixture should render through native backend");
+
+        assert_eq!(thumbnail.width, 300);
+        assert_eq!(thumbnail.height, 160);
+        assert!(thumbnail
+            .bytes
+            .chunks_exact(4)
+            .any(|pixel| pixel != [255, 255, 255, 255]));
     }
 
     #[test]
