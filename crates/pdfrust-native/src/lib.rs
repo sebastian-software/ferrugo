@@ -42,6 +42,9 @@ const BUCKET_RENDERER_UNSUPPORTED: &str = "native.unsupported";
 const BUCKET_TEXT_CMAP_TOUNICODE: &str = "text.cmap-tounicode";
 const BUCKET_TEXT_FONT_PROGRAM: &str = "text.font-program";
 const BUCKET_TEXT_GLYPH_OUTLINE: &str = "text.glyph-outline";
+const ANNOTATION_OPAQUE_GRAPHICS_STATE: &[u8] = b"AnnotOpaque";
+const ANNOTATION_UNDERLINE_GRAPHICS_STATE: &[u8] = b"AnnotUnderline";
+const MAX_ANNOTATION_FALLBACK_QUADS: usize = 32;
 
 /// Rust-native thumbnail backend.
 ///
@@ -354,7 +357,7 @@ fn render_bytes(bytes: &[u8], options: &ThumbnailOptions) -> Result<Thumbnail, T
         rasterize_images(&image_list, &mut raster, transform).map_err(map_raster_error)?;
         rasterize_text(&text_list, &mut raster, transform).map_err(map_raster_error)?;
     }
-    let (annotation_forms, annotation_content) =
+    let (annotation_forms, annotation_content, annotation_fallback_content) =
         page_annotation_appearance_resources(&document, page)?;
     if !annotation_content.is_empty() {
         let annotation_list = build_form_display_list_with_graphics_resources(
@@ -363,6 +366,25 @@ fn render_bytes(bytes: &[u8], options: &ThumbnailOptions) -> Result<Thumbnail, T
             &ext_graphics_states,
             &shadings,
             &patterns,
+            DisplayListOptions::default(),
+        )
+        .map_err(map_graphics_error)?;
+        rasterize_paths_into(
+            &annotation_list,
+            &mut raster,
+            transform,
+            PathRasterOptions::default(),
+        )
+        .map_err(map_raster_error)?;
+    }
+    if !annotation_fallback_content.is_empty() {
+        let annotation_ext_graphics_states =
+            annotation_fallback_ext_graphics_states().map_err(map_graphics_error)?;
+        let annotation_list = build_path_display_list_with_graphics_resources(
+            tokenize_content(PdfBytes::new(&annotation_fallback_content)),
+            &annotation_ext_graphics_states,
+            &ShadingResources::empty(),
+            &TilingPatternResources::empty(),
             DisplayListOptions::default(),
         )
         .map_err(map_graphics_error)?;
@@ -814,25 +836,27 @@ fn page_form_resources(
 fn page_annotation_appearance_resources(
     document: &ClassicDocument<'_>,
     page: &ObjectPageMetadata,
-) -> Result<(FormResources, Vec<u8>), ThumbnailError> {
+) -> Result<(FormResources, Vec<u8>, Vec<u8>), ThumbnailError> {
     let object = document
         .objects
         .get(page.id)
         .ok_or(ThumbnailError::Malformed)?;
     let dictionary = object_dictionary(&object.value)?;
     let Some(annots) = dictionary_value(dictionary, b"Annots") else {
-        return Ok((FormResources::empty(), Vec::new()));
+        return Ok((FormResources::empty(), Vec::new(), Vec::new()));
     };
     let annotations = annotation_array(document, annots)?;
     let mut names = Vec::new();
     let mut references = Vec::new();
     let mut rects = Vec::new();
+    let mut fallback_content = Vec::new();
 
     for annotation in annotations {
         let Some(dictionary) = annotation_dictionary(document, annotation)? else {
             continue;
         };
         let Some(reference) = normal_appearance_reference(dictionary) else {
+            append_annotation_fallback(&mut fallback_content, dictionary);
             continue;
         };
         let Some(rect) = annotation_rect(dictionary) else {
@@ -848,7 +872,7 @@ fn page_annotation_appearance_resources(
     }
 
     if names.is_empty() {
-        return Ok((FormResources::empty(), Vec::new()));
+        return Ok((FormResources::empty(), Vec::new(), fallback_content));
     }
 
     let xobjects = names
@@ -870,7 +894,7 @@ fn page_annotation_appearance_resources(
         };
         append_annotation_form_invocation(&mut content, name, rect, form.bbox);
     }
-    Ok((resources, content))
+    Ok((resources, content, fallback_content))
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -1288,6 +1312,409 @@ fn annotation_rect(annotation: &[(PdfName<'_>, PdfPrimitive<'_>)]) -> Option<Pat
         max_x: left.max(right),
         max_y: bottom.max(top),
     })
+}
+
+fn append_annotation_fallback(
+    content: &mut Vec<u8>,
+    annotation: &[(PdfName<'_>, PdfPrimitive<'_>)],
+) {
+    let Some(PdfPrimitive::Name(subtype)) = dictionary_value(annotation, b"Subtype") else {
+        return;
+    };
+    let Some(rect) = annotation_rect(annotation).filter(valid_annotation_bounds) else {
+        return;
+    };
+    match subtype.as_bytes() {
+        b"Highlight" => append_highlight_annotation_fallback(content, annotation, rect),
+        b"Underline" => append_underline_annotation_fallback(content, annotation, rect),
+        b"Square" => append_square_annotation_fallback(content, annotation, rect),
+        b"Circle" => append_circle_annotation_fallback(content, annotation, rect),
+        b"Text" => append_text_note_annotation_fallback(content, annotation, rect),
+        b"Link" => {}
+        _ => {}
+    }
+}
+
+fn valid_annotation_bounds(bounds: &PathBounds) -> bool {
+    bounds.max_x > bounds.min_x && bounds.max_y > bounds.min_y
+}
+
+fn append_highlight_annotation_fallback(
+    content: &mut Vec<u8>,
+    annotation: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    rect: PathBounds,
+) {
+    let color = annotation_color(annotation, [1.0, 1.0, 0.0]);
+    append_annotation_graphics_state(content, ANNOTATION_OPAQUE_GRAPHICS_STATE, color, true);
+    let quads = annotation_quad_points(annotation);
+    if quads.is_empty() {
+        append_fill_rect(content, rect);
+    } else {
+        for quad in quads {
+            append_fill_quad(content, quad);
+        }
+    }
+    content.extend_from_slice(b"Q\n");
+}
+
+fn append_underline_annotation_fallback(
+    content: &mut Vec<u8>,
+    annotation: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    rect: PathBounds,
+) {
+    let color = annotation_color(annotation, [1.0, 0.0, 0.0]);
+    append_annotation_graphics_state(content, ANNOTATION_UNDERLINE_GRAPHICS_STATE, color, false);
+    let quads = annotation_quad_points(annotation);
+    if quads.is_empty() {
+        append_stroked_line(
+            content,
+            rect.min_x,
+            rect.min_y + 1.0,
+            rect.max_x,
+            rect.min_y + 1.0,
+        );
+    } else {
+        for quad in quads {
+            let min_x = quad[0].min(quad[2]).min(quad[4]).min(quad[6]);
+            let max_x = quad[0].max(quad[2]).max(quad[4]).max(quad[6]);
+            let min_y = quad[1].min(quad[3]).min(quad[5]).min(quad[7]);
+            append_stroked_line(content, min_x, min_y + 1.0, max_x, min_y + 1.0);
+        }
+    }
+    content.extend_from_slice(b"Q\n");
+}
+
+fn append_square_annotation_fallback(
+    content: &mut Vec<u8>,
+    annotation: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    rect: PathBounds,
+) {
+    let color = annotation_color(annotation, [0.85, 0.0, 0.0]);
+    append_annotation_graphics_state(content, ANNOTATION_OPAQUE_GRAPHICS_STATE, color, false);
+    content.extend_from_slice(
+        format!(
+            "{} {} {} {} re S Q\n",
+            format_pdf_number(rect.min_x),
+            format_pdf_number(rect.min_y),
+            format_pdf_number(rect.max_x - rect.min_x),
+            format_pdf_number(rect.max_y - rect.min_y)
+        )
+        .as_bytes(),
+    );
+}
+
+fn append_circle_annotation_fallback(
+    content: &mut Vec<u8>,
+    annotation: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    rect: PathBounds,
+) {
+    let color = annotation_color(annotation, [0.85, 0.0, 0.0]);
+    let center_x = (rect.min_x + rect.max_x) * 0.5;
+    let center_y = (rect.min_y + rect.max_y) * 0.5;
+    let radius_x = (rect.max_x - rect.min_x) * 0.5;
+    let radius_y = (rect.max_y - rect.min_y) * 0.5;
+
+    append_annotation_graphics_state(content, ANNOTATION_OPAQUE_GRAPHICS_STATE, color, false);
+    append_ellipse_polyline(content, center_x, center_y, radius_x, radius_y);
+    content.extend_from_slice(b"S Q\n");
+}
+
+fn append_text_note_annotation_fallback(
+    content: &mut Vec<u8>,
+    annotation: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    rect: PathBounds,
+) {
+    let icon = text_note_icon_bounds(rect);
+    let body = text_note_body_bounds(icon);
+    let color = annotation_color(annotation, [1.0, 0.85, 0.0]);
+    append_annotation_graphics_state(content, ANNOTATION_OPAQUE_GRAPHICS_STATE, color, true);
+    append_fill_rect(content, body);
+    append_text_note_tail(content, icon);
+    content.extend_from_slice(b"Q\n");
+    append_text_note_icon_rules(content, body);
+    append_annotation_graphics_state(
+        content,
+        ANNOTATION_OPAQUE_GRAPHICS_STATE,
+        [0.0, 0.0, 0.0],
+        true,
+    );
+    append_text_note_icon_border(content, icon, body);
+    content.extend_from_slice(b"Q\n");
+}
+
+fn text_note_icon_bounds(rect: PathBounds) -> PathBounds {
+    let size = (rect.max_x - rect.min_x)
+        .min(rect.max_y - rect.min_y)
+        .min(20.0);
+    PathBounds {
+        min_x: rect.min_x,
+        min_y: rect.min_y,
+        max_x: rect.min_x + size,
+        max_y: rect.min_y + size,
+    }
+}
+
+fn text_note_body_bounds(icon: PathBounds) -> PathBounds {
+    let size = icon.max_x - icon.min_x;
+    PathBounds {
+        min_x: icon.min_x,
+        min_y: icon.min_y + size * 0.25,
+        max_x: icon.max_x,
+        max_y: icon.max_y,
+    }
+}
+
+fn append_text_note_tail(content: &mut Vec<u8>, icon: PathBounds) {
+    let size = icon.max_x - icon.min_x;
+    let top_y = icon.min_y + size * 0.25;
+    content.extend_from_slice(
+        format!(
+            "{} {} m {} {} l {} {} l {} {} l h f ",
+            format_pdf_number(icon.min_x + size * 0.25),
+            format_pdf_number(top_y),
+            format_pdf_number(icon.min_x + size * 0.5),
+            format_pdf_number(top_y),
+            format_pdf_number(icon.min_x + size * 0.45),
+            format_pdf_number(icon.min_y),
+            format_pdf_number(icon.min_x + size * 0.35),
+            format_pdf_number(icon.min_y)
+        )
+        .as_bytes(),
+    );
+}
+
+fn append_text_note_icon_rules(content: &mut Vec<u8>, icon: PathBounds) {
+    let start_x = icon.min_x + 3.0;
+    let end_x = icon.max_x - 3.0;
+    for (offset, color) in [
+        (3.0, [0.75, 0.75, 0.0]),
+        (7.0, [0.5, 0.5, 0.0]),
+        (11.0, [0.25, 0.25, 0.0]),
+    ] {
+        append_annotation_graphics_state(content, ANNOTATION_OPAQUE_GRAPHICS_STATE, color, false);
+        content.extend_from_slice(b"1 w ");
+        append_stroked_line(
+            content,
+            start_x,
+            icon.max_y - offset,
+            end_x,
+            icon.max_y - offset,
+        );
+        content.extend_from_slice(b"Q\n");
+    }
+}
+
+fn append_text_note_icon_border(content: &mut Vec<u8>, icon: PathBounds, body: PathBounds) {
+    let size = icon.max_x - icon.min_x;
+    append_fill_rect(
+        content,
+        PathBounds {
+            min_x: body.min_x,
+            min_y: body.max_y - 1.0,
+            max_x: body.max_x,
+            max_y: body.max_y,
+        },
+    );
+    append_fill_rect(
+        content,
+        PathBounds {
+            min_x: body.min_x,
+            min_y: body.min_y,
+            max_x: body.min_x + 1.0,
+            max_y: body.max_y,
+        },
+    );
+    append_fill_rect(
+        content,
+        PathBounds {
+            min_x: body.max_x - 1.0,
+            min_y: body.min_y,
+            max_x: body.max_x,
+            max_y: body.max_y,
+        },
+    );
+    append_fill_rect(
+        content,
+        PathBounds {
+            min_x: body.min_x,
+            min_y: body.min_y,
+            max_x: body.min_x + size * 0.25,
+            max_y: body.min_y + 1.0,
+        },
+    );
+    append_fill_rect(
+        content,
+        PathBounds {
+            min_x: body.min_x + size * 0.5,
+            min_y: body.min_y,
+            max_x: body.max_x,
+            max_y: body.min_y + 1.0,
+        },
+    );
+    append_fill_rect(
+        content,
+        PathBounds {
+            min_x: icon.min_x + size * 0.45,
+            min_y: icon.min_y,
+            max_x: icon.min_x + size * 0.5,
+            max_y: body.min_y,
+        },
+    );
+}
+
+fn append_annotation_graphics_state(
+    content: &mut Vec<u8>,
+    state_name: &[u8],
+    color: [f64; 3],
+    fill: bool,
+) {
+    let operator = if fill { "rg" } else { "RG" };
+    content.extend_from_slice(
+        format!(
+            "q /{} gs {} {} {} {} 1.5 w ",
+            String::from_utf8_lossy(state_name),
+            format_pdf_number(color[0]),
+            format_pdf_number(color[1]),
+            format_pdf_number(color[2]),
+            operator
+        )
+        .as_bytes(),
+    );
+}
+
+fn append_fill_rect(content: &mut Vec<u8>, rect: PathBounds) {
+    content.extend_from_slice(
+        format!(
+            "{} {} {} {} re f ",
+            format_pdf_number(rect.min_x),
+            format_pdf_number(rect.min_y),
+            format_pdf_number(rect.max_x - rect.min_x),
+            format_pdf_number(rect.max_y - rect.min_y)
+        )
+        .as_bytes(),
+    );
+}
+
+fn append_fill_quad(content: &mut Vec<u8>, quad: [f64; 8]) {
+    content.extend_from_slice(
+        format!(
+            "{} {} m {} {} l {} {} l {} {} l h f ",
+            format_pdf_number(quad[0]),
+            format_pdf_number(quad[1]),
+            format_pdf_number(quad[2]),
+            format_pdf_number(quad[3]),
+            format_pdf_number(quad[6]),
+            format_pdf_number(quad[7]),
+            format_pdf_number(quad[4]),
+            format_pdf_number(quad[5])
+        )
+        .as_bytes(),
+    );
+}
+
+fn append_stroked_line(content: &mut Vec<u8>, start_x: f64, y: f64, end_x: f64, end_y: f64) {
+    content.extend_from_slice(
+        format!(
+            "{} {} m {} {} l S ",
+            format_pdf_number(start_x),
+            format_pdf_number(y),
+            format_pdf_number(end_x),
+            format_pdf_number(end_y)
+        )
+        .as_bytes(),
+    );
+}
+
+fn append_ellipse_polyline(
+    content: &mut Vec<u8>,
+    center_x: f64,
+    center_y: f64,
+    radius_x: f64,
+    radius_y: f64,
+) {
+    const SEGMENTS: usize = 12;
+    for segment in 0..SEGMENTS {
+        let angle = std::f64::consts::TAU * segment as f64 / SEGMENTS as f64;
+        let x = center_x + radius_x * angle.cos();
+        let y = center_y + radius_y * angle.sin();
+        let operator = if segment == 0 { "m" } else { "l" };
+        content.extend_from_slice(
+            format!(
+                "{} {} {} ",
+                format_pdf_number(x),
+                format_pdf_number(y),
+                operator
+            )
+            .as_bytes(),
+        );
+    }
+    content.extend_from_slice(b"h ");
+}
+
+fn annotation_quad_points(annotation: &[(PdfName<'_>, PdfPrimitive<'_>)]) -> Vec<[f64; 8]> {
+    let Some(PdfPrimitive::Array(values)) = dictionary_value(annotation, b"QuadPoints") else {
+        return Vec::new();
+    };
+    values
+        .chunks_exact(8)
+        .take(MAX_ANNOTATION_FALLBACK_QUADS)
+        .filter_map(|chunk| {
+            let mut quad = [0.0; 8];
+            for (index, value) in chunk.iter().enumerate() {
+                quad[index] = primitive_number(value)?;
+            }
+            Some(quad)
+        })
+        .collect()
+}
+
+fn annotation_color(annotation: &[(PdfName<'_>, PdfPrimitive<'_>)], default: [f64; 3]) -> [f64; 3] {
+    let Some(PdfPrimitive::Array(values)) = dictionary_value(annotation, b"C") else {
+        return default;
+    };
+    let [red, green, blue] = values.as_slice() else {
+        return default;
+    };
+    [
+        primitive_number(red).map_or(default[0], clamp_pdf_color),
+        primitive_number(green).map_or(default[1], clamp_pdf_color),
+        primitive_number(blue).map_or(default[2], clamp_pdf_color),
+    ]
+}
+
+fn clamp_pdf_color(value: f64) -> f64 {
+    value.clamp(0.0, 1.0)
+}
+
+fn annotation_fallback_ext_graphics_states() -> Result<ExtGraphicsStateResources, GraphicsError> {
+    ExtGraphicsStateResources::from_extgstate_dictionary(&[
+        (
+            PdfName::new(ANNOTATION_OPAQUE_GRAPHICS_STATE),
+            PdfPrimitive::Dictionary(vec![
+                (
+                    PdfName::new(b"ca"),
+                    PdfPrimitive::Number(PdfNumber::Real(1.0)),
+                ),
+                (
+                    PdfName::new(b"CA"),
+                    PdfPrimitive::Number(PdfNumber::Real(1.0)),
+                ),
+            ]),
+        ),
+        (
+            PdfName::new(ANNOTATION_UNDERLINE_GRAPHICS_STATE),
+            PdfPrimitive::Dictionary(vec![
+                (
+                    PdfName::new(b"ca"),
+                    PdfPrimitive::Number(PdfNumber::Real(1.0)),
+                ),
+                (
+                    PdfName::new(b"CA"),
+                    PdfPrimitive::Number(PdfNumber::Real(0.5)),
+                ),
+            ]),
+        ),
+    ])
 }
 
 fn document_object_exists(
@@ -2272,6 +2699,91 @@ mod tests {
         assert_eq!(thumbnail.height, 120);
         assert_eq!(rgba_at(&thumbnail, 15, 95), [0, 0, 0, 255]);
         assert_eq!(rgba_at(&thumbnail, 70, 45), [255, 255, 255, 255]);
+    }
+
+    #[test]
+    fn native_backend_should_synthesize_highlight_annotation_without_appearance() {
+        let bytes = include_bytes!(
+            "../../../fixtures/generated/highlight-annotation-without-appearance.pdf"
+        );
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 120,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated highlight fallback fixture should render");
+
+        assert_eq!(thumbnail.width, 120);
+        assert_eq!(thumbnail.height, 120);
+        assert_eq!(rgba_at(&thumbnail, 30, 52), [255, 255, 0, 255]);
+        assert_eq!(rgba_at(&thumbnail, 15, 95), [0, 0, 0, 255]);
+        assert_eq!(rgba_at(&thumbnail, 70, 45), [255, 255, 0, 255]);
+    }
+
+    #[test]
+    fn native_backend_should_synthesize_markup_annotations_without_appearance() {
+        let bytes =
+            include_bytes!("../../../fixtures/generated/markup-annotations-without-appearance.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 120,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated markup fallback fixture should render");
+
+        assert_eq!(thumbnail.width, 120);
+        assert_eq!(thumbnail.height, 120);
+        assert_eq!(rgba_at(&thumbnail, 30, 38), [255, 128, 128, 255]);
+        assert_eq!(rgba_at(&thumbnail, 15, 85), [0, 115, 255, 255]);
+        assert_eq!(rgba_at(&thumbnail, 109, 80), [0, 140, 0, 255]);
+    }
+
+    #[test]
+    fn native_backend_should_keep_link_annotation_without_appearance_invisible() {
+        let bytes =
+            include_bytes!("../../../fixtures/generated/link-annotation-without-appearance.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 120,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated link fallback control fixture should render");
+
+        assert_eq!(thumbnail.width, 120);
+        assert_eq!(thumbnail.height, 120);
+        assert_eq!(rgba_at(&thumbnail, 70, 50), [255, 255, 255, 255]);
+        assert_eq!(rgba_at(&thumbnail, 15, 95), [0, 0, 0, 255]);
+    }
+
+    #[test]
+    fn native_backend_should_synthesize_text_note_annotation_without_appearance() {
+        let bytes = include_bytes!(
+            "../../../fixtures/generated/text-note-annotation-without-appearance.pdf"
+        );
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 120,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated text note fallback fixture should render");
+
+        assert_eq!(thumbnail.width, 120);
+        assert_eq!(thumbnail.height, 120);
+        assert_eq!(rgba_at(&thumbnail, 90, 29), [255, 255, 0, 255]);
+        assert_eq!(rgba_at(&thumbnail, 80, 29), [0, 0, 0, 255]);
+        assert_eq!(rgba_at(&thumbnail, 105, 29), [255, 255, 255, 255]);
     }
 
     #[test]

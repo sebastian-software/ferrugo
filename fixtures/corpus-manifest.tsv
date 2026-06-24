@@ -19,6 +19,7 @@ fixtures/generated/encoding-differences.pdf	office-export	scripts/generate_fixtu
 fixtures/generated/encrypted-placeholder.pdf	mixed-layout	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	encryption,security	Generated encrypted-trailer placeholder fixture.
 fixtures/generated/form-xobject.pdf	presentation	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	form-xobject,vector	Generated path-only Form XObject fixture.
 fixtures/generated/highlight-annotation-appearance.pdf	mixed-layout	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	annotation,highlight,appearance	Generated text-markup highlight appearance fixture.
+fixtures/generated/highlight-annotation-without-appearance.pdf	mixed-layout	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	annotation,highlight,missing-appearance	Generated text-markup highlight fallback fixture without appearance stream.
 fixtures/generated/hybrid-reference.pdf	mixed-layout	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	xref,hybrid-reference	Generated hybrid classic xref plus xref stream fixture.
 fixtures/generated/image-mask-logo.pdf	scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,image-mask,flate,stencil	Generated Flate-compressed ImageMask logo fixture.
 fixtures/generated/image-mask-monochrome-icon.pdf	scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,image-mask,icon,stencil	Generated monochrome ImageMask icon fixture.
@@ -30,7 +31,9 @@ fixtures/generated/inline-image.pdf	browser-print	scripts/generate_fixtures.py	M
 fixtures/generated/line-caps.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	vector,stroke,line-cap	Generated line-cap stroke fixture.
 fixtures/generated/line-joins.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	vector,stroke,line-join	Generated line-join stroke fixture.
 fixtures/generated/link-annotation-appearance.pdf	mixed-layout	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	annotation,link,appearance	Generated link annotation appearance fixture.
+fixtures/generated/link-annotation-without-appearance.pdf	mixed-layout	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	annotation,link,missing-appearance	Generated link annotation fixture without visual fallback.
 fixtures/generated/malformed-xref-offset-drift.pdf	mixed-layout	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	xref,recovery	Generated malformed xref offset-drift fixture.
+fixtures/generated/markup-annotations-without-appearance.pdf	mixed-layout	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	annotation,underline,square,circle,missing-appearance	Generated markup annotation fallback fixture without appearance streams.
 fixtures/generated/mesh-shading-unsupported.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	shading,mesh,unsupported	Generated unsupported mesh shading fixture.
 fixtures/generated/mixed-text-image.pdf	mixed-layout	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,image,vector,z-order	Generated mixed handout-style page with image, vector marker, and text.
 fixtures/generated/multi-page-report.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	2	text,table,vector,multipage,report	Generated two-page report with repeated headers, table lines, and text.
@@ -48,6 +51,7 @@ fixtures/generated/scanned-page.pdf	scan	scripts/generate_fixtures.py	MIT OR Apa
 fixtures/generated/shaped-rtl-text.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,type0,cid,rtl,prepositioned	Generated pre-positioned RTL Type0 CID text fixture.
 fixtures/generated/soft-mask-image.pdf	scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,soft-mask,alpha	Generated soft-mask image alpha fixture.
 fixtures/generated/text-page.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,type1	Generated simple text page fixture.
+fixtures/generated/text-note-annotation-without-appearance.pdf	mixed-layout	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	annotation,text-note,missing-appearance	Generated text note annotation fallback fixture without appearance stream.
 fixtures/generated/text-spacing.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,spacing,invisible-text	Generated text spacing and invisible render-mode fixture.
 fixtures/generated/tiling-pattern.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	pattern,tiling	Generated colored tiling pattern fixture.
 fixtures/generated/tounicode-text.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,tounicode	Generated ToUnicode character-code mapping fixture.

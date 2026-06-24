@@ -1115,6 +1115,102 @@ def highlight_annotation_appearance_pdf() -> bytes:
     return pdf.render(catalog)
 
 
+def highlight_annotation_without_appearance_pdf() -> bytes:
+    pdf = Pdf()
+    content = b"0 0 0 rg 10 10 20 20 re f"
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 120 120] "
+        f"/Contents {contents} 0 R /Annots [4 0 R] >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    annotation = pdf.add(
+        "<< /Type /Annot /Subtype /Highlight /Rect [20 60 100 75] "
+        "/QuadPoints [20 75 100 75 20 60 100 60] /C [1 1 0] >>"
+    )
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert annotation == 4
+    return pdf.render(catalog)
+
+
+def markup_annotations_without_appearance_pdf() -> bytes:
+    pdf = Pdf()
+    content = b""
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 120 120] "
+        f"/Contents {contents} 0 R /Annots [4 0 R 5 0 R 6 0 R] >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    underline = pdf.add(
+        "<< /Type /Annot /Subtype /Underline /Rect [15 80 65 92] "
+        "/QuadPoints [15 92 65 92 15 80 65 80] /C [1 0 0] >>"
+    )
+    square = pdf.add(
+        "<< /Type /Annot /Subtype /Square /Rect [15 20 45 50] /C [0 0.45 1] >>"
+    )
+    circle = pdf.add(
+        "<< /Type /Annot /Subtype /Circle /Rect [70 20 110 60] /C [0 0.55 0] >>"
+    )
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert underline == 4
+    assert square == 5
+    assert circle == 6
+    return pdf.render(catalog)
+
+
+def link_annotation_without_appearance_pdf() -> bytes:
+    pdf = Pdf()
+    content = b"0 0 0 rg 10 10 20 20 re f"
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 120 120] "
+        f"/Contents {contents} 0 R /Annots [4 0 R] >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    annotation = pdf.add(
+        "<< /Type /Annot /Subtype /Link /Rect [60 60 100 80] "
+        "/Border [0 0 0] /A << /S /URI /URI (https://example.invalid/) >> >>"
+    )
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert annotation == 4
+    return pdf.render(catalog)
+
+
+def text_note_annotation_without_appearance_pdf() -> bytes:
+    pdf = Pdf()
+    content = b""
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 120 120] "
+        f"/Contents {contents} 0 R /Annots [4 0 R] >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    annotation = pdf.add(
+        "<< /Type /Annot /Subtype /Text /Rect [80 80 102 102] "
+        "/C [1 1 0] /Contents (Review note) >>"
+    )
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert annotation == 4
+    return pdf.render(catalog)
+
+
 def widget_annotation_appearance_pdf() -> bytes:
     pdf = Pdf()
     content = b""
@@ -2061,6 +2157,22 @@ def main() -> None:
     write("annotation-missing-appearance.pdf", annotation_missing_appearance_pdf())
     write("link-annotation-appearance.pdf", link_annotation_appearance_pdf())
     write("highlight-annotation-appearance.pdf", highlight_annotation_appearance_pdf())
+    write(
+        "highlight-annotation-without-appearance.pdf",
+        highlight_annotation_without_appearance_pdf(),
+    )
+    write(
+        "markup-annotations-without-appearance.pdf",
+        markup_annotations_without_appearance_pdf(),
+    )
+    write(
+        "link-annotation-without-appearance.pdf",
+        link_annotation_without_appearance_pdf(),
+    )
+    write(
+        "text-note-annotation-without-appearance.pdf",
+        text_note_annotation_without_appearance_pdf(),
+    )
     write("widget-annotation-appearance.pdf", widget_annotation_appearance_pdf())
     write("acroform-text-field.pdf", acroform_text_field_pdf())
     write("acroform-checkbox.pdf", acroform_checkbox_pdf())
