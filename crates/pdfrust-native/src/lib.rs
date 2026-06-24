@@ -1539,6 +1539,24 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_render_generated_output_intent_rgb_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/output-intent-rgb.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 120,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated OutputIntent RGB fixture should render through native backend");
+
+        assert_eq!(thumbnail.width, 120);
+        assert_eq!(thumbnail.height, 90);
+        assert_eq!(rgba_at(&thumbnail, 40, 40), [26, 115, 217, 255]);
+    }
+
+    #[test]
     fn native_backend_should_render_generated_indexed_image_fixture() {
         let bytes = include_bytes!("../../../fixtures/generated/indexed-image.pdf");
         let thumbnail = ThumbnailBackend::render(

@@ -201,6 +201,35 @@ def cmyk_image_pdf() -> bytes:
     return pdf.render(catalog)
 
 
+def output_intent_rgb_pdf() -> bytes:
+    pdf = Pdf()
+    content = b"0.1 0.45 0.85 rg 20 20 80 50 re f"
+    profile = b"pdfrust synthetic profile placeholder"
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 120 90] "
+        f"/Resources << >> /Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    profile_object = pdf.add(
+        b"<< /N 3 /Length "
+        + str(len(profile)).encode("ascii")
+        + b" >>\nstream\n"
+        + profile
+        + b"\nendstream"
+    )
+    catalog = pdf.add(
+        f"<< /Type /Catalog /Pages {pages} 0 R /OutputIntents [<< /Type /OutputIntent "
+        f"/S /GTS_PDFA1 /OutputConditionIdentifier (sRGB synthetic) /DestOutputProfile {profile_object} 0 R >>] >>"
+    )
+    assert profile_object == 4
+    return pdf.render(catalog)
+
+
 def indexed_image_pdf() -> bytes:
     pdf = Pdf()
     content = b"q 80 0 0 80 20 20 cm /Im1 Do Q"
@@ -1609,6 +1638,7 @@ def main() -> None:
     write("form-xobject.pdf", form_xobject_pdf())
     write("image-xobject.pdf", image_xobject_pdf())
     write("cmyk-image.pdf", cmyk_image_pdf())
+    write("output-intent-rgb.pdf", output_intent_rgb_pdf())
     write("indexed-image.pdf", indexed_image_pdf())
     write("dct-image.pdf", dct_image_pdf())
     write("predictor-image.pdf", predictor_image_pdf())

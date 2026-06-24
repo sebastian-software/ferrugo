@@ -31,6 +31,7 @@ The initial seed set covers:
 - image placement through an inline image stream
 - image placement through an Image XObject
 - CMYK and Indexed image color spaces
+- DeviceRGB rendering with catalog OutputIntent metadata
 - DCT/JPEG Image XObject decoding
 - Flate image PNG predictor decoding
 - image soft-mask alpha compositing
