@@ -1,6 +1,6 @@
 # 0065: Browser Print Document Coverage
 
-Status: todo
+Status: done
 Phase: 10
 Size: medium
 Depends on: 0064
@@ -45,4 +45,18 @@ Cover PDFs produced by browser print and save-to-PDF workflows.
 
 ## Completion Notes
 
-Empty until done.
+- Used the committed `browser-print` corpus family in
+  `fixtures/corpus-manifest.tsv` as deterministic, license-safe browser-print
+  proxies for page geometry, vector paths, clipping, and inline images.
+- Added `docs/reports/browser-print-coverage-2026-06-24.md`.
+- Browser-print corpus summary at `--max-edge 120` reported 4 total fixtures,
+  4 native renders, 1.000 native pass rate, 0 fallbacks, and 0 errors.
+- PDFium differential smoke at `--max-edge 260` rendered all 4 browser-print
+  fixtures successfully through native and direct PDFium with matching PNG
+  dimensions.
+- Browser-specific remaining gaps are documented separately from generic
+  renderer failures and mapped to fallback categories.
+- Validation: `cargo fmt --check`, `cargo check`,
+  `cargo clippy --all-targets --all-features -- -D warnings`,
+  `cargo test --quiet`, browser-print corpus summary, and PDFium differential
+  smoke.
