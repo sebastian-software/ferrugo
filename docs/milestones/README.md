@@ -21,7 +21,6 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
-| 0053 | [AcroForm Appearance Rendering](0053-acroform-appearance-rendering.md) | 7 | medium | 0052 |
 | 0054 | [Optional Content And Layer Policy](0054-optional-content-and-layer-policy.md) | 7 | medium | 0053 |
 | 0055 | [Incremental Updates And Hybrid References](0055-incremental-updates-and-hybrid-references.md) | 7 | medium | 0054 |
 | 0056 | [Encryption And Permissions Policy](0056-encryption-and-permissions-policy.md) | 7 | small | 0055 |
@@ -54,6 +53,7 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
+| 0053 | [AcroForm Appearance Rendering](0053-acroform-appearance-rendering.md) | 7 | medium | 0052 |
 | 0050 | [Patterns Shadings And Gradients](0050-patterns-shadings-and-gradients.md) | 6 | medium | 0049 |
 
 ## Done
