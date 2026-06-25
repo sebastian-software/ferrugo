@@ -1,6 +1,6 @@
 # 0122: Presentation And Slide Export Fidelity
 
-Status: todo
+Status: done
 Phase: 22
 Size: medium
 Depends on: 0121
@@ -47,4 +47,15 @@ images, transparency, and positioned text commonly combine on one page.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-25.
+
+- Added four synthetic slide-export fixtures covering gradient title slides,
+  layered image/tint/shadow slides, rotated chart callouts, and speaker notes.
+- Added `fixtures/presentation-slide-manifest.tsv` for common slide-export
+  subtype gates.
+- Added native regression coverage for the new slide fixtures.
+- Native slide gate renders 7/7 manifest rows without fallback or errors.
+- Native benchmark has 0 budget failures with `--max-edge 160` and two
+  iterations.
+- PDFium visual oracle reports 2 exact matches and 5 fidelity blockers, with
+  no native or PDFium render errors.

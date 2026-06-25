@@ -74,6 +74,29 @@ cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks \
   --max-edge 160
 ```
 
+## Presentation Slide Manifest
+
+`fixtures/presentation-slide-manifest.tsv` is the focused gate for common
+slide-export PDFs. It uses subtype families such as `title-slide`,
+`image-slide`, `chart-slide`, and `notes-page` so presentation regressions can
+be measured without mixing them into all presentation-edge cases.
+
+The manifest intentionally excludes known maintainer-only optional-content
+fallback cases such as OCMD policy fixtures. Use it for common slide exports
+that should render natively:
+
+```sh
+cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks \
+  fixtures/generated \
+  --manifest fixtures/presentation-slide-manifest.tsv \
+  --include-family title-slide \
+  --include-family image-slide \
+  --include-family chart-slide \
+  --include-family notes-page \
+  --fail-on-fallback \
+  --max-edge 160
+```
+
 ## Private Local Corpora
 
 Private or third-party PDFs stay outside Git under `fixtures/local-corpus/`.

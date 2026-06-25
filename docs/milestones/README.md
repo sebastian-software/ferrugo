@@ -21,7 +21,6 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
-| 0122 | [Presentation And Slide Export Fidelity](0122-presentation-and-slide-export-fidelity.md) | 22 | medium | 0121 |
 | 0123 | [Spreadsheet Grid And Dense Table Fidelity](0123-spreadsheet-grid-and-dense-table-fidelity.md) | 22 | medium | 0122 |
 | 0124 | [Technical Drawing And CAD PDF Fidelity](0124-technical-drawing-and-cad-pdf-fidelity.md) | 22 | medium | 0123 |
 | 0125 | [Chart Map And Dashboard Export Coverage](0125-chart-map-and-dashboard-export-coverage.md) | 22 | medium | 0124 |
@@ -110,6 +109,7 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Completed |
 | --- | --- | --- | --- | --- |
+| 0122 | [Presentation And Slide Export Fidelity](0122-presentation-and-slide-export-fidelity.md) | 22 | medium | 2026-06-25 |
 | 0121 | [Invoice Statement And Business Form Corpus Gate](0121-invoice-statement-and-business-form-corpus-gate.md) | 22 | medium | 2026-06-25 |
 | 0120 | [PDFium-Free Maintenance Gate And Deletion Backlog](0120-pdfium-free-maintenance-gate-and-deletion-backlog.md) | 21 | medium | 2026-06-25 |
 | 0119 | [Cross-Platform Rendering Determinism Gate](0119-cross-platform-rendering-determinism-gate.md) | 21 | medium | 2026-06-25 |
