@@ -193,13 +193,27 @@ pub trait DocumentMetadataBackend {
 pub struct DocumentMetadata {
     /// Per-page metadata in document order.
     pub pages: Vec<PageMetadata>,
+    /// Document information dictionary fields.
+    pub info: DocumentInfo,
+    /// Non-rendering catalog structure signals.
+    pub structure: DocumentStructure,
+    /// Document outline metadata.
+    pub outlines: OutlineMetadata,
+    /// Page label metadata.
+    pub page_labels: PageLabelsMetadata,
 }
 
 impl DocumentMetadata {
     /// Creates document metadata from resolved page metadata.
     #[must_use]
     pub fn new(pages: Vec<PageMetadata>) -> Self {
-        Self { pages }
+        Self {
+            pages,
+            info: DocumentInfo::default(),
+            structure: DocumentStructure::default(),
+            outlines: OutlineMetadata::default(),
+            page_labels: PageLabelsMetadata::default(),
+        }
     }
 
     /// Returns the number of pages in the document.
@@ -213,6 +227,69 @@ impl DocumentMetadata {
     pub fn first_page_size(&self) -> Option<PageSize> {
         self.pages.first().map(|page| page.size)
     }
+}
+
+/// Common PDF document information fields.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct DocumentInfo {
+    /// `/Title` from the document information dictionary.
+    pub title: Option<String>,
+    /// `/Author` from the document information dictionary.
+    pub author: Option<String>,
+    /// `/Subject` from the document information dictionary.
+    pub subject: Option<String>,
+    /// `/Keywords` from the document information dictionary.
+    pub keywords: Option<String>,
+    /// `/Creator` from the document information dictionary.
+    pub creator: Option<String>,
+    /// `/Producer` from the document information dictionary.
+    pub producer: Option<String>,
+    /// `/CreationDate` from the document information dictionary.
+    pub creation_date: Option<String>,
+    /// `/ModDate` from the document information dictionary.
+    pub modification_date: Option<String>,
+}
+
+/// Non-rendering high-level document structure signals.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct DocumentStructure {
+    /// Catalog contains XMP metadata through `/Metadata`.
+    pub has_xmp_metadata: bool,
+    /// Catalog contains `/MarkInfo`.
+    pub has_mark_info: bool,
+    /// Catalog contains `/StructTreeRoot`.
+    pub has_struct_tree_root: bool,
+    /// Catalog exposes named destinations through `/Dests` or `/Names /Dests`.
+    pub has_named_destinations: bool,
+}
+
+/// Outline tree metadata.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct OutlineMetadata {
+    /// Catalog contains an `/Outlines` entry.
+    pub has_outlines: bool,
+    /// Number of outline items reached before the traversal budget.
+    pub item_count: usize,
+    /// Traversal stopped because the bounded item budget was reached.
+    pub truncated: bool,
+}
+
+/// Page label metadata.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct PageLabelsMetadata {
+    /// Resolved labels in page order up to the configured metadata budget.
+    pub labels: Vec<PageLabel>,
+    /// Label expansion stopped because the bounded label budget was reached.
+    pub truncated: bool,
+}
+
+/// One resolved page label.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PageLabel {
+    /// Zero-based page index.
+    pub page_index: u32,
+    /// Resolved display label.
+    pub label: String,
 }
 
 /// Page metadata shared by backend comparison harnesses.

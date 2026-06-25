@@ -1226,7 +1226,7 @@ impl CompareMetadataConfig {
 
 #[derive(Debug, Clone, PartialEq)]
 enum MetadataOutcome {
-    Success(DocumentMetadata),
+    Success(Box<DocumentMetadata>),
     Error {
         class: &'static str,
         message: String,
@@ -1236,7 +1236,7 @@ enum MetadataOutcome {
 impl MetadataOutcome {
     fn from_result(result: Result<DocumentMetadata, ThumbnailError>) -> Self {
         match result {
-            Ok(metadata) => Self::Success(metadata),
+            Ok(metadata) => Self::Success(Box::new(metadata)),
             Err(error) => Self::Error {
                 class: error.class().as_str(),
                 message: error.to_string(),
@@ -2800,9 +2800,13 @@ fn metadata_outcome_json(outcome: &MetadataOutcome) -> String {
                 .collect::<Vec<_>>()
                 .join(",");
             format!(
-                "{{\"status\":\"success\",\"page_count\":{},\"pages\":[{}]}}",
+                "{{\"status\":\"success\",\"page_count\":{},\"pages\":[{}],\"info\":{},\"structure\":{},\"outlines\":{},\"page_labels\":{}}}",
                 metadata.page_count(),
-                pages
+                pages,
+                document_info_json(&metadata.info),
+                document_structure_json(&metadata.structure),
+                outline_metadata_json(&metadata.outlines),
+                page_labels_metadata_json(&metadata.page_labels)
             )
         }
         MetadataOutcome::Error { class, message } => format!(
@@ -2811,6 +2815,60 @@ fn metadata_outcome_json(outcome: &MetadataOutcome) -> String {
             json_string(message)
         ),
     }
+}
+
+fn document_info_json(info: &pdfrust_thumbnail::DocumentInfo) -> String {
+    format!(
+        "{{\"title\":{},\"author\":{},\"subject\":{},\"keywords\":{},\"creator\":{},\"producer\":{},\"creation_date\":{},\"modification_date\":{}}}",
+        optional_json_string(info.title.as_deref()),
+        optional_json_string(info.author.as_deref()),
+        optional_json_string(info.subject.as_deref()),
+        optional_json_string(info.keywords.as_deref()),
+        optional_json_string(info.creator.as_deref()),
+        optional_json_string(info.producer.as_deref()),
+        optional_json_string(info.creation_date.as_deref()),
+        optional_json_string(info.modification_date.as_deref())
+    )
+}
+
+fn document_structure_json(structure: &pdfrust_thumbnail::DocumentStructure) -> String {
+    format!(
+        "{{\"has_xmp_metadata\":{},\"has_mark_info\":{},\"has_struct_tree_root\":{},\"has_named_destinations\":{}}}",
+        structure.has_xmp_metadata,
+        structure.has_mark_info,
+        structure.has_struct_tree_root,
+        structure.has_named_destinations
+    )
+}
+
+fn outline_metadata_json(outlines: &pdfrust_thumbnail::OutlineMetadata) -> String {
+    format!(
+        "{{\"has_outlines\":{},\"item_count\":{},\"truncated\":{}}}",
+        outlines.has_outlines, outlines.item_count, outlines.truncated
+    )
+}
+
+fn page_labels_metadata_json(page_labels: &pdfrust_thumbnail::PageLabelsMetadata) -> String {
+    let labels = page_labels
+        .labels
+        .iter()
+        .map(|label| {
+            format!(
+                "{{\"page_index\":{},\"label\":{}}}",
+                label.page_index,
+                json_string(&label.label)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    format!(
+        "{{\"truncated\":{},\"labels\":[{}]}}",
+        page_labels.truncated, labels
+    )
+}
+
+fn optional_json_string(value: Option<&str>) -> String {
+    value.map_or_else(|| "null".to_string(), json_string)
 }
 
 fn json_string_array(values: &[String]) -> String {
@@ -3333,8 +3391,8 @@ mod tests {
         }]);
 
         let comparison = compare_metadata_results(
-            MetadataOutcome::Success(metadata.clone()),
-            MetadataOutcome::Success(metadata),
+            MetadataOutcome::Success(Box::new(metadata.clone())),
+            MetadataOutcome::Success(Box::new(metadata)),
         );
 
         assert!(comparison.matches);
@@ -3359,8 +3417,8 @@ mod tests {
         }]);
 
         let comparison = compare_metadata_results(
-            MetadataOutcome::Success(pdfium),
-            MetadataOutcome::Success(native),
+            MetadataOutcome::Success(Box::new(pdfium)),
+            MetadataOutcome::Success(Box::new(native)),
         );
 
         assert!(!comparison.matches);
@@ -3386,22 +3444,40 @@ mod tests {
 
     #[test]
     fn comparison_json_should_include_match_status() {
-        let metadata = DocumentMetadata::new(vec![PageMetadata {
+        let mut metadata = DocumentMetadata::new(vec![PageMetadata {
             index: 0,
             size: PageSize {
                 width: 300.0,
                 height: 160.0,
             },
         }]);
+        metadata.info.title = Some("Metadata Fixture".to_string());
+        metadata.structure.has_xmp_metadata = true;
+        metadata.outlines = pdfrust_thumbnail::OutlineMetadata {
+            has_outlines: true,
+            item_count: 2,
+            truncated: false,
+        };
+        metadata
+            .page_labels
+            .labels
+            .push(pdfrust_thumbnail::PageLabel {
+                page_index: 0,
+                label: "A-1".to_string(),
+            });
         let comparison = compare_metadata_results(
-            MetadataOutcome::Success(metadata.clone()),
-            MetadataOutcome::Success(metadata),
+            MetadataOutcome::Success(Box::new(metadata.clone())),
+            MetadataOutcome::Success(Box::new(metadata)),
         );
 
         let json = comparison_json(Path::new("fixtures/generated/text-page.pdf"), &comparison);
 
         assert!(json.contains("\"status\": \"match\""));
         assert!(json.contains("\"page_count\":1"));
+        assert!(json.contains("\"title\":\"Metadata Fixture\""));
+        assert!(json.contains("\"has_xmp_metadata\":true"));
+        assert!(json.contains("\"item_count\":2"));
+        assert!(json.contains("\"label\":\"A-1\""));
         assert!(json.contains("\"rust_native_memory\""));
         assert!(json.contains("\"max_page_pixels\":16777216"));
     }

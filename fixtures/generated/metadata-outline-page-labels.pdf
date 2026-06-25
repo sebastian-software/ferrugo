@@ -1,0 +1,52 @@
+%PDF-1.4
+%‚„œ”
+1 0 obj
+<< /Length 35 >>
+stream
+0.12 0.18 0.28 rg 20 20 160 60 re f
+endstream
+endobj
+2 0 obj
+<< /Type /Page /Parent 3 0 R /MediaBox [0 0 200 120] /Resources << >> /Contents 1 0 R >>
+endobj
+3 0 obj
+<< /Type /Pages /Kids [2 0 R] /Count 1 >>
+endobj
+4 0 obj
+<< /Type /Metadata /Subtype /XML /Length 60 >>
+stream
+<x:xmpmeta><dc:title>Metadata Fixture</dc:title></x:xmpmeta>
+endstream
+endobj
+5 0 obj
+<< /Title (Metadata Fixture) /Author (pdfrust) /Creator (fixture generator) /Producer (pdfrust) >>
+endobj
+6 0 obj
+<< /Title (Chapter One) /Parent 8 0 R /Dest [2 0 R /Fit] /Next 7 0 R >>
+endobj
+7 0 obj
+<< /Title (Appendix) /Parent 8 0 R /Dest [2 0 R /Fit] >>
+endobj
+8 0 obj
+<< /Type /Outlines /First 6 0 R /Last 7 0 R /Count 2 >>
+endobj
+9 0 obj
+<< /Type /Catalog /Pages 3 0 R /Metadata 4 0 R /Outlines 8 0 R /PageLabels << /Nums [0 << /P (A-) /S /D /St 1 >>] >> /Names << /Dests << /Names [(chapter-one) [2 0 R /Fit]] >> >> /MarkInfo << /Marked true >> /StructTreeRoot << /Type /StructTreeRoot /K [] >> >>
+endobj
+xref
+0 10
+0000000000 65535 f 
+0000000015 00000 n 
+0000000100 00000 n 
+0000000204 00000 n 
+0000000261 00000 n 
+0000000401 00000 n 
+0000000515 00000 n 
+0000000602 00000 n 
+0000000674 00000 n 
+0000000745 00000 n 
+trailer
+<< /Size 10 /Root 9 0 R /Info 5 0 R >>
+startxref
+1021
+%%EOF

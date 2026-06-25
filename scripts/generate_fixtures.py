@@ -21,8 +21,15 @@ class Pdf:
         self.objects.append(body)
         return len(self.objects)
 
-    def render(self, root: int, offset_drift: dict[int, int] | None = None) -> bytes:
+    def render(
+        self,
+        root: int,
+        offset_drift: dict[int, int] | None = None,
+        trailer_entries: str | bytes = b"",
+    ) -> bytes:
         offset_drift = offset_drift or {}
+        if isinstance(trailer_entries, str):
+            trailer_entries = trailer_entries.encode("ascii")
         out = bytearray(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
         offsets = [0]
         for idx, body in enumerate(self.objects, start=1):
@@ -39,10 +46,11 @@ class Pdf:
             out.extend(f"{adjusted:010d} 00000 n \n".encode("ascii"))
         out.extend(
             (
-                f"trailer\n<< /Size {len(self.objects) + 1} /Root {root} 0 R >>\n"
-                f"startxref\n{xref_offset}\n%%EOF\n"
+                f"trailer\n<< /Size {len(self.objects) + 1} /Root {root} 0 R "
             ).encode("ascii")
         )
+        out.extend(trailer_entries)
+        out.extend(f">>\nstartxref\n{xref_offset}\n%%EOF\n".encode("ascii"))
         return bytes(out)
 
 
@@ -133,6 +141,51 @@ def user_unit_page_pdf() -> bytes:
     catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
     assert font == 4
     return pdf.render(catalog)
+
+
+def metadata_outline_page_labels_pdf() -> bytes:
+    pdf = Pdf()
+    content = b"0.12 0.18 0.28 rg 20 20 160 60 re f"
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 200 120] "
+        f"/Resources << >> /Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    metadata = b"<x:xmpmeta><dc:title>Metadata Fixture</dc:title></x:xmpmeta>"
+    metadata_object = pdf.add(
+        b"<< /Type /Metadata /Subtype /XML /Length "
+        + str(len(metadata)).encode("ascii")
+        + b" >>\nstream\n"
+        + metadata
+        + b"\nendstream"
+    )
+    info = pdf.add(
+        "<< /Title (Metadata Fixture) /Author (pdfrust) "
+        "/Creator (fixture generator) /Producer (pdfrust) >>"
+    )
+    outline_one = pdf.add(
+        f"<< /Title (Chapter One) /Parent 8 0 R /Dest [{page} 0 R /Fit] /Next 7 0 R >>"
+    )
+    outline_two = pdf.add(
+        f"<< /Title (Appendix) /Parent 8 0 R /Dest [{page} 0 R /Fit] >>"
+    )
+    outlines = pdf.add(
+        f"<< /Type /Outlines /First {outline_one} 0 R /Last {outline_two} 0 R /Count 2 >>"
+    )
+    catalog = pdf.add(
+        f"<< /Type /Catalog /Pages {pages} 0 R /Metadata {metadata_object} 0 R "
+        f"/Outlines {outlines} 0 R "
+        f"/PageLabels << /Nums [0 << /P (A-) /S /D /St 1 >>] >> "
+        f"/Names << /Dests << /Names [(chapter-one) [{page} 0 R /Fit]] >> >> "
+        "/MarkInfo << /Marked true >> "
+        "/StructTreeRoot << /Type /StructTreeRoot /K [] >> >>"
+    )
+    return pdf.render(catalog, trailer_entries=f"/Info {info} 0 R ")
 
 
 def malformed_xref_offset_drift_pdf() -> bytes:
@@ -2244,6 +2297,7 @@ def main() -> None:
     write("rotated-office-export.pdf", rotated_office_export_pdf())
     write("cropped-scan-page.pdf", cropped_scan_page_pdf())
     write("user-unit-page.pdf", user_unit_page_pdf())
+    write("metadata-outline-page-labels.pdf", metadata_outline_page_labels_pdf())
     write(
         "text-page.pdf",
         page_pdf(

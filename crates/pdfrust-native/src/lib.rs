@@ -3,6 +3,7 @@
 #![forbid(unsafe_code)]
 
 use std::borrow::Cow;
+use std::collections::HashSet;
 use std::fs;
 use std::thread;
 
@@ -23,8 +24,9 @@ use pdfrust_render::{
 };
 use pdfrust_syntax::{PdfBytes, PdfName, PdfNumber, PdfPrimitive, PdfReference, PdfString};
 use pdfrust_thumbnail::{
-    DocumentMetadata, DocumentMetadataBackend, PageMetadata as ThumbnailPageMetadata, PageSize,
-    PdfSource, Thumbnail, ThumbnailBackend, ThumbnailError, ThumbnailOptions,
+    DocumentInfo, DocumentMetadata, DocumentMetadataBackend, DocumentStructure, OutlineMetadata,
+    PageLabel, PageLabelsMetadata, PageMetadata as ThumbnailPageMetadata, PageSize, PdfSource,
+    Thumbnail, ThumbnailBackend, ThumbnailError, ThumbnailOptions,
 };
 
 /// Stable crate role used by architecture smoke tests and documentation.
@@ -45,6 +47,8 @@ const BUCKET_TEXT_GLYPH_OUTLINE: &str = "text.glyph-outline";
 const ANNOTATION_OPAQUE_GRAPHICS_STATE: &[u8] = b"AnnotOpaque";
 const ANNOTATION_UNDERLINE_GRAPHICS_STATE: &[u8] = b"AnnotUnderline";
 const MAX_ANNOTATION_FALLBACK_QUADS: usize = 32;
+const MAX_METADATA_OUTLINE_ITEMS: usize = 256;
+const MAX_METADATA_PAGE_LABELS: usize = 4096;
 
 /// Rust-native thumbnail backend.
 ///
@@ -252,10 +256,10 @@ fn inspect_bytes(bytes: &[u8]) -> Result<DocumentMetadata, ThumbnailError> {
     match load_modern_document(input).and_then(|document| document.page_tree()) {
         Ok(page_tree) => metadata_from_page_tree(&page_tree),
         Err(ObjectError::Encrypted) => Err(ThumbnailError::Encrypted),
-        Err(_) => load_classic_document(input)
-            .and_then(|document| document.page_tree())
-            .map_err(map_object_error)
-            .and_then(|page_tree| metadata_from_page_tree(&page_tree)),
+        Err(_) => {
+            let document = load_classic_document(input).map_err(map_object_error)?;
+            metadata_from_classic_document(&document)
+        }
     }
 }
 
@@ -2217,6 +2221,358 @@ fn metadata_from_page_tree(page_tree: &PageTree) -> Result<DocumentMetadata, Thu
     Ok(DocumentMetadata::new(pages))
 }
 
+fn metadata_from_classic_document(
+    document: &ClassicDocument<'_>,
+) -> Result<DocumentMetadata, ThumbnailError> {
+    let page_tree = document.page_tree().map_err(map_object_error)?;
+    let mut metadata = metadata_from_page_tree(&page_tree)?;
+    let catalog = document_catalog_dictionary(document)?;
+    metadata.info = document_info(document)?;
+    metadata.structure = document_structure(document, catalog)?;
+    metadata.outlines = outline_metadata(document, catalog)?;
+    metadata.page_labels = page_labels_metadata(document, catalog, page_tree.page_count())?;
+    Ok(metadata)
+}
+
+fn document_catalog_dictionary<'a>(
+    document: &'a ClassicDocument<'a>,
+) -> Result<&'a [(PdfName<'a>, PdfPrimitive<'a>)], ThumbnailError> {
+    let Some(PdfPrimitive::Reference(reference)) =
+        dictionary_value(document.trailer.entries(), b"Root")
+    else {
+        return Err(ThumbnailError::Malformed);
+    };
+    let reference = object_reference(*reference)?;
+    let object = document
+        .objects
+        .get(reference.id)
+        .ok_or(ThumbnailError::Malformed)?;
+    object_dictionary(&object.value)
+}
+
+fn document_info(document: &ClassicDocument<'_>) -> Result<DocumentInfo, ThumbnailError> {
+    let Some(PdfPrimitive::Reference(reference)) =
+        dictionary_value(document.trailer.entries(), b"Info")
+    else {
+        return Ok(DocumentInfo::default());
+    };
+    let reference = object_reference(*reference)?;
+    let object = document
+        .objects
+        .get(reference.id)
+        .ok_or(ThumbnailError::Malformed)?;
+    let dictionary = object_dictionary(&object.value)?;
+    Ok(DocumentInfo {
+        title: metadata_string(dictionary, b"Title"),
+        author: metadata_string(dictionary, b"Author"),
+        subject: metadata_string(dictionary, b"Subject"),
+        keywords: metadata_string(dictionary, b"Keywords"),
+        creator: metadata_string(dictionary, b"Creator"),
+        producer: metadata_string(dictionary, b"Producer"),
+        creation_date: metadata_string(dictionary, b"CreationDate"),
+        modification_date: metadata_string(dictionary, b"ModDate"),
+    })
+}
+
+fn document_structure(
+    document: &ClassicDocument<'_>,
+    catalog: &[(PdfName<'_>, PdfPrimitive<'_>)],
+) -> Result<DocumentStructure, ThumbnailError> {
+    Ok(DocumentStructure {
+        has_xmp_metadata: dictionary_value(catalog, b"Metadata").is_some(),
+        has_mark_info: dictionary_value(catalog, b"MarkInfo").is_some(),
+        has_struct_tree_root: dictionary_value(catalog, b"StructTreeRoot").is_some(),
+        has_named_destinations: has_named_destinations(document, catalog)?,
+    })
+}
+
+fn has_named_destinations(
+    document: &ClassicDocument<'_>,
+    catalog: &[(PdfName<'_>, PdfPrimitive<'_>)],
+) -> Result<bool, ThumbnailError> {
+    if dictionary_value(catalog, b"Dests").is_some() {
+        return Ok(true);
+    }
+    let Some(names_value) = dictionary_value(catalog, b"Names") else {
+        return Ok(false);
+    };
+    let names = metadata_dictionary_from_value(document, names_value)?;
+    Ok(dictionary_value(names, b"Dests").is_some())
+}
+
+fn outline_metadata(
+    document: &ClassicDocument<'_>,
+    catalog: &[(PdfName<'_>, PdfPrimitive<'_>)],
+) -> Result<OutlineMetadata, ThumbnailError> {
+    let Some(outlines_value) = dictionary_value(catalog, b"Outlines") else {
+        return Ok(OutlineMetadata::default());
+    };
+    let outlines = metadata_dictionary_from_value(document, outlines_value)?;
+    let Some(first) = dictionary_reference(outlines, b"First")? else {
+        return Ok(OutlineMetadata {
+            has_outlines: true,
+            item_count: 0,
+            truncated: false,
+        });
+    };
+    let (item_count, truncated) = count_outline_items(document, first)?;
+    Ok(OutlineMetadata {
+        has_outlines: true,
+        item_count,
+        truncated,
+    })
+}
+
+fn count_outline_items(
+    document: &ClassicDocument<'_>,
+    first: Reference,
+) -> Result<(usize, bool), ThumbnailError> {
+    let mut stack = vec![first];
+    let mut visited = HashSet::new();
+    let mut item_count = 0;
+
+    while let Some(reference) = stack.pop() {
+        if !visited.insert(reference.id) {
+            continue;
+        }
+        if item_count == MAX_METADATA_OUTLINE_ITEMS {
+            return Ok((item_count, true));
+        }
+        item_count += 1;
+        let object = document
+            .objects
+            .get(reference.id)
+            .ok_or(ThumbnailError::Malformed)?;
+        let dictionary = object_dictionary(&object.value)?;
+        if let Some(next) = dictionary_reference(dictionary, b"Next")? {
+            stack.push(next);
+        }
+        if let Some(child) = dictionary_reference(dictionary, b"First")? {
+            stack.push(child);
+        }
+    }
+
+    Ok((item_count, false))
+}
+
+fn page_labels_metadata(
+    document: &ClassicDocument<'_>,
+    catalog: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    page_count: usize,
+) -> Result<PageLabelsMetadata, ThumbnailError> {
+    let Some(page_labels_value) = dictionary_value(catalog, b"PageLabels") else {
+        return Ok(PageLabelsMetadata::default());
+    };
+    let page_labels = metadata_dictionary_from_value(document, page_labels_value)?;
+    let Some(PdfPrimitive::Array(nums)) = dictionary_value(page_labels, b"Nums") else {
+        return Err(ThumbnailError::Malformed);
+    };
+    let mut ranges = Vec::new();
+    for pair in nums.chunks_exact(2) {
+        let Some(start_page) = primitive_usize(&pair[0]) else {
+            return Err(ThumbnailError::Malformed);
+        };
+        let PdfPrimitive::Dictionary(dictionary) = &pair[1] else {
+            return Err(ThumbnailError::Malformed);
+        };
+        ranges.push(PageLabelRange::from_dictionary(start_page, dictionary)?);
+    }
+    ranges.sort_by_key(|range| range.start_page);
+    if ranges.is_empty() {
+        return Ok(PageLabelsMetadata::default());
+    }
+
+    let label_count = page_count.min(MAX_METADATA_PAGE_LABELS);
+    let mut labels = Vec::with_capacity(label_count);
+    let mut range_index = 0;
+    for page_index in 0..label_count {
+        while range_index + 1 < ranges.len() && ranges[range_index + 1].start_page <= page_index {
+            range_index += 1;
+        }
+        if ranges[range_index].start_page > page_index {
+            continue;
+        }
+        labels.push(PageLabel {
+            page_index: u32::try_from(page_index)
+                .map_err(|_| ThumbnailError::internal("page label index exceeds u32"))?,
+            label: ranges[range_index].label_for(page_index),
+        });
+    }
+
+    Ok(PageLabelsMetadata {
+        labels,
+        truncated: page_count > label_count,
+    })
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PageLabelRange {
+    start_page: usize,
+    prefix: String,
+    style: Option<PageLabelStyle>,
+    start_number: u32,
+}
+
+impl PageLabelRange {
+    fn from_dictionary(
+        start_page: usize,
+        dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    ) -> Result<Self, ThumbnailError> {
+        Ok(Self {
+            start_page,
+            prefix: metadata_string(dictionary, b"P").unwrap_or_default(),
+            style: dictionary_name_bytes(dictionary, b"S").and_then(PageLabelStyle::from_name),
+            start_number: dictionary_value(dictionary, b"St")
+                .and_then(primitive_u32)
+                .unwrap_or(1),
+        })
+    }
+
+    fn label_for(&self, page_index: usize) -> String {
+        let number = self.start_number + (page_index - self.start_page) as u32;
+        match self.style {
+            Some(style) => format!("{}{}", self.prefix, style.format(number)),
+            None => self.prefix.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PageLabelStyle {
+    Decimal,
+    UpperRoman,
+    LowerRoman,
+    UpperAlpha,
+    LowerAlpha,
+}
+
+impl PageLabelStyle {
+    fn from_name(name: &[u8]) -> Option<Self> {
+        match name {
+            b"D" => Some(Self::Decimal),
+            b"R" => Some(Self::UpperRoman),
+            b"r" => Some(Self::LowerRoman),
+            b"A" => Some(Self::UpperAlpha),
+            b"a" => Some(Self::LowerAlpha),
+            _ => None,
+        }
+    }
+
+    fn format(self, number: u32) -> String {
+        match self {
+            Self::Decimal => number.to_string(),
+            Self::UpperRoman => roman_label(number),
+            Self::LowerRoman => roman_label(number).to_ascii_lowercase(),
+            Self::UpperAlpha => alpha_label(number, b'A'),
+            Self::LowerAlpha => alpha_label(number, b'a'),
+        }
+    }
+}
+
+fn roman_label(mut number: u32) -> String {
+    if number == 0 {
+        return String::new();
+    }
+    const ROMAN: &[(u32, &str)] = &[
+        (1000, "M"),
+        (900, "CM"),
+        (500, "D"),
+        (400, "CD"),
+        (100, "C"),
+        (90, "XC"),
+        (50, "L"),
+        (40, "XL"),
+        (10, "X"),
+        (9, "IX"),
+        (5, "V"),
+        (4, "IV"),
+        (1, "I"),
+    ];
+    let mut output = String::new();
+    for (value, symbol) in ROMAN {
+        while number >= *value {
+            output.push_str(symbol);
+            number -= *value;
+        }
+    }
+    output
+}
+
+fn alpha_label(mut number: u32, base: u8) -> String {
+    if number == 0 {
+        return String::new();
+    }
+    let mut bytes = Vec::new();
+    while number > 0 {
+        number -= 1;
+        bytes.push(base + (number % 26) as u8);
+        number /= 26;
+    }
+    bytes.reverse();
+    String::from_utf8(bytes).unwrap_or_default()
+}
+
+fn metadata_dictionary_from_value<'a>(
+    document: &'a ClassicDocument<'a>,
+    value: &'a PdfPrimitive<'a>,
+) -> Result<&'a [(PdfName<'a>, PdfPrimitive<'a>)], ThumbnailError> {
+    match value {
+        PdfPrimitive::Dictionary(dictionary) => Ok(dictionary),
+        PdfPrimitive::Reference(reference) => {
+            let reference = object_reference(*reference)?;
+            let object = document
+                .objects
+                .get(reference.id)
+                .ok_or(ThumbnailError::Malformed)?;
+            object_dictionary(&object.value)
+        }
+        _ => Err(ThumbnailError::Malformed),
+    }
+}
+
+fn dictionary_reference(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    key: &[u8],
+) -> Result<Option<Reference>, ThumbnailError> {
+    let Some(PdfPrimitive::Reference(reference)) = dictionary_value(dictionary, key) else {
+        return Ok(None);
+    };
+    object_reference(*reference).map(Some)
+}
+
+fn metadata_string(dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)], key: &[u8]) -> Option<String> {
+    match dictionary_value(dictionary, key)? {
+        PdfPrimitive::String(value) => Some(match value {
+            PdfString::Literal(bytes) | PdfString::Hex(bytes) => {
+                String::from_utf8_lossy(bytes).into_owned()
+            }
+        }),
+        PdfPrimitive::Name(name) => Some(String::from_utf8_lossy(name.as_bytes()).into_owned()),
+        _ => None,
+    }
+}
+
+fn dictionary_name_bytes<'a>(
+    dictionary: &'a [(PdfName<'a>, PdfPrimitive<'a>)],
+    key: &[u8],
+) -> Option<&'a [u8]> {
+    let Some(PdfPrimitive::Name(name)) = dictionary_value(dictionary, key) else {
+        return None;
+    };
+    Some(name.as_bytes())
+}
+
+fn primitive_u32(value: &PdfPrimitive<'_>) -> Option<u32> {
+    match value {
+        PdfPrimitive::Number(PdfNumber::Integer(value)) => u32::try_from(*value).ok(),
+        _ => None,
+    }
+}
+
+fn primitive_usize(value: &PdfPrimitive<'_>) -> Option<usize> {
+    primitive_u32(value).and_then(|value| usize::try_from(value).ok())
+}
+
 /// Returns the stable role for this crate.
 #[must_use]
 pub const fn crate_role() -> &'static str {
@@ -4003,6 +4359,22 @@ mod tests {
                 height: 160.0,
             })
         );
+    }
+
+    #[test]
+    fn native_backend_should_inspect_generated_structure_metadata() {
+        let bytes = include_bytes!("../../../fixtures/generated/metadata-outline-page-labels.pdf");
+        let metadata =
+            DocumentMetadataBackend::inspect(&NativeBackend::new(), PdfSource::from_bytes(bytes))
+                .expect("generated structure metadata fixture should inspect");
+
+        assert_eq!(metadata.info.title.as_deref(), Some("Metadata Fixture"));
+        assert!(metadata.structure.has_xmp_metadata);
+        assert!(metadata.structure.has_mark_info);
+        assert!(metadata.structure.has_struct_tree_root);
+        assert!(metadata.structure.has_named_destinations);
+        assert_eq!(metadata.outlines.item_count, 2);
+        assert_eq!(metadata.page_labels.labels[0].label, "A-1");
     }
 
     #[test]
