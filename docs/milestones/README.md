@@ -21,7 +21,6 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
-| 0111 | [XFA And Dynamic Form Fallback Policy](0111-xfa-and-dynamic-form-fallback-policy.md) | 20 | small | 0110 |
 | 0112 | [Digital Signature Appearance And Validation Boundary](0112-digital-signature-appearance-and-validation-boundary.md) | 20 | small | 0111 |
 | 0113 | [Embedded Files Portfolio And Attachment Visibility](0113-embedded-files-portfolio-and-attachment-visibility.md) | 20 | medium | 0112 |
 | 0114 | [Linearized PDF Fast First Page Loading](0114-linearized-pdf-fast-first-page-loading.md) | 20 | medium | 0113 |
@@ -96,6 +95,7 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
+| 0111 | [XFA And Dynamic Form Fallback Policy](0111-xfa-and-dynamic-form-fallback-policy.md) | 20 | small | 0110 |
 
 ## Done
 
