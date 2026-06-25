@@ -542,6 +542,18 @@ mod tests {
     }
 
     #[test]
+    fn tokenizer_should_reject_adversarial_unterminated_inline_image_fixture() {
+        let input =
+            include_bytes!("../../../fixtures/adversarial/unterminated-inline-image.content");
+        let error = tokenize_content(PdfBytes::new(input))
+            .collect::<ContentResult<Vec<_>>>()
+            .expect_err("missing EI should fail");
+
+        assert_eq!(error.offset(), ByteOffset::new(0));
+        assert_eq!(error.kind(), ContentErrorKind::UnexpectedEof);
+    }
+
+    #[test]
     fn tokenizer_should_skip_comments() {
         let tokens = tokenize_content(PdfBytes::new(b"q % ignore this\nQ"))
             .collect::<ContentResult<Vec<_>>>()

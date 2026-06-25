@@ -4401,6 +4401,23 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_report_adversarial_truncated_header_as_malformed() {
+        let bytes = include_bytes!("../../../fixtures/adversarial/truncated-header.pdf");
+        let inspect_error =
+            DocumentMetadataBackend::inspect(&NativeBackend::new(), PdfSource::from_bytes(bytes))
+                .expect_err("truncated PDF should not inspect");
+        let render_error = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions::default(),
+        )
+        .expect_err("truncated PDF should not render");
+
+        assert_eq!(inspect_error, ThumbnailError::Malformed);
+        assert_eq!(render_error, ThumbnailError::Malformed);
+    }
+
+    #[test]
     fn native_backend_should_depend_on_object_and_render_layers() {
         assert_eq!(object_role(), "object");
         assert_eq!(render_role(), "render");

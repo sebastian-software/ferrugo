@@ -1,0 +1,34 @@
+[package]
+name = "pdfrust-fuzz"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+pdfrust-content = { path = "../crates/pdfrust-content" }
+pdfrust-native = { path = "../crates/pdfrust-native" }
+pdfrust-object = { path = "../crates/pdfrust-object" }
+pdfrust-syntax = { path = "../crates/pdfrust-syntax" }
+pdfrust-thumbnail = { path = "../crates/pdfrust-thumbnail" }
+
+[[bin]]
+name = "primitive_parse"
+path = "fuzz_targets/primitive_parse.rs"
+
+[[bin]]
+name = "xref_load"
+path = "fuzz_targets/xref_load.rs"
+
+[[bin]]
+name = "stream_decode"
+path = "fuzz_targets/stream_decode.rs"
+
+[[bin]]
+name = "content_tokenize"
+path = "fuzz_targets/content_tokenize.rs"
+
+[[bin]]
+name = "render_setup"
+path = "fuzz_targets/render_setup.rs"
