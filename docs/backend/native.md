@@ -42,13 +42,19 @@ tokenization, and native render setup. See `docs/fuzzing.md` and
 
 ## GA Gate Status
 
-The 2026-06-25 GA gate keeps the native renderer in a conditional state:
-supported-family technical execution is PDFium-free, but broad visual GA is not
-declared yet. The supported-family native-only gate renders `browser-print`,
-`office-export`, and `form` fixtures without fallback, while the PDFium visual
-baseline still reports fidelity blockers in form synthesis, text/font rendering,
-and page geometry. See
-`docs/reports/native-renderer-ga-gate-2026-06-25.md` for the measured decision.
+The 2026-06-26 GA2 gate keeps the native renderer in a conditional state:
+core supported-family technical execution is PDFium-free, but broad visual GA
+is not declared yet. The native-only gate renders all current `browser-print`,
+`office-export`, and `form` fixtures without fallback or errors. The full
+typical corpus is 146/155 native-rendered with 8 typed unsupported boundaries
+and 1 encrypted error.
+
+The PDFium visual oracle still reports material blockers in form appearance
+parity, text/font rendering, rendering-core details, image/color parity, and
+page geometry. PDFium should remain out of normal native-only runtime paths, but
+stay available as explicit maintainer comparison tooling. See
+`docs/reports/native-renderer-ga2-coverage-2026-06-26.md` for the measured
+decision.
 
 ## Page Artifact Cache Policy
 

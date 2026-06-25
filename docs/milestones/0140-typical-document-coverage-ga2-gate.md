@@ -1,6 +1,6 @@
 # 0140: Typical Document Coverage GA2 Gate
 
-Status: todo
+Status: done
 Phase: 25
 Size: medium
 Depends on: 0139
@@ -47,4 +47,16 @@ after document-family, performance, packaging, and hardening expansions.
 
 ## Completion Notes
 
-Empty until done.
+- Added `docs/reports/native-renderer-ga2-coverage-2026-06-26.md`.
+- Core supported-family gate passed: 67/67 `browser-print`, `office-export`,
+  and `form` fixtures rendered natively with zero fallback and zero errors.
+- Full current corpus coverage: 155 total, 146 native rendered, 8 typed
+  fallbacks, 1 encrypted error.
+- PDFium visual oracle remains a broad GA blocker: 32 exact, 23 accepted drift,
+  91 blockers, 8 native errors, and 1 both-error encrypted row.
+- Native-only packaging evidence remains PDFium-free; full CLI package
+  preparation is still release-order blocked until internal crates are
+  available from the registry.
+- Recommendation: proceed to runtime PDFium deletion/quarantine work for normal
+  native-only paths while keeping PDFium comparison tooling for maintainer
+  visual-oracle gates.
