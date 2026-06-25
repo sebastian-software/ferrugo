@@ -285,6 +285,28 @@ composition, so the native renderer follows that comparison behavior for now
 instead of introducing a divergent hard-knockout interpretation. See
 `docs/reports/transparency-group-alpha-2026-06-25.md`.
 
+## Transparency And Blend Conformance
+
+The transparency conformance manifest is
+`fixtures/transparency-conformance-manifest.tsv`. It separates supported native
+coverage from typed unsupported boundaries:
+
+| Area | Native status |
+| --- | --- |
+| ExtGState fill/stroke alpha | Supported with known stroke-edge visual blocker. |
+| Isolated transparency groups | Supported with exact or accepted-drift PDFium comparison. |
+| Knockout group metadata | Parsed; current thumbnail behavior follows PDFium comparison output. |
+| `Normal`, `Multiply`, `Screen` blend modes | Supported. |
+| Blend-mode arrays | Supported when a later entry is one of the supported blend modes. |
+| Image soft masks | Supported for DeviceGray image masks matching image dimensions. |
+| ExtGState `/SMask /None` | Accepted. |
+| ExtGState luminosity soft masks | Typed `graphics.transparency` fallback. |
+| Advanced blend modes such as `Overlay` | Typed `graphics.transparency` fallback. |
+
+The 0138 gate renders seven supported conformance rows natively with zero
+fallbacks and classifies two unsupported rows under `graphics.transparency`.
+See `docs/reports/transparency-blend-conformance-2026-06-26.md`.
+
 ## Overprint Approximation
 
 ExtGState `/OP`, `/op`, and `/OPM` entries are parsed and validated by the
