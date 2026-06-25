@@ -119,6 +119,28 @@ cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks \
   --max-edge 160
 ```
 
+## Technical Drawing Manifest
+
+`fixtures/technical-drawing-manifest.tsv` is the focused gate for technical
+drawings and CAD-style PDFs. It covers fine linework, clipped hatch fills,
+large-coordinate page geometry, user units, dashed strokes, and repeated symbol
+workloads.
+
+Use this manifest when a change may affect path flattening, stroke visibility,
+clipping, page transforms, or repeated vector geometry:
+
+```sh
+cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks \
+  fixtures/generated \
+  --manifest fixtures/technical-drawing-manifest.tsv \
+  --include-family linework \
+  --include-family hatch-clipping \
+  --include-family large-coordinate \
+  --include-family repeated-symbols \
+  --fail-on-fallback \
+  --max-edge 160
+```
+
 ## Private Local Corpora
 
 Private or third-party PDFs stay outside Git under `fixtures/local-corpus/`.
