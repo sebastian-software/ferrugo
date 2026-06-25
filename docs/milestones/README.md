@@ -21,7 +21,6 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
-| 0130 | [Legal Contract And Redaction Document Coverage](0130-legal-contract-and-redaction-document-coverage.md) | 23 | medium | 0129 |
 | 0131 | [Low-Memory Embedded Renderer Profile](0131-low-memory-embedded-renderer-profile.md) | 24 | medium | 0130 |
 | 0132 | [WASM Renderer Packaging And Size Gate](0132-wasm-renderer-packaging-and-size-gate.md) | 24 | medium | 0131 |
 | 0133 | [Server-Side Batch Rendering Throughput Gate](0133-server-side-batch-rendering-throughput-gate.md) | 24 | medium | 0132 |
@@ -102,6 +101,7 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Completed |
 | --- | --- | --- | --- | --- |
+| 0130 | [Legal Contract And Redaction Document Coverage](0130-legal-contract-and-redaction-document-coverage.md) | 23 | medium | 2026-06-25 |
 | 0129 | [Mobile Scan And Camera PDF Robustness](0129-mobile-scan-and-camera-pdf-robustness.md) | 23 | medium | 2026-06-25 |
 | 0128 | [Print Production And Prepress Boundary](0128-print-production-and-prepress-boundary.md) | 23 | medium | 2026-06-25 |
 | 0127 | [Book Ebook And Longform Text Coverage](0127-book-ebook-and-longform-text-coverage.md) | 23 | medium | 2026-06-25 |

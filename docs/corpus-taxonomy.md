@@ -263,6 +263,32 @@ cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks \
   --max-edge 160
 ```
 
+## Legal Document Manifest
+
+`fixtures/legal-document-manifest.tsv` is the focused gate for contracts,
+court-filing style pages, visible redactions, scanned attachments, signature
+blocks, annotations, and form fallback behavior that appears in legal-document
+workflows.
+
+The manifest uses families `contract`, `filing`, `redaction`,
+`scanned-attachment`, and `missing-appearance`. Redaction coverage is visual
+only: black rectangles must render in thumbnails when they are page content or
+annotation appearance content, but this manifest does not validate semantic
+redaction security.
+
+```sh
+cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks \
+  fixtures/generated \
+  --manifest fixtures/legal-document-manifest.tsv \
+  --include-family contract \
+  --include-family filing \
+  --include-family redaction \
+  --include-family scanned-attachment \
+  --include-family missing-appearance \
+  --fail-on-fallback \
+  --max-edge 160
+```
+
 ## Private Local Corpora
 
 Private or third-party PDFs stay outside Git under `fixtures/local-corpus/`.
