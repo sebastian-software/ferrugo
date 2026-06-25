@@ -4,8 +4,8 @@ Status: accepted.
 Date: 2026-06-24.
 
 `pdfrust-cli` builds native-only by default. The PDFium backend remains in the
-workspace for differential testing and fallback workflows, but it is not part of
-the default CLI dependency graph.
+workspace for maintainer comparison workflows, but it is not part of the
+default CLI dependency graph or normal runtime rendering path.
 
 ## Native-Only Build
 
@@ -49,18 +49,16 @@ PDFium packaging obvious.
   normal deployment images.
 - Build `pdfrust-cli` without `--features pdfium` for production native-only
   usage.
-- Use `render-native` when scripts must fail rather than consider fallback.
-- Use `render` or `render-auto --native-only` when scripts should keep the
-  default command spelling while still denying PDFium fallback.
-- Keep `--allow-pdfium-fallback` out of production CI unless the job is
-  explicitly a maintainer comparison job.
+- Use `render` / `render-auto` for normal native-only runtime rendering.
+- Use `render-native` when scripts must make the native backend explicit.
+- Remove `--allow-pdfium-fallback`; runtime PDFium fallback has been removed.
 - Treat `unsupported` feature buckets as native renderer backlog, not as a
   packaging signal to bundle PDFium again.
 
 ## PDFium-Enabled Build
 
-Enable PDFium explicitly when fallback, oracle comparison, or PDFium benchmark
-work is needed:
+Enable PDFium explicitly when oracle comparison, direct PDFium probes, or PDFium
+benchmark work is needed:
 
 ```sh
 cargo build -p pdfrust-cli --features pdfium
@@ -80,8 +78,9 @@ The PDFium-enabled CLI adds:
 - `render-isolated`
 - `compare-metadata`
 - `benchmark-pdfium`
-- PDFium fallback from `render` / `render-auto` when Rust-native returns
-  `unsupported` and the caller passes `--allow-pdfium-fallback`
+- `visual-diff`
+
+It does not add runtime fallback to `render` / `render-auto`.
 
 ## Workspace Defaults
 

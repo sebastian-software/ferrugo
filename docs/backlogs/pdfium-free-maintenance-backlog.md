@@ -22,15 +22,21 @@ comparison infrastructure. Each deletion item should be small and reversible.
 | Candidate | Earliest milestone | Risk | Rollback |
 | --- | --- | --- | --- |
 | `render-worker` alias for direct PDFium rendering | 0142 | Low: scripts may still use the old alias. | Re-add the alias to the CLI match arm. |
-| `PDFRUST_ALLOW_PDFIUM_FALLBACK` environment fallback opt-in | 0142 or later | Medium: local maintainer sweeps may rely on env-driven fallback. | Restore env parsing in `FallbackPolicy::default()`. |
 | Production docs that suggest PDFium fallback for supported families | 0120 complete | Low: docs-only cleanup. | Restore wording from this backlog/report. |
 | Any default-feature PDFium dependency edge | Immediately if found | High if missed, because it would reintroduce runtime packaging baggage. | Revert the dependency or feature change. |
+
+## Deleted From Runtime Paths
+
+| Item | Removed in | Rollback |
+| --- | --- | --- |
+| `render` / `render-auto --allow-pdfium-fallback` runtime retry | 0141 | Reintroduce the fallback branch in `render_auto_thumbnail`. |
+| `PDFRUST_ALLOW_PDFIUM_FALLBACK` environment runtime opt-in | 0141 | Restore env parsing and fallback policy state. |
+| `PDFRUST_DENY_FALLBACK_REASONS` targeted runtime denial | 0141 | Restore fallback policy parsing if runtime fallback returns. |
 
 ## Deferred Until Native Coverage Lands
 
 | Area | Blocker | Required evidence before deletion |
 | --- | --- | --- |
-| `render` / `render-auto --allow-pdfium-fallback` | Unsupported categories remain. | Full supported target surface has 0 native fallback buckets or a documented non-PDFium fallback strategy. |
 | Optional-content PDFium fallback | `graphics.optional-content` / OCMD gaps. | Optional-content membership policy renders natively or returns accepted typed unsupported outcomes for out-of-scope cases. |
 | Specialized image codec fallback | `image.filter` gaps for CCITT, JBIG2, JPX. | Codec policy either implements pure-Rust support or stable unsupported handling for target document families. |
 | Pattern/mesh fallback | `graphics.pattern-shading` gaps. | Mesh shading and pattern fixtures no longer require PDFium for target families. |
@@ -41,7 +47,7 @@ comparison infrastructure. Each deletion item should be small and reversible.
 Normal supported-document rendering must use:
 
 - default features or `--no-default-features`
-- `render-native`, `render --native-only`, or `render-auto --native-only`
+- `render`, `render-auto`, or `render-native`
 - supported-family fallback gates with `--fail-on-fallback`
 
 Maintainer PDFium commands must be isolated in explicit `--features pdfium`

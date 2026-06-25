@@ -1,6 +1,6 @@
 # 0141: PDFium Runtime Deletion Execution
 
-Status: todo
+Status: done
 Phase: 26
 Size: medium
 Depends on: 0140
@@ -45,4 +45,15 @@ that supported document families are covered by the Rust-native renderer.
 
 ## Completion Notes
 
-Empty until done.
+- Removed PDFium runtime fallback dispatch from `render` / `render-auto`.
+- `--allow-pdfium-fallback` now fails with a usage error for normal render
+  commands; `--native-only` / `--no-pdfium-fallback` remain compatibility
+  no-ops because normal render paths are already native-only.
+- Kept explicit maintainer PDFium commands behind `--features pdfium`:
+  `render-pdfium`, `render-isolated`, `compare-metadata`,
+  `benchmark-pdfium`, and `visual-diff`.
+- Native-only supported corpus gate passed without PDFium env:
+  67/67 `browser-print`, `office-export`, and `form` fixtures rendered
+  natively with zero fallback and zero errors.
+- Added `docs/reports/pdfium-runtime-deletion-2026-06-26.md` and updated the
+  native, PDFium, packaging, error, and maintenance-backlog docs.

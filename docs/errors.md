@@ -57,9 +57,8 @@ These buckets are not API classes. They make support matrices and corpus
 reports stable without forcing downstream callers to depend on milestone-level
 implementation details.
 
-Automatic native-first rendering preserves the public `unsupported` class and
-emits the bucket as `fallback_reason` / `fallback_category` when PDFium fallback
-is used. Generic unsupported outcomes use `native.unsupported` until a narrower
-bucket is available. `PDFRUST_NATIVE_ONLY=1`, `--native-only`, and
-`--deny-fallback-reason <bucket>` can turn these diagnostics into local or CI
-failure gates.
+Native runtime rendering preserves the public `unsupported` class and includes
+the bucket in the error message when one is available. Generic unsupported
+outcomes use `native.unsupported` until a narrower bucket is available. Corpus
+commands such as `summarize-fallbacks --fail-on-fallback` turn these diagnostics
+into local or CI failure gates without loading PDFium.

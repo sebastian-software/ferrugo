@@ -34,7 +34,6 @@ when the server renderer is already correct and bounded.
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
-| 0141 | [PDFium Runtime Deletion Execution](0141-pdfium-runtime-deletion-execution.md) | 26 | medium | 0140 |
 | 0142 | [PDFium Comparison Tooling Quarantine](0142-pdfium-comparison-tooling-quarantine.md) | 26 | medium | 0141 |
 | 0143 | [Native Renderer Conformance Triage Loop](0143-native-renderer-conformance-triage-loop.md) | 26 | medium | 0142 |
 | 0144 | [Renderer Operator Coverage Audit](0144-renderer-operator-coverage-audit.md) | 26 | medium | 0143 |
@@ -124,6 +123,7 @@ when the server renderer is already correct and bounded.
 
 | ID | Milestone | Phase | Size | Completed |
 | --- | --- | --- | --- | --- |
+| 0141 | [PDFium Runtime Deletion Execution](0141-pdfium-runtime-deletion-execution.md) | 26 | medium | 2026-06-26 |
 | 0140 | [Typical Document Coverage GA2 Gate](0140-typical-document-coverage-ga2-gate.md) | 25 | medium | 2026-06-26 |
 | 0139 | [Native Renderer Security And Fuzz Refresh](0139-native-renderer-security-and-fuzz-refresh.md) | 25 | medium | 2026-06-26 |
 | 0138 | [Transparency And Blend Conformance Corpus](0138-transparency-and-blend-conformance-corpus.md) | 25 | medium | 2026-06-26 |

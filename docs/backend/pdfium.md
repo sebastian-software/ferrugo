@@ -8,10 +8,10 @@ the backend-neutral types from `pdfrust-thumbnail`; PDFium handles and symbols
 do not appear in the facade API.
 
 PDFium support is optional for `pdfrust-cli`. Default CLI builds are
-native-only. Use `--features pdfium` when running PDFium commands, metadata
-comparisons, or PDFium benchmarks. Native-default `render` / `render-auto`
-commands only retry through PDFium when the caller also passes
-`--allow-pdfium-fallback`.
+native-only. Use `--features pdfium` only when running explicit maintainer
+commands such as PDFium renders, metadata comparisons, PDFium benchmarks, or
+visual diffs. Native-default `render` / `render-auto` commands do not retry
+through PDFium.
 
 ## Runtime Configuration
 
@@ -85,4 +85,4 @@ cargo run -p pdfrust-cli --features pdfium -- render-isolated fixtures/generated
 
 `render-worker` is a private child-process entry point. Callers should use
 `render-pdfium` for direct trusted PDFium probes or `render-isolated` for hard
-timeout semantics. The public `render` command is native-first automatic mode.
+timeout semantics. The public `render` command is native-only runtime rendering.

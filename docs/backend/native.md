@@ -431,28 +431,19 @@ cargo run -p pdfrust-cli -- render fixtures/generated/text-page.pdf \
   --timeout 5
 ```
 
-`render` and `render-auto` try the Rust-native backend first. If native returns
-the public `unsupported` class, the default behavior is a stable render error
-that names the fallback bucket and asks for `--allow-pdfium-fallback` when the
-caller wants PDFium retry behavior. In a PDFium-enabled CLI build,
-`--allow-pdfium-fallback` retries through PDFium using
-`PDFRUST_PDFIUM_LIBRARY`. `encrypted`, `malformed`, and `internal` failures are
-not silently retried. The selected backend is printed as a render diagnostic.
-Fallback diagnostics include `fallback_reason=<bucket>` and
-`fallback_category=<bucket>` so corpus runs can count the remaining PDFium
-surface.
+`render` and `render-auto` use the Rust-native backend only. If native returns
+the public `unsupported` class, the command returns a stable render error that
+names the unsupported bucket; it does not retry through PDFium. The selected
+backend is printed as a render diagnostic for successful native renders.
 
-Use `--allow-pdfium-fallback` with `render`/`render-auto` to permit explicit
-PDFium retry. Use `--native-only` or `--no-pdfium-fallback` to force denial
-after environment-driven fallback has been enabled. Use
-`--deny-fallback-reason <bucket>` for targeted experiments, or set
-`PDFRUST_ALLOW_PDFIUM_FALLBACK=1`, `PDFRUST_NATIVE_ONLY=1`, and
-`PDFRUST_DENY_FALLBACK_REASONS=bucket.one,bucket.two` for environment-driven
-runs.
+Use `render-native` when scripts must make the native-only choice explicit.
+`--native-only` and `--no-pdfium-fallback` are accepted for compatibility, but
+the normal render paths are already native-only. `--allow-pdfium-fallback` is
+rejected because runtime PDFium fallback has been removed.
 
-Use `render-native` to force native without fallback. Use `render-pdfium` or
-`render-isolated` to force PDFium in a CLI build compiled with
-`--features pdfium`.
+Use `render-pdfium`, `render-isolated`, `benchmark-pdfium`, `compare-metadata`,
+or `visual-diff` only in a CLI build compiled with `--features pdfium`; those
+commands are maintainer comparison tooling, not runtime fallback paths.
 
 Summarize a local corpus without rendering PDFium output:
 
