@@ -1,6 +1,6 @@
 # 0118: Real Corpus Acquisition And Privacy Review Loop
 
-Status: in-progress
+Status: done
 Phase: 21
 Size: medium
 Depends on: 0117
@@ -46,4 +46,17 @@ coverage program without committing sensitive files.
 
 ## Completion Notes
 
-Empty until done.
+- Added a Rust-native `pdfrust-cli validate-local-corpus` command for
+  aggregate local corpus TOML validation without new dependencies.
+- Updated `fixtures/local-corpus.example.toml` to use privacy-safe `[[sample]]`
+  entries instead of per-document private paths.
+- Expanded `docs/policies/corpus-intake.md`, `docs/corpus-taxonomy.md`, and
+  `docs/fixtures.md` with the local metadata field vocabulary and validation
+  flow.
+- Confirmed `fixtures/local-corpus/` is excluded from Git by committed ignore
+  rules.
+- Validated the committed example, the optional missing local manifest path,
+  metadata extraction, and fallback summary for the synthetic-realistic
+  `fixtures/real-world-style-manifest.tsv`.
+- Report: `docs/reports/real-corpus-privacy-review-loop-2026-06-25.md`.
+- Implementation commit: `fcb2f87 feat: validate local corpus intake metadata`.
