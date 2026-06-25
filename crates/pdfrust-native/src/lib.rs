@@ -6952,6 +6952,32 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_bound_adversarial_huge_image_dimensions() {
+        let bytes = include_bytes!("../../../fixtures/adversarial/huge-image-dimensions.pdf");
+        let error = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                page_index: 0,
+                max_edge: 32,
+                background: pdfrust_thumbnail::Rgba::WHITE,
+                output_format: pdfrust_thumbnail::OutputFormat::Rgba,
+                timeout: std::time::Duration::from_millis(100),
+            },
+        )
+        .expect_err("huge image dimensions should fail before allocation");
+
+        assert_eq!(
+            error.class(),
+            pdfrust_thumbnail::ThumbnailErrorClass::Unsupported
+        );
+        assert_eq!(
+            error.unsupported_feature_bucket(),
+            Some(BUCKET_RENDERER_MEMORY_BUDGET)
+        );
+    }
+
+    #[test]
     fn native_backend_should_depend_on_object_and_render_layers() {
         assert_eq!(object_role(), "object");
         assert_eq!(render_role(), "render");

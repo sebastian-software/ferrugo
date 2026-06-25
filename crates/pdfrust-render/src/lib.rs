@@ -8238,6 +8238,12 @@ where
             icc_cache,
         )?
     };
+    let expected_len = if image_mask {
+        expected_image_mask_len(width, height)?
+    } else {
+        expected_image_len(width, height, color_space.kind)?
+    };
+    enforce_image_byte_budget(expected_len, limits.max_image_bytes)?;
     let image_filter = image_filter(stream.dictionary())?;
     let decoded = decode_image_samples(
         stream,
@@ -8248,19 +8254,7 @@ where
         bits_per_component,
         limits.max_image_bytes,
     )?;
-    if decoded.len() > limits.max_image_bytes {
-        return Err(GraphicsError::new(
-            None,
-            GraphicsErrorKind::ImageBytesOverflow {
-                limit: limits.max_image_bytes,
-            },
-        ));
-    }
-    let expected_len = if image_mask {
-        expected_image_mask_len(width, height)?
-    } else {
-        expected_image_len(width, height, color_space.kind)?
-    };
+    enforce_image_byte_budget(decoded.len(), limits.max_image_bytes)?;
     if decoded.len() != expected_len {
         return Err(GraphicsError::new(
             None,
@@ -8449,15 +8443,9 @@ fn decode_inline_image(
     }
     let color_space = image_color_space(attributes)?;
     let data = image.data();
-    if data.len() > max_image_bytes {
-        return Err(GraphicsError::new(
-            None,
-            GraphicsErrorKind::ImageBytesOverflow {
-                limit: max_image_bytes,
-            },
-        ));
-    }
     let expected_len = expected_image_len(width, height, color_space.kind)?;
+    enforce_image_byte_budget(expected_len, max_image_bytes)?;
+    enforce_image_byte_budget(data.len(), max_image_bytes)?;
     if data.len() != expected_len {
         return Err(GraphicsError::new(
             None,
@@ -8917,6 +8905,19 @@ fn expected_image_mask_len(width: u32, height: u32) -> GraphicsResult<usize> {
                 GraphicsErrorKind::ImageBytesOverflow { limit: usize::MAX },
             )
         })
+}
+
+fn enforce_image_byte_budget(byte_len: usize, max_image_bytes: usize) -> GraphicsResult<()> {
+    if byte_len > max_image_bytes {
+        Err(GraphicsError::new(
+            None,
+            GraphicsErrorKind::ImageBytesOverflow {
+                limit: max_image_bytes,
+            },
+        ))
+    } else {
+        Ok(())
+    }
 }
 
 fn flatten_path_segments(
@@ -16066,6 +16067,28 @@ mod tests {
             },
         )
         .expect_err("image samples should exceed configured budget");
+
+        assert_eq!(
+            error.kind(),
+            &GraphicsErrorKind::ImageBytesOverflow { limit: 4 }
+        );
+    }
+
+    #[test]
+    fn image_resources_should_enforce_declared_image_byte_budget() {
+        let document = load_image_xobject_pdf(
+            b"q 10 0 0 10 0 0 cm /Im1 Do Q",
+            b"<< /Type /XObject /Subtype /Image /Width 100000 /Height 100000 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Length 0 >>",
+            &[],
+        );
+        let error = image_resources_from_document_with_options(
+            &document,
+            DisplayListOptions {
+                max_image_bytes: 4,
+                ..DisplayListOptions::default()
+            },
+        )
+        .expect_err("declared image sample size should exceed configured budget");
 
         assert_eq!(
             error.kind(),

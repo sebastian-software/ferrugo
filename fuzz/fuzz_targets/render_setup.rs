@@ -15,6 +15,7 @@ fn main() {
             b"BT /F1 12 Tf (hello) Tj ET",
             b"BI /W 1 /H 1 /BPC 8 ID x EI",
             include_bytes!("../../fixtures/adversarial/truncated-header.pdf"),
+            include_bytes!("../../fixtures/adversarial/huge-image-dimensions.pdf"),
         ],
     );
 }
