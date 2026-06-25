@@ -1,6 +1,6 @@
 # 0113: Embedded Files Portfolio And Attachment Visibility
 
-Status: in-progress
+Status: done
 Phase: 20
 Size: medium
 Depends on: 0112
@@ -46,4 +46,15 @@ breaking thumbnail rendering.
 
 ## Completion Notes
 
-Empty until done.
+Completed 2026-06-25.
+
+- Added generated embedded-file, portfolio, and file-attachment annotation
+  fixtures.
+- Exposed inert presence-only metadata for embedded files, portfolio
+  collections, and file-attachment annotations.
+- Covered visible file-attachment annotations through the existing appearance
+  rendering path.
+- Documented the boundary: no extraction, execution, or portfolio UI in the
+  native thumbnail renderer.
+- Validation evidence is recorded in
+  `docs/reports/embedded-files-portfolio-2026-06-25.md`.

@@ -219,6 +219,19 @@ The native renderer does not validate certificate chains, hash signed byte
 ranges, parse PKCS#7/CMS contents, or report legal signature status. See
 `docs/reports/signature-boundary-2026-06-25.md`.
 
+## Embedded Files And Portfolio Visibility
+
+Embedded files stay inert in the native thumbnail path. Catalog
+`/Names /EmbeddedFiles`, portfolio `/Collection`, and page
+`/Subtype /FileAttachment` annotation presence are exposed through document
+metadata so callers can classify these documents without opening attachments.
+
+Attachment annotations render only through the existing annotation appearance
+path when a normal appearance stream is present. The renderer does not extract,
+open, execute, or preview embedded payloads, and it does not implement a
+portfolio browser. The metadata scan remains bounded and reports presence
+signals only. See `docs/reports/embedded-files-portfolio-2026-06-25.md`.
+
 ## Fallback Policy
 
 PDFium remains the oracle and explicit fallback until the visual GA gate says
