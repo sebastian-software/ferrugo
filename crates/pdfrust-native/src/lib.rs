@@ -3921,6 +3921,69 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_render_generated_identity_h_cjk_text_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/identity-h-cjk-text.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 180,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated Identity-H CJK fixture should render through native backend");
+
+        assert_eq!(thumbnail.width, 180);
+        assert_eq!(thumbnail.height, 100);
+        assert!(thumbnail
+            .bytes
+            .chunks_exact(4)
+            .any(|pixel| pixel != [255, 255, 255, 255]));
+    }
+
+    #[test]
+    fn native_backend_should_render_generated_identity_v_cjk_text_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/identity-v-cjk-text.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 180,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated Identity-V CJK fixture should render through native backend");
+
+        assert_eq!(thumbnail.width, 180);
+        assert_eq!(thumbnail.height, 120);
+        assert!(thumbnail
+            .bytes
+            .chunks_exact(4)
+            .any(|pixel| pixel != [255, 255, 255, 255]));
+    }
+
+    #[test]
+    fn native_backend_should_render_generated_cmap_codespace_range_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/cmap-codespace-range-text.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 180,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated CMap codespace fixture should render through native backend");
+
+        assert_eq!(thumbnail.width, 180);
+        assert_eq!(thumbnail.height, 100);
+        assert!(thumbnail
+            .bytes
+            .chunks_exact(4)
+            .any(|pixel| pixel != [255, 255, 255, 255]));
+    }
+
+    #[test]
     fn native_backend_should_render_generated_shaped_rtl_text_fixture() {
         let bytes = include_bytes!("../../../fixtures/generated/shaped-rtl-text.pdf");
         let thumbnail = ThumbnailBackend::render(

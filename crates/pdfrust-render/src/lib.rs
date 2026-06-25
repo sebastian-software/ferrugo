@@ -2,6 +2,7 @@
 
 #![forbid(unsafe_code)]
 
+use std::borrow::Cow;
 use std::fmt;
 use std::sync::Arc;
 
@@ -2138,32 +2139,72 @@ fn ascii_glyph_name(code: u8) -> Vec<u8> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ToUnicodeMap {
     entries: Vec<ToUnicodeEntry>,
+    code_space_ranges: Vec<CodeSpaceRange>,
     max_code_len: usize,
+    identity_width: Option<usize>,
 }
 
 impl ToUnicodeMap {
-    fn new(entries: Vec<ToUnicodeEntry>) -> Self {
-        let max_code_len = entries
+    fn new(entries: Vec<ToUnicodeEntry>, code_space_ranges: Vec<CodeSpaceRange>) -> Self {
+        let max_entry_len = entries
             .iter()
             .map(|entry| entry.code.len())
             .max()
             .unwrap_or(0);
+        let max_range_len = code_space_ranges
+            .iter()
+            .map(|range| range.start.len())
+            .max()
+            .unwrap_or(0);
         Self {
             entries,
-            max_code_len,
+            code_space_ranges,
+            max_code_len: max_entry_len.max(max_range_len),
+            identity_width: None,
         }
     }
 
-    fn match_code(&self, bytes: &[u8], offset: usize) -> Option<(&str, usize, u32)> {
+    fn identity(width: usize) -> Self {
+        let max = vec![0xff; width];
+        Self {
+            entries: Vec::new(),
+            code_space_ranges: vec![CodeSpaceRange {
+                start: vec![0; width],
+                end: max,
+            }],
+            max_code_len: width,
+            identity_width: Some(width),
+        }
+    }
+
+    fn match_code(&self, bytes: &[u8], offset: usize) -> Option<(Cow<'_, str>, usize, u32)> {
         let remaining = bytes.len().saturating_sub(offset);
         let max_width = self.max_code_len.min(remaining);
         for width in (1..=max_width).rev() {
             let code = &bytes[offset..offset + width];
+            if !self.code_space_ranges.is_empty() && !self.code_space_contains(code) {
+                continue;
+            }
             if let Some(entry) = self.entries.iter().find(|entry| entry.code == code) {
-                return Some((entry.text.as_str(), width, bytes_to_u32(code)));
+                return Some((
+                    Cow::Borrowed(entry.text.as_str()),
+                    width,
+                    bytes_to_u32(code),
+                ));
+            }
+            if self.identity_width == Some(width) {
+                let scalar = bytes_to_u32(code);
+                let character = char::from_u32(scalar)?;
+                return Some((Cow::Owned(character.to_string()), width, scalar));
             }
         }
         None
+    }
+
+    fn code_space_contains(&self, code: &[u8]) -> bool {
+        self.code_space_ranges
+            .iter()
+            .any(|range| range.contains(code))
     }
 }
 
@@ -2171,6 +2212,20 @@ impl ToUnicodeMap {
 struct ToUnicodeEntry {
     code: Vec<u8>,
     text: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CodeSpaceRange {
+    start: Vec<u8>,
+    end: Vec<u8>,
+}
+
+impl CodeSpaceRange {
+    fn contains(&self, code: &[u8]) -> bool {
+        code.len() == self.start.len()
+            && bytes_to_u32(&self.start) <= bytes_to_u32(code)
+            && bytes_to_u32(code) <= bytes_to_u32(&self.end)
+    }
 }
 
 /// CID descendant font metadata used by composite fonts.
@@ -2882,7 +2937,7 @@ where
     R: FontObjectResolver<'a> + ?Sized,
 {
     let Some(value) = dictionary_value(dictionary, b"ToUnicode") else {
-        return Ok(None);
+        return Ok(identity_to_unicode_map(dictionary));
     };
     let reference = reference_from_primitive(value).ok_or_else(|| {
         GraphicsError::new(
@@ -2930,6 +2985,17 @@ where
         ));
     }
     parse_to_unicode_cmap(&decoded, options.max_cmap_entries).map(Some)
+}
+
+fn identity_to_unicode_map(dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)]) -> Option<ToUnicodeMap> {
+    match dictionary_value(dictionary, b"Encoding") {
+        Some(PdfPrimitive::Name(name))
+            if matches!(name.as_bytes(), b"Identity-H" | b"Identity-V") =>
+        {
+            Some(ToUnicodeMap::identity(2))
+        }
+        _ => None,
+    }
 }
 
 fn extract_truetype_glyph_outline(
@@ -6285,11 +6351,11 @@ fn decode_with_to_unicode(
                 GraphicsErrorKind::TextRunOverflow { limit },
             ));
         }
-        text.push_str(mapped);
+        text.push_str(&mapped);
         glyphs.push(TextGlyph {
             character_code,
             unicode: mapped.to_string(),
-            layout: classify_text_layout(mapped),
+            layout: classify_text_layout(&mapped),
         });
         byte_offset += width;
     }
@@ -9478,10 +9544,15 @@ fn glyph_name_to_char(name: &[u8]) -> Option<char> {
 
 fn parse_to_unicode_cmap(bytes: &[u8], entry_limit: usize) -> GraphicsResult<ToUnicodeMap> {
     let mut entries = Vec::new();
+    let mut code_space_ranges = Vec::new();
     let mut mode = CMapSection::None;
     for raw_line in bytes.split(|byte| matches!(byte, b'\n' | b'\r')) {
         let line = trim_cmap_comment(raw_line);
         if line.is_empty() {
+            continue;
+        }
+        if contains_word(line, b"begincodespacerange") {
+            mode = CMapSection::CodeSpaceRange;
             continue;
         }
         if contains_word(line, b"beginbfchar") {
@@ -9492,19 +9563,36 @@ fn parse_to_unicode_cmap(bytes: &[u8], entry_limit: usize) -> GraphicsResult<ToU
             mode = CMapSection::BfRange;
             continue;
         }
-        if contains_word(line, b"endbfchar") || contains_word(line, b"endbfrange") {
+        if contains_word(line, b"endcodespacerange")
+            || contains_word(line, b"endbfchar")
+            || contains_word(line, b"endbfrange")
+        {
             mode = CMapSection::None;
             continue;
         }
         match mode {
             CMapSection::None => {
-                if contains_word(line, b"usecmap") {
+                if contains_word(line, b"usecmap") && !is_identity_usecmap(line) {
                     return Err(GraphicsError::new(
                         None,
                         GraphicsErrorKind::UnsupportedCMap {
                             feature: b"usecmap".to_vec(),
                         },
                     ));
+                }
+            }
+            CMapSection::CodeSpaceRange => {
+                let hex_values = collect_hex_strings(line)?;
+                for pair in hex_values.chunks_exact(2) {
+                    push_cmap_code_space_range(
+                        &mut code_space_ranges,
+                        &pair[0],
+                        &pair[1],
+                        entry_limit,
+                    )?;
+                }
+                if hex_values.len() % 2 != 0 {
+                    return Err(invalid_cmap());
                 }
             }
             CMapSection::BfChar => {
@@ -9521,14 +9609,41 @@ fn parse_to_unicode_cmap(bytes: &[u8], entry_limit: usize) -> GraphicsResult<ToU
             }
         }
     }
-    Ok(ToUnicodeMap::new(entries))
+    Ok(ToUnicodeMap::new(entries, code_space_ranges))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CMapSection {
     None,
+    CodeSpaceRange,
     BfChar,
     BfRange,
+}
+
+fn push_cmap_code_space_range(
+    ranges: &mut Vec<CodeSpaceRange>,
+    start: &[u8],
+    end: &[u8],
+    entry_limit: usize,
+) -> GraphicsResult<()> {
+    if ranges.len() >= entry_limit {
+        return Err(GraphicsError::new(
+            None,
+            GraphicsErrorKind::CMapEntriesOverflow { limit: entry_limit },
+        ));
+    }
+    if start.is_empty() || start.len() != end.len() || bytes_to_u32(end) < bytes_to_u32(start) {
+        return Err(invalid_cmap());
+    }
+    ranges.push(CodeSpaceRange {
+        start: start.to_vec(),
+        end: end.to_vec(),
+    });
+    Ok(())
+}
+
+fn is_identity_usecmap(line: &[u8]) -> bool {
+    contains_word(line, b"Identity-H") || contains_word(line, b"Identity-V")
 }
 
 fn push_cmap_range(
@@ -12688,6 +12803,89 @@ mod tests {
         assert_eq!(text.text, "日本");
         assert_eq!(text.glyph_origins[0], Point { x: 0.0, y: 0.0 });
         assert_eq!(text.glyph_origins[1], Point { x: 0.0, y: -10.0 });
+    }
+
+    #[test]
+    fn text_display_list_should_decode_identity_h_without_tounicode() {
+        let document = load_tounicode_text_pdf(
+            b"BT /F1 10 Tf <65e5672c> Tj ET",
+            b"<< /Type /Font /Subtype /Type0 /BaseFont /ABCDEE+IdentityFixture /Encoding /Identity-H /DescendantFonts [<< /Type /Font /Subtype /CIDFontType2 /BaseFont /ABCDEE+IdentityFixture /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /DW 1000 >>] >>",
+            b"",
+        );
+        let resources =
+            font_resources_from_document(&document, &[("F1", 4)]).expect("valid font resources");
+        let content = content_stream_from_document(&document);
+        let list = build_text_display_list(
+            tokenize_content(PdfBytes::new(&content)),
+            &resources,
+            DisplayListOptions::default(),
+        )
+        .expect("Identity-H text should decode through identity CMap fallback");
+
+        let DisplayItem::Text(text) = &list.items()[0] else {
+            panic!("expected text display item");
+        };
+        assert_eq!(text.text, "日本");
+        assert_eq!(text.glyphs[0].character_code, 0x65e5);
+    }
+
+    #[test]
+    fn text_display_list_should_respect_tounicode_codespace_ranges() {
+        let document = load_tounicode_text_pdf(
+            b"BT /F1 10 Tf <65e5672c> Tj ET",
+            b"<< /Type /Font /Subtype /Type0 /BaseFont /ABCDEE+CodeSpaceFixture /Encoding /Identity-H /DescendantFonts [<< /Type /Font /Subtype /CIDFontType2 /BaseFont /ABCDEE+CodeSpaceFixture /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /DW 1000 >>] /ToUnicode 6 0 R >>",
+            b"/CIDInit /ProcSet findresource begin\n1 begincodespacerange\n<0000> <ffff>\nendcodespacerange\n2 beginbfchar\n<65e5> <65e5>\n<672c> <672c>\nendbfchar\nend",
+        );
+        let resources =
+            font_resources_from_document(&document, &[("F1", 4)]).expect("valid font resources");
+        let content = content_stream_from_document(&document);
+        let list = build_text_display_list(
+            tokenize_content(PdfBytes::new(&content)),
+            &resources,
+            DisplayListOptions::default(),
+        )
+        .expect("codespace CMap should decode");
+
+        let DisplayItem::Text(text) = &list.items()[0] else {
+            panic!("expected text display item");
+        };
+        assert_eq!(text.text, "日本");
+    }
+
+    #[test]
+    fn text_display_list_should_allow_identity_usecmap_base() {
+        let document = load_tounicode_text_pdf(
+            b"BT /F1 10 Tf <01> Tj ET",
+            b"<< /Type /Font /Subtype /Type0 /BaseFont /ABCDEE+UseCMapFixture /Encoding /Identity-H /DescendantFonts [<< /Type /Font /Subtype /CIDFontType2 /BaseFont /ABCDEE+UseCMapFixture /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /DW 1000 >>] /ToUnicode 6 0 R >>",
+            b"/CIDInit /ProcSet findresource begin\n/Identity-H usecmap\n1 beginbfchar\n<01> <0055>\nendbfchar\nend",
+        );
+        let resources =
+            font_resources_from_document(&document, &[("F1", 4)]).expect("valid font resources");
+        let content = content_stream_from_document(&document);
+        let list = build_text_display_list(
+            tokenize_content(PdfBytes::new(&content)),
+            &resources,
+            DisplayListOptions::default(),
+        )
+        .expect("Identity-H usecmap base should be accepted");
+
+        let DisplayItem::Text(text) = &list.items()[0] else {
+            panic!("expected text display item");
+        };
+        assert_eq!(text.text, "U");
+    }
+
+    #[test]
+    fn font_resources_should_reject_malformed_codespace_range() {
+        let document = load_tounicode_text_pdf(
+            b"BT /F1 12 Tf <01> Tj ET",
+            b"<< /Type /Font /Subtype /Type1 /BaseFont /SubsetFont /ToUnicode 6 0 R >>",
+            b"1 begincodespacerange\n<00> <ffff>\nendcodespacerange",
+        );
+        let error = font_resources_from_document(&document, &[("F1", 4)])
+            .expect_err("malformed codespace range should fail");
+
+        assert_eq!(error.kind(), &GraphicsErrorKind::InvalidCMap);
     }
 
     #[test]

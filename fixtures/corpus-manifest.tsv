@@ -16,6 +16,7 @@ fixtures/generated/blend-modes.pdf	report	scripts/generate_fixtures.py	MIT OR Ap
 fixtures/generated/cid-font-text.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,type0,cid,tounicode	Generated Type0 CID font ToUnicode fixture.
 fixtures/generated/cff-fontfile3-text.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,font,cff,fontfile3	Generated Type1 font resource with embedded CFF FontFile3 fixture.
 fixtures/generated/clipped-paths.pdf	browser-print	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	vector,clipping	Generated even-odd clipping path fixture.
+fixtures/generated/cmap-codespace-range-text.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,type0,cid,cmap,codespace,tounicode	Generated Type0 CID text fixture with an explicit ToUnicode code-space range.
 fixtures/generated/cmyk-image.pdf	scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,cmyk	Generated CMYK image color-space fixture.
 fixtures/generated/combining-mark-text.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,tounicode,combining-mark,opentype	Generated ToUnicode text fixture with a combining mark sequence.
 fixtures/generated/cropped-scan-page.pdf	scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	geometry,cropbox,scan	Generated cropped scan-like page using CropBox selection.
@@ -32,6 +33,8 @@ fixtures/generated/image-mask-logo.pdf	scan	scripts/generate_fixtures.py	MIT OR 
 fixtures/generated/image-mask-monochrome-icon.pdf	scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,image-mask,icon,stencil	Generated monochrome ImageMask icon fixture.
 fixtures/generated/image-mask-signature.pdf	form	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,image-mask,signature,stencil	Generated signature-style ImageMask stencil fixture.
 fixtures/generated/image-xobject.pdf	scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,xobject,rgb	Generated unfiltered Image XObject fixture.
+fixtures/generated/identity-h-cjk-text.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,type0,cid,cmap,identity-h,cjk	Generated Type0 CID text fixture using Identity-H without a ToUnicode stream.
+fixtures/generated/identity-v-cjk-text.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,type0,cid,cmap,identity-v,cjk,vertical	Generated Type0 CID vertical text fixture using Identity-V without a ToUnicode stream.
 fixtures/generated/incremental-deleted-object.pdf	mixed-layout	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	xref,incremental-update,deleted-object	Generated incremental update fixture with a newer free entry deleting an older object.
 fixtures/generated/incremental-update.pdf	mixed-layout	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	xref,incremental-update	Generated classic incremental update fixture.
 fixtures/generated/indexed-image.pdf	scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,indexed-color	Generated Indexed image color-space fixture.

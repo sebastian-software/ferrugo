@@ -2156,6 +2156,57 @@ def arabic_shaped_text_pdf() -> bytes:
     )
 
 
+def identity_h_cjk_text_pdf() -> bytes:
+    return shaped_text_pdf(
+        b"BT /F1 26 Tf 30 60 Td <65e5672c> Tj ET",
+        b"",
+        "<< /Type /Font /Subtype /Type0 /BaseFont /ABCDEE+IdentityCjkFixture "
+        "/Encoding /Identity-H /DescendantFonts [<< /Type /Font "
+        "/Subtype /CIDFontType2 /BaseFont /ABCDEE+IdentityCjkFixture "
+        "/CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> "
+        "/DW 1000 >>] >>",
+    )
+
+
+def identity_v_cjk_text_pdf() -> bytes:
+    return shaped_text_pdf(
+        b"BT /F1 26 Tf 90 80 Td <65e5672c> Tj ET",
+        b"",
+        "<< /Type /Font /Subtype /Type0 /BaseFont /ABCDEE+IdentityVerticalFixture "
+        "/Encoding /Identity-V /DescendantFonts [<< /Type /Font "
+        "/Subtype /CIDFontType2 /BaseFont /ABCDEE+IdentityVerticalFixture "
+        "/CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> "
+        "/DW 1000 >>] >>",
+        "[0 0 180 120]",
+    )
+
+
+def cmap_codespace_range_text_pdf() -> bytes:
+    cmap = (
+        b"/CIDInit /ProcSet findresource begin\n"
+        b"1 begincmap\n"
+        b"1 begincodespacerange\n"
+        b"<0000> <ffff>\n"
+        b"endcodespacerange\n"
+        b"2 beginbfchar\n"
+        b"<65e5> <65e5>\n"
+        b"<672c> <672c>\n"
+        b"endbfchar\n"
+        b"endcmap\n"
+        b"CMapName currentdict /CMap defineresource pop\n"
+        b"end"
+    )
+    return shaped_text_pdf(
+        b"BT /F1 26 Tf 30 60 Td <65e5672c> Tj ET",
+        cmap,
+        "<< /Type /Font /Subtype /Type0 /BaseFont /ABCDEE+CodeSpaceCjkFixture "
+        "/Encoding /Identity-H /DescendantFonts [<< /Type /Font "
+        "/Subtype /CIDFontType2 /BaseFont /ABCDEE+CodeSpaceCjkFixture "
+        "/CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> "
+        "/DW 1000 >>] /ToUnicode 6 0 R >>",
+    )
+
+
 def encoding_differences_pdf() -> bytes:
     pdf = Pdf()
     content = b"BT /F1 24 Tf 30 60 Td (A) Tj ET"
@@ -2600,6 +2651,9 @@ def main() -> None:
     write("opentype-ligature-text.pdf", opentype_ligature_text_pdf())
     write("combining-mark-text.pdf", combining_mark_text_pdf())
     write("arabic-shaped-text.pdf", arabic_shaped_text_pdf())
+    write("identity-h-cjk-text.pdf", identity_h_cjk_text_pdf())
+    write("identity-v-cjk-text.pdf", identity_v_cjk_text_pdf())
+    write("cmap-codespace-range-text.pdf", cmap_codespace_range_text_pdf())
     write("encoding-differences.pdf", encoding_differences_pdf())
     write("text-spacing.pdf", text_spacing_pdf())
     write(
