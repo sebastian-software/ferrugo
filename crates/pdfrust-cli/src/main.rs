@@ -2421,6 +2421,7 @@ fn native_memory_diagnostics_json(diagnostics: &NativeMemoryDiagnostics) -> Stri
             "\"max_cmap_bytes\":{},",
             "\"max_text_run_bytes\":{},",
             "\"max_display_items\":{},",
+            "\"max_font_fallback_cache_entries\":{},",
             "\"spooling_enabled\":{},",
             "\"max_spool_bytes\":{}",
             "}}"
@@ -2432,6 +2433,7 @@ fn native_memory_diagnostics_json(diagnostics: &NativeMemoryDiagnostics) -> Stri
         diagnostics.max_cmap_bytes,
         diagnostics.max_text_run_bytes,
         diagnostics.max_display_items,
+        diagnostics.max_font_fallback_cache_entries,
         diagnostics.spooling_enabled,
         diagnostics.max_spool_bytes
     )

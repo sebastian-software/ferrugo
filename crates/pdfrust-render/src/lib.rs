@@ -52,6 +52,9 @@ pub const DEFAULT_GLYPH_OUTLINE_CACHE_LIMIT: usize = 4_096;
 /// Default maximum cached fallback glyph bitmaps per rasterization pass.
 pub const DEFAULT_GLYPH_BITMAP_CACHE_LIMIT: usize = 256;
 
+/// Default maximum cached deterministic font fallback resolutions.
+pub const DEFAULT_FONT_FALLBACK_CACHE_LIMIT: usize = 128;
+
 /// Default maximum decoded bytes for one embedded font program.
 pub const DEFAULT_FONT_PROGRAM_BYTES_LIMIT: usize = 16 * 1024 * 1024;
 
@@ -1653,7 +1656,63 @@ pub enum TextSubpixelPolicy {
 /// Current native text positioning policy.
 pub const TEXT_SUBPIXEL_POLICY: TextSubpixelPolicy = TextSubpixelPolicy::PreserveUserSpace;
 
-/// Small fallback glyph bitmap cache keyed by glyph and quantized size.
+/// Deterministic built-in font face used by the native fallback text rasterizer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum FontFallbackFace {
+    /// Sans-serif fallback used for Helvetica, Arial, and unknown families.
+    Sans,
+    /// Serif fallback used for Times-like families.
+    Serif,
+    /// Monospace fallback used for Courier-like families.
+    Monospace,
+    /// Symbol fallback bucket for symbolic base fonts.
+    Symbol,
+}
+
+/// Why the fallback rasterizer selected a built-in font face.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum FontFallbackSource {
+    /// Embedded program exists, but the current rasterizer still uses the
+    /// deterministic built-in bitmap fallback for visible text.
+    EmbeddedProgram,
+    /// PDF standard/base font without an embedded program.
+    StandardBase,
+    /// Non-standard named font without an embedded program.
+    MissingEmbeddedProgram,
+    /// No usable base font metadata was present.
+    Unspecified,
+}
+
+/// Resolved deterministic built-in fallback face.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct FontFallback {
+    /// Built-in face selected by the deterministic policy.
+    pub face: FontFallbackFace,
+    /// Reason the built-in face was selected.
+    pub source: FontFallbackSource,
+}
+
+impl FontFallback {
+    fn resolve(
+        base_font: Option<&[u8]>,
+        subtype: Option<FontSubtype>,
+        has_embedded_program: bool,
+    ) -> Self {
+        let face = fallback_face_for_base_font(base_font);
+        let source = if has_embedded_program {
+            FontFallbackSource::EmbeddedProgram
+        } else if base_font.is_none() {
+            FontFallbackSource::Unspecified
+        } else if is_standard_base_font(base_font.unwrap_or_default(), subtype) {
+            FontFallbackSource::StandardBase
+        } else {
+            FontFallbackSource::MissingEmbeddedProgram
+        };
+        Self { face, source }
+    }
+}
+
+/// Small fallback glyph bitmap cache keyed by face, glyph, and quantized size.
 #[derive(Debug, Clone, PartialEq)]
 pub struct GlyphBitmapCache {
     entries: Vec<CachedGlyphBitmap>,
@@ -1670,8 +1729,8 @@ impl GlyphBitmapCache {
         }
     }
 
-    fn bitmap_for(&mut self, character: char, cell: f64) -> &GlyphBitmap {
-        let key = GlyphBitmapKey::new(character, cell);
+    fn bitmap_for(&mut self, face: FontFallbackFace, character: char, cell: f64) -> &GlyphBitmap {
+        let key = GlyphBitmapKey::new(face, character, cell);
         if let Some(index) = self.entries.iter().position(|entry| entry.key == key) {
             return &self.entries[index].bitmap;
         }
@@ -1715,14 +1774,16 @@ struct CachedGlyphBitmap {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct GlyphBitmapKey {
+    face: FontFallbackFace,
     character: char,
     cell_microunits: i64,
     paint_policy: GlyphBitmapPaintPolicy,
 }
 
 impl GlyphBitmapKey {
-    fn new(character: char, cell: f64) -> Self {
+    fn new(face: FontFallbackFace, character: char, cell: f64) -> Self {
         Self {
+            face,
             character: character.to_ascii_lowercase(),
             cell_microunits: quantize_glyph_cell(cell),
             paint_policy: GlyphBitmapPaintPolicy::MaskOnly,
@@ -1775,6 +1836,74 @@ struct GlyphBitmapRect {
 
 fn quantize_glyph_cell(cell: f64) -> i64 {
     (cell * 1_000_000.0).round() as i64
+}
+
+fn fallback_face_for_base_font(base_font: Option<&[u8]>) -> FontFallbackFace {
+    let Some(name) = base_font.map(strip_subset_font_prefix) else {
+        return FontFallbackFace::Sans;
+    };
+    if ascii_contains_ignore_case(name, b"symbol")
+        || ascii_contains_ignore_case(name, b"zapfdingbats")
+    {
+        FontFallbackFace::Symbol
+    } else if ascii_contains_ignore_case(name, b"courier")
+        || ascii_contains_ignore_case(name, b"consolas")
+        || ascii_contains_ignore_case(name, b"monaco")
+        || ascii_contains_ignore_case(name, b"mono")
+    {
+        FontFallbackFace::Monospace
+    } else if ascii_contains_ignore_case(name, b"times")
+        || ascii_contains_ignore_case(name, b"georgia")
+        || ascii_contains_ignore_case(name, b"serif")
+    {
+        FontFallbackFace::Serif
+    } else {
+        FontFallbackFace::Sans
+    }
+}
+
+fn is_standard_base_font(base_font: &[u8], subtype: Option<FontSubtype>) -> bool {
+    let name = strip_subset_font_prefix(base_font);
+    matches!(
+        subtype,
+        Some(FontSubtype::Type1 | FontSubtype::TrueType | FontSubtype::Type0)
+    ) && (ascii_eq_ignore_case(name, b"courier")
+        || ascii_eq_ignore_case(name, b"courier-bold")
+        || ascii_eq_ignore_case(name, b"courier-oblique")
+        || ascii_eq_ignore_case(name, b"courier-boldoblique")
+        || ascii_eq_ignore_case(name, b"helvetica")
+        || ascii_eq_ignore_case(name, b"helvetica-bold")
+        || ascii_eq_ignore_case(name, b"helvetica-oblique")
+        || ascii_eq_ignore_case(name, b"helvetica-boldoblique")
+        || ascii_eq_ignore_case(name, b"times-roman")
+        || ascii_eq_ignore_case(name, b"times-bold")
+        || ascii_eq_ignore_case(name, b"times-italic")
+        || ascii_eq_ignore_case(name, b"times-bolditalic")
+        || ascii_eq_ignore_case(name, b"symbol")
+        || ascii_eq_ignore_case(name, b"zapfdingbats"))
+}
+
+fn strip_subset_font_prefix(name: &[u8]) -> &[u8] {
+    if name.len() > 7 && name[6] == b'+' && name[..6].iter().all(|byte| byte.is_ascii_uppercase()) {
+        &name[7..]
+    } else {
+        name
+    }
+}
+
+fn ascii_eq_ignore_case(left: &[u8], right: &[u8]) -> bool {
+    left.len() == right.len()
+        && left
+            .iter()
+            .zip(right.iter())
+            .all(|(left, right)| left.eq_ignore_ascii_case(right))
+}
+
+fn ascii_contains_ignore_case(haystack: &[u8], needle: &[u8]) -> bool {
+    !needle.is_empty()
+        && haystack
+            .windows(needle.len())
+            .any(|window| ascii_eq_ignore_case(window, needle))
 }
 
 /// Small glyph outline cache keyed by font program identity and glyph code.
@@ -2049,15 +2178,19 @@ pub struct FontDescriptor {
     pub type3: Option<Arc<Type3Font>>,
     /// Writing mode selected for text advance.
     pub writing_mode: TextWritingMode,
+    /// Deterministic built-in fallback used by the current text rasterizer.
+    pub fallback: Option<FontFallback>,
 }
 
 impl FontDescriptor {
     /// Creates a lightweight fallback font descriptor.
     #[must_use]
     pub fn new(resource_name: impl Into<Vec<u8>>, base_font: Option<impl Into<Vec<u8>>>) -> Self {
+        let base_font = base_font.map(Into::into);
+        let fallback = Some(FontFallback::resolve(base_font.as_deref(), None, false));
         Self {
             resource_name: resource_name.into(),
-            base_font: base_font.map(Into::into),
+            base_font,
             subtype: None,
             descriptor_reference: None,
             program: None,
@@ -2066,6 +2199,7 @@ impl FontDescriptor {
             cid_metrics: None,
             type3: None,
             writing_mode: TextWritingMode::Horizontal,
+            fallback,
         }
     }
 
@@ -2087,19 +2221,26 @@ impl FontDescriptor {
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct FontResources {
     fonts: Vec<FontDescriptor>,
+    fallback_cache_entries: usize,
 }
 
 impl FontResources {
     /// Creates an empty font resource map.
     #[must_use]
     pub const fn empty() -> Self {
-        Self { fonts: Vec::new() }
+        Self {
+            fonts: Vec::new(),
+            fallback_cache_entries: 0,
+        }
     }
 
     /// Creates a font resource map from descriptors.
     #[must_use]
     pub fn new(fonts: Vec<FontDescriptor>) -> Self {
-        Self { fonts }
+        Self {
+            fonts,
+            fallback_cache_entries: 0,
+        }
     }
 
     /// Resolves font resources from a PDF `/Font` resource dictionary.
@@ -2118,13 +2259,22 @@ impl FontResources {
         R: FontObjectResolver<'a> + ?Sized,
     {
         let mut cache = FontProgramCache::default();
+        let mut fallback_cache = FontFallbackCache::new(options.max_font_fallback_cache_entries);
         let mut fonts = Vec::new();
         for (name, value) in dictionary {
-            fonts.push(decode_font_resource(
-                *name, value, resolver, &mut cache, options,
-            )?);
+            let mut font = decode_font_resource(*name, value, resolver, &mut cache, options)?;
+            font.fallback = fallback_cache.resolve(
+                font.base_font.as_deref(),
+                font.subtype,
+                font.program.is_some(),
+                font.type3.is_some(),
+            );
+            fonts.push(font);
         }
-        Ok(Self { fonts })
+        Ok(Self {
+            fonts,
+            fallback_cache_entries: fallback_cache.len(),
+        })
     }
 
     /// Returns the font matching a PDF resource name.
@@ -2134,6 +2284,73 @@ impl FontResources {
             .iter()
             .find(|font| font.resource_name.as_slice() == name.as_bytes())
     }
+
+    /// Returns cached deterministic fallback resolutions retained for this map.
+    #[must_use]
+    pub const fn fallback_cache_entries(&self) -> usize {
+        self.fallback_cache_entries
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct FontFallbackCache {
+    entries: Vec<CachedFontFallback>,
+    max_entries: usize,
+}
+
+impl FontFallbackCache {
+    fn new(max_entries: usize) -> Self {
+        Self {
+            entries: Vec::new(),
+            max_entries,
+        }
+    }
+
+    fn resolve(
+        &mut self,
+        base_font: Option<&[u8]>,
+        subtype: Option<FontSubtype>,
+        has_embedded_program: bool,
+        is_type3: bool,
+    ) -> Option<FontFallback> {
+        if is_type3 {
+            return None;
+        }
+        let fallback = FontFallback::resolve(base_font, subtype, has_embedded_program);
+        let key = FontFallbackKey {
+            face: fallback.face,
+            source: fallback.source,
+            subtype,
+        };
+        if let Some(entry) = self.entries.iter().find(|entry| entry.key == key) {
+            return Some(entry.fallback);
+        }
+        if self.max_entries == 0 {
+            return Some(fallback);
+        }
+        if self.entries.len() >= self.max_entries {
+            self.entries.remove(0);
+        }
+        self.entries.push(CachedFontFallback { key, fallback });
+        Some(fallback)
+    }
+
+    fn len(&self) -> usize {
+        self.entries.len()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct FontFallbackKey {
+    face: FontFallbackFace,
+    source: FontFallbackSource,
+    subtype: Option<FontSubtype>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct CachedFontFallback {
+    key: FontFallbackKey,
+    fallback: FontFallback,
 }
 
 /// Resolves font and font descriptor references from a loaded PDF document.
@@ -2292,6 +2509,7 @@ where
         cid_metrics,
         type3,
         writing_mode,
+        fallback: None,
     })
 }
 
@@ -3059,6 +3277,8 @@ pub struct DisplayListOptions {
     pub max_soft_mask_depth: usize,
     /// Maximum allowed Form XObject recursion depth.
     pub max_form_recursion_depth: usize,
+    /// Maximum cached deterministic font fallback resolutions.
+    pub max_font_fallback_cache_entries: usize,
 }
 
 impl Default for DisplayListOptions {
@@ -3075,6 +3295,7 @@ impl Default for DisplayListOptions {
             max_total_image_bytes: DEFAULT_TOTAL_IMAGE_BYTES_LIMIT,
             max_soft_mask_depth: DEFAULT_SOFT_MASK_DEPTH_LIMIT,
             max_form_recursion_depth: DEFAULT_FORM_RECURSION_DEPTH_LIMIT,
+            max_font_fallback_cache_entries: DEFAULT_FONT_FALLBACK_CACHE_LIMIT,
         }
     }
 }
@@ -7855,7 +8076,11 @@ fn draw_text_run(
         if character == ' ' {
             continue;
         }
-        let bitmap = glyph_cache.bitmap_for(character, cell);
+        let face = text
+            .font
+            .fallback
+            .map_or(FontFallbackFace::Sans, |fallback| fallback.face);
+        let bitmap = glyph_cache.bitmap_for(face, character, cell);
         draw_ascii_glyph(device, page_transform, bitmap, origin.x, origin.y, color)?;
     }
     Ok(())
@@ -11964,8 +12189,8 @@ mod tests {
     #[test]
     fn glyph_bitmap_cache_should_reuse_same_character_and_size() {
         let mut cache = GlyphBitmapCache::new(8);
-        let first = cache.bitmap_for('A', 2.0).clone();
-        let second = cache.bitmap_for('A', 2.0).clone();
+        let first = cache.bitmap_for(FontFallbackFace::Sans, 'A', 2.0).clone();
+        let second = cache.bitmap_for(FontFallbackFace::Sans, 'A', 2.0).clone();
 
         assert_eq!(first, second);
         assert_eq!(cache.len(), 1);
@@ -11974,8 +12199,8 @@ mod tests {
     #[test]
     fn glyph_bitmap_cache_should_include_size_in_key() {
         let mut cache = GlyphBitmapCache::new(8);
-        let small = cache.bitmap_for('A', 1.0).clone();
-        let large = cache.bitmap_for('A', 2.0).clone();
+        let small = cache.bitmap_for(FontFallbackFace::Sans, 'A', 1.0).clone();
+        let large = cache.bitmap_for(FontFallbackFace::Sans, 'A', 2.0).clone();
 
         assert_ne!(small, large);
         assert_eq!(cache.len(), 2);
@@ -11984,11 +12209,20 @@ mod tests {
     #[test]
     fn glyph_bitmap_cache_should_evict_oldest_entry_at_limit() {
         let mut cache = GlyphBitmapCache::new(1);
-        cache.bitmap_for('A', 1.0);
-        cache.bitmap_for('B', 1.0);
+        cache.bitmap_for(FontFallbackFace::Sans, 'A', 1.0);
+        cache.bitmap_for(FontFallbackFace::Sans, 'B', 1.0);
 
         assert_eq!(cache.len(), 1);
         assert_eq!(cache.entries[0].key.character, 'b');
+    }
+
+    #[test]
+    fn glyph_bitmap_cache_should_include_fallback_face_in_key() {
+        let mut cache = GlyphBitmapCache::new(8);
+        cache.bitmap_for(FontFallbackFace::Sans, 'A', 1.0);
+        cache.bitmap_for(FontFallbackFace::Serif, 'A', 1.0);
+
+        assert_eq!(cache.len(), 2);
     }
 
     #[test]
@@ -12165,6 +12399,108 @@ mod tests {
         assert_eq!(font.subtype, Some(FontSubtype::Type1));
         assert_eq!(font.base_font.as_deref(), Some(b"Helvetica".as_slice()));
         assert!(font.program.is_none());
+        assert_eq!(
+            font.fallback,
+            Some(FontFallback {
+                face: FontFallbackFace::Sans,
+                source: FontFallbackSource::StandardBase,
+            })
+        );
+    }
+
+    #[test]
+    fn font_resources_should_resolve_missing_embedded_font_deterministically() {
+        let document = generated_fixture_document("text-page.pdf");
+        let resources = FontResources::from_font_dictionary(
+            &[(
+                PdfName::new(b"F1"),
+                PdfPrimitive::Dictionary(vec![
+                    (
+                        PdfName::new(b"Subtype"),
+                        PdfPrimitive::Name(PdfName::new(b"TrueType")),
+                    ),
+                    (
+                        PdfName::new(b"BaseFont"),
+                        PdfPrimitive::Name(PdfName::new(b"ABCDEE+InvoiceSerif")),
+                    ),
+                    (
+                        PdfName::new(b"FontDescriptor"),
+                        PdfPrimitive::Dictionary(vec![(
+                            PdfName::new(b"FontName"),
+                            PdfPrimitive::Name(PdfName::new(b"ABCDEE+InvoiceSerif")),
+                        )]),
+                    ),
+                ]),
+            )],
+            &document,
+            DisplayListOptions::default(),
+        )
+        .expect("missing embedded program should use deterministic fallback");
+        let font = resources.get(PdfName::new(b"F1")).expect("font resource");
+
+        assert_eq!(
+            font.fallback,
+            Some(FontFallback {
+                face: FontFallbackFace::Serif,
+                source: FontFallbackSource::MissingEmbeddedProgram,
+            })
+        );
+    }
+
+    #[test]
+    fn font_resources_should_bound_fallback_resolution_cache() {
+        let document = generated_fixture_document("text-page.pdf");
+        let resources = FontResources::from_font_dictionary(
+            &[
+                (
+                    PdfName::new(b"F1"),
+                    PdfPrimitive::Dictionary(vec![
+                        (
+                            PdfName::new(b"Subtype"),
+                            PdfPrimitive::Name(PdfName::new(b"Type1")),
+                        ),
+                        (
+                            PdfName::new(b"BaseFont"),
+                            PdfPrimitive::Name(PdfName::new(b"Helvetica")),
+                        ),
+                    ]),
+                ),
+                (
+                    PdfName::new(b"F2"),
+                    PdfPrimitive::Dictionary(vec![
+                        (
+                            PdfName::new(b"Subtype"),
+                            PdfPrimitive::Name(PdfName::new(b"TrueType")),
+                        ),
+                        (
+                            PdfName::new(b"BaseFont"),
+                            PdfPrimitive::Name(PdfName::new(b"InvoiceSerif")),
+                        ),
+                    ]),
+                ),
+                (
+                    PdfName::new(b"F3"),
+                    PdfPrimitive::Dictionary(vec![
+                        (
+                            PdfName::new(b"Subtype"),
+                            PdfPrimitive::Name(PdfName::new(b"TrueType")),
+                        ),
+                        (
+                            PdfName::new(b"BaseFont"),
+                            PdfPrimitive::Name(PdfName::new(b"InvoiceMono")),
+                        ),
+                    ]),
+                ),
+            ],
+            &document,
+            DisplayListOptions {
+                max_font_fallback_cache_entries: 2,
+                ..DisplayListOptions::default()
+            },
+        )
+        .expect("fallback cache should evict without failing");
+
+        assert_eq!(resources.fallback_cache_entries(), 2);
     }
 
     #[test]

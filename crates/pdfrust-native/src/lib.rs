@@ -95,6 +95,8 @@ pub struct NativeMemoryDiagnostics {
     pub max_text_run_bytes: usize,
     /// Maximum display items accepted in one display list.
     pub max_display_items: usize,
+    /// Maximum cached deterministic font fallback resolutions.
+    pub max_font_fallback_cache_entries: usize,
     /// Whether temporary spooling is enabled for sensitive intermediates.
     pub spooling_enabled: bool,
     /// Maximum bytes allowed for temporary spooling.
@@ -143,6 +145,7 @@ impl Default for NativeMemoryDiagnostics {
             max_cmap_bytes: display.max_cmap_bytes,
             max_text_run_bytes: display.max_text_run_bytes,
             max_display_items: display.max_display_items,
+            max_font_fallback_cache_entries: display.max_font_fallback_cache_entries,
             spooling_enabled: false,
             max_spool_bytes: DEFAULT_SPOOL_BYTES_LIMIT,
         }
@@ -2624,6 +2627,7 @@ mod tests {
         assert_eq!(diagnostics.max_image_bytes, 32 * 1024 * 1024);
         assert_eq!(diagnostics.max_total_image_bytes, 128 * 1024 * 1024);
         assert_eq!(diagnostics.max_display_items, 8_192);
+        assert_eq!(diagnostics.max_font_fallback_cache_entries, 128);
         assert!(!diagnostics.spooling_enabled);
         assert_eq!(diagnostics.max_spool_bytes, 0);
     }
@@ -3968,6 +3972,69 @@ mod tests {
             },
         )
         .expect("generated text spacing fixture should render through native backend");
+
+        assert_eq!(thumbnail.width, 260);
+        assert_eq!(thumbnail.height, 120);
+        assert!(thumbnail
+            .bytes
+            .chunks_exact(4)
+            .any(|pixel| pixel != [255, 255, 255, 255]));
+    }
+
+    #[test]
+    fn native_backend_should_render_generated_missing_font_office_export_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/missing-font-office-export.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 260,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated office missing-font fixture should render through native backend");
+
+        assert_eq!(thumbnail.width, 260);
+        assert_eq!(thumbnail.height, 120);
+        assert!(thumbnail
+            .bytes
+            .chunks_exact(4)
+            .any(|pixel| pixel != [255, 255, 255, 255]));
+    }
+
+    #[test]
+    fn native_backend_should_render_generated_missing_font_invoice_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/missing-font-invoice.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 220,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated invoice missing-font fixture should render through native backend");
+
+        assert_eq!(thumbnail.width, 220);
+        assert_eq!(thumbnail.height, 120);
+        assert!(thumbnail
+            .bytes
+            .chunks_exact(4)
+            .any(|pixel| pixel != [255, 255, 255, 255]));
+    }
+
+    #[test]
+    fn native_backend_should_render_generated_missing_font_browser_print_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/missing-font-browser-print.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 260,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated browser missing-font fixture should render through native backend");
 
         assert_eq!(thumbnail.width, 260);
         assert_eq!(thumbnail.height, 120);
