@@ -1,6 +1,6 @@
 # 0135: Renderer Diagnostics And Debug Artifact Bundle
 
-Status: todo
+Status: done
 Phase: 24
 Size: medium
 Depends on: 0134
@@ -47,4 +47,21 @@ debug artifacts for parser, display-list, raster, and comparison stages.
 
 ## Completion Notes
 
-Empty until done.
+- Added opt-in `summarize-fallbacks --diagnostics-dir <path>` integration that
+  writes one JSON diagnostic bundle per fallback-required/error fixture.
+- Bundle format records render options, manifest metadata, safe page
+  count/page sizes, metadata/render timings, typed error class/category, coarse
+  stage hints, and native memory diagnostics.
+- Default bundles exclude PDF bytes, rendered pixels, and document-info fields.
+- Smoke artifact:
+  `target/diagnostics-0135/0004-fixtures-generated-optional-content-ocmd-pdf.diagnostics.json`.
+- Report: `docs/reports/renderer-diagnostics-bundle-2026-06-25.md`.
+- Validation:
+  - `cargo fmt --check`
+  - `cargo test -p pdfrust-cli diagnostic_bundles -- --nocapture`
+  - `cargo test -p pdfrust-cli fallback_summary_config_should_accept_family_filters -- --nocapture`
+  - `cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --include-family presentation --max-edge 160 --diagnostics-dir target/diagnostics-0135 --output target/diagnostics-0135-summary.json`
+  - `cargo check --workspace`
+  - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+  - `cargo test --workspace`
+  - `cargo test --workspace --no-default-features`

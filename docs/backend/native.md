@@ -398,6 +398,15 @@ cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/g
   --max-edge 160
 ```
 
+Add `--diagnostics-dir <path>` to emit one safe JSON diagnostic bundle for each
+fixture that returns fallback-required or error. Bundles include render options,
+manifest metadata, safe page count/page sizes, stage timings, typed error
+class/category, a coarse stage hint, and native memory diagnostics. They do not
+include PDF bytes, rendered pixels, or document-info fields such as title or
+author by default. Review the path and manifest notes before sharing a bundle
+outside the document trust boundary. See
+`docs/reports/renderer-diagnostics-bundle-2026-06-25.md`.
+
 Extract committed fixture metadata with page sizes and manifest tags:
 
 ```sh
