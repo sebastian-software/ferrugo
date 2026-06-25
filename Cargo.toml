@@ -8,6 +8,7 @@ members = [
     "crates/pdfrust-render",
     "crates/pdfrust-syntax",
     "crates/pdfrust-thumbnail",
+    "crates/pdfrust-wasm-smoke",
 ]
 resolver = "2"
 default-members = [

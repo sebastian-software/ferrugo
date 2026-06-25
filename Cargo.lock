@@ -107,6 +107,14 @@ name = "pdfrust-thumbnail"
 version = "0.1.0"
 
 [[package]]
+name = "pdfrust-wasm-smoke"
+version = "0.1.0"
+dependencies = [
+ "pdfrust-native",
+ "pdfrust-thumbnail",
+]
+
+[[package]]
 name = "simd-adler32"
 version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"

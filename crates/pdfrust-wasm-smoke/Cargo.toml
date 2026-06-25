@@ -1,0 +1,19 @@
+[package]
+name = "pdfrust-wasm-smoke"
+version = "0.1.0"
+edition.workspace = true
+description.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+pdfrust-native = { version = "0.1.0", path = "../pdfrust-native" }
+pdfrust-thumbnail = { version = "0.1.0", path = "../pdfrust-thumbnail" }
+
+[lints]
+workspace = true
