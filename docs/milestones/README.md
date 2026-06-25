@@ -21,7 +21,6 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
-| 0108 | [Advanced Shading Mesh Tessellation](0108-advanced-shading-mesh-tessellation.md) | 19 | medium | 0107 |
 | 0109 | [Transparency Isolation Knockout And Luminosity Masks](0109-transparency-isolation-knockout-and-luminosity-masks.md) | 19 | medium | 0108 |
 | 0110 | [Overprint Simulation For Print-Oriented PDFs](0110-overprint-simulation-for-print-oriented-pdfs.md) | 19 | medium | 0109 |
 | 0111 | [XFA And Dynamic Form Fallback Policy](0111-xfa-and-dynamic-form-fallback-policy.md) | 20 | small | 0110 |
@@ -99,6 +98,7 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
+| 0108 | [Advanced Shading Mesh Tessellation](0108-advanced-shading-mesh-tessellation.md) | 19 | medium | 0107 |
 
 ## Done
 
