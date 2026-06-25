@@ -1,0 +1,8 @@
+path	family	source	license	page_count	features	notes
+fixtures/generated/slide-title-gradient.pdf	title-slide	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	presentation,slide,title,axial-gradient,shadow,text,expected:native	Generated title slide with axial gradient background, translucent shadow, and positioned text.
+fixtures/generated/slide-layered-image-shadow.pdf	image-slide	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	presentation,slide,image,shadow,transparency,text,expected:native	Generated slide with scaled Image XObject, translucent tint overlay, soft shadow block, and text.
+fixtures/generated/slide-rotated-callout.pdf	chart-slide	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	presentation,slide,chart,rotated-text,transparency,expected:native	Generated chart-style slide with translucent callout panel and rotated label text.
+fixtures/generated/slide-speaker-notes-page.pdf	notes-page	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	presentation,slide,speaker-notes,thumbnail,text,expected:native	Generated speaker-notes style export page with slide thumbnail and notes lines.
+fixtures/generated/form-xobject.pdf	title-slide	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	presentation,form-xobject,expected:native	Existing presentation baseline for Form XObject placement.
+fixtures/generated/optional-content-layer-on.pdf	title-slide	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	presentation,optional-content,layer-on,expected:native	Existing presentation baseline for default-visible optional content.
+fixtures/generated/devicen-spot-color.pdf	chart-slide	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	presentation,spot-color,expected:native	Existing presentation baseline for slide-like spot-color vector elements.

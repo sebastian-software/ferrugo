@@ -3208,6 +3208,177 @@ def business_form_stamp_signature_pdf() -> bytes:
     )
 
 
+def slide_title_gradient_pdf() -> bytes:
+    pdf = Pdf()
+    content = (
+        b"/Bg sh "
+        b"q /Shadow gs 0 0 0 rg 34 40 220 72 re f Q "
+        b"q 1 1 1 rg 28 48 220 72 re f Q "
+        b"q 0.10 0.18 0.38 rg 28 132 44 14 re f Q "
+        b"BT /F1 24 Tf 42 96 Td (Quarterly Review) Tj "
+        b"/F1 12 Tf 0 -24 Td (Native slide export fixture) Tj ET"
+    )
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 320 180] "
+        "/Resources << "
+        "/Font << /F1 4 0 R >> "
+        "/ExtGState << /Shadow << /ca 0.22 >> >> "
+        "/Shading << /Bg << /ShadingType 2 /ColorSpace /DeviceRGB "
+        "/Coords [0 0 320 180] "
+        "/Function << /FunctionType 2 /Domain [0 1] /C0 [0.08 0.18 0.34] /C1 [0.95 0.54 0.18] /N 1 >> "
+        "/Extend [true true] >> >> "
+        ">> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    font = pdf.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert font == 4
+    return pdf.render(catalog)
+
+
+def slide_layered_image_shadow_pdf() -> bytes:
+    pdf = Pdf()
+    image = bytes(
+        [
+            22,
+            90,
+            150,
+            76,
+            130,
+            190,
+            160,
+            190,
+            210,
+            245,
+            210,
+            130,
+            48,
+            120,
+            170,
+            104,
+            164,
+            205,
+            205,
+            218,
+            230,
+            255,
+            226,
+            156,
+            72,
+            144,
+            182,
+            128,
+            180,
+            210,
+            222,
+            232,
+            238,
+            255,
+            238,
+            188,
+            42,
+            105,
+            160,
+            96,
+            150,
+            198,
+            184,
+            210,
+            228,
+            250,
+            220,
+            170,
+        ]
+    )
+    content = (
+        b"q 0.96 0.97 0.98 rg 0 0 320 180 re f Q "
+        b"q /Shadow gs 0 0 0 rg 92 36 154 98 re f Q "
+        b"q 150 0 0 96 84 42 cm /Hero Do Q "
+        b"q /Tint gs 0.04 0.28 0.55 rg 84 42 150 96 re f Q "
+        b"q 0.95 0.38 0.10 rg 214 102 42 28 re f Q "
+        b"BT /F1 18 Tf 28 144 Td (Layered image slide) Tj "
+        b"/F1 11 Tf 0 -18 Td (image, tint overlay, shadow) Tj ET"
+    )
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 320 180] "
+        "/Resources << /Font << /F1 5 0 R >> "
+        "/ExtGState << /Shadow << /ca 0.18 >> /Tint << /ca 0.18 >> >> "
+        "/XObject << /Hero 4 0 R >> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    image_object = pdf.add(
+        b"<< /Type /XObject /Subtype /Image /Width 4 /Height 4 "
+        b"/ColorSpace /DeviceRGB /BitsPerComponent 8 /Length "
+        + str(len(image)).encode("ascii")
+        + b" >>\nstream\n"
+        + image
+        + b"\nendstream"
+    )
+    font = pdf.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert image_object == 4
+    assert font == 5
+    return pdf.render(catalog)
+
+
+def slide_rotated_callout_pdf() -> bytes:
+    pdf = Pdf()
+    content = (
+        b"q 0.08 0.10 0.16 rg 0 0 320 180 re f Q "
+        b"q 0.18 0.62 0.76 rg 36 36 42 66 re f 94 36 42 92 re f 152 36 42 48 re f Q "
+        b"q /Panel gs 1 1 1 rg 188 34 98 92 re f Q "
+        b"q 0.95 0.44 0.16 RG 2 w 188 34 98 92 re S Q "
+        b"BT /F1 22 Tf 28 146 Td (Metrics) Tj /F1 11 Tf 0 -18 Td (rotated callout) Tj ET "
+        b"q 0.866 0.5 -0.5 0.866 214 58 cm BT /F1 14 Tf 0 0 Td (Growth +24%) Tj ET Q"
+    )
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 320 180] "
+        "/Resources << /Font << /F1 4 0 R >> /ExtGState << /Panel << /ca 0.88 >> >> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    font = pdf.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert font == 4
+    return pdf.render(catalog)
+
+
+def slide_speaker_notes_page_pdf() -> bytes:
+    return page_pdf(
+        "[0 0 240 320]",
+        (
+            "q 0.98 0.98 0.96 rg 0 0 240 320 re f Q "
+            "q 0.12 0.20 0.34 rg 24 184 192 108 re f Q "
+            "q 0.96 0.48 0.16 rg 42 244 54 18 re f 42 218 92 12 re f Q "
+            "q 0.72 0.72 0.72 RG 0.6 w 24 160 m 216 160 l "
+            "24 136 m 216 136 l 24 112 m 216 112 l 24 88 m 216 88 l "
+            "24 64 m 216 64 l 24 40 m 216 40 l S Q "
+            "BT /F1 12 Tf 24 300 Td (Speaker Notes) Tj "
+            "0 -154 Td (Key talking points) Tj "
+            "0 -24 Td (1. Revenue bridge) Tj "
+            "0 -24 Td (2. Product adoption) Tj "
+            "0 -24 Td (3. Follow-up owners) Tj ET"
+        ),
+    )
+
+
 def page_targeted_stream_pdf() -> bytes:
     pdf = Pdf()
     content_1 = b"q 0.1 0.6 0.2 rg 20 20 80 40 re f Q"
@@ -3418,6 +3589,10 @@ def main() -> None:
     write("account-statement-ledger.pdf", account_statement_ledger_pdf())
     write("thermal-receipt.pdf", thermal_receipt_pdf())
     write("business-form-stamp-signature.pdf", business_form_stamp_signature_pdf())
+    write("slide-title-gradient.pdf", slide_title_gradient_pdf())
+    write("slide-layered-image-shadow.pdf", slide_layered_image_shadow_pdf())
+    write("slide-rotated-callout.pdf", slide_rotated_callout_pdf())
+    write("slide-speaker-notes-page.pdf", slide_speaker_notes_page_pdf())
     write("page-targeted-stream.pdf", page_targeted_stream_pdf())
 
 

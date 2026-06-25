@@ -5143,6 +5143,66 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_render_generated_presentation_slide_fixtures() {
+        let fixtures: &[(&[u8], u32, u32, &str)] = &[
+            (
+                include_bytes!("../../../fixtures/generated/slide-title-gradient.pdf") as &[u8],
+                320,
+                180,
+                "title gradient slide",
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/slide-layered-image-shadow.pdf")
+                    as &[u8],
+                320,
+                180,
+                "layered image slide",
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/slide-rotated-callout.pdf") as &[u8],
+                320,
+                180,
+                "rotated callout slide",
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/slide-speaker-notes-page.pdf")
+                    as &[u8],
+                240,
+                320,
+                "speaker notes page",
+            ),
+        ];
+
+        for &(bytes, expected_width, expected_height, label) in fixtures {
+            let thumbnail = ThumbnailBackend::render(
+                &NativeBackend::new(),
+                PdfSource::from_bytes(bytes),
+                &ThumbnailOptions {
+                    max_edge: expected_width.max(expected_height),
+                    ..ThumbnailOptions::default()
+                },
+            )
+            .unwrap_or_else(|error| panic!("{label} fixture should render: {error}"));
+
+            assert_eq!(
+                thumbnail.width, expected_width,
+                "{label} fixture width should match"
+            );
+            assert_eq!(
+                thumbnail.height, expected_height,
+                "{label} fixture height should match"
+            );
+            assert!(
+                thumbnail
+                    .bytes
+                    .chunks_exact(4)
+                    .any(|pixel| pixel != [255, 255, 255, 255]),
+                "{label} fixture should render visible content"
+            );
+        }
+    }
+
+    #[test]
     fn native_backend_should_render_generated_multi_page_report_first_page() {
         let bytes = include_bytes!("../../../fixtures/generated/multi-page-report.pdf");
         let thumbnail = ThumbnailBackend::render(
