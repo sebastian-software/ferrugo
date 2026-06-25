@@ -34,6 +34,9 @@ fixtures/generated/image-mask-logo.pdf	scan	scripts/generate_fixtures.py	MIT OR 
 fixtures/generated/image-mask-monochrome-icon.pdf	scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,image-mask,icon,stencil	Generated monochrome ImageMask icon fixture.
 fixtures/generated/image-mask-signature.pdf	form	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,image-mask,signature,stencil	Generated signature-style ImageMask stencil fixture.
 fixtures/generated/image-xobject.pdf	scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,xobject,rgb	Generated unfiltered Image XObject fixture.
+fixtures/generated/icc-cmyk-image.pdf	scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,icc,cmyk	Generated ICCBased CMYK image color-space fixture.
+fixtures/generated/icc-gray-image.pdf	scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,icc,devicegray	Generated ICCBased Gray image color-space fixture.
+fixtures/generated/icc-rgb-image.pdf	scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,icc,rgb	Generated ICCBased RGB image color-space fixture.
 fixtures/generated/identity-h-cjk-text.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,type0,cid,cmap,identity-h,cjk	Generated Type0 CID text fixture using Identity-H without a ToUnicode stream.
 fixtures/generated/identity-v-cjk-text.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,type0,cid,cmap,identity-v,cjk,vertical	Generated Type0 CID vertical text fixture using Identity-V without a ToUnicode stream.
 fixtures/generated/incremental-deleted-object.pdf	mixed-layout	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	xref,incremental-update,deleted-object	Generated incremental update fixture with a newer free entry deleting an older object.

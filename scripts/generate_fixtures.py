@@ -323,6 +323,114 @@ def cmyk_image_pdf() -> bytes:
     return pdf.render(catalog)
 
 
+def icc_based_image_pdf(
+    color_space_name: bytes,
+    components: int,
+    image: bytes,
+    profile: bytes,
+) -> bytes:
+    pdf = Pdf()
+    content = b"q 80 0 0 80 20 20 cm /Im1 Do Q"
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 120 120] "
+        "/Resources << /XObject << /Im1 4 0 R >> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    image_object = pdf.add(
+        b"<< /Type /XObject /Subtype /Image /Width 2 /Height 2 "
+        b"/ColorSpace [/ICCBased 6 0 R] /BitsPerComponent 8 /Length "
+        + str(len(image)).encode("ascii")
+        + b" >>\nstream\n"
+        + image
+        + b"\nendstream"
+    )
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    profile_object = pdf.add(
+        b"<< /N "
+        + str(components).encode("ascii")
+        + b" /Alternate /"
+        + color_space_name
+        + b" /Length "
+        + str(len(profile)).encode("ascii")
+        + b" >>\nstream\n"
+        + profile
+        + b"\nendstream"
+    )
+    assert image_object == 4
+    assert profile_object == 6
+    return pdf.render(catalog)
+
+
+def icc_rgb_image_pdf() -> bytes:
+    image = bytes(
+        [
+            255,
+            0,
+            0,
+            0,
+            255,
+            0,
+            0,
+            0,
+            255,
+            255,
+            255,
+            0,
+        ]
+    )
+    return icc_based_image_pdf(
+        b"DeviceRGB",
+        3,
+        image,
+        b"pdfrust synthetic icc rgb profile",
+    )
+
+
+def icc_gray_image_pdf() -> bytes:
+    image = bytes([0, 85, 170, 255])
+    return icc_based_image_pdf(
+        b"DeviceGray",
+        1,
+        image,
+        b"pdfrust synthetic icc gray profile",
+    )
+
+
+def icc_cmyk_image_pdf() -> bytes:
+    image = bytes(
+        [
+            0,
+            255,
+            255,
+            0,
+            255,
+            0,
+            255,
+            0,
+            255,
+            255,
+            0,
+            0,
+            0,
+            0,
+            0,
+            255,
+        ]
+    )
+    return icc_based_image_pdf(
+        b"DeviceCMYK",
+        4,
+        image,
+        b"pdfrust synthetic icc cmyk profile",
+    )
+
+
 def output_intent_rgb_pdf() -> bytes:
     pdf = Pdf()
     content = b"0.1 0.45 0.85 rg 20 20 80 50 re f"
@@ -2618,6 +2726,9 @@ def main() -> None:
     write("form-xobject.pdf", form_xobject_pdf())
     write("image-xobject.pdf", image_xobject_pdf())
     write("cmyk-image.pdf", cmyk_image_pdf())
+    write("icc-rgb-image.pdf", icc_rgb_image_pdf())
+    write("icc-gray-image.pdf", icc_gray_image_pdf())
+    write("icc-cmyk-image.pdf", icc_cmyk_image_pdf())
     write("output-intent-rgb.pdf", output_intent_rgb_pdf())
     write("indexed-image.pdf", indexed_image_pdf())
     write("dct-image.pdf", dct_image_pdf())

@@ -87,6 +87,12 @@ pub struct NativeMemoryDiagnostics {
     pub max_image_bytes: usize,
     /// Maximum resident decoded image bytes accepted for one page resource map.
     pub max_total_image_bytes: usize,
+    /// Maximum decoded ICC profile bytes accepted for one image color space.
+    pub max_icc_profile_bytes: usize,
+    /// Maximum scratch bytes accepted for one ICC transform.
+    pub max_icc_transform_workspace_bytes: usize,
+    /// Maximum cached ICC transform entries.
+    pub max_icc_transform_cache_entries: usize,
     /// Maximum decoded bytes accepted for one embedded font program.
     pub max_font_program_bytes: usize,
     /// Maximum decoded bytes accepted for one ToUnicode CMap stream.
@@ -141,6 +147,9 @@ impl Default for NativeMemoryDiagnostics {
             max_page_pixels: page.max_page_pixels,
             max_image_bytes: display.max_image_bytes,
             max_total_image_bytes: display.max_total_image_bytes,
+            max_icc_profile_bytes: display.max_icc_profile_bytes,
+            max_icc_transform_workspace_bytes: display.max_icc_transform_workspace_bytes,
+            max_icc_transform_cache_entries: display.max_icc_transform_cache_entries,
             max_font_program_bytes: display.max_font_program_bytes,
             max_cmap_bytes: display.max_cmap_bytes,
             max_text_run_bytes: display.max_text_run_bytes,
@@ -2670,6 +2679,9 @@ mod tests {
         assert_eq!(diagnostics.max_page_pixels, 16 * 1024 * 1024);
         assert_eq!(diagnostics.max_image_bytes, 32 * 1024 * 1024);
         assert_eq!(diagnostics.max_total_image_bytes, 128 * 1024 * 1024);
+        assert_eq!(diagnostics.max_icc_profile_bytes, 1024 * 1024);
+        assert_eq!(diagnostics.max_icc_transform_workspace_bytes, 64 * 1024);
+        assert_eq!(diagnostics.max_icc_transform_cache_entries, 32);
         assert_eq!(diagnostics.max_display_items, 8_192);
         assert_eq!(diagnostics.max_font_fallback_cache_entries, 128);
         assert!(!diagnostics.spooling_enabled);
@@ -2770,6 +2782,66 @@ mod tests {
             },
         )
         .expect("generated CMYK image fixture should render through native backend");
+
+        assert_eq!(thumbnail.width, 120);
+        assert_eq!(thumbnail.height, 120);
+        assert_eq!(rgba_at(&thumbnail, 44, 44), [255, 0, 0, 255]);
+        assert_eq!(rgba_at(&thumbnail, 76, 44), [0, 255, 0, 255]);
+        assert_eq!(rgba_at(&thumbnail, 44, 76), [0, 0, 255, 255]);
+    }
+
+    #[test]
+    fn native_backend_should_render_generated_icc_rgb_image_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/icc-rgb-image.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 120,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated ICCBased RGB image fixture should render through native backend");
+
+        assert_eq!(thumbnail.width, 120);
+        assert_eq!(thumbnail.height, 120);
+        assert_eq!(rgba_at(&thumbnail, 44, 44), [255, 0, 0, 255]);
+        assert_eq!(rgba_at(&thumbnail, 76, 44), [0, 255, 0, 255]);
+        assert_eq!(rgba_at(&thumbnail, 44, 76), [0, 0, 255, 255]);
+    }
+
+    #[test]
+    fn native_backend_should_render_generated_icc_gray_image_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/icc-gray-image.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 120,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated ICCBased Gray image fixture should render through native backend");
+
+        assert_eq!(thumbnail.width, 120);
+        assert_eq!(thumbnail.height, 120);
+        assert_eq!(rgba_at(&thumbnail, 44, 44), [0, 0, 0, 255]);
+        assert_eq!(rgba_at(&thumbnail, 76, 44), [85, 85, 85, 255]);
+        assert_eq!(rgba_at(&thumbnail, 44, 76), [170, 170, 170, 255]);
+    }
+
+    #[test]
+    fn native_backend_should_render_generated_icc_cmyk_image_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/icc-cmyk-image.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 120,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated ICCBased CMYK image fixture should render through native backend");
 
         assert_eq!(thumbnail.width, 120);
         assert_eq!(thumbnail.height, 120);

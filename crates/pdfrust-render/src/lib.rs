@@ -71,6 +71,15 @@ pub const DEFAULT_IMAGE_BYTES_LIMIT: usize = 32 * 1024 * 1024;
 /// Default maximum resident decoded image bytes for one page resource map.
 pub const DEFAULT_TOTAL_IMAGE_BYTES_LIMIT: usize = 128 * 1024 * 1024;
 
+/// Default maximum decoded ICC profile bytes accepted for one image color space.
+pub const DEFAULT_ICC_PROFILE_BYTES_LIMIT: usize = 1024 * 1024;
+
+/// Default maximum scratch bytes accepted for one ICC transform.
+pub const DEFAULT_ICC_TRANSFORM_WORKSPACE_LIMIT: usize = 64 * 1024;
+
+/// Default maximum cached ICC transform entries.
+pub const DEFAULT_ICC_TRANSFORM_CACHE_LIMIT: usize = 32;
+
 /// Default maximum nested soft-mask image depth.
 pub const DEFAULT_SOFT_MASK_DEPTH_LIMIT: usize = 1;
 
@@ -1199,6 +1208,7 @@ impl DisplayList {
 pub struct ImageResources {
     images: Vec<ImageXObject>,
     non_image_names: Vec<Vec<u8>>,
+    icc_metrics: IccTransformMetrics,
 }
 
 impl ImageResources {
@@ -1208,6 +1218,7 @@ impl ImageResources {
         Self {
             images: Vec::new(),
             non_image_names: Vec::new(),
+            icc_metrics: IccTransformMetrics::EMPTY,
         }
     }
 
@@ -1217,6 +1228,7 @@ impl ImageResources {
         Self {
             images,
             non_image_names: Vec::new(),
+            icc_metrics: IccTransformMetrics::EMPTY,
         }
     }
 
@@ -1235,9 +1247,31 @@ impl ImageResources {
     where
         R: ImageObjectResolver<'a> + ?Sized,
     {
+        let mut icc_cache = IccTransformCache::new(options.max_icc_transform_cache_entries);
+        Self::from_xobject_dictionary_with_icc_cache(dictionary, resolver, options, &mut icc_cache)
+    }
+
+    /// Resolves image XObjects while reusing a caller-owned ICC transform cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`GraphicsError`] when an image resource is malformed,
+    /// references a missing object, uses an unsupported color space or filter,
+    /// or decodes beyond the configured image byte budget.
+    pub fn from_xobject_dictionary_with_icc_cache<'a, R>(
+        dictionary: &[(PdfName<'a>, PdfPrimitive<'a>)],
+        resolver: &'a R,
+        options: DisplayListOptions,
+        icc_cache: &mut IccTransformCache,
+    ) -> GraphicsResult<Self>
+    where
+        R: ImageObjectResolver<'a> + ?Sized,
+    {
+        icc_cache.set_limit(options.max_icc_transform_cache_entries);
         let mut images = Vec::new();
         let mut total_image_bytes = 0usize;
         let mut non_image_names = Vec::new();
+        let metrics_start = icc_cache.metrics();
         for (name, value) in dictionary {
             let Some(reference) = reference_from_primitive(value) else {
                 continue;
@@ -1261,8 +1295,8 @@ impl ImageResources {
                 *name,
                 stream,
                 resolver,
-                options.max_image_bytes,
-                options.max_soft_mask_depth,
+                ImageDecodeLimits::from_display_options(options),
+                icc_cache,
             )?;
             total_image_bytes = total_image_bytes
                 .checked_add(image_resident_bytes(&image))
@@ -1287,6 +1321,7 @@ impl ImageResources {
         Ok(Self {
             images,
             non_image_names,
+            icc_metrics: icc_cache.metrics().saturating_sub(metrics_start),
         })
     }
 
@@ -1303,6 +1338,135 @@ impl ImageResources {
             .iter()
             .any(|non_image| non_image.as_slice() == name.as_bytes())
     }
+
+    /// Returns ICC transform cache activity caused while building this map.
+    #[must_use]
+    pub const fn icc_transform_metrics(&self) -> IccTransformMetrics {
+        self.icc_metrics
+    }
+}
+
+/// ICC transform cache counters.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct IccTransformMetrics {
+    /// Cache entries hit while resolving ICCBased color spaces.
+    pub cache_hits: usize,
+    /// Validated transforms inserted into the cache.
+    pub cache_misses: usize,
+    /// Oldest entries evicted due to the configured limit.
+    pub evictions: usize,
+    /// Maximum transform workspace bytes validated during this build.
+    pub max_workspace_bytes: usize,
+}
+
+impl IccTransformMetrics {
+    const EMPTY: Self = Self {
+        cache_hits: 0,
+        cache_misses: 0,
+        evictions: 0,
+        max_workspace_bytes: 0,
+    };
+
+    fn saturating_sub(self, baseline: Self) -> Self {
+        Self {
+            cache_hits: self.cache_hits.saturating_sub(baseline.cache_hits),
+            cache_misses: self.cache_misses.saturating_sub(baseline.cache_misses),
+            evictions: self.evictions.saturating_sub(baseline.evictions),
+            max_workspace_bytes: self.max_workspace_bytes,
+        }
+    }
+}
+
+/// Bounded cache of validated ICCBased image transform metadata.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IccTransformCache {
+    entries: Vec<(IccProfileIdentity, IccTransform)>,
+    limit: usize,
+    metrics: IccTransformMetrics,
+}
+
+impl IccTransformCache {
+    /// Creates an ICC transform cache with a maximum entry count.
+    #[must_use]
+    pub fn new(limit: usize) -> Self {
+        Self {
+            entries: Vec::new(),
+            limit,
+            metrics: IccTransformMetrics::EMPTY,
+        }
+    }
+
+    fn set_limit(&mut self, limit: usize) {
+        self.limit = limit;
+        while self.entries.len() > self.limit {
+            self.entries.remove(0);
+            self.metrics.evictions += 1;
+        }
+    }
+
+    fn get_or_insert(&mut self, transform: IccTransform) -> IccTransform {
+        self.metrics.max_workspace_bytes = self
+            .metrics
+            .max_workspace_bytes
+            .max(transform.workspace_bytes);
+        if self.limit == 0 {
+            self.metrics.cache_misses += 1;
+            return transform;
+        }
+        if let Some((_, cached)) = self
+            .entries
+            .iter()
+            .find(|(identity, _)| *identity == transform.identity)
+        {
+            self.metrics.cache_hits += 1;
+            return *cached;
+        }
+        self.metrics.cache_misses += 1;
+        if self.entries.len() >= self.limit {
+            self.entries.remove(0);
+            self.metrics.evictions += 1;
+        }
+        self.entries.push((transform.identity, transform));
+        transform
+    }
+
+    /// Returns the number of cached ICC transforms.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    /// Returns true when no ICC transforms are cached.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    /// Returns cumulative cache metrics.
+    #[must_use]
+    pub const fn metrics(&self) -> IccTransformMetrics {
+        self.metrics
+    }
+}
+
+impl Default for IccTransformCache {
+    fn default() -> Self {
+        Self::new(DEFAULT_ICC_TRANSFORM_CACHE_LIMIT)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct IccProfileIdentity {
+    hash: u64,
+    len: usize,
+    components: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct IccTransform {
+    identity: IccProfileIdentity,
+    color_space: ImageColorSpace,
+    workspace_bytes: usize,
 }
 
 fn image_resident_bytes(image: &ImageXObject) -> usize {
@@ -3996,6 +4160,12 @@ pub struct DisplayListOptions {
     pub max_image_bytes: usize,
     /// Maximum resident decoded image bytes accepted for one page resource map.
     pub max_total_image_bytes: usize,
+    /// Maximum decoded ICC profile bytes accepted for one image color space.
+    pub max_icc_profile_bytes: usize,
+    /// Maximum scratch bytes accepted for one ICC transform.
+    pub max_icc_transform_workspace_bytes: usize,
+    /// Maximum cached ICC transform entries.
+    pub max_icc_transform_cache_entries: usize,
     /// Maximum nested soft-mask image depth.
     pub max_soft_mask_depth: usize,
     /// Maximum allowed Form XObject recursion depth.
@@ -4016,6 +4186,9 @@ impl Default for DisplayListOptions {
             max_font_program_bytes: DEFAULT_FONT_PROGRAM_BYTES_LIMIT,
             max_image_bytes: DEFAULT_IMAGE_BYTES_LIMIT,
             max_total_image_bytes: DEFAULT_TOTAL_IMAGE_BYTES_LIMIT,
+            max_icc_profile_bytes: DEFAULT_ICC_PROFILE_BYTES_LIMIT,
+            max_icc_transform_workspace_bytes: DEFAULT_ICC_TRANSFORM_WORKSPACE_LIMIT,
+            max_icc_transform_cache_entries: DEFAULT_ICC_TRANSFORM_CACHE_LIMIT,
             max_soft_mask_depth: DEFAULT_SOFT_MASK_DEPTH_LIMIT,
             max_form_recursion_depth: DEFAULT_FORM_RECURSION_DEPTH_LIMIT,
             max_font_fallback_cache_entries: DEFAULT_FONT_FALLBACK_CACHE_LIMIT,
@@ -7280,33 +7453,45 @@ fn optional_bool(
     Ok(Some(*value))
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ImageDecodeLimits {
+    max_image_bytes: usize,
+    max_icc_profile_bytes: usize,
+    max_icc_transform_workspace_bytes: usize,
+    max_soft_mask_depth: usize,
+}
+
+impl ImageDecodeLimits {
+    const fn from_display_options(options: DisplayListOptions) -> Self {
+        Self {
+            max_image_bytes: options.max_image_bytes,
+            max_icc_profile_bytes: options.max_icc_profile_bytes,
+            max_icc_transform_workspace_bytes: options.max_icc_transform_workspace_bytes,
+            max_soft_mask_depth: options.max_soft_mask_depth,
+        }
+    }
+}
+
 fn decode_image_xobject<'a, R>(
     resource_name: PdfName<'_>,
     stream: &StreamObject<'a>,
     resolver: &'a R,
-    max_image_bytes: usize,
-    max_soft_mask_depth: usize,
+    limits: ImageDecodeLimits,
+    icc_cache: &mut IccTransformCache,
 ) -> GraphicsResult<ImageXObject>
 where
     R: ImageObjectResolver<'a> + ?Sized,
 {
-    decode_image_xobject_at_depth(
-        resource_name,
-        stream,
-        resolver,
-        max_image_bytes,
-        max_soft_mask_depth,
-        0,
-    )
+    decode_image_xobject_at_depth(resource_name, stream, resolver, limits, 0, icc_cache)
 }
 
 fn decode_image_xobject_at_depth<'a, R>(
     resource_name: PdfName<'_>,
     stream: &StreamObject<'a>,
     resolver: &'a R,
-    max_image_bytes: usize,
-    max_soft_mask_depth: usize,
+    limits: ImageDecodeLimits,
     soft_mask_depth: usize,
+    icc_cache: &mut IccTransformCache,
 ) -> GraphicsResult<ImageXObject>
 where
     R: ImageObjectResolver<'a> + ?Sized,
@@ -7336,7 +7521,13 @@ where
     let color_space = if image_mask {
         ImageColorSpaceInfo::new(ImageColorSpace::DeviceGray)
     } else {
-        image_color_space(stream.dictionary())?
+        image_color_space_with_icc(
+            stream.dictionary(),
+            resolver,
+            limits.max_icc_profile_bytes,
+            limits.max_icc_transform_workspace_bytes,
+            icc_cache,
+        )?
     };
     let image_filter = image_filter(stream.dictionary())?;
     let decoded = decode_image_samples(
@@ -7346,13 +7537,13 @@ where
         height,
         color_space.kind,
         bits_per_component,
-        max_image_bytes,
+        limits.max_image_bytes,
     )?;
-    if decoded.len() > max_image_bytes {
+    if decoded.len() > limits.max_image_bytes {
         return Err(GraphicsError::new(
             None,
             GraphicsErrorKind::ImageBytesOverflow {
-                limit: max_image_bytes,
+                limit: limits.max_image_bytes,
             },
         ));
     }
@@ -7391,9 +7582,9 @@ where
                 resolver,
                 width,
                 height,
-                max_image_bytes,
-                max_soft_mask_depth,
+                limits,
                 soft_mask_depth,
+                icc_cache,
             )?,
         )
     };
@@ -7459,9 +7650,9 @@ fn soft_mask_samples<'a, R>(
     resolver: &'a R,
     width: u32,
     height: u32,
-    max_image_bytes: usize,
-    max_soft_mask_depth: usize,
+    limits: ImageDecodeLimits,
     soft_mask_depth: usize,
+    icc_cache: &mut IccTransformCache,
 ) -> GraphicsResult<Option<Arc<[u8]>>>
 where
     R: ImageObjectResolver<'a> + ?Sized,
@@ -7472,11 +7663,11 @@ where
     if matches!(value, PdfPrimitive::Name(name) if name.as_bytes() == b"None") {
         return Ok(None);
     }
-    if soft_mask_depth >= max_soft_mask_depth {
+    if soft_mask_depth >= limits.max_soft_mask_depth {
         return Err(GraphicsError::new(
             None,
             GraphicsErrorKind::SoftMaskDepthOverflow {
-                limit: max_soft_mask_depth,
+                limit: limits.max_soft_mask_depth,
             },
         ));
     }
@@ -7511,9 +7702,9 @@ where
         PdfName::new(b"SMask"),
         stream,
         resolver,
-        max_image_bytes,
-        max_soft_mask_depth,
+        limits,
         soft_mask_depth + 1,
+        icc_cache,
     )?;
     if mask.width != width || mask.height != height {
         return Err(invalid_image_resource(b"SMask"));
@@ -9539,6 +9730,38 @@ fn image_color_space(
     }
 }
 
+fn image_color_space_with_icc<'a, R>(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    resolver: &'a R,
+    max_icc_profile_bytes: usize,
+    max_icc_transform_workspace_bytes: usize,
+    icc_cache: &mut IccTransformCache,
+) -> GraphicsResult<ImageColorSpaceInfo>
+where
+    R: ImageObjectResolver<'a> + ?Sized,
+{
+    let Some(value) =
+        dictionary_value(dictionary, b"ColorSpace").or_else(|| dictionary_value(dictionary, b"CS"))
+    else {
+        return Err(GraphicsError::new(
+            None,
+            GraphicsErrorKind::UnsupportedImageColorSpace {
+                color_space: b"missing".to_vec(),
+            },
+        ));
+    };
+    match value {
+        PdfPrimitive::Array(values) => array_color_space_with_icc(
+            values,
+            resolver,
+            max_icc_profile_bytes,
+            max_icc_transform_workspace_bytes,
+            icc_cache,
+        ),
+        _ => image_color_space(dictionary),
+    }
+}
+
 fn array_color_space(values: &[PdfPrimitive<'_>]) -> GraphicsResult<ImageColorSpaceInfo> {
     let Some(PdfPrimitive::Name(kind)) = values.first() else {
         return Err(unsupported_color_space(b"array"));
@@ -9550,6 +9773,142 @@ fn array_color_space(values: &[PdfPrimitive<'_>]) -> GraphicsResult<ImageColorSp
         b"ICCBased" => Err(unsupported_color_space(b"ICCBased")),
         other => Err(unsupported_color_space(other)),
     }
+}
+
+fn array_color_space_with_icc<'a, R>(
+    values: &[PdfPrimitive<'_>],
+    resolver: &'a R,
+    max_icc_profile_bytes: usize,
+    max_icc_transform_workspace_bytes: usize,
+    icc_cache: &mut IccTransformCache,
+) -> GraphicsResult<ImageColorSpaceInfo>
+where
+    R: ImageObjectResolver<'a> + ?Sized,
+{
+    let Some(PdfPrimitive::Name(kind)) = values.first() else {
+        return Err(unsupported_color_space(b"array"));
+    };
+    match kind.as_bytes() {
+        b"Indexed" | b"I" => indexed_color_space(values),
+        b"CalRGB" => Ok(ImageColorSpaceInfo::new(ImageColorSpace::DeviceRgb)),
+        b"CalGray" => Ok(ImageColorSpaceInfo::new(ImageColorSpace::DeviceGray)),
+        b"ICCBased" => icc_based_color_space(
+            values,
+            resolver,
+            max_icc_profile_bytes,
+            max_icc_transform_workspace_bytes,
+            icc_cache,
+        ),
+        other => Err(unsupported_color_space(other)),
+    }
+}
+
+fn icc_based_color_space<'a, R>(
+    values: &[PdfPrimitive<'_>],
+    resolver: &'a R,
+    max_icc_profile_bytes: usize,
+    max_icc_transform_workspace_bytes: usize,
+    icc_cache: &mut IccTransformCache,
+) -> GraphicsResult<ImageColorSpaceInfo>
+where
+    R: ImageObjectResolver<'a> + ?Sized,
+{
+    if values.len() != 2 {
+        return Err(unsupported_color_space(b"ICCBased"));
+    }
+    let reference =
+        reference_from_primitive(&values[1]).ok_or_else(|| unsupported_color_space(b"ICCBased"))?;
+    let object = resolver.resolve_image_object(reference)?.ok_or_else(|| {
+        GraphicsError::new(
+            None,
+            GraphicsErrorKind::MissingImageObject {
+                name: b"ICCBased".to_vec(),
+            },
+        )
+    })?;
+    let ObjectValue::Stream(stream) = &object.value else {
+        return Err(unsupported_color_space(b"ICCBased"));
+    };
+    let transform = decode_icc_transform(
+        stream,
+        max_icc_profile_bytes,
+        max_icc_transform_workspace_bytes,
+    )?;
+    Ok(ImageColorSpaceInfo::new(
+        icc_cache.get_or_insert(transform).color_space,
+    ))
+}
+
+fn decode_icc_transform(
+    stream: &StreamObject<'_>,
+    max_icc_profile_bytes: usize,
+    max_icc_transform_workspace_bytes: usize,
+) -> GraphicsResult<IccTransform> {
+    let components = required_u32(stream.dictionary(), b"N")
+        .ok()
+        .and_then(|value| usize::try_from(value).ok())
+        .ok_or_else(|| invalid_image_resource(b"ICCBased"))?;
+    let color_space = match components {
+        1 => ImageColorSpace::DeviceGray,
+        3 => ImageColorSpace::DeviceRgb,
+        4 => ImageColorSpace::DeviceCmyk,
+        _ => return Err(unsupported_color_space(b"ICCBased-N")),
+    };
+    let profile = stream
+        .decode_with_options(StreamDecodeOptions {
+            max_decoded_len: max_icc_profile_bytes,
+        })
+        .map_err(|error| match error {
+            pdfrust_object::ObjectError::StreamLimitExceeded { .. } => GraphicsError::new(
+                None,
+                GraphicsErrorKind::ImageResourceBytesOverflow {
+                    limit: max_icc_profile_bytes,
+                },
+            ),
+            _ => GraphicsError::new(
+                None,
+                GraphicsErrorKind::ObjectModel {
+                    message: error.to_string(),
+                },
+            ),
+        })?;
+    let workspace_bytes = components
+        .checked_mul(256)
+        .and_then(|value| value.checked_mul(std::mem::size_of::<f32>()))
+        .ok_or_else(|| {
+            GraphicsError::new(
+                None,
+                GraphicsErrorKind::ImageResourceBytesOverflow {
+                    limit: max_icc_transform_workspace_bytes,
+                },
+            )
+        })?;
+    if workspace_bytes > max_icc_transform_workspace_bytes {
+        return Err(GraphicsError::new(
+            None,
+            GraphicsErrorKind::ImageResourceBytesOverflow {
+                limit: max_icc_transform_workspace_bytes,
+            },
+        ));
+    }
+    Ok(IccTransform {
+        identity: IccProfileIdentity {
+            hash: stable_icc_profile_hash(&profile),
+            len: profile.len(),
+            components,
+        },
+        color_space,
+        workspace_bytes,
+    })
+}
+
+fn stable_icc_profile_hash(profile: &[u8]) -> u64 {
+    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+    for byte in profile {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    hash
 }
 
 fn indexed_color_space(values: &[PdfPrimitive<'_>]) -> GraphicsResult<ImageColorSpaceInfo> {
@@ -14648,20 +15007,164 @@ mod tests {
     }
 
     #[test]
-    fn image_resources_should_report_unsupported_icc_based_color_space() {
-        let document = load_image_xobject_pdf(
+    fn image_resources_should_decode_icc_based_rgb_color_space() {
+        let document = load_image_xobject_pdf_with_icc_profile(
             b"q 10 0 0 10 0 0 cm /Im1 Do Q",
-            b"<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace [/ICCBased 9 0 R] /BitsPerComponent 8 /Length 3 >>",
+            b"<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace [/ICCBased 6 0 R] /BitsPerComponent 8 /Length 3 >>",
             &[10, 20, 30],
+            b"<< /N 3 /Length 22 >>",
+            b"pdfrust synthetic srgb",
         );
-        let error =
-            image_resources_from_document(&document).expect_err("ICCBased policy is unsupported");
+        let resources =
+            image_resources_from_document(&document).expect("ICCBased RGB should decode");
+        let image = resources.get(PdfName::new(b"Im1")).expect("image resource");
+
+        assert_eq!(image.color_space, ImageColorSpace::DeviceRgb);
+        assert_eq!(&*image.samples, &[10, 20, 30]);
+        assert_eq!(
+            resources.icc_transform_metrics(),
+            IccTransformMetrics {
+                cache_hits: 0,
+                cache_misses: 1,
+                evictions: 0,
+                max_workspace_bytes: 3 * 256 * std::mem::size_of::<f32>(),
+            }
+        );
+    }
+
+    #[test]
+    fn image_resources_should_reuse_icc_transform_cache_across_builds() {
+        let document = load_image_xobject_pdf_with_icc_profile(
+            b"q 10 0 0 10 0 0 cm /Im1 Do Q",
+            b"<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace [/ICCBased 6 0 R] /BitsPerComponent 8 /Length 3 >>",
+            &[10, 20, 30],
+            b"<< /N 3 /Length 22 >>",
+            b"pdfrust synthetic srgb",
+        );
+        let xobjects = vec![(
+            PdfName::new(b"Im1"),
+            PdfPrimitive::Reference(pdfrust_syntax::PdfReference::new(4, 0)),
+        )];
+        let mut cache = IccTransformCache::new(4);
+        let first = ImageResources::from_xobject_dictionary_with_icc_cache(
+            &xobjects,
+            &document,
+            DisplayListOptions::default(),
+            &mut cache,
+        )
+        .expect("first ICCBased build should decode");
+        let second = ImageResources::from_xobject_dictionary_with_icc_cache(
+            &xobjects,
+            &document,
+            DisplayListOptions::default(),
+            &mut cache,
+        )
+        .expect("second ICCBased build should reuse cache");
+
+        assert_eq!(first.icc_transform_metrics().cache_misses, 1);
+        assert_eq!(second.icc_transform_metrics().cache_hits, 1);
+        assert_eq!(cache.len(), 1);
+    }
+
+    #[test]
+    fn image_resources_should_evict_icc_transform_cache_by_entry_budget() {
+        let first_document = load_image_xobject_pdf_with_icc_profile(
+            b"q 10 0 0 10 0 0 cm /Im1 Do Q",
+            b"<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace [/ICCBased 6 0 R] /BitsPerComponent 8 /Length 3 >>",
+            &[10, 20, 30],
+            b"<< /N 3 /Length 24 >>",
+            b"pdfrust synthetic srgb A",
+        );
+        let second_document = load_image_xobject_pdf_with_icc_profile(
+            b"q 10 0 0 10 0 0 cm /Im1 Do Q",
+            b"<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace [/ICCBased 6 0 R] /BitsPerComponent 8 /Length 3 >>",
+            &[40, 50, 60],
+            b"<< /N 3 /Length 24 >>",
+            b"pdfrust synthetic srgb B",
+        );
+        let xobjects = vec![(
+            PdfName::new(b"Im1"),
+            PdfPrimitive::Reference(pdfrust_syntax::PdfReference::new(4, 0)),
+        )];
+        let mut cache = IccTransformCache::new(1);
+        let options = DisplayListOptions {
+            max_icc_transform_cache_entries: 1,
+            ..DisplayListOptions::default()
+        };
+
+        ImageResources::from_xobject_dictionary_with_icc_cache(
+            &xobjects,
+            &first_document,
+            options,
+            &mut cache,
+        )
+        .expect("first ICCBased build should decode");
+        let second = ImageResources::from_xobject_dictionary_with_icc_cache(
+            &xobjects,
+            &second_document,
+            options,
+            &mut cache,
+        )
+        .expect("second ICCBased build should decode and evict");
+        let third = ImageResources::from_xobject_dictionary_with_icc_cache(
+            &xobjects,
+            &first_document,
+            options,
+            &mut cache,
+        )
+        .expect("first ICCBased profile should decode again after eviction");
+
+        assert_eq!(cache.len(), 1);
+        assert_eq!(second.icc_transform_metrics().evictions, 1);
+        assert_eq!(third.icc_transform_metrics().cache_misses, 1);
+        assert_eq!(third.icc_transform_metrics().evictions, 1);
+    }
+
+    #[test]
+    fn image_resources_should_enforce_icc_profile_byte_budget() {
+        let document = load_image_xobject_pdf_with_icc_profile(
+            b"q 10 0 0 10 0 0 cm /Im1 Do Q",
+            b"<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace [/ICCBased 6 0 R] /BitsPerComponent 8 /Length 3 >>",
+            &[10, 20, 30],
+            b"<< /N 3 /Length 22 >>",
+            b"pdfrust synthetic srgb",
+        );
+        let error = image_resources_from_document_with_options(
+            &document,
+            DisplayListOptions {
+                max_icc_profile_bytes: 4,
+                ..DisplayListOptions::default()
+            },
+        )
+        .expect_err("ICC profile should exceed configured byte budget");
 
         assert_eq!(
             error.kind(),
-            &GraphicsErrorKind::UnsupportedImageColorSpace {
-                color_space: b"ICCBased".to_vec(),
-            }
+            &GraphicsErrorKind::ImageResourceBytesOverflow { limit: 4 }
+        );
+    }
+
+    #[test]
+    fn image_resources_should_enforce_icc_transform_workspace_budget() {
+        let document = load_image_xobject_pdf_with_icc_profile(
+            b"q 10 0 0 10 0 0 cm /Im1 Do Q",
+            b"<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace [/ICCBased 6 0 R] /BitsPerComponent 8 /Length 3 >>",
+            &[10, 20, 30],
+            b"<< /N 3 /Length 22 >>",
+            b"pdfrust synthetic srgb",
+        );
+        let error = image_resources_from_document_with_options(
+            &document,
+            DisplayListOptions {
+                max_icc_transform_workspace_bytes: 128,
+                ..DisplayListOptions::default()
+            },
+        )
+        .expect_err("ICC transform should exceed configured workspace budget");
+
+        assert_eq!(
+            error.kind(),
+            &GraphicsErrorKind::ImageResourceBytesOverflow { limit: 128 }
         );
     }
 
@@ -15887,6 +16390,31 @@ mod tests {
         let pdf = build_classic_pdf_from_objects(&objects);
         let leaked = Box::leak(pdf.into_boxed_slice());
         load_classic_document(PdfBytes::new(leaked)).expect("image XObject PDF should load")
+    }
+
+    fn load_image_xobject_pdf_with_icc_profile(
+        content_stream: &[u8],
+        image_dictionary: &[u8],
+        image_stream: &[u8],
+        profile_dictionary: &[u8],
+        profile_stream: &[u8],
+    ) -> ClassicDocument<'static> {
+        let content_dictionary = format!("<< /Length {} >>", content_stream.len());
+        let objects = vec![
+            stream_object_bytes(1, content_dictionary.as_bytes(), content_stream),
+            indirect_object_bytes(
+                2,
+                b"<< /Type /Page /Parent 3 0 R /MediaBox [0 0 120 120] /Resources << /XObject << /Im1 4 0 R >> >> /Contents 1 0 R >>",
+            ),
+            indirect_object_bytes(3, b"<< /Type /Pages /Kids [2 0 R] /Count 1 >>"),
+            stream_object_bytes(4, image_dictionary, image_stream),
+            indirect_object_bytes(5, b"<< /Type /Catalog /Pages 3 0 R >>"),
+            stream_object_bytes(6, profile_dictionary, profile_stream),
+        ];
+        let pdf = build_classic_pdf_from_objects(&objects);
+        let leaked = Box::leak(pdf.into_boxed_slice());
+        load_classic_document(PdfBytes::new(leaked))
+            .expect("ICCBased image XObject PDF should load")
     }
 
     fn load_two_image_xobject_pdf() -> ClassicDocument<'static> {
