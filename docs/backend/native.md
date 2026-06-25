@@ -232,6 +232,21 @@ open, execute, or preview embedded payloads, and it does not implement a
 portfolio browser. The metadata scan remains bounded and reports presence
 signals only. See `docs/reports/embedded-files-portfolio-2026-06-25.md`.
 
+## Linearized First-Page Loading
+
+For classic-xref PDFs that declare a valid linearization dictionary, page-zero
+thumbnail rendering first attempts a bounded first-page load. The object layer
+parses `/L`, `/E`, `/O`, `/N`, `/H`, and `/T` metadata, exposes loader metrics,
+and loads only indirect objects whose xref offsets fall inside the declared
+first-page section. If the linearization dictionary is absent, malformed,
+incomplete, or insufficient for page-zero rendering, the native backend falls
+back to the existing full classic loader.
+
+This is not network range fetching. The current slice keeps the in-memory input
+model and uses linearization metadata to reduce parsed object graph size for
+the first page when the hints are valid. See
+`docs/reports/linearized-first-page-loading-2026-06-25.md`.
+
 ## Fallback Policy
 
 PDFium remains the oracle and explicit fallback until the visual GA gate says

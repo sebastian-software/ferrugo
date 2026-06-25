@@ -1,6 +1,6 @@
 # 0114: Linearized PDF Fast First Page Loading
 
-Status: in-progress
+Status: done
 Phase: 20
 Size: medium
 Depends on: 0113
@@ -46,4 +46,15 @@ preserving safe fallback behavior for malformed files.
 
 ## Completion Notes
 
-Empty until done.
+Completed 2026-06-25.
+
+- Added typed linearization dictionary metadata and loader metrics in
+  `pdfrust-object`.
+- Added a bounded first-page classic loader that only parses objects before the
+  validated `/E` boundary.
+- Wired native page-zero rendering to try the first-page loader and fall back
+  to the full loader for malformed or insufficient hints.
+- Added valid and malformed linearization fixtures with exact Pdfium visual
+  parity.
+- Validation evidence is recorded in
+  `docs/reports/linearized-first-page-loading-2026-06-25.md`.
