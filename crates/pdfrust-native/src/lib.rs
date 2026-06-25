@@ -3344,6 +3344,24 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_render_generated_overprint_spot_approximation_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/overprint-spot-approximation.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 120,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated overprint spot-color approximation fixture should render natively");
+
+        assert_eq!(thumbnail.width, 120);
+        assert_eq!(thumbnail.height, 120);
+        assert_eq!(rgba_at(&thumbnail, 24, 90), [255, 125, 71, 255]);
+    }
+
+    #[test]
     fn native_backend_should_render_generated_devicen_spot_color_fixture() {
         let bytes = include_bytes!("../../../fixtures/generated/devicen-spot-color.pdf");
         let thumbnail = ThumbnailBackend::render(

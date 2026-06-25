@@ -1169,6 +1169,33 @@ def separation_spot_color_pdf() -> bytes:
     return pdf.render(catalog)
 
 
+def overprint_spot_approximation_pdf() -> bytes:
+    pdf = Pdf()
+    content = (
+        b"0.95 0.95 0.95 rg 0 0 120 120 re f "
+        b"q /GSOP gs /CS1 cs 0.85 scn 16 22 88 44 re f "
+        b"0 0 0 RG 2 w 16 22 88 44 re S Q"
+    )
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 120 120] "
+        "/Resources << "
+        "/ExtGState << /GSOP << /OP true /op true /OPM 1 >> >> "
+        "/ColorSpace << /CS1 "
+        "[/Separation /OverprintOrange /DeviceRGB "
+        "<< /FunctionType 2 /Domain [0 1] /C0 [1 1 1] /C1 [1 0.4 0.15] /N 1 >>] "
+        ">> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    return pdf.render(catalog)
+
+
 def devicen_spot_color_pdf() -> bytes:
     pdf = Pdf()
     content = (
@@ -2858,6 +2885,7 @@ def main() -> None:
     write("mesh-shading-unsupported.pdf", mesh_shading_unsupported_pdf())
     write("type4-mesh-shading.pdf", type4_mesh_shading_pdf())
     write("separation-spot-color.pdf", separation_spot_color_pdf())
+    write("overprint-spot-approximation.pdf", overprint_spot_approximation_pdf())
     write("devicen-spot-color.pdf", devicen_spot_color_pdf())
     write("tiling-pattern.pdf", tiling_pattern_pdf())
     write("uncolored-tiling-pattern.pdf", uncolored_tiling_pattern_pdf())

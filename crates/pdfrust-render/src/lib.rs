@@ -734,6 +734,12 @@ pub struct GraphicsState {
     pub fill_alpha: f64,
     /// Current stroking alpha constant.
     pub stroke_alpha: f64,
+    /// Whether nonstroking overprint was requested and approximated in RGB.
+    pub fill_overprint: bool,
+    /// Whether stroking overprint was requested and approximated in RGB.
+    pub stroke_overprint: bool,
+    /// Current PDF overprint mode, validated but approximated in RGB output.
+    pub overprint_mode: u8,
     /// Placeholder flag set by `W` or `W*` until clipping is modeled fully.
     pub clip_path_pending: bool,
 }
@@ -757,6 +763,9 @@ impl Default for GraphicsState {
             blend_mode: BlendMode::Normal,
             fill_alpha: 1.0,
             stroke_alpha: 1.0,
+            fill_overprint: false,
+            stroke_overprint: false,
+            overprint_mode: 0,
             clip_path_pending: false,
         }
     }
@@ -782,6 +791,12 @@ pub struct ExtGraphicsState {
     pub fill_alpha: f64,
     /// Stroking alpha constant from `/CA`.
     pub stroke_alpha: f64,
+    /// Nonstroking overprint flag from `/op`.
+    pub fill_overprint: bool,
+    /// Stroking overprint flag from `/OP`.
+    pub stroke_overprint: bool,
+    /// Overprint mode from `/OPM`.
+    pub overprint_mode: u8,
 }
 
 impl Default for ExtGraphicsState {
@@ -790,6 +805,9 @@ impl Default for ExtGraphicsState {
             blend_mode: BlendMode::Normal,
             fill_alpha: 1.0,
             stroke_alpha: 1.0,
+            fill_overprint: false,
+            stroke_overprint: false,
+            overprint_mode: 0,
         }
     }
 }
@@ -5866,6 +5884,9 @@ impl<'r> DisplayListInterpreter<'r> {
         self.current.blend_mode = state.blend_mode;
         self.current.fill_alpha = state.fill_alpha;
         self.current.stroke_alpha = state.stroke_alpha;
+        self.current.fill_overprint = state.fill_overprint;
+        self.current.stroke_overprint = state.stroke_overprint;
+        self.current.overprint_mode = state.overprint_mode;
         Ok(())
     }
 
@@ -7324,11 +7345,13 @@ fn decode_form_xobject(
 fn decode_ext_graphics_state(
     dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
 ) -> GraphicsResult<ExtGraphicsState> {
-    reject_enabled_overprint(dictionary)?;
     Ok(ExtGraphicsState {
         blend_mode: ext_graphics_state_blend_mode(dictionary)?,
         fill_alpha: ext_graphics_state_alpha(dictionary, b"ca")?,
         stroke_alpha: ext_graphics_state_alpha(dictionary, b"CA")?,
+        fill_overprint: ext_graphics_state_bool(dictionary, b"op")?.unwrap_or(false),
+        stroke_overprint: ext_graphics_state_bool(dictionary, b"OP")?.unwrap_or(false),
+        overprint_mode: ext_graphics_state_overprint_mode(dictionary)?,
     })
 }
 
@@ -7397,21 +7420,33 @@ fn blend_mode_from_name(name: &[u8]) -> GraphicsResult<BlendMode> {
     }
 }
 
-fn reject_enabled_overprint(dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)]) -> GraphicsResult<()> {
-    for key in [b"OP".as_slice(), b"op"] {
-        let Some(value) = dictionary_value(dictionary, key) else {
-            continue;
-        };
-        if matches!(value, PdfPrimitive::Boolean(true)) {
-            return Err(GraphicsError::new(
-                None,
-                GraphicsErrorKind::UnsupportedOverprint {
-                    feature: key.to_vec(),
-                },
-            ));
-        }
+fn ext_graphics_state_bool(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    key: &[u8],
+) -> GraphicsResult<Option<bool>> {
+    let Some(value) = dictionary_value(dictionary, key) else {
+        return Ok(None);
+    };
+    let PdfPrimitive::Boolean(value) = value else {
+        return Err(invalid_ext_graphics_state(key));
+    };
+    Ok(Some(*value))
+}
+
+fn ext_graphics_state_overprint_mode(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+) -> GraphicsResult<u8> {
+    let Some(value) = dictionary_value(dictionary, b"OPM") else {
+        return Ok(0);
+    };
+    let PdfPrimitive::Number(PdfNumber::Integer(value)) = value else {
+        return Err(invalid_ext_graphics_state(b"OPM"));
+    };
+    match *value {
+        0 => Ok(0),
+        1 => Ok(1),
+        _ => Err(invalid_ext_graphics_state(b"OPM")),
     }
-    Ok(())
 }
 
 fn decode_shading(dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)]) -> GraphicsResult<Shading> {
@@ -13299,6 +13334,9 @@ mod tests {
                 blend_mode: BlendMode::Multiply,
                 fill_alpha: 1.0,
                 stroke_alpha: 1.0,
+                fill_overprint: false,
+                stroke_overprint: false,
+                overprint_mode: 0,
             })
         );
     }
@@ -13327,6 +13365,9 @@ mod tests {
                 blend_mode: BlendMode::Normal,
                 fill_alpha: 0.5,
                 stroke_alpha: 0.25,
+                fill_overprint: false,
+                stroke_overprint: false,
+                overprint_mode: 0,
             })
         );
     }
@@ -13372,19 +13413,31 @@ mod tests {
     }
 
     #[test]
-    fn ext_graphics_state_resources_should_reject_enabled_overprint() {
+    fn ext_graphics_state_resources_should_parse_overprint_approximation_flags() {
         let dictionary = vec![(
             PdfName::new(b"GS1"),
-            PdfPrimitive::Dictionary(vec![(PdfName::new(b"OP"), PdfPrimitive::Boolean(true))]),
+            PdfPrimitive::Dictionary(vec![
+                (PdfName::new(b"OP"), PdfPrimitive::Boolean(true)),
+                (PdfName::new(b"op"), PdfPrimitive::Boolean(true)),
+                (
+                    PdfName::new(b"OPM"),
+                    PdfPrimitive::Number(PdfNumber::Integer(1)),
+                ),
+            ]),
         )];
-        let error = ExtGraphicsStateResources::from_extgstate_dictionary(&dictionary)
-            .expect_err("enabled overprint should fail explicitly");
+        let resources = ExtGraphicsStateResources::from_extgstate_dictionary(&dictionary)
+            .expect("overprint should be approximated in RGB thumbnails");
 
         assert_eq!(
-            error.kind(),
-            &GraphicsErrorKind::UnsupportedOverprint {
-                feature: b"OP".to_vec(),
-            }
+            resources.get(PdfName::new(b"GS1")),
+            Some(ExtGraphicsState {
+                blend_mode: BlendMode::Normal,
+                fill_alpha: 1.0,
+                stroke_alpha: 1.0,
+                fill_overprint: true,
+                stroke_overprint: true,
+                overprint_mode: 1,
+            })
         );
     }
 
@@ -13441,6 +13494,36 @@ mod tests {
         };
         assert_eq!(path.state.fill_alpha, 0.5);
         assert_eq!(path.state.stroke_alpha, 0.25);
+    }
+
+    #[test]
+    fn display_list_should_expose_overprint_approximation_flags() {
+        let dictionary = vec![(
+            PdfName::new(b"GS1"),
+            PdfPrimitive::Dictionary(vec![
+                (PdfName::new(b"OP"), PdfPrimitive::Boolean(true)),
+                (PdfName::new(b"op"), PdfPrimitive::Boolean(true)),
+                (
+                    PdfName::new(b"OPM"),
+                    PdfPrimitive::Number(PdfNumber::Integer(1)),
+                ),
+            ]),
+        )];
+        let resources = ExtGraphicsStateResources::from_extgstate_dictionary(&dictionary)
+            .expect("overprint state");
+        let list = build_path_display_list_with_ext_graphics_states(
+            tokenize_content(PdfBytes::new(b"/GS1 gs 1 0 0 rg 0 0 10 10 re f")),
+            &resources,
+            DisplayListOptions::default(),
+        )
+        .expect("valid overprint graphics state stream");
+
+        let DisplayItem::Path(path) = &list.items()[0] else {
+            panic!("expected path display item");
+        };
+        assert!(path.state.fill_overprint);
+        assert!(path.state.stroke_overprint);
+        assert_eq!(path.state.overprint_mode, 1);
     }
 
     #[test]
