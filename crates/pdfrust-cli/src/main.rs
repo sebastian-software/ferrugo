@@ -13,9 +13,9 @@ use std::process::{Command, ExitCode};
 use std::thread;
 use std::time::{Duration, Instant};
 
-#[cfg(any(feature = "pdfium", test))]
-use pdfrust_native::NativeMemoryDiagnostics;
-use pdfrust_native::{NativeBackend, NativePageCacheKey, NativePageCachePolicy};
+use pdfrust_native::{
+    NativeBackend, NativeMemoryDiagnostics, NativePageCacheKey, NativePageCachePolicy,
+};
 #[cfg(feature = "pdfium")]
 use pdfrust_pdfium::PdfiumBackend;
 #[cfg(any(feature = "pdfium", test))]
@@ -375,6 +375,16 @@ fn summarize_fallbacks_command(args: &[OsString]) -> Result<(), CliError> {
         })?;
     } else {
         println!("{json}");
+    }
+
+    if let Some(diagnostics_dir) = &config.diagnostics_dir {
+        write_native_diagnostic_bundles(
+            &native,
+            &fixtures,
+            &options,
+            manifest.as_ref(),
+            diagnostics_dir,
+        )?;
     }
 
     if config.fail_on_fallback && summary.fallback_required > 0 {
@@ -909,6 +919,7 @@ struct FallbackSummaryConfig {
     input: PathBuf,
     manifest: Option<PathBuf>,
     output: Option<PathBuf>,
+    diagnostics_dir: Option<PathBuf>,
     page_index: u32,
     max_edge: u32,
     background: Rgba,
@@ -923,6 +934,7 @@ impl FallbackSummaryConfig {
         let mut input = None;
         let mut manifest = None;
         let mut output = None;
+        let mut diagnostics_dir = None;
         let mut page_index = DEFAULT_PAGE_INDEX;
         let mut max_edge = DEFAULT_MAX_EDGE;
         let mut background = Rgba::WHITE;
@@ -944,6 +956,10 @@ impl FallbackSummaryConfig {
                 "--manifest" => {
                     index += 1;
                     manifest = Some(required_path(args, index, "--manifest")?);
+                }
+                "--diagnostics-dir" => {
+                    index += 1;
+                    diagnostics_dir = Some(required_path(args, index, "--diagnostics-dir")?);
                 }
                 "--page-index" => {
                     index += 1;
@@ -999,6 +1015,7 @@ impl FallbackSummaryConfig {
             input: input.ok_or_else(|| CliError::Usage("missing input path".to_string()))?,
             manifest,
             output,
+            diagnostics_dir,
             page_index,
             max_edge,
             background,
@@ -2038,6 +2055,17 @@ struct RepeatBenchmarkRecord {
     outcome: RepeatBenchmarkOutcome,
 }
 
+struct NativeDiagnosticBundle<'a> {
+    path: &'a str,
+    manifest: Option<&'a CorpusManifestEntry>,
+    options: &'a ThumbnailOptions,
+    metadata: Result<&'a DocumentMetadata, &'a ThumbnailError>,
+    metadata_ms: f64,
+    render_error: &'a ThumbnailError,
+    render_ms: f64,
+    diagnostics: &'a NativeMemoryDiagnostics,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 enum BatchBenchmarkOutcome {
     NativeRendered {
@@ -2432,6 +2460,72 @@ fn summarize_native_fallbacks(
     }
 
     summary
+}
+
+fn write_native_diagnostic_bundles(
+    native: &NativeBackend,
+    paths: &[PathBuf],
+    options: &ThumbnailOptions,
+    manifest: Option<&CorpusManifest>,
+    diagnostics_dir: &Path,
+) -> Result<usize, CliError> {
+    fs::create_dir_all(diagnostics_dir).map_err(|source| CliError::Io {
+        path: diagnostics_dir.to_path_buf(),
+        source,
+    })?;
+    let mut written = 0;
+    for (index, path) in paths.iter().enumerate() {
+        let metadata_started = Instant::now();
+        let metadata = native.inspect(PdfSource::from_path(path));
+        let metadata_ms = elapsed_ms(metadata_started.elapsed());
+
+        let render_started = Instant::now();
+        let render = native.render(PdfSource::from_path(path), options);
+        let render_ms = elapsed_ms(render_started.elapsed());
+        let Err(render_error) = render else {
+            continue;
+        };
+
+        let path_key = normalize_manifest_path(path);
+        let diagnostics = native.memory_diagnostics();
+        let bundle = native_diagnostic_bundle_json(NativeDiagnosticBundle {
+            path: &path_key,
+            manifest: manifest.and_then(|manifest| manifest.entry_for_path(&path_key)),
+            options,
+            metadata: metadata.as_ref(),
+            metadata_ms,
+            render_error: &render_error,
+            render_ms,
+            diagnostics: &diagnostics,
+        });
+        let output_path = diagnostic_bundle_path(diagnostics_dir, index, &path_key);
+        fs::write(&output_path, bundle).map_err(|source| CliError::Io {
+            path: output_path,
+            source,
+        })?;
+        written += 1;
+    }
+    Ok(written)
+}
+
+fn diagnostic_bundle_path(dir: &Path, index: usize, path_key: &str) -> PathBuf {
+    let mut slug = path_key
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() {
+                ch.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>();
+    while slug.contains("--") {
+        slug = slug.replace("--", "-");
+    }
+    let slug = slug.trim_matches('-');
+    let slug = if slug.is_empty() { "fixture" } else { slug };
+    let slug = slug.chars().take(96).collect::<String>();
+    dir.join(format!("{index:04}-{slug}.diagnostics.json"))
 }
 
 fn extract_native_corpus_metadata(
@@ -4014,7 +4108,6 @@ fn comparison_json(input: &Path, comparison: &MetadataComparison) -> String {
     )
 }
 
-#[cfg(any(feature = "pdfium", test))]
 fn native_memory_diagnostics_json(diagnostics: &NativeMemoryDiagnostics) -> String {
     format!(
         concat!(
@@ -4050,6 +4143,144 @@ fn native_memory_diagnostics_json(diagnostics: &NativeMemoryDiagnostics) -> Stri
         diagnostics.spooling_enabled,
         diagnostics.max_spool_bytes
     )
+}
+
+fn native_diagnostic_bundle_json(bundle: NativeDiagnosticBundle<'_>) -> String {
+    format!(
+        concat!(
+            "{{\n",
+            "  \"schema_version\": 1,\n",
+            "  \"backend\": \"rust-native\",\n",
+            "  \"path\": {},\n",
+            "  \"manifest\": {},\n",
+            "  \"privacy\": {{\"includes_pdf_bytes\":false,\"includes_rendered_pixels\":false,\"includes_document_info\":false,\"redaction\":\"review path and manifest notes before sharing outside the trust boundary\"}},\n",
+            "  \"options\": {},\n",
+            "  \"metadata\": {},\n",
+            "  \"stages\": [{{\"name\":\"metadata\",\"elapsed_ms\":{:.3},\"outcome\":{}}},{{\"name\":\"render_pipeline\",\"elapsed_ms\":{:.3},\"stage_hint\":{},\"outcome\":{}}}],\n",
+            "  \"native_memory_diagnostics\": {}\n",
+            "}}\n"
+        ),
+        json_string(bundle.path),
+        manifest_entry_json(bundle.manifest),
+        thumbnail_options_json(bundle.options),
+        safe_metadata_json(bundle.metadata),
+        bundle.metadata_ms,
+        metadata_stage_outcome_json(bundle.metadata),
+        bundle.render_ms,
+        json_string(error_stage_hint(bundle.render_error)),
+        thumbnail_error_json(bundle.render_error),
+        native_memory_diagnostics_json(bundle.diagnostics)
+    )
+}
+
+fn thumbnail_options_json(options: &ThumbnailOptions) -> String {
+    format!(
+        concat!(
+            "{{",
+            "\"page_index\":{},",
+            "\"max_edge\":{},",
+            "\"background\":[{},{},{},{}],",
+            "\"output_format\":{},",
+            "\"timeout_ms\":{}",
+            "}}"
+        ),
+        options.page_index,
+        options.max_edge,
+        options.background.r,
+        options.background.g,
+        options.background.b,
+        options.background.a,
+        output_format_name(options),
+        options.timeout.as_millis()
+    )
+}
+
+fn output_format_name(options: &ThumbnailOptions) -> &'static str {
+    match options.output_format {
+        pdfrust_thumbnail::OutputFormat::Png => "\"png\"",
+        pdfrust_thumbnail::OutputFormat::Rgba => "\"rgba\"",
+    }
+}
+
+fn safe_metadata_json(metadata: Result<&DocumentMetadata, &ThumbnailError>) -> String {
+    match metadata {
+        Ok(metadata) => {
+            let pages = metadata
+                .pages
+                .iter()
+                .map(|page| {
+                    format!(
+                        "{{\"index\":{},\"width\":{:.3},\"height\":{:.3}}}",
+                        page.index, page.size.width, page.size.height
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(",");
+            format!(
+                "{{\"status\":\"success\",\"page_count\":{},\"pages\":[{}]}}",
+                metadata.page_count(),
+                pages
+            )
+        }
+        Err(error) => format!(
+            "{{\"status\":\"error\",\"error\":{}}}",
+            thumbnail_error_json(error)
+        ),
+    }
+}
+
+fn metadata_stage_outcome_json(metadata: Result<&DocumentMetadata, &ThumbnailError>) -> String {
+    match metadata {
+        Ok(_) => "{\"status\":\"success\"}".to_string(),
+        Err(error) => thumbnail_error_json(error),
+    }
+}
+
+fn thumbnail_error_json(error: &ThumbnailError) -> String {
+    let class = error.class().as_str();
+    let category = if error.class() == pdfrust_thumbnail::ThumbnailErrorClass::Unsupported {
+        format!(
+            ",\"category\":{}",
+            json_string(FallbackReason::from_native_error(error).category())
+        )
+    } else {
+        String::new()
+    };
+    format!(
+        "{{\"status\":{},\"class\":{},\"message\":{}{}}}",
+        json_string(
+            if error.class() == pdfrust_thumbnail::ThumbnailErrorClass::Unsupported {
+                "fallback_required"
+            } else {
+                "error"
+            }
+        ),
+        json_string(class),
+        json_string(&error.to_string()),
+        category
+    )
+}
+
+fn error_stage_hint(error: &ThumbnailError) -> &'static str {
+    match error.class() {
+        pdfrust_thumbnail::ThumbnailErrorClass::Malformed
+        | pdfrust_thumbnail::ThumbnailErrorClass::Encrypted => "parser-or-object",
+        pdfrust_thumbnail::ThumbnailErrorClass::Unsupported => {
+            let reason = FallbackReason::from_native_error(error);
+            let category = reason.category();
+            if category.starts_with("renderer.memory") {
+                "raster-or-memory-budget"
+            } else if category.starts_with("text.") || category.starts_with("graphics.") {
+                "display-list-or-raster"
+            } else if category.starts_with("image.") {
+                "resource-decode-or-raster"
+            } else {
+                "unsupported-boundary"
+            }
+        }
+        pdfrust_thumbnail::ThumbnailErrorClass::Timeout => "timeout",
+        pdfrust_thumbnail::ThumbnailErrorClass::Internal => "internal",
+    }
 }
 
 fn fallback_summary_json(summary: &FallbackSummary) -> String {
@@ -5132,7 +5363,7 @@ fn print_usage() {
          [--output PATH] [--page-index N] [--max-edge N] [--background #RRGGBB] \
          [--timeout SECONDS] [--iterations N] [--repetitions N] [--max-workers N] [--max-in-flight-pixels N] [--max-ms N] [--max-p95-ms N] [--max-first-ms N] [--max-repeat-mean-ms N] [--max-output-bytes N] \
          [--allow-pdfium-fallback] [--native-only] [--deny-fallback-reason BUCKET] [--manifest PATH] [--include-family FAMILY] \
-         [--allow-missing] [--max-mae N] [--max-p95 N] [--max-changed-ratio N]"
+         [--diagnostics-dir PATH] [--allow-missing] [--max-mae N] [--max-p95 N] [--max-changed-ratio N]"
     );
 }
 
@@ -5323,6 +5554,8 @@ mod tests {
             OsString::from("--include-family"),
             OsString::from("report"),
             OsString::from("--fail-on-fallback"),
+            OsString::from("--diagnostics-dir"),
+            OsString::from("target/diagnostics"),
         ])
         .expect("valid fallback summary config");
 
@@ -5331,6 +5564,10 @@ mod tests {
             vec!["browser-print".to_string(), "report".to_string()]
         );
         assert!(config.fail_on_fallback);
+        assert_eq!(
+            config.diagnostics_dir,
+            Some(PathBuf::from("target/diagnostics"))
+        );
     }
 
     #[test]
@@ -5458,6 +5695,47 @@ mod tests {
         assert!(json.contains("\"graphics.optional-content\":1"));
         assert!(json.contains("\"presentation\""));
         assert!(json.contains("\"native_pass_rate\":0.000"));
+    }
+
+    #[test]
+    fn diagnostic_bundles_should_exclude_private_bytes_and_include_typed_failure() {
+        let fixture_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let paths = vec![fixture_root.join("fixtures/generated/optional-content-ocmd.pdf")];
+        let manifest_path = fixture_root.join("fixtures/corpus-manifest.tsv");
+        let manifest = read_corpus_manifest(&manifest_path).expect("manifest should parse");
+        let output_dir = fixture_root
+            .join("target/diagnostic-bundle-test")
+            .join(std::process::id().to_string());
+        let _ = fs::remove_dir_all(&output_dir);
+        let options = ThumbnailOptions {
+            page_index: 0,
+            max_edge: 120,
+            background: Rgba::WHITE,
+            output_format: pdfrust_thumbnail::OutputFormat::Png,
+            timeout: Duration::from_secs(5),
+        };
+
+        let written = write_native_diagnostic_bundles(
+            &NativeBackend::new(),
+            &paths,
+            &options,
+            Some(&manifest),
+            &output_dir,
+        )
+        .expect("diagnostic bundle should write");
+        let entries = fs::read_dir(&output_dir)
+            .expect("diagnostic dir should exist")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("diagnostic dir should list");
+        let bundle = fs::read_to_string(entries[0].path()).expect("bundle should be readable");
+
+        assert_eq!(written, 1);
+        assert_eq!(entries.len(), 1);
+        assert!(bundle.contains("\"includes_pdf_bytes\":false"));
+        assert!(bundle.contains("\"includes_rendered_pixels\":false"));
+        assert!(bundle.contains("\"stage_hint\":\"display-list-or-raster\""));
+        assert!(bundle.contains("\"category\":\"graphics.optional-content\""));
+        assert!(!bundle.contains("%PDF"));
     }
 
     #[test]
