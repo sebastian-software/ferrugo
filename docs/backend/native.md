@@ -97,7 +97,18 @@ cargo run -p pdfrust-cli -- summarize-fallbacks fixtures/generated \
 The summary counts `native_rendered`, `fallback_required`,
 `fallback_categories`, non-fallback `errors`, and per-family pass rates when a
 manifest is provided. Add `--fail-on-fallback` for CI subsets that must stay
-native-only.
+native-only. Add one or more `--include-family <family>` arguments with a
+manifest to run a supported-category native-only gate:
+
+```sh
+cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated \
+  --manifest fixtures/corpus-manifest.tsv \
+  --include-family browser-print \
+  --include-family office-export \
+  --include-family form \
+  --fail-on-fallback \
+  --max-edge 160
+```
 
 Extract committed fixture metadata with page sizes and manifest tags:
 

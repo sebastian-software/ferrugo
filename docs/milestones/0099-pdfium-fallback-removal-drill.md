@@ -1,6 +1,6 @@
 # 0099: PDFium Fallback Removal Drill
 
-Status: todo
+Status: done
 Phase: 17
 Size: medium
 Depends on: 0098
@@ -47,4 +47,18 @@ categories and measures the remaining operational risk.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-25.
+
+- Added `summarize-fallbacks --include-family <family>` so supported corpus
+  categories can be gated explicitly instead of relying on full-corpus fallback
+  totals.
+- Ran a native-only supported-category gate for `browser-print`,
+  `office-export`, and `form`: 30 fixtures rendered natively with 0 fallback
+  requirements and 0 errors.
+- Recorded full-corpus fallback risk: `graphics.optional-content` (1),
+  `graphics.pattern-shading` (1), and `image.filter` (3); encrypted input
+  remains a native `encrypted` error rather than a fallback category.
+- Documented delete/defer/keep decisions for production fallback usage,
+  explicit `--allow-pdfium-fallback`, environment-driven fallback, and
+  maintainer comparison commands.
+- See `docs/reports/pdfium-fallback-removal-drill-2026-06-25.md`.
