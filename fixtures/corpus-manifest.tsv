@@ -78,6 +78,7 @@ fixtures/generated/tiling-pattern.pdf	report	scripts/generate_fixtures.py	MIT OR
 fixtures/generated/tounicode-text.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,tounicode	Generated ToUnicode character-code mapping fixture.
 fixtures/generated/transparency-alpha.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	transparency,alpha,extgstate	Generated ExtGState fill and stroke alpha fixture.
 fixtures/generated/transparency-group.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	transparency,form-xobject	Generated path-only transparency group fixture.
+fixtures/generated/transparency-knockout-group.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	transparency,form-xobject,knockout	Generated isolated knockout transparency group fixture.
 fixtures/generated/type1-fontfile-text.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,font,type1,fontfile	Generated Type1 FontFile text fixture with bounded synthetic charstring program.
 fixtures/generated/type3-barcode-font.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,type3,charproc,barcode	Generated Type3 barcode-like glyph CharProc fixture.
 fixtures/generated/type3-symbol-font.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,type3,charproc,symbol	Generated Type3 symbol-like glyph CharProc fixture.

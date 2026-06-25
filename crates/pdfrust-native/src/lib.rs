@@ -3183,6 +3183,28 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_render_generated_knockout_transparency_group_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/transparency-knockout-group.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 120,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect(
+            "generated knockout transparency group fixture should render through native backend",
+        );
+
+        assert_eq!(thumbnail.width, 120);
+        assert_eq!(thumbnail.height, 120);
+        assert_eq!(rgba_at(&thumbnail, 5, 5), [128, 128, 128, 255]);
+        assert_eq!(rgba_at(&thumbnail, 25, 85), [192, 64, 64, 255]);
+        assert_eq!(rgba_at(&thumbnail, 55, 55), [96, 32, 160, 255]);
+    }
+
+    #[test]
     fn native_backend_should_render_generated_blend_modes_fixture() {
         let bytes = include_bytes!("../../../fixtures/generated/blend-modes.pdf");
         let thumbnail = ThumbnailBackend::render(

@@ -5109,14 +5109,21 @@ fn rasterize_transparency_group(
             a: 0,
         },
     )?;
-    rasterize_paths_into(&group.items, &mut group_device, group_transform, options)?;
+    rasterize_display_list_into(&group.items, &mut group_device, group_transform, options)?;
     for y in 0..bounds.height {
         for x in 0..bounds.width {
             let source = group_device.pixel(x, y)?;
             if source.a == 0 {
                 continue;
             }
-            composite_image_pixel(device, bounds.min_x + x, bounds.min_y + y, source)?;
+            blend_pixel(
+                device,
+                bounds.min_x + x,
+                bounds.min_y + y,
+                source,
+                group.state.blend_mode,
+                group.state.fill_alpha,
+            )?;
         }
     }
     Ok(())
@@ -9800,16 +9807,17 @@ fn blend_pixel(
     }
     let dest = device.pixel(x, y)?;
     let blended = blend_source_with_backdrop(source, dest, blend_mode);
-    let inv = 1.0 - coverage;
     device.set_pixel(
         x,
         y,
-        Rgba {
-            r: blend_channel(blended.r, dest.r, coverage, inv),
-            g: blend_channel(blended.g, dest.g, coverage, inv),
-            b: blend_channel(blended.b, dest.b, coverage, inv),
-            a: 255,
-        },
+        source_over(
+            Rgba {
+                a: source.a,
+                ..blended
+            },
+            dest,
+            coverage,
+        ),
     )
 }
 
@@ -9842,8 +9850,40 @@ fn screen_channel(source: u8, dest: u8) -> u8 {
     ))
 }
 
-fn blend_channel(source: u8, dest: u8, coverage: f64, inv_coverage: f64) -> u8 {
-    (f64::from(source).mul_add(coverage, f64::from(dest) * inv_coverage)).round() as u8
+fn source_over(source: Rgba, dest: Rgba, coverage: f64) -> Rgba {
+    let source_alpha = (f64::from(source.a) / 255.0 * coverage).clamp(0.0, 1.0);
+    if source_alpha <= f64::EPSILON {
+        return dest;
+    }
+    let dest_alpha = f64::from(dest.a) / 255.0;
+    let out_alpha = source_alpha.mul_add(1.0, dest_alpha * (1.0 - source_alpha));
+    if out_alpha <= f64::EPSILON {
+        return Rgba {
+            r: 0,
+            g: 0,
+            b: 0,
+            a: 0,
+        };
+    }
+    Rgba {
+        r: source_over_channel(source.r, dest.r, source_alpha, dest_alpha, out_alpha),
+        g: source_over_channel(source.g, dest.g, source_alpha, dest_alpha, out_alpha),
+        b: source_over_channel(source.b, dest.b, source_alpha, dest_alpha, out_alpha),
+        a: normalized_to_u8(out_alpha),
+    }
+}
+
+fn source_over_channel(
+    source: u8,
+    dest: u8,
+    source_alpha: f64,
+    dest_alpha: f64,
+    out_alpha: f64,
+) -> u8 {
+    ((f64::from(source) * source_alpha + f64::from(dest) * dest_alpha * (1.0 - source_alpha))
+        / out_alpha)
+        .round()
+        .clamp(0.0, 255.0) as u8
 }
 
 fn draw_image(
@@ -9998,21 +10038,7 @@ fn composite_image_pixel(
         return Ok(());
     }
     let dest = device.pixel(x, y)?;
-    let coverage = f64::from(source.a) / 255.0;
-    let inv = 1.0 - coverage;
-    device.set_pixel(
-        x,
-        y,
-        Rgba {
-            r: blend_channel(source.r, dest.r, coverage, inv),
-            g: blend_channel(source.g, dest.g, coverage, inv),
-            b: blend_channel(source.b, dest.b, coverage, inv),
-            a: f64::from(source.a)
-                .mul_add(1.0, f64::from(dest.a) * inv)
-                .round()
-                .min(255.0) as u8,
-        },
-    )
+    device.set_pixel(x, y, source_over(source, dest, 1.0))
 }
 
 fn cmyk_to_rgba(cyan: u8, magenta: u8, yellow: u8, key: u8) -> Rgba {
@@ -13504,6 +13530,47 @@ mod tests {
                 r: 255,
                 g: 128,
                 b: 128,
+                a: 255,
+            }
+        );
+    }
+
+    #[test]
+    fn source_over_should_preserve_intermediate_alpha() {
+        let source = Rgba {
+            r: 255,
+            g: 0,
+            b: 0,
+            a: 255,
+        };
+        let transparent = Rgba {
+            r: 0,
+            g: 0,
+            b: 0,
+            a: 0,
+        };
+        assert_eq!(
+            source_over(source, transparent, 0.5),
+            Rgba {
+                r: 255,
+                g: 0,
+                b: 0,
+                a: 128,
+            }
+        );
+
+        let gray = Rgba {
+            r: 128,
+            g: 128,
+            b: 128,
+            a: 255,
+        };
+        assert_eq!(
+            source_over(source, gray, 0.5),
+            Rgba {
+                r: 192,
+                g: 64,
+                b: 64,
                 a: 255,
             }
         );

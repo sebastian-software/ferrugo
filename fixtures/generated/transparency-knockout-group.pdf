@@ -1,0 +1,36 @@
+%PDF-1.4
+%‚„œ”
+1 0 obj
+<< /Length 60 >>
+stream
+0.5 0.5 0.5 rg 0 0 120 120 re f q 1 0 0 1 15 15 cm /Fm1 Do Q
+endstream
+endobj
+2 0 obj
+<< /Type /Page /Parent 3 0 R /MediaBox [0 0 120 120] /Resources << /ExtGState << /GSHalf << /ca 0.5 >> >> /XObject << /Fm1 4 0 R >> >> /Contents 1 0 R >>
+endobj
+3 0 obj
+<< /Type /Pages /Kids [2 0 R] /Count 1 >>
+endobj
+4 0 obj
+<< /Type /XObject /Subtype /Form /BBox [0 0 90 90] /Group << /S /Transparency /I true /K true /CS /DeviceRGB >> /Length 79 >>
+stream
+q /GSHalf gs 1 0 0 rg 0 0 60 60 re f Q q /GSHalf gs 0 0 1 rg 30 30 60 60 re f Q
+endstream
+endobj
+5 0 obj
+<< /Type /Catalog /Pages 3 0 R >>
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000015 00000 n 
+0000000125 00000 n 
+0000000294 00000 n 
+0000000351 00000 n 
+0000000589 00000 n 
+trailer
+<< /Size 6 /Root 5 0 R >>
+startxref
+638
+%%EOF

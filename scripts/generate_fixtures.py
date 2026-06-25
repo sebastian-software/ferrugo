@@ -950,6 +950,41 @@ def transparency_group_pdf() -> bytes:
     return pdf.render(catalog)
 
 
+def transparency_knockout_group_pdf() -> bytes:
+    pdf = Pdf()
+    content = (
+        b"0.5 0.5 0.5 rg 0 0 120 120 re f "
+        b"q 1 0 0 1 15 15 cm /Fm1 Do Q"
+    )
+    form = (
+        b"q /GSHalf gs 1 0 0 rg 0 0 60 60 re f Q "
+        b"q /GSHalf gs 0 0 1 rg 30 30 60 60 re f Q"
+    )
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 120 120] "
+        "/Resources << /ExtGState << /GSHalf << /ca 0.5 >> >> "
+        "/XObject << /Fm1 4 0 R >> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    form_object = pdf.add(
+        b"<< /Type /XObject /Subtype /Form /BBox [0 0 90 90] "
+        b"/Group << /S /Transparency /I true /K true /CS /DeviceRGB >> /Length "
+        + str(len(form)).encode("ascii")
+        + b" >>\nstream\n"
+        + form
+        + b"\nendstream"
+    )
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert form_object == 4
+    return pdf.render(catalog)
+
+
 def blend_modes_pdf() -> bytes:
     pdf = Pdf()
     content = (
@@ -2815,6 +2850,7 @@ def main() -> None:
     write("scanned-page.pdf", scanned_page_pdf())
     write("mixed-text-image.pdf", mixed_text_image_pdf())
     write("transparency-group.pdf", transparency_group_pdf())
+    write("transparency-knockout-group.pdf", transparency_knockout_group_pdf())
     write("blend-modes.pdf", blend_modes_pdf())
     write("transparency-alpha.pdf", transparency_alpha_pdf())
     write("axial-gradient.pdf", axial_gradient_pdf())
