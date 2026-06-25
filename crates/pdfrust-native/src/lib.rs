@@ -5471,6 +5471,64 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_render_generated_font_subset_regression_fixtures() {
+        let cases: &[(&str, &[u8], u32, u32)] = &[
+            (
+                "subset TrueType widths",
+                include_bytes!("../../../fixtures/generated/subset-truetype-widths.pdf"),
+                220,
+                120,
+            ),
+            (
+                "subset CFF ToUnicode",
+                include_bytes!("../../../fixtures/generated/subset-cff-tounicode.pdf"),
+                220,
+                120,
+            ),
+            (
+                "subset CID widths",
+                include_bytes!("../../../fixtures/generated/subset-cid-widths.pdf"),
+                220,
+                120,
+            ),
+            (
+                "subset Type3 repeated CharProcs",
+                include_bytes!("../../../fixtures/generated/subset-type3-repeated-charprocs.pdf"),
+                260,
+                120,
+            ),
+            (
+                "subset missing font",
+                include_bytes!("../../../fixtures/generated/subset-missing-font.pdf"),
+                240,
+                120,
+            ),
+        ];
+
+        for (name, bytes, expected_width, expected_height) in cases {
+            let thumbnail = ThumbnailBackend::render(
+                &NativeBackend::new(),
+                PdfSource::from_bytes(bytes),
+                &ThumbnailOptions {
+                    max_edge: 260,
+                    ..ThumbnailOptions::default()
+                },
+            )
+            .unwrap_or_else(|error| panic!("{name} should render through native backend: {error}"));
+
+            assert_eq!(thumbnail.width, *expected_width, "{name} width");
+            assert_eq!(thumbnail.height, *expected_height, "{name} height");
+            assert!(
+                thumbnail
+                    .bytes
+                    .chunks_exact(4)
+                    .any(|pixel| pixel != [255, 255, 255, 255]),
+                "{name} should paint visible pixels"
+            );
+        }
+    }
+
+    #[test]
     fn native_backend_should_render_generated_type3_vector_text_fixture() {
         let bytes = include_bytes!("../../../fixtures/generated/type3-vector-text.pdf");
         let thumbnail = ThumbnailBackend::render(

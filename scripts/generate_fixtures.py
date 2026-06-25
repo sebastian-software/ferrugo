@@ -3129,6 +3129,146 @@ def cff_fontfile3_text_pdf() -> bytes:
     )
 
 
+def subset_truetype_widths_pdf() -> bytes:
+    pdf = Pdf()
+    content = b"BT /F1 20 Tf 24 76 Td (ABCA) Tj ET"
+    font_program = b"subset-truetype-program"
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 220 120] "
+        "/Resources << /Font << /F1 4 0 R >> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    font = pdf.add(
+        "<< /Type /Font /Subtype /TrueType /BaseFont /ABCDEE+SubsetSans "
+        "/FirstChar 65 /LastChar 67 /Widths [620 580 610] "
+        "/FontDescriptor 6 0 R >>"
+    )
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    descriptor = pdf.add(
+        "<< /Type /FontDescriptor /FontName /ABCDEE+SubsetSans /FontFile2 7 0 R >>"
+    )
+    font_file = pdf.add(
+        b"<< /Length "
+        + str(len(font_program)).encode("ascii")
+        + b" >>\nstream\n"
+        + font_program
+        + b"\nendstream"
+    )
+    assert font == 4
+    assert descriptor == 6
+    assert font_file == 7
+    return pdf.render(catalog)
+
+
+def subset_cff_tounicode_pdf() -> bytes:
+    pdf = Pdf()
+    content = b"BT /F1 24 Tf 24 76 Td <0102> Tj ET"
+    font_program = b"subset-cff-program"
+    cmap = (
+        b"/CIDInit /ProcSet findresource begin\n"
+        b"1 begincmap\n"
+        b"2 beginbfchar\n"
+        b"<01> <0043>\n"
+        b"<02> <0046>\n"
+        b"endbfchar\n"
+        b"endcmap\n"
+        b"CMapName currentdict /CMap defineresource pop\n"
+        b"end"
+    )
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 220 120] "
+        "/Resources << /Font << /F1 4 0 R >> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    font = pdf.add(
+        "<< /Type /Font /Subtype /Type1 /BaseFont /ABCDEE+SubsetCff "
+        "/FontDescriptor 6 0 R /ToUnicode 8 0 R >>"
+    )
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    descriptor = pdf.add(
+        "<< /Type /FontDescriptor /FontName /ABCDEE+SubsetCff /FontFile3 7 0 R >>"
+    )
+    font_file = pdf.add(
+        b"<< /Subtype /Type1C /Length "
+        + str(len(font_program)).encode("ascii")
+        + b" >>\nstream\n"
+        + font_program
+        + b"\nendstream"
+    )
+    cmap_stream = pdf.add(
+        b"<< /Length "
+        + str(len(cmap)).encode("ascii")
+        + b" >>\nstream\n"
+        + cmap
+        + b"\nendstream"
+    )
+    assert font == 4
+    assert descriptor == 6
+    assert font_file == 7
+    assert cmap_stream == 8
+    return pdf.render(catalog)
+
+
+def subset_cid_widths_pdf() -> bytes:
+    return shaped_text_pdf(
+        b"BT /F1 22 Tf 24 76 Td <000100020003> Tj ET",
+        (
+            b"/CIDInit /ProcSet findresource begin\n"
+            b"1 begincmap\n"
+            b"3 beginbfchar\n"
+            b"<0001> <0057>\n"
+            b"<0002> <0049>\n"
+            b"<0003> <0044>\n"
+            b"endbfchar\n"
+            b"endcmap\n"
+            b"CMapName currentdict /CMap defineresource pop\n"
+            b"end"
+        ),
+        "<< /Type /Font /Subtype /Type0 /BaseFont /ABCDEE+SubsetCID "
+        "/Encoding /Identity-H /DescendantFonts [<< /Type /Font "
+        "/Subtype /CIDFontType2 /BaseFont /ABCDEE+SubsetCID "
+        "/CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> "
+        "/DW 600 /W [1 [420 610 730]] >>] /ToUnicode 6 0 R >>",
+        "[0 0 220 120]",
+    )
+
+
+def subset_type3_repeated_charprocs_pdf() -> bytes:
+    return type3_font_pdf(
+        b"BT /F1 34 Tf 22 54 Td (ABABBA) Tj ET",
+        "<< /Type /Font /Subtype /Type3 /FontBBox [0 0 620 620] "
+        "/FontMatrix [0.001 0 0 0.001 0 0] "
+        "/FirstChar 65 /LastChar 66 /Widths [620 560] "
+        "/Encoding << /Differences [65 /A /B] >> "
+        "/CharProcs << /A 6 0 R /B 7 0 R >> >>",
+        [
+            b"0.1 0.1 0.1 rg 70 0 m 310 620 l 550 0 l 430 0 l 380 130 l 240 130 l 190 0 l h f",
+            b"0.1 0.1 0.1 rg 70 0 180 620 re f 220 0 260 260 re f 220 360 230 260 re f",
+        ],
+        "[0 0 260 120]",
+    )
+
+
+def subset_missing_font_pdf() -> bytes:
+    return missing_font_pdf(
+        "ABCDEE+SubsetMissingSans",
+        "subset missing font",
+        "[0 0 240 120]",
+    )
+
+
 def type3_font_pdf(
     content: bytes,
     font_dictionary: str,
@@ -4607,6 +4747,11 @@ def main() -> None:
     )
     write("type1-fontfile-text.pdf", type1_fontfile_text_pdf())
     write("cff-fontfile3-text.pdf", cff_fontfile3_text_pdf())
+    write("subset-truetype-widths.pdf", subset_truetype_widths_pdf())
+    write("subset-cff-tounicode.pdf", subset_cff_tounicode_pdf())
+    write("subset-cid-widths.pdf", subset_cid_widths_pdf())
+    write("subset-type3-repeated-charprocs.pdf", subset_type3_repeated_charprocs_pdf())
+    write("subset-missing-font.pdf", subset_missing_font_pdf())
     write("type3-vector-text.pdf", type3_vector_text_pdf())
     write("type3-symbol-font.pdf", type3_symbol_font_pdf())
     write("type3-barcode-font.pdf", type3_barcode_font_pdf())

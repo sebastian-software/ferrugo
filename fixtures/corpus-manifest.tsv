@@ -17,6 +17,11 @@ fixtures/generated/axial-gradient.pdf	report	scripts/generate_fixtures.py	MIT OR
 fixtures/generated/blend-modes.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	blend-mode,transparency	Generated Multiply and Screen blend-mode fixture.
 fixtures/generated/cid-font-text.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,type0,cid,tounicode	Generated Type0 CID font ToUnicode fixture.
 fixtures/generated/cff-fontfile3-text.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,font,cff,fontfile3	Generated Type1 font resource with embedded CFF FontFile3 fixture.
+fixtures/generated/subset-truetype-widths.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,font,subset,truetype,widths,fontfile2	Generated subset TrueType fixture with explicit widths and embedded FontFile2.
+fixtures/generated/subset-cff-tounicode.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,font,subset,cff,fontfile3,tounicode	Generated subset CFF FontFile3 fixture with explicit ToUnicode mapping.
+fixtures/generated/subset-cid-widths.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,font,subset,type0,cid,widths,tounicode	Generated subset Type0 CID fixture with descendant width overrides and ToUnicode mapping.
+fixtures/generated/subset-type3-repeated-charprocs.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,font,subset,type3,charproc,repeated	Generated subset Type3 fixture with repeated CharProc glyph use.
+fixtures/generated/subset-missing-font.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,font,subset,missing-font,fallback	Generated subset-prefixed missing-font fixture for deterministic fallback selection.
 fixtures/generated/chart-combo-legend.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	chart,dashboard,legend,bar,line,small-text	Generated combo chart fixture with bars, trend line, legend, axis, and labels.
 fixtures/generated/clipped-paths.pdf	browser-print	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	vector,clipping	Generated even-odd clipping path fixture.
 fixtures/generated/cmap-codespace-range-text.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,type0,cid,cmap,codespace,tounicode	Generated Type0 CID text fixture with an explicit ToUnicode code-space range.

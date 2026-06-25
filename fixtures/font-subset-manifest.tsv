@@ -1,0 +1,6 @@
+path	family	source	license	page_count	features	notes
+fixtures/generated/subset-truetype-widths.pdf	truetype-subset	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,font,subset,truetype,widths,fontfile2	Subset TrueType fixture with explicit widths and embedded FontFile2.
+fixtures/generated/subset-cff-tounicode.pdf	cff-subset	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,font,subset,cff,fontfile3,tounicode	Subset CFF FontFile3 fixture with explicit ToUnicode mapping.
+fixtures/generated/subset-cid-widths.pdf	cid-subset	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,font,subset,type0,cid,widths,tounicode	Subset Type0 CID fixture with descendant width overrides and ToUnicode mapping.
+fixtures/generated/subset-type3-repeated-charprocs.pdf	type3-subset	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,font,subset,type3,charproc,repeated	Subset Type3 fixture with repeated CharProc glyph use.
+fixtures/generated/subset-missing-font.pdf	missing-font-subset	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,font,subset,missing-font,fallback	Subset-prefixed missing-font fixture for deterministic fallback selection.
