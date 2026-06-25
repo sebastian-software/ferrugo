@@ -1,0 +1,49 @@
+%PDF-1.4
+%‚„œ”
+1 0 obj
+<< /Length 44 >>
+stream
+BT /F1 18 Tf 24 72 Td (type1 fontfile) Tj ET
+endstream
+endobj
+2 0 obj
+<< /Type /Page /Parent 3 0 R /MediaBox [0 0 240 120] /Resources << /Font << /F1 4 0 R >> >> /Contents 1 0 R >>
+endobj
+3 0 obj
+<< /Type /Pages /Kids [2 0 R] /Count 1 >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /PdfrustTypeOne /FontDescriptor 6 0 R >>
+endobj
+5 0 obj
+<< /Type /Catalog /Pages 3 0 R >>
+endobj
+6 0 obj
+<< /Type /FontDescriptor /FontName /PdfrustTypeOne /FontFile 7 0 R >>
+endobj
+7 0 obj
+<< /Length 141 >>
+stream
+%!PS-AdobeFont-1.0: PdfrustTypeOne 1.0
+/CharStrings 2 dict dup begin
+/.notdef <0e> def
+/A <8bef0d8b8b15ef8b058bef05278b058b2705090e> def
+end
+
+endstream
+endobj
+xref
+0 8
+0000000000 65535 f 
+0000000015 00000 n 
+0000000109 00000 n 
+0000000235 00000 n 
+0000000292 00000 n 
+0000000389 00000 n 
+0000000438 00000 n 
+0000000523 00000 n 
+trailer
+<< /Size 8 /Root 5 0 R >>
+startxref
+715
+%%EOF

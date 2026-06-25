@@ -2153,6 +2153,8 @@ fn map_graphics_error(error: GraphicsError) -> ThumbnailError {
         GraphicsErrorKind::UnsupportedGlyphOutlineProgram { .. }
         | GraphicsErrorKind::UnsupportedGlyphOutline { .. }
         | GraphicsErrorKind::GlyphOutlineSegmentOverflow { .. }
+        | GraphicsErrorKind::GlyphOutlineStackOverflow { .. }
+        | GraphicsErrorKind::GlyphOutlineSubroutineOverflow { .. }
         | GraphicsErrorKind::GlyphOutlineCacheOverflow { .. } => {
             unsupported_feature(BUCKET_TEXT_GLYPH_OUTLINE)
         }
@@ -4037,6 +4039,48 @@ mod tests {
         .expect("generated browser missing-font fixture should render through native backend");
 
         assert_eq!(thumbnail.width, 260);
+        assert_eq!(thumbnail.height, 120);
+        assert!(thumbnail
+            .bytes
+            .chunks_exact(4)
+            .any(|pixel| pixel != [255, 255, 255, 255]));
+    }
+
+    #[test]
+    fn native_backend_should_render_generated_type1_fontfile_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/type1-fontfile-text.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 240,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated Type1 FontFile fixture should render through native backend");
+
+        assert_eq!(thumbnail.width, 240);
+        assert_eq!(thumbnail.height, 120);
+        assert!(thumbnail
+            .bytes
+            .chunks_exact(4)
+            .any(|pixel| pixel != [255, 255, 255, 255]));
+    }
+
+    #[test]
+    fn native_backend_should_render_generated_cff_fontfile3_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/cff-fontfile3-text.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 240,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated CFF FontFile3 fixture should render through native backend");
+
+        assert_eq!(thumbnail.width, 240);
         assert_eq!(thumbnail.height, 120);
         assert!(thumbnail
             .bytes

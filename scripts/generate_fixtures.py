@@ -2118,6 +2118,76 @@ def missing_font_pdf(base_font: str, text: str, media_box: str = "[0 0 260 120]"
     return pdf.render(catalog)
 
 
+def embedded_font_program_text_pdf(
+    base_font: str,
+    descriptor_field: str,
+    font_file_dictionary: str,
+    font_program: bytes,
+    text: str,
+    media_box: str = "[0 0 240 120]",
+) -> bytes:
+    pdf = Pdf()
+    content = f"BT /F1 18 Tf 24 72 Td ({text}) Tj ET".encode("ascii")
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        f"<< /Type /Page /Parent 3 0 R /MediaBox {media_box} "
+        "/Resources << /Font << /F1 4 0 R >> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    font = pdf.add(
+        f"<< /Type /Font /Subtype /Type1 /BaseFont /{base_font} "
+        f"/FontDescriptor 6 0 R >>"
+    )
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    descriptor = pdf.add(
+        f"<< /Type /FontDescriptor /FontName /{base_font} /{descriptor_field} 7 0 R >>"
+    )
+    font_file_base = font_file_dictionary.strip()
+    if font_file_base.endswith(">>"):
+        font_file_base = font_file_base[:-2].strip()
+    font_file = pdf.add(
+        f"{font_file_base} /Length {len(font_program)} >>\nstream\n".encode("ascii")
+        + font_program
+        + b"\nendstream"
+    )
+    assert font == 4
+    assert descriptor == 6
+    assert font_file == 7
+    return pdf.render(catalog)
+
+
+def type1_fontfile_text_pdf() -> bytes:
+    program = (
+        b"%!PS-AdobeFont-1.0: PdfrustTypeOne 1.0\n"
+        b"/CharStrings 2 dict dup begin\n"
+        b"/.notdef <0e> def\n"
+        b"/A <8bef0d8b8b15ef8b058bef05278b058b2705090e> def\n"
+        b"end\n"
+    )
+    return embedded_font_program_text_pdf(
+        "PdfrustTypeOne",
+        "FontFile",
+        "<<",
+        program,
+        "type1 fontfile",
+    )
+
+
+def cff_fontfile3_text_pdf() -> bytes:
+    return embedded_font_program_text_pdf(
+        "PdfrustCffOne",
+        "FontFile3",
+        "<< /Subtype /Type1C >>",
+        b"fake-cff-font-program",
+        "cff fontfile3",
+    )
+
+
 def type3_font_pdf(
     content: bytes,
     font_dictionary: str,
@@ -2443,6 +2513,8 @@ def main() -> None:
         "missing-font-browser-print.pdf",
         missing_font_pdf("ABCDEE+BrowserMono", "browser missing font", "[0 0 260 120]"),
     )
+    write("type1-fontfile-text.pdf", type1_fontfile_text_pdf())
+    write("cff-fontfile3-text.pdf", cff_fontfile3_text_pdf())
     write("type3-vector-text.pdf", type3_vector_text_pdf())
     write("type3-symbol-font.pdf", type3_symbol_font_pdf())
     write("type3-barcode-font.pdf", type3_barcode_font_pdf())

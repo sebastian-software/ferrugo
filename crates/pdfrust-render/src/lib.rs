@@ -49,6 +49,12 @@ pub const DEFAULT_GLYPH_OUTLINE_SEGMENT_LIMIT: usize = 2_048;
 /// Default maximum cached glyph outlines per outline cache.
 pub const DEFAULT_GLYPH_OUTLINE_CACHE_LIMIT: usize = 4_096;
 
+/// Default maximum operands accepted on a charstring stack.
+pub const DEFAULT_CHARSTRING_STACK_LIMIT: usize = 48;
+
+/// Default maximum nested charstring subroutine calls.
+pub const DEFAULT_CHARSTRING_SUBROUTINE_DEPTH_LIMIT: usize = 10;
+
 /// Default maximum cached fallback glyph bitmaps per rasterization pass.
 pub const DEFAULT_GLYPH_BITMAP_CACHE_LIMIT: usize = 256;
 
@@ -1622,6 +1628,10 @@ pub struct GlyphOutlineOptions {
     pub max_segments: usize,
     /// Maximum cached glyph outlines.
     pub max_cache_entries: usize,
+    /// Maximum operands accepted on one charstring stack.
+    pub max_charstring_stack: usize,
+    /// Maximum nested charstring subroutine depth.
+    pub max_charstring_subroutine_depth: usize,
 }
 
 impl Default for GlyphOutlineOptions {
@@ -1629,6 +1639,8 @@ impl Default for GlyphOutlineOptions {
         Self {
             max_segments: DEFAULT_GLYPH_OUTLINE_SEGMENT_LIMIT,
             max_cache_entries: DEFAULT_GLYPH_OUTLINE_CACHE_LIMIT,
+            max_charstring_stack: DEFAULT_CHARSTRING_STACK_LIMIT,
+            max_charstring_subroutine_depth: DEFAULT_CHARSTRING_SUBROUTINE_DEPTH_LIMIT,
         }
     }
 }
@@ -1982,12 +1994,7 @@ pub fn extract_glyph_outline(
     match program.key.kind {
         FontProgramKind::TrueType => extract_truetype_glyph_outline(program, glyph_code, options),
         FontProgramKind::Cff => extract_cff_glyph_outline(program, glyph_code, options),
-        FontProgramKind::Type1 => Err(GraphicsError::new(
-            None,
-            GraphicsErrorKind::UnsupportedGlyphOutlineProgram {
-                kind: program.key.kind,
-            },
-        )),
+        FontProgramKind::Type1 => extract_type1_glyph_outline(program, glyph_code, options),
     }
 }
 
@@ -2923,6 +2930,395 @@ fn extract_cff_glyph_outline(
         left_side_bearing: f64::from(face.glyph_hor_side_bearing(glyph_id).unwrap_or(0)),
         segments: builder.segments,
     }))
+}
+
+fn extract_type1_glyph_outline(
+    program: &FontProgram,
+    glyph_code: u32,
+    options: GlyphOutlineOptions,
+) -> GraphicsResult<Option<GlyphOutline>> {
+    let Some(charstring) = type1_charstring_for_glyph(&program.bytes, glyph_code)? else {
+        return Ok(None);
+    };
+    interpret_type1_charstring(&charstring, glyph_code, options).map(Some)
+}
+
+fn type1_charstring_for_glyph(bytes: &[u8], glyph_code: u32) -> GraphicsResult<Option<Vec<u8>>> {
+    let mut offset = 0;
+    let mut seen = 0u32;
+    while let Some(slash_offset) = bytes[offset..].iter().position(|byte| *byte == b'/') {
+        offset += slash_offset + 1;
+        let name_start = offset;
+        while offset < bytes.len() && is_type1_name_byte(bytes[offset]) {
+            offset += 1;
+        }
+        let name = &bytes[name_start..offset];
+        while offset < bytes.len() && bytes[offset].is_ascii_whitespace() {
+            offset += 1;
+        }
+        if offset >= bytes.len() || bytes[offset] != b'<' {
+            continue;
+        }
+        let hex_start = offset + 1;
+        let Some(hex_len) = bytes[hex_start..].iter().position(|byte| *byte == b'>') else {
+            return Err(invalid_glyph_outline());
+        };
+        let hex = &bytes[hex_start..hex_start + hex_len];
+        offset = hex_start + hex_len + 1;
+        if name == b".notdef" {
+            continue;
+        }
+        seen = seen.saturating_add(1);
+        if seen == glyph_code {
+            return decode_hex_charstring(hex).map(Some);
+        }
+    }
+    Ok(None)
+}
+
+fn is_type1_name_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_')
+}
+
+fn decode_hex_charstring(hex: &[u8]) -> GraphicsResult<Vec<u8>> {
+    let mut decoded = Vec::with_capacity(hex.len() / 2);
+    let mut high = None;
+    for byte in hex
+        .iter()
+        .copied()
+        .filter(|byte| !byte.is_ascii_whitespace())
+    {
+        let nibble = charstring_hex_nibble(byte).ok_or_else(invalid_glyph_outline)?;
+        if let Some(high_nibble) = high.take() {
+            decoded.push((high_nibble << 4) | nibble);
+        } else {
+            high = Some(nibble);
+        }
+    }
+    if high.is_some() {
+        return Err(invalid_glyph_outline());
+    }
+    Ok(decoded)
+}
+
+fn charstring_hex_nibble(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
+    }
+}
+
+fn interpret_type1_charstring(
+    bytes: &[u8],
+    glyph_code: u32,
+    options: GlyphOutlineOptions,
+) -> GraphicsResult<GlyphOutline> {
+    let mut interpreter = Type1CharstringInterpreter::new(glyph_code, options);
+    let mut offset = 0;
+    while offset < bytes.len() {
+        let byte = bytes[offset];
+        offset += 1;
+        match byte {
+            0..=31 => {
+                if byte == 12 {
+                    let Some(escaped) = bytes.get(offset).copied() else {
+                        return Err(invalid_glyph_outline());
+                    };
+                    offset += 1;
+                    interpreter.apply_escaped_operator(escaped)?;
+                } else {
+                    interpreter.apply_operator(byte)?;
+                }
+            }
+            32..=246 => interpreter.push_number(f64::from(i16::from(byte) - 139))?,
+            247..=250 => {
+                let Some(next) = bytes.get(offset).copied() else {
+                    return Err(invalid_glyph_outline());
+                };
+                offset += 1;
+                let value = (i16::from(byte) - 247) * 256 + i16::from(next) + 108;
+                interpreter.push_number(f64::from(value))?;
+            }
+            251..=254 => {
+                let Some(next) = bytes.get(offset).copied() else {
+                    return Err(invalid_glyph_outline());
+                };
+                offset += 1;
+                let value = -((i16::from(byte) - 251) * 256) - i16::from(next) - 108;
+                interpreter.push_number(f64::from(value))?;
+            }
+            255 => {
+                let Some(raw) = bytes.get(offset..offset + 4) else {
+                    return Err(invalid_glyph_outline());
+                };
+                offset += 4;
+                let value = i32::from_be_bytes([raw[0], raw[1], raw[2], raw[3]]);
+                interpreter.push_number(f64::from(value) / 65_536.0)?;
+            }
+        }
+        if interpreter.ended {
+            return interpreter.finish();
+        }
+    }
+    Err(invalid_glyph_outline())
+}
+
+struct Type1CharstringInterpreter {
+    glyph_code: u32,
+    options: GlyphOutlineOptions,
+    stack: Vec<f64>,
+    current: Point,
+    started: bool,
+    ended: bool,
+    advance_width: f64,
+    left_side_bearing: f64,
+    segments: Vec<PathSegment>,
+}
+
+impl Type1CharstringInterpreter {
+    fn new(glyph_code: u32, options: GlyphOutlineOptions) -> Self {
+        Self {
+            glyph_code,
+            options,
+            stack: Vec::new(),
+            current: Point { x: 0.0, y: 0.0 },
+            started: false,
+            ended: false,
+            advance_width: 500.0,
+            left_side_bearing: 0.0,
+            segments: Vec::new(),
+        }
+    }
+
+    fn push_number(&mut self, value: f64) -> GraphicsResult<()> {
+        if self.stack.len() >= self.options.max_charstring_stack {
+            return Err(GraphicsError::new(
+                None,
+                GraphicsErrorKind::GlyphOutlineStackOverflow {
+                    limit: self.options.max_charstring_stack,
+                },
+            ));
+        }
+        self.stack.push(value);
+        Ok(())
+    }
+
+    fn apply_operator(&mut self, operator: u8) -> GraphicsResult<()> {
+        match operator {
+            4 => {
+                let dy = self.pop_one()?;
+                self.move_by(0.0, dy)
+            }
+            5 => self.lines_by_pairs(),
+            6 => {
+                let dx = self.pop_one()?;
+                self.line_by(dx, 0.0)
+            }
+            7 => {
+                let dy = self.pop_one()?;
+                self.line_by(0.0, dy)
+            }
+            8 => self.curves_by_sixes(),
+            9 => self.close_path(),
+            10 => Err(GraphicsError::new(
+                None,
+                GraphicsErrorKind::GlyphOutlineSubroutineOverflow {
+                    limit: self.options.max_charstring_subroutine_depth,
+                },
+            )),
+            11 => Err(invalid_glyph_outline()),
+            13 => {
+                let (side_bearing, width) = self.pop_two()?;
+                self.left_side_bearing = side_bearing;
+                self.advance_width = width;
+                self.current.x = side_bearing;
+                self.stack.clear();
+                Ok(())
+            }
+            14 => {
+                self.ended = true;
+                self.stack.clear();
+                Ok(())
+            }
+            21 => {
+                let (dx, dy) = self.pop_two()?;
+                self.move_by(dx, dy)
+            }
+            22 => {
+                let dx = self.pop_one()?;
+                self.move_by(dx, 0.0)
+            }
+            _ => Err(GraphicsError::new(
+                None,
+                GraphicsErrorKind::UnsupportedGlyphOutline {
+                    feature: format!("type1-charstring-operator-{operator}").into_bytes(),
+                },
+            )),
+        }
+    }
+
+    fn apply_escaped_operator(&mut self, operator: u8) -> GraphicsResult<()> {
+        match operator {
+            7 => {
+                let (side_bearing_x, side_bearing_y, width_x, _width_y) = self.pop_four()?;
+                self.left_side_bearing = side_bearing_x;
+                self.advance_width = width_x;
+                self.current = Point {
+                    x: side_bearing_x,
+                    y: side_bearing_y,
+                };
+                self.stack.clear();
+                Ok(())
+            }
+            10 => Err(GraphicsError::new(
+                None,
+                GraphicsErrorKind::GlyphOutlineSubroutineOverflow {
+                    limit: self.options.max_charstring_subroutine_depth,
+                },
+            )),
+            12 => {
+                let (left, right) = self.pop_two()?;
+                if right == 0.0 {
+                    return Err(invalid_glyph_outline());
+                }
+                self.push_number(left / right)
+            }
+            _ => Err(GraphicsError::new(
+                None,
+                GraphicsErrorKind::UnsupportedGlyphOutline {
+                    feature: format!("type1-charstring-escaped-operator-{operator}").into_bytes(),
+                },
+            )),
+        }
+    }
+
+    fn move_by(&mut self, dx: f64, dy: f64) -> GraphicsResult<()> {
+        self.current = Point {
+            x: self.current.x + dx,
+            y: self.current.y + dy,
+        };
+        self.push_segment(PathSegment::MoveTo(self.current))?;
+        self.started = true;
+        self.stack.clear();
+        Ok(())
+    }
+
+    fn line_by(&mut self, dx: f64, dy: f64) -> GraphicsResult<()> {
+        self.ensure_started()?;
+        self.current = Point {
+            x: self.current.x + dx,
+            y: self.current.y + dy,
+        };
+        self.push_segment(PathSegment::LineTo(self.current))?;
+        self.stack.clear();
+        Ok(())
+    }
+
+    fn lines_by_pairs(&mut self) -> GraphicsResult<()> {
+        if self.stack.is_empty() || self.stack.len() % 2 != 0 {
+            return Err(invalid_glyph_outline());
+        }
+        let values = std::mem::take(&mut self.stack);
+        for pair in values.chunks_exact(2) {
+            self.line_by(pair[0], pair[1])?;
+        }
+        Ok(())
+    }
+
+    fn curves_by_sixes(&mut self) -> GraphicsResult<()> {
+        if self.stack.is_empty() || self.stack.len() % 6 != 0 {
+            return Err(invalid_glyph_outline());
+        }
+        self.ensure_started()?;
+        let values = std::mem::take(&mut self.stack);
+        for curve in values.chunks_exact(6) {
+            let c1 = Point {
+                x: self.current.x + curve[0],
+                y: self.current.y + curve[1],
+            };
+            let c2 = Point {
+                x: c1.x + curve[2],
+                y: c1.y + curve[3],
+            };
+            self.current = Point {
+                x: c2.x + curve[4],
+                y: c2.y + curve[5],
+            };
+            self.push_segment(PathSegment::CubicTo {
+                c1,
+                c2,
+                to: self.current,
+            })?;
+        }
+        Ok(())
+    }
+
+    fn close_path(&mut self) -> GraphicsResult<()> {
+        self.ensure_started()?;
+        self.push_segment(PathSegment::Close)?;
+        self.stack.clear();
+        Ok(())
+    }
+
+    fn finish(self) -> GraphicsResult<GlyphOutline> {
+        Ok(GlyphOutline {
+            glyph_code: self.glyph_code,
+            advance_width: self.advance_width,
+            left_side_bearing: self.left_side_bearing,
+            segments: self.segments,
+        })
+    }
+
+    fn ensure_started(&mut self) -> GraphicsResult<()> {
+        if !self.started {
+            self.push_segment(PathSegment::MoveTo(self.current))?;
+            self.started = true;
+        }
+        Ok(())
+    }
+
+    fn push_segment(&mut self, segment: PathSegment) -> GraphicsResult<()> {
+        if self.segments.len() >= self.options.max_segments {
+            return Err(GraphicsError::new(
+                None,
+                GraphicsErrorKind::GlyphOutlineSegmentOverflow {
+                    limit: self.options.max_segments,
+                },
+            ));
+        }
+        self.segments.push(segment);
+        Ok(())
+    }
+
+    fn pop_one(&mut self) -> GraphicsResult<f64> {
+        let [value] = self.pop_array()?;
+        Ok(value)
+    }
+
+    fn pop_two(&mut self) -> GraphicsResult<(f64, f64)> {
+        let [a, b] = self.pop_array()?;
+        Ok((a, b))
+    }
+
+    fn pop_four(&mut self) -> GraphicsResult<(f64, f64, f64, f64)> {
+        let [a, b, c, d] = self.pop_array()?;
+        Ok((a, b, c, d))
+    }
+
+    fn pop_array<const N: usize>(&mut self) -> GraphicsResult<[f64; N]> {
+        if self.stack.len() != N {
+            return Err(invalid_glyph_outline());
+        }
+        let values: [f64; N] = self
+            .stack
+            .drain(..)
+            .collect::<Vec<_>>()
+            .try_into()
+            .map_err(|_| invalid_glyph_outline())?;
+        Ok(values)
+    }
 }
 
 fn synthetic_cff_head_table() -> [u8; 54] {
@@ -9660,6 +10056,16 @@ pub enum GraphicsErrorKind {
         /// Configured outline segment limit.
         limit: usize,
     },
+    /// Charstring operand stack exceeds the configured limit.
+    GlyphOutlineStackOverflow {
+        /// Configured charstring stack limit.
+        limit: usize,
+    },
+    /// Charstring subroutine recursion would exceed the configured limit.
+    GlyphOutlineSubroutineOverflow {
+        /// Configured charstring subroutine recursion limit.
+        limit: usize,
+    },
     /// Glyph outline cache reached the configured entry limit.
     GlyphOutlineCacheOverflow {
         /// Configured cache entry limit.
@@ -9913,6 +10319,15 @@ impl fmt::Display for GraphicsErrorKind {
             Self::InvalidGlyphOutline => f.write_str("invalid glyph outline data"),
             Self::GlyphOutlineSegmentOverflow { limit } => {
                 write!(f, "decoded glyph outline exceeds segment limit {limit}")
+            }
+            Self::GlyphOutlineStackOverflow { limit } => {
+                write!(f, "glyph outline charstring stack exceeds limit {limit}")
+            }
+            Self::GlyphOutlineSubroutineOverflow { limit } => {
+                write!(
+                    f,
+                    "glyph outline charstring subroutine exceeds limit {limit}"
+                )
             }
             Self::GlyphOutlineCacheOverflow { limit } => {
                 write!(f, "glyph outline cache exceeds entry limit {limit}")
@@ -12630,6 +13045,87 @@ mod tests {
     }
 
     #[test]
+    fn glyph_outline_should_extract_simple_type1_charstring() {
+        let program = test_type1_program(&[
+            139, 239, 13, 139, 139, 21, 239, 139, 5, 139, 239, 5, 39, 139, 5, 139, 39, 5, 9, 14,
+        ]);
+        let outline = extract_glyph_outline(&program, 1, GlyphOutlineOptions::default())
+            .expect("Type1 outline extraction should succeed")
+            .expect("glyph should exist");
+
+        assert_eq!(outline.glyph_code, 1);
+        assert_eq!(outline.advance_width, 100.0);
+        assert_eq!(outline.left_side_bearing, 0.0);
+        assert_eq!(
+            outline.segments,
+            vec![
+                PathSegment::MoveTo(Point { x: 0.0, y: 0.0 }),
+                PathSegment::LineTo(Point { x: 100.0, y: 0.0 }),
+                PathSegment::LineTo(Point { x: 100.0, y: 100.0 }),
+                PathSegment::LineTo(Point { x: 0.0, y: 100.0 }),
+                PathSegment::LineTo(Point { x: 0.0, y: 0.0 }),
+                PathSegment::Close,
+            ]
+        );
+    }
+
+    #[test]
+    fn glyph_outline_should_reject_malformed_type1_hex_charstring() {
+        let program = FontProgram {
+            key: FontProgramKey {
+                reference: Reference::new(ObjectId::new(
+                    ObjectNumber::new(7).expect("object number"),
+                    GenerationNumber::new(0),
+                )),
+                kind: FontProgramKind::Type1,
+            },
+            bytes: Arc::from(b"/CharStrings 1 dict dup begin /A <0> def end".as_slice()),
+        };
+        let error = extract_glyph_outline(&program, 1, GlyphOutlineOptions::default())
+            .expect_err("odd Type1 hex charstring should be malformed");
+
+        assert_eq!(error.kind(), &GraphicsErrorKind::InvalidGlyphOutline);
+    }
+
+    #[test]
+    fn glyph_outline_should_enforce_type1_charstring_stack_limit() {
+        let program = test_type1_program(&[139, 139, 139, 14]);
+        let error = extract_glyph_outline(
+            &program,
+            1,
+            GlyphOutlineOptions {
+                max_charstring_stack: 2,
+                ..GlyphOutlineOptions::default()
+            },
+        )
+        .expect_err("Type1 charstring stack should exceed configured limit");
+
+        assert_eq!(
+            error.kind(),
+            &GraphicsErrorKind::GlyphOutlineStackOverflow { limit: 2 }
+        );
+    }
+
+    #[test]
+    fn glyph_outline_should_report_type1_subroutine_limit() {
+        let program = test_type1_program(&[139, 10]);
+        let error = extract_glyph_outline(
+            &program,
+            1,
+            GlyphOutlineOptions {
+                max_charstring_subroutine_depth: 0,
+                ..GlyphOutlineOptions::default()
+            },
+        )
+        .expect_err("Type1 subroutine should be rejected by bounded interpreter");
+
+        assert_eq!(
+            error.kind(),
+            &GraphicsErrorKind::GlyphOutlineSubroutineOverflow { limit: 0 }
+        );
+    }
+
+    #[test]
     fn image_resources_should_decode_flate_rgb_xobject() {
         let document = load_image_xobject_pdf(
             b"q 64 0 0 64 28 28 cm /Im1 Do Q",
@@ -14347,6 +14843,28 @@ mod tests {
             },
             bytes: Arc::from(minimal_cff_font()),
         }
+    }
+
+    fn test_type1_program(charstring: &[u8]) -> FontProgram {
+        FontProgram {
+            key: FontProgramKey {
+                reference: Reference::new(ObjectId::new(
+                    ObjectNumber::new(9).expect("object number"),
+                    GenerationNumber::new(0),
+                )),
+                kind: FontProgramKind::Type1,
+            },
+            bytes: Arc::from(minimal_type1_font(charstring)),
+        }
+    }
+
+    fn minimal_type1_font(charstring: &[u8]) -> Vec<u8> {
+        let mut font = b"%!PS-AdobeFont-1.0: PdfrustType1 1.0\n/CharStrings 2 dict dup begin\n/.notdef <0e> def\n/A <".to_vec();
+        for byte in charstring {
+            font.extend_from_slice(format!("{byte:02x}").as_bytes());
+        }
+        font.extend_from_slice(b"> def\nend\n");
+        font
     }
 
     fn minimal_cff_font() -> Vec<u8> {
