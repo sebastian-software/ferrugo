@@ -17,10 +17,10 @@ use pdfrust_render::{
     build_form_display_list_with_graphics_resources, build_image_display_list,
     build_path_display_list_with_graphics_resources, build_text_display_list,
     decode_tiling_pattern, rasterize_display_list_into, rasterize_images, rasterize_paths_into,
-    rasterize_text, DisplayItem, DisplayList, DisplayListOptions, ExtGraphicsStateResources,
-    FontResources, FormResources, GraphicsError, GraphicsErrorKind, ImageResources, PageGeometry,
-    PageRotation, PageTransform, PageTransformOptions, PathBounds, PathRasterOptions, RasterError,
-    RasterErrorKind, ShadingResources, TilingPatternResources,
+    rasterize_text, ColorSpaceResources, DisplayItem, DisplayList, DisplayListOptions,
+    ExtGraphicsStateResources, FontResources, FormResources, GraphicsError, GraphicsErrorKind,
+    ImageResources, PageGeometry, PageRotation, PageTransform, PageTransformOptions, PathBounds,
+    PathRasterOptions, RasterError, RasterErrorKind, ShadingResources, TilingPatternResources,
 };
 use pdfrust_syntax::{PdfBytes, PdfName, PdfNumber, PdfPrimitive, PdfReference, PdfString};
 use pdfrust_thumbnail::{
@@ -293,11 +293,13 @@ fn render_bytes(bytes: &[u8], options: &ThumbnailOptions) -> Result<Thumbnail, T
     let ext_graphics_states = page_ext_graphics_state_resources(&document, page)?;
     let shadings = page_shading_resources(&document, page)?;
     let patterns = page_tiling_pattern_resources(&document, page)?;
+    let color_spaces = page_color_space_resources(&document, page)?;
     let display_list = build_path_display_list_with_graphics_resources(
         tokenize_content(PdfBytes::new(&content)),
         &ext_graphics_states,
         &shadings,
         &patterns,
+        &color_spaces,
         display_options,
     )
     .map_err(map_graphics_error)?;
@@ -310,6 +312,7 @@ fn render_bytes(bytes: &[u8], options: &ThumbnailOptions) -> Result<Thumbnail, T
         &ext_graphics_states,
         &shadings,
         &patterns,
+        &color_spaces,
         DisplayListOptions::default(),
     )
     .map_err(map_graphics_error)?;
@@ -383,6 +386,7 @@ fn render_bytes(bytes: &[u8], options: &ThumbnailOptions) -> Result<Thumbnail, T
             &ext_graphics_states,
             &shadings,
             &patterns,
+            &color_spaces,
             DisplayListOptions::default(),
         )
         .map_err(map_graphics_error)?;
@@ -402,6 +406,7 @@ fn render_bytes(bytes: &[u8], options: &ThumbnailOptions) -> Result<Thumbnail, T
             &annotation_ext_graphics_states,
             &ShadingResources::empty(),
             &TilingPatternResources::empty(),
+            &ColorSpaceResources::empty(),
             DisplayListOptions::default(),
         )
         .map_err(map_graphics_error)?;
@@ -708,6 +713,43 @@ fn page_shading_resources(
         return Ok(ShadingResources::empty());
     };
     ShadingResources::from_shading_dictionary(shadings).map_err(map_graphics_error)
+}
+
+fn page_color_space_resources(
+    document: &ClassicDocument<'_>,
+    page: &ObjectPageMetadata,
+) -> Result<ColorSpaceResources, ThumbnailError> {
+    let object = document
+        .objects
+        .get(page.id)
+        .ok_or(ThumbnailError::Malformed)?;
+    let dictionary = object_dictionary(&object.value)?;
+    let Some(resources) = dictionary_value(dictionary, b"Resources") else {
+        return Ok(ColorSpaceResources::empty());
+    };
+    let resource_dictionary = match resources {
+        PdfPrimitive::Dictionary(dictionary) => dictionary.as_slice(),
+        PdfPrimitive::Reference(reference) => {
+            let object_number =
+                ObjectNumber::new(reference.object).map_err(|_| ThumbnailError::Malformed)?;
+            let reference = Reference::new(ObjectId::new(
+                object_number,
+                GenerationNumber::new(reference.generation),
+            ));
+            let object = document
+                .objects
+                .get(reference.id)
+                .ok_or(ThumbnailError::Malformed)?;
+            object_dictionary(&object.value)?
+        }
+        _ => return Err(ThumbnailError::Malformed),
+    };
+    let Some(PdfPrimitive::Dictionary(color_spaces)) =
+        dictionary_value(resource_dictionary, b"ColorSpace")
+    else {
+        return Ok(ColorSpaceResources::empty());
+    };
+    ColorSpaceResources::from_color_space_dictionary(color_spaces).map_err(map_graphics_error)
 }
 
 fn page_tiling_pattern_resources(
@@ -3159,6 +3201,44 @@ mod tests {
     fn native_backend_should_report_generated_unsupported_mesh_shading_fixture() {
         let bytes = include_bytes!("../../../fixtures/generated/mesh-shading-unsupported.pdf");
         assert_unsupported_feature_fixture(bytes, "graphics.pattern-shading");
+    }
+
+    #[test]
+    fn native_backend_should_render_generated_separation_spot_color_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/separation-spot-color.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 120,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated Separation spot-color fixture should render through native backend");
+
+        assert_eq!(thumbnail.width, 120);
+        assert_eq!(thumbnail.height, 120);
+        assert_eq!(rgba_at(&thumbnail, 24, 36), [255, 180, 140, 255]);
+        assert_eq!(rgba_at(&thumbnail, 24, 90), [255, 89, 0, 255]);
+    }
+
+    #[test]
+    fn native_backend_should_render_generated_devicen_spot_color_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/devicen-spot-color.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 120,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated DeviceN spot-color fixture should render through native backend");
+
+        assert_eq!(thumbnail.width, 120);
+        assert_eq!(thumbnail.height, 120);
+        assert_eq!(rgba_at(&thumbnail, 24, 88), [128, 159, 239, 255]);
+        assert_eq!(rgba_at(&thumbnail, 24, 44), [117, 152, 238, 255]);
     }
 
     #[test]

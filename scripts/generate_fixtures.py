@@ -958,6 +958,56 @@ def mesh_shading_unsupported_pdf() -> bytes:
     return pdf.render(catalog)
 
 
+def separation_spot_color_pdf() -> bytes:
+    pdf = Pdf()
+    content = (
+        b"q /CS1 cs 1 scn 16 18 88 42 re f "
+        b"/CS1 cs 0.45 scn 16 72 88 24 re f "
+        b"0 0 0 RG 1 w 16 18 88 78 re S Q"
+    )
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 120 120] "
+        "/Resources << /ColorSpace << /CS1 "
+        "[/Separation /BrandOrange /DeviceCMYK "
+        "<< /FunctionType 2 /Domain [0 1] /C0 [0 0 0 0] /C1 [0 0.65 1 0] /N 1 >>] "
+        ">> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    return pdf.render(catalog)
+
+
+def devicen_spot_color_pdf() -> bytes:
+    pdf = Pdf()
+    content = (
+        b"q /CS2 cs 0.25 1 scn 14 18 92 32 re f "
+        b"/CS2 CS 1 0.35 SCN 6 w 18 76 m 102 76 l S "
+        b"/CS2 cs 0.8 0.2 scn 24 88 72 16 re f Q"
+    )
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 120 120] "
+        "/Resources << /ColorSpace << /CS2 "
+        "[/DeviceN [/SpotOrange /SpotBlue] /DeviceRGB "
+        "<< /FunctionType 2 /Domain [0 1] /C0 [1 1 1] /C1 [0.2 0.4 0.9] /N 1 >>] "
+        ">> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    return pdf.render(catalog)
+
+
 def tiling_pattern_pdf() -> bytes:
     pdf = Pdf()
     content = b"/Pattern cs /P1 scn 0 0 120 120 re f"
@@ -2587,6 +2637,8 @@ def main() -> None:
     write("axial-gradient.pdf", axial_gradient_pdf())
     write("radial-gradient.pdf", radial_gradient_pdf())
     write("mesh-shading-unsupported.pdf", mesh_shading_unsupported_pdf())
+    write("separation-spot-color.pdf", separation_spot_color_pdf())
+    write("devicen-spot-color.pdf", devicen_spot_color_pdf())
     write("tiling-pattern.pdf", tiling_pattern_pdf())
     write("dashed-stroke.pdf", dashed_stroke_pdf())
     write("line-caps.pdf", line_caps_pdf())

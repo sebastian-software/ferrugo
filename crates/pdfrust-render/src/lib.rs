@@ -435,11 +435,63 @@ pub enum DeviceColor {
         /// Blue channel, normalized to `0.0..=1.0`.
         b: f64,
     },
+    /// RGB thumbnail approximation of a PDF spot color space.
+    Spot {
+        /// Red channel, normalized to `0.0..=1.0`.
+        r: f64,
+        /// Green channel, normalized to `0.0..=1.0`.
+        g: f64,
+        /// Blue channel, normalized to `0.0..=1.0`.
+        b: f64,
+        /// Approximation metadata exposed for diagnostics and reports.
+        approximation: SpotColorApproximation,
+    },
 }
 
 impl DeviceColor {
     /// Black DeviceGray.
     pub const BLACK: Self = Self::Gray(DeviceGray::BLACK);
+
+    /// Returns spot-color approximation metadata, when this color came from a
+    /// `/Separation` or `/DeviceN` color space.
+    #[must_use]
+    pub const fn spot_approximation(self) -> Option<SpotColorApproximation> {
+        match self {
+            Self::Spot { approximation, .. } => Some(approximation),
+            Self::Gray(_) | Self::Rgb { .. } => None,
+        }
+    }
+}
+
+/// PDF spot color-space family approximated into RGB for thumbnail output.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpotColorSpaceKind {
+    /// PDF `/Separation` color space.
+    Separation,
+    /// PDF `/DeviceN` color space.
+    DeviceN,
+}
+
+/// Diagnostic metadata for spot-color thumbnail approximations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SpotColorApproximation {
+    /// Spot color-space family.
+    pub kind: SpotColorSpaceKind,
+    /// Number of spot colorants/tint operands consumed.
+    pub colorant_count: usize,
+    /// Alternate color space used by the tint transform.
+    pub alternate_space: AlternateColorSpace,
+}
+
+/// Supported alternate color spaces for spot-color approximation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AlternateColorSpace {
+    /// PDF `/DeviceGray`.
+    DeviceGray,
+    /// PDF `/DeviceRGB`.
+    DeviceRgb,
+    /// PDF `/DeviceCMYK`.
+    DeviceCmyk,
 }
 
 /// Fill color-space mode tracked for pattern color setting.
@@ -449,6 +501,17 @@ pub enum FillColorSpace {
     Device,
     /// PDF `/Pattern` color space.
     Pattern,
+    /// PDF `/Separation` or `/DeviceN` color-space resource.
+    Spot(usize),
+}
+
+/// Stroke color-space mode tracked for spot-color setting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StrokeColorSpace {
+    /// Normal device color operators.
+    Device,
+    /// PDF `/Separation` or `/DeviceN` color-space resource.
+    Spot(usize),
 }
 
 /// Stroke dash pattern tracked in graphics state.
@@ -563,6 +626,8 @@ pub struct GraphicsState {
     pub stroke_color: DeviceColor,
     /// Current fill color-space mode.
     pub fill_color_space: FillColorSpace,
+    /// Current stroke color-space mode.
+    pub stroke_color_space: StrokeColorSpace,
     /// Current fill pattern resource index, if `/Pattern` color space is active.
     pub fill_pattern: Option<usize>,
     /// Current stroke dash pattern.
@@ -593,6 +658,7 @@ impl Default for GraphicsState {
             fill_color: DeviceColor::BLACK,
             stroke_color: DeviceColor::BLACK,
             fill_color_space: FillColorSpace::Device,
+            stroke_color_space: StrokeColorSpace::Device,
             fill_pattern: None,
             stroke_dash: StrokeDashPattern::solid(),
             line_cap: LineCap::Butt,
@@ -1336,6 +1402,123 @@ impl ShadingResources {
             (resource.as_slice() == name.as_bytes()).then_some(shading)
         })
     }
+}
+
+/// Page color-space resource map for spot-color thumbnail approximation.
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct ColorSpaceResources {
+    color_spaces: Vec<(Vec<u8>, SpotColorSpace)>,
+}
+
+impl ColorSpaceResources {
+    /// Creates an empty color-space resource map.
+    #[must_use]
+    pub const fn empty() -> Self {
+        Self {
+            color_spaces: Vec::new(),
+        }
+    }
+
+    /// Creates a color-space resource map from decoded spot color spaces.
+    #[must_use]
+    pub fn new(color_spaces: Vec<(Vec<u8>, SpotColorSpace)>) -> Self {
+        Self { color_spaces }
+    }
+
+    /// Resolves spot color spaces from a PDF `/ColorSpace` resource dictionary.
+    ///
+    /// Unsupported non-spot color spaces are ignored so callers can pass the
+    /// full page resource dictionary without pre-filtering.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`GraphicsError`] when a `/Separation` or `/DeviceN` color-space
+    /// resource is malformed or uses an unsupported alternate/tint transform.
+    pub fn from_color_space_dictionary(
+        dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    ) -> GraphicsResult<Self> {
+        let mut color_spaces = Vec::new();
+        for (name, value) in dictionary {
+            let Some(color_space) = decode_spot_color_space(value)? else {
+                continue;
+            };
+            color_spaces.push((name.as_bytes().to_vec(), color_space));
+        }
+        Ok(Self { color_spaces })
+    }
+
+    /// Returns the resource index matching a PDF color-space name.
+    #[must_use]
+    pub fn index_of(&self, name: PdfName<'_>) -> Option<usize> {
+        self.color_spaces
+            .iter()
+            .position(|(resource, _)| resource.as_slice() == name.as_bytes())
+    }
+
+    /// Returns the spot color space at a resource index.
+    #[must_use]
+    pub fn get_index(&self, index: usize) -> Option<&SpotColorSpace> {
+        self.color_spaces
+            .get(index)
+            .map(|(_, color_space)| color_space)
+    }
+}
+
+/// Decoded `/Separation` or `/DeviceN` color-space approximation data.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SpotColorSpace {
+    kind: SpotColorSpaceKind,
+    colorant_count: usize,
+    alternate_space: AlternateColorSpace,
+    tint_transform: Type2TintFunction,
+}
+
+impl SpotColorSpace {
+    fn evaluate(self, tints: &[f64]) -> DeviceColor {
+        let alternate = self.tint_transform.evaluate(tints);
+        let color = alternate_color_to_rgb(self.alternate_space, alternate);
+        DeviceColor::Spot {
+            r: color[0],
+            g: color[1],
+            b: color[2],
+            approximation: SpotColorApproximation {
+                kind: self.kind,
+                colorant_count: self.colorant_count,
+                alternate_space: self.alternate_space,
+            },
+        }
+    }
+}
+
+const MAX_TINT_FUNCTION_COMPONENTS: usize = 4;
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Type2TintFunction {
+    c0: [f64; MAX_TINT_FUNCTION_COMPONENTS],
+    c1: [f64; MAX_TINT_FUNCTION_COMPONENTS],
+    output_components: usize,
+    exponent: f64,
+}
+
+impl Type2TintFunction {
+    fn evaluate(self, tints: &[f64]) -> [f64; MAX_TINT_FUNCTION_COMPONENTS] {
+        let tint = average_tint(tints).powf(self.exponent);
+        let mut output = [0.0; MAX_TINT_FUNCTION_COMPONENTS];
+        for (index, channel) in output.iter_mut().enumerate().take(self.output_components) {
+            *channel = self.c0[index]
+                .mul_add(1.0 - tint, self.c1[index] * tint)
+                .clamp(0.0, 1.0);
+        }
+        output
+    }
+}
+
+fn average_tint(tints: &[f64]) -> f64 {
+    if tints.is_empty() {
+        return 0.0;
+    }
+    let sum: f64 = tints.iter().map(|value| value.clamp(0.0, 1.0)).sum();
+    (sum / tints.len() as f64).clamp(0.0, 1.0)
 }
 
 /// Tiling pattern resource map.
@@ -3889,11 +4072,13 @@ pub fn build_path_display_list_with_ext_graphics_states<'a>(
 ) -> GraphicsResult<DisplayList> {
     let shadings = ShadingResources::empty();
     let patterns = TilingPatternResources::empty();
+    let color_spaces = ColorSpaceResources::empty();
     build_path_display_list_with_graphics_resources(
         tokens,
         ext_graphics_states,
         &shadings,
         &patterns,
+        &color_spaces,
         options,
     )
 }
@@ -3910,6 +4095,7 @@ pub fn build_path_display_list_with_graphics_resources<'a>(
     ext_graphics_states: &ExtGraphicsStateResources,
     shadings: &ShadingResources,
     patterns: &TilingPatternResources,
+    color_spaces: &ColorSpaceResources,
     options: DisplayListOptions,
 ) -> GraphicsResult<DisplayList> {
     let mut interpreter = DisplayListInterpreter::new_with_graphics_resources(
@@ -3917,6 +4103,7 @@ pub fn build_path_display_list_with_graphics_resources<'a>(
         ext_graphics_states,
         shadings,
         patterns,
+        color_spaces,
     );
     interpreter.interpret(tokens)?;
     Ok(interpreter.display_list)
@@ -3986,12 +4173,14 @@ pub fn build_form_display_list_with_ext_graphics_states<'a>(
 ) -> GraphicsResult<DisplayList> {
     let shadings = ShadingResources::empty();
     let patterns = TilingPatternResources::empty();
+    let color_spaces = ColorSpaceResources::empty();
     build_form_display_list_with_graphics_resources(
         tokens,
         forms,
         ext_graphics_states,
         &shadings,
         &patterns,
+        &color_spaces,
         options,
     )
 }
@@ -4009,12 +4198,14 @@ pub fn build_form_display_list_with_graphics_resources<'a>(
     ext_graphics_states: &ExtGraphicsStateResources,
     shadings: &ShadingResources,
     patterns: &TilingPatternResources,
+    color_spaces: &ColorSpaceResources,
     options: DisplayListOptions,
 ) -> GraphicsResult<DisplayList> {
     let resources = GraphicsResourceContext {
         ext_graphics_states: Some(ext_graphics_states),
         shadings: Some(shadings),
         patterns: Some(patterns),
+        color_spaces: Some(color_spaces),
     };
     let mut interpreter = DisplayListInterpreter::new_with_forms(
         GraphicsState::default(),
@@ -4525,6 +4716,7 @@ struct GraphicsResourceContext<'r> {
     ext_graphics_states: Option<&'r ExtGraphicsStateResources>,
     shadings: Option<&'r ShadingResources>,
     patterns: Option<&'r TilingPatternResources>,
+    color_spaces: Option<&'r ColorSpaceResources>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -4574,11 +4766,13 @@ impl<'r> DisplayListInterpreter<'r> {
         ext_graphics_states: &'r ExtGraphicsStateResources,
         shadings: &'r ShadingResources,
         patterns: &'r TilingPatternResources,
+        color_spaces: &'r ColorSpaceResources,
     ) -> Self {
         let resources = GraphicsResourceContext {
             ext_graphics_states: Some(ext_graphics_states),
             shadings: Some(shadings),
             patterns: Some(patterns),
+            color_spaces: Some(color_spaces),
         };
         Self {
             current: GraphicsState::default(),
@@ -4654,7 +4848,11 @@ impl<'r> DisplayListInterpreter<'r> {
             b"rg" => self.set_fill_rgb(offset, operands),
             b"RG" => self.set_stroke_rgb(offset, operands),
             b"cs" => self.set_fill_color_space(offset, operands),
-            b"scn" => self.set_fill_pattern(offset, operands),
+            b"CS" => self.set_stroke_color_space(offset, operands),
+            b"sc" => self.set_fill_color(offset, b"sc", operands),
+            b"scn" => self.set_fill_color(offset, b"scn", operands),
+            b"SC" => self.set_stroke_color(offset, b"SC", operands),
+            b"SCN" => self.set_stroke_color(offset, b"SCN", operands),
             b"gs" => self.set_ext_graphics_state(offset, operands),
             b"sh" => self.paint_shading(offset, operands),
             b"m" => self.move_to(offset, operands),
@@ -4927,6 +5125,7 @@ impl<'r> DisplayListInterpreter<'r> {
         let gray = DeviceGray(number_operand(offset, b"G", operands, 0)?.clamp(0.0, 1.0));
         self.current.stroke_gray = gray;
         self.current.stroke_color = DeviceColor::Gray(gray);
+        self.current.stroke_color_space = StrokeColorSpace::Device;
         Ok(())
     }
 
@@ -4957,6 +5156,7 @@ impl<'r> DisplayListInterpreter<'r> {
             g: number_operand(offset, b"RG", operands, 1)?.clamp(0.0, 1.0),
             b: number_operand(offset, b"RG", operands, 2)?.clamp(0.0, 1.0),
         };
+        self.current.stroke_color_space = StrokeColorSpace::Device;
         Ok(())
     }
 
@@ -4971,21 +5171,78 @@ impl<'r> DisplayListInterpreter<'r> {
             self.current.fill_color_space = FillColorSpace::Pattern;
             return Ok(());
         }
+        if let Some(index) = self
+            .resources
+            .color_spaces
+            .and_then(|color_spaces| color_spaces.index_of(name))
+        {
+            self.current.fill_color_space = FillColorSpace::Spot(index);
+            self.current.fill_pattern = None;
+            return Ok(());
+        }
         self.current.fill_color_space = FillColorSpace::Device;
         self.current.fill_pattern = None;
+        Ok(())
+    }
+
+    fn set_stroke_color_space(
+        &mut self,
+        offset: ByteOffset,
+        operands: &[PdfPrimitive<'_>],
+    ) -> GraphicsResult<()> {
+        expect_operand_count(offset, b"CS", operands, 1)?;
+        let name = name_operand(offset, b"CS", operands, 0)?;
+        if let Some(index) = self
+            .resources
+            .color_spaces
+            .and_then(|color_spaces| color_spaces.index_of(name))
+        {
+            self.current.stroke_color_space = StrokeColorSpace::Spot(index);
+            return Ok(());
+        }
+        self.current.stroke_color_space = StrokeColorSpace::Device;
+        Ok(())
+    }
+
+    fn set_fill_color(
+        &mut self,
+        offset: ByteOffset,
+        operator: &'static [u8],
+        operands: &[PdfPrimitive<'_>],
+    ) -> GraphicsResult<()> {
+        match self.current.fill_color_space {
+            FillColorSpace::Device => Ok(()),
+            FillColorSpace::Pattern => self.set_fill_pattern(offset, operator, operands),
+            FillColorSpace::Spot(index) => {
+                let color = self.spot_color(offset, operator, operands, index)?;
+                self.current.fill_color = color;
+                self.current.fill_pattern = None;
+                Ok(())
+            }
+        }
+    }
+
+    fn set_stroke_color(
+        &mut self,
+        offset: ByteOffset,
+        operator: &'static [u8],
+        operands: &[PdfPrimitive<'_>],
+    ) -> GraphicsResult<()> {
+        let StrokeColorSpace::Spot(index) = self.current.stroke_color_space else {
+            return Ok(());
+        };
+        self.current.stroke_color = self.spot_color(offset, operator, operands, index)?;
         Ok(())
     }
 
     fn set_fill_pattern(
         &mut self,
         offset: ByteOffset,
+        operator: &'static [u8],
         operands: &[PdfPrimitive<'_>],
     ) -> GraphicsResult<()> {
-        if self.current.fill_color_space != FillColorSpace::Pattern {
-            return Ok(());
-        }
-        expect_operand_count(offset, b"scn", operands, 1)?;
-        let name = name_operand(offset, b"scn", operands, 0)?;
+        expect_operand_count(offset, operator, operands, 1)?;
+        let name = name_operand(offset, operator, operands, 0)?;
         let pattern = self
             .resources
             .patterns
@@ -5000,6 +5257,37 @@ impl<'r> DisplayListInterpreter<'r> {
             })?;
         self.current.fill_pattern = Some(pattern);
         Ok(())
+    }
+
+    fn spot_color(
+        &self,
+        offset: ByteOffset,
+        operator: &'static [u8],
+        operands: &[PdfPrimitive<'_>],
+        color_space_index: usize,
+    ) -> GraphicsResult<DeviceColor> {
+        let color_space = self
+            .resources
+            .color_spaces
+            .and_then(|color_spaces| color_spaces.get_index(color_space_index))
+            .ok_or_else(|| invalid_color_space_resource(operator))?;
+        if operands.len() != color_space.colorant_count {
+            return Err(GraphicsError::new(
+                Some(offset),
+                GraphicsErrorKind::OperandCount {
+                    operator,
+                    expected: color_space.colorant_count,
+                    actual: operands.len(),
+                },
+            ));
+        }
+        let mut tints = [0.0; MAX_TINT_FUNCTION_COMPONENTS];
+        for (target, operand) in tints.iter_mut().zip(operands.iter()) {
+            *target = number_from_primitive(operand)
+                .ok_or_else(|| invalid_operand(offset, operator))?
+                .clamp(0.0, 1.0);
+        }
+        Ok(color_space.evaluate(&tints[..operands.len()]))
     }
 
     fn set_ext_graphics_state(
@@ -6627,6 +6915,158 @@ fn decode_shading(dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)]) -> GraphicsRes
             }))
         }
         _ => Err(unsupported_shading(b"ShadingType")),
+    }
+}
+
+fn decode_spot_color_space(value: &PdfPrimitive<'_>) -> GraphicsResult<Option<SpotColorSpace>> {
+    let PdfPrimitive::Array(items) = value else {
+        return Ok(None);
+    };
+    let Some(PdfPrimitive::Name(kind)) = items.first() else {
+        return Ok(None);
+    };
+    match kind.as_bytes() {
+        b"Separation" => decode_separation_color_space(items).map(Some),
+        b"DeviceN" => decode_devicen_color_space(items).map(Some),
+        _ => Ok(None),
+    }
+}
+
+fn decode_separation_color_space(items: &[PdfPrimitive<'_>]) -> GraphicsResult<SpotColorSpace> {
+    let [_, PdfPrimitive::Name(_colorant), alternate, function] = items else {
+        return Err(invalid_color_space_resource(b"Separation"));
+    };
+    let alternate_space = alternate_color_space(alternate)?;
+    Ok(SpotColorSpace {
+        kind: SpotColorSpaceKind::Separation,
+        colorant_count: 1,
+        alternate_space,
+        tint_transform: decode_type2_tint_function(function, alternate_space)?,
+    })
+}
+
+fn decode_devicen_color_space(items: &[PdfPrimitive<'_>]) -> GraphicsResult<SpotColorSpace> {
+    let [_, PdfPrimitive::Array(colorants), alternate, function, ..] = items else {
+        return Err(invalid_color_space_resource(b"DeviceN"));
+    };
+    if colorants.is_empty() || colorants.len() > MAX_TINT_FUNCTION_COMPONENTS {
+        return Err(invalid_color_space_resource(b"DeviceN"));
+    }
+    if !colorants
+        .iter()
+        .all(|colorant| matches!(colorant, PdfPrimitive::Name(_)))
+    {
+        return Err(invalid_color_space_resource(b"DeviceN"));
+    }
+    let alternate_space = alternate_color_space(alternate)?;
+    Ok(SpotColorSpace {
+        kind: SpotColorSpaceKind::DeviceN,
+        colorant_count: colorants.len(),
+        alternate_space,
+        tint_transform: decode_type2_tint_function(function, alternate_space)?,
+    })
+}
+
+fn alternate_color_space(value: &PdfPrimitive<'_>) -> GraphicsResult<AlternateColorSpace> {
+    match value {
+        PdfPrimitive::Name(name) if matches!(name.as_bytes(), b"DeviceGray" | b"G") => {
+            Ok(AlternateColorSpace::DeviceGray)
+        }
+        PdfPrimitive::Name(name) if matches!(name.as_bytes(), b"DeviceRGB" | b"RGB") => {
+            Ok(AlternateColorSpace::DeviceRgb)
+        }
+        PdfPrimitive::Name(name) if matches!(name.as_bytes(), b"DeviceCMYK" | b"CMYK") => {
+            Ok(AlternateColorSpace::DeviceCmyk)
+        }
+        PdfPrimitive::Name(name) => Err(unsupported_spot_color_space(name.as_bytes())),
+        _ => Err(invalid_color_space_resource(b"Alternate")),
+    }
+}
+
+fn decode_type2_tint_function(
+    value: &PdfPrimitive<'_>,
+    alternate_space: AlternateColorSpace,
+) -> GraphicsResult<Type2TintFunction> {
+    let PdfPrimitive::Dictionary(function) = value else {
+        return Err(invalid_color_space_resource(b"Function"));
+    };
+    let Some(PdfPrimitive::Number(PdfNumber::Integer(2))) =
+        dictionary_value(function, b"FunctionType")
+    else {
+        return Err(unsupported_spot_color_space(b"FunctionType"));
+    };
+    let exponent = required_color_space_number(function, b"N")?;
+    if !exponent.is_finite() || exponent <= 0.0 {
+        return Err(invalid_color_space_resource(b"N"));
+    }
+    let output_components = alternate_space_component_count(alternate_space);
+    Ok(Type2TintFunction {
+        c0: optional_color_component_array(function, b"C0", output_components, 0.0)?,
+        c1: optional_color_component_array(function, b"C1", output_components, 1.0)?,
+        output_components,
+        exponent,
+    })
+}
+
+fn alternate_space_component_count(alternate_space: AlternateColorSpace) -> usize {
+    match alternate_space {
+        AlternateColorSpace::DeviceGray => 1,
+        AlternateColorSpace::DeviceRgb => 3,
+        AlternateColorSpace::DeviceCmyk => 4,
+    }
+}
+
+fn optional_color_component_array(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    key: &'static [u8],
+    expected: usize,
+    default: f64,
+) -> GraphicsResult<[f64; MAX_TINT_FUNCTION_COMPONENTS]> {
+    let Some(value) = dictionary_value(dictionary, key) else {
+        return Ok([default; MAX_TINT_FUNCTION_COMPONENTS]);
+    };
+    let PdfPrimitive::Array(values) = value else {
+        return Err(invalid_color_space_resource(key));
+    };
+    if values.len() != expected {
+        return Err(invalid_color_space_resource(key));
+    }
+    let mut components = [default; MAX_TINT_FUNCTION_COMPONENTS];
+    for (target, value) in components.iter_mut().zip(values.iter()).take(expected) {
+        *target = number_from_primitive(value)
+            .ok_or_else(|| invalid_color_space_resource(key))?
+            .clamp(0.0, 1.0);
+    }
+    Ok(components)
+}
+
+fn required_color_space_number(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    key: &'static [u8],
+) -> GraphicsResult<f64> {
+    dictionary_value(dictionary, key)
+        .and_then(number_from_primitive)
+        .ok_or_else(|| invalid_color_space_resource(key))
+}
+
+fn alternate_color_to_rgb(
+    alternate_space: AlternateColorSpace,
+    components: [f64; MAX_TINT_FUNCTION_COMPONENTS],
+) -> [f64; 3] {
+    match alternate_space {
+        AlternateColorSpace::DeviceGray => [components[0], components[0], components[0]],
+        AlternateColorSpace::DeviceRgb => [components[0], components[1], components[2]],
+        AlternateColorSpace::DeviceCmyk => {
+            let c = components[0].clamp(0.0, 1.0);
+            let m = components[1].clamp(0.0, 1.0);
+            let y = components[2].clamp(0.0, 1.0);
+            let k = components[3].clamp(0.0, 1.0);
+            [
+                (1.0 - c) * (1.0 - k),
+                (1.0 - m) * (1.0 - k),
+                (1.0 - y) * (1.0 - k),
+            ]
+        }
     }
 }
 
@@ -8403,6 +8843,12 @@ fn device_color_to_rgba(color: DeviceColor) -> Rgba {
             b: normalized_to_u8(b),
             a: 255,
         },
+        DeviceColor::Spot { r, g, b, .. } => Rgba {
+            r: normalized_to_u8(r),
+            g: normalized_to_u8(g),
+            b: normalized_to_u8(b),
+            a: 255,
+        },
     }
 }
 
@@ -10027,6 +10473,24 @@ fn unsupported_shading(feature: &[u8]) -> GraphicsError {
     )
 }
 
+fn invalid_color_space_resource(name: &[u8]) -> GraphicsError {
+    GraphicsError::new(
+        None,
+        GraphicsErrorKind::InvalidColorSpaceResource {
+            name: name.to_vec(),
+        },
+    )
+}
+
+fn unsupported_spot_color_space(feature: &[u8]) -> GraphicsError {
+    GraphicsError::new(
+        None,
+        GraphicsErrorKind::UnsupportedColorSpace {
+            feature: feature.to_vec(),
+        },
+    )
+}
+
 fn invalid_pattern_resource(name: &[u8]) -> GraphicsError {
     GraphicsError::new(
         None,
@@ -10488,6 +10952,16 @@ pub enum GraphicsErrorKind {
         /// Unsupported shading feature.
         feature: Vec<u8>,
     },
+    /// Color-space resource dictionary is malformed.
+    InvalidColorSpaceResource {
+        /// Invalid color-space resource or field name.
+        name: Vec<u8>,
+    },
+    /// Color-space resource uses a feature outside the current support.
+    UnsupportedColorSpace {
+        /// Unsupported color-space feature.
+        feature: Vec<u8>,
+    },
     /// Pattern resource name was not present in the resource map.
     MissingPattern {
         /// Missing pattern resource name.
@@ -10734,6 +11208,16 @@ impl fmt::Display for GraphicsErrorKind {
             Self::UnsupportedShading { feature } => write!(
                 f,
                 "unsupported shading feature {}",
+                String::from_utf8_lossy(feature)
+            ),
+            Self::InvalidColorSpaceResource { name } => write!(
+                f,
+                "invalid color-space resource {}",
+                String::from_utf8_lossy(name)
+            ),
+            Self::UnsupportedColorSpace { feature } => write!(
+                f,
+                "unsupported color-space feature {}",
                 String::from_utf8_lossy(feature)
             ),
             Self::MissingPattern { name } => write!(
@@ -11976,11 +12460,13 @@ mod tests {
             ShadingResources::from_shading_dictionary(&dictionary).expect("axial shading");
         let ext_graphics_states = ExtGraphicsStateResources::empty();
         let patterns = TilingPatternResources::empty();
+        let color_spaces = ColorSpaceResources::empty();
         let list = build_path_display_list_with_graphics_resources(
             tokenize_content(PdfBytes::new(b"/Sh1 sh")),
             &ext_graphics_states,
             &shadings,
             &patterns,
+            &color_spaces,
             DisplayListOptions::default(),
         )
         .expect("valid shading stream");
@@ -12056,6 +12542,129 @@ mod tests {
     }
 
     #[test]
+    fn color_space_resources_should_parse_separation_tint_transform() {
+        let dictionary = vec![(PdfName::new(b"CS1"), test_separation_color_space())];
+        let resources = ColorSpaceResources::from_color_space_dictionary(&dictionary)
+            .expect("separation color space");
+        let index = resources
+            .index_of(PdfName::new(b"CS1"))
+            .expect("color space index");
+        let color = resources
+            .get_index(index)
+            .expect("color space")
+            .evaluate(&[1.0]);
+
+        assert_eq!(
+            color.spot_approximation(),
+            Some(SpotColorApproximation {
+                kind: SpotColorSpaceKind::Separation,
+                colorant_count: 1,
+                alternate_space: AlternateColorSpace::DeviceCmyk,
+            })
+        );
+        assert_eq!(
+            device_color_to_rgba(color),
+            Rgba {
+                r: 255,
+                g: 89,
+                b: 0,
+                a: 255,
+            }
+        );
+    }
+
+    #[test]
+    fn color_space_resources_should_reject_unsupported_tint_function() {
+        let dictionary = vec![(
+            PdfName::new(b"CS1"),
+            PdfPrimitive::Array(vec![
+                PdfPrimitive::Name(PdfName::new(b"Separation")),
+                PdfPrimitive::Name(PdfName::new(b"Spot")),
+                PdfPrimitive::Name(PdfName::new(b"DeviceRGB")),
+                PdfPrimitive::Dictionary(vec![(
+                    PdfName::new(b"FunctionType"),
+                    PdfPrimitive::Number(PdfNumber::Integer(4)),
+                )]),
+            ]),
+        )];
+        let error = ColorSpaceResources::from_color_space_dictionary(&dictionary)
+            .expect_err("Type 4 tint transform should be unsupported");
+
+        assert_eq!(
+            error.kind(),
+            &GraphicsErrorKind::UnsupportedColorSpace {
+                feature: b"FunctionType".to_vec(),
+            }
+        );
+    }
+
+    #[test]
+    fn display_list_should_apply_separation_fill_color() {
+        let color_spaces = ColorSpaceResources::from_color_space_dictionary(&[(
+            PdfName::new(b"CS1"),
+            test_separation_color_space(),
+        )])
+        .expect("separation color space");
+        let ext_graphics_states = ExtGraphicsStateResources::empty();
+        let shadings = ShadingResources::empty();
+        let patterns = TilingPatternResources::empty();
+        let list = build_path_display_list_with_graphics_resources(
+            tokenize_content(PdfBytes::new(b"/CS1 cs 1 scn 0 0 20 10 re f")),
+            &ext_graphics_states,
+            &shadings,
+            &patterns,
+            &color_spaces,
+            DisplayListOptions::default(),
+        )
+        .expect("valid separation fill");
+
+        let DisplayItem::Path(path) = &list.items()[0] else {
+            panic!("expected path display item");
+        };
+        assert_eq!(
+            path.state.fill_color.spot_approximation(),
+            Some(SpotColorApproximation {
+                kind: SpotColorSpaceKind::Separation,
+                colorant_count: 1,
+                alternate_space: AlternateColorSpace::DeviceCmyk,
+            })
+        );
+    }
+
+    #[test]
+    fn display_list_should_apply_devicen_stroke_color() {
+        let color_spaces = ColorSpaceResources::from_color_space_dictionary(&[(
+            PdfName::new(b"CS2"),
+            test_devicen_color_space(),
+        )])
+        .expect("DeviceN color space");
+        let ext_graphics_states = ExtGraphicsStateResources::empty();
+        let shadings = ShadingResources::empty();
+        let patterns = TilingPatternResources::empty();
+        let list = build_path_display_list_with_graphics_resources(
+            tokenize_content(PdfBytes::new(b"/CS2 CS 0.5 1 SCN 0 0 m 20 0 l S")),
+            &ext_graphics_states,
+            &shadings,
+            &patterns,
+            &color_spaces,
+            DisplayListOptions::default(),
+        )
+        .expect("valid DeviceN stroke");
+
+        let DisplayItem::Path(path) = &list.items()[0] else {
+            panic!("expected path display item");
+        };
+        assert_eq!(
+            path.state.stroke_color.spot_approximation(),
+            Some(SpotColorApproximation {
+                kind: SpotColorSpaceKind::DeviceN,
+                colorant_count: 2,
+                alternate_space: AlternateColorSpace::DeviceRgb,
+            })
+        );
+    }
+
+    #[test]
     fn tiling_pattern_should_decode_colored_pattern_stream() {
         let pattern = test_tiling_pattern();
 
@@ -12070,11 +12679,13 @@ mod tests {
         let patterns = TilingPatternResources::new(vec![test_tiling_pattern()]);
         let ext_graphics_states = ExtGraphicsStateResources::empty();
         let shadings = ShadingResources::empty();
+        let color_spaces = ColorSpaceResources::empty();
         let list = build_path_display_list_with_graphics_resources(
             tokenize_content(PdfBytes::new(b"/Pattern cs /P1 scn 0 0 20 10 re f")),
             &ext_graphics_states,
             &shadings,
             &patterns,
+            &color_spaces,
             DisplayListOptions::default(),
         )
         .expect("valid tiling pattern fill");
@@ -12090,11 +12701,13 @@ mod tests {
         let patterns = TilingPatternResources::new(vec![test_tiling_pattern()]);
         let ext_graphics_states = ExtGraphicsStateResources::empty();
         let shadings = ShadingResources::empty();
+        let color_spaces = ColorSpaceResources::empty();
         let list = build_path_display_list_with_graphics_resources(
             tokenize_content(PdfBytes::new(b"/Pattern cs /P1 scn 0 0 20 10 re f")),
             &ext_graphics_states,
             &shadings,
             &patterns,
+            &color_spaces,
             DisplayListOptions::default(),
         )
         .expect("valid tiling pattern fill");
@@ -15128,6 +15741,79 @@ mod tests {
                 ]),
             ),
         ]
+    }
+
+    fn test_separation_color_space() -> PdfPrimitive<'static> {
+        PdfPrimitive::Array(vec![
+            PdfPrimitive::Name(PdfName::new(b"Separation")),
+            PdfPrimitive::Name(PdfName::new(b"SpotOrange")),
+            PdfPrimitive::Name(PdfName::new(b"DeviceCMYK")),
+            PdfPrimitive::Dictionary(vec![
+                (
+                    PdfName::new(b"FunctionType"),
+                    PdfPrimitive::Number(PdfNumber::Integer(2)),
+                ),
+                (
+                    PdfName::new(b"C0"),
+                    PdfPrimitive::Array(vec![
+                        PdfPrimitive::Number(PdfNumber::Integer(0)),
+                        PdfPrimitive::Number(PdfNumber::Integer(0)),
+                        PdfPrimitive::Number(PdfNumber::Integer(0)),
+                        PdfPrimitive::Number(PdfNumber::Integer(0)),
+                    ]),
+                ),
+                (
+                    PdfName::new(b"C1"),
+                    PdfPrimitive::Array(vec![
+                        PdfPrimitive::Number(PdfNumber::Integer(0)),
+                        PdfPrimitive::Number(PdfNumber::Real(0.65)),
+                        PdfPrimitive::Number(PdfNumber::Integer(1)),
+                        PdfPrimitive::Number(PdfNumber::Integer(0)),
+                    ]),
+                ),
+                (
+                    PdfName::new(b"N"),
+                    PdfPrimitive::Number(PdfNumber::Integer(1)),
+                ),
+            ]),
+        ])
+    }
+
+    fn test_devicen_color_space() -> PdfPrimitive<'static> {
+        PdfPrimitive::Array(vec![
+            PdfPrimitive::Name(PdfName::new(b"DeviceN")),
+            PdfPrimitive::Array(vec![
+                PdfPrimitive::Name(PdfName::new(b"SpotOrange")),
+                PdfPrimitive::Name(PdfName::new(b"SpotBlue")),
+            ]),
+            PdfPrimitive::Name(PdfName::new(b"DeviceRGB")),
+            PdfPrimitive::Dictionary(vec![
+                (
+                    PdfName::new(b"FunctionType"),
+                    PdfPrimitive::Number(PdfNumber::Integer(2)),
+                ),
+                (
+                    PdfName::new(b"C0"),
+                    PdfPrimitive::Array(vec![
+                        PdfPrimitive::Number(PdfNumber::Integer(1)),
+                        PdfPrimitive::Number(PdfNumber::Integer(1)),
+                        PdfPrimitive::Number(PdfNumber::Integer(1)),
+                    ]),
+                ),
+                (
+                    PdfName::new(b"C1"),
+                    PdfPrimitive::Array(vec![
+                        PdfPrimitive::Number(PdfNumber::Real(0.2)),
+                        PdfPrimitive::Number(PdfNumber::Real(0.4)),
+                        PdfPrimitive::Number(PdfNumber::Real(0.9)),
+                    ]),
+                ),
+                (
+                    PdfName::new(b"N"),
+                    PdfPrimitive::Number(PdfNumber::Integer(1)),
+                ),
+            ]),
+        ])
     }
 
     fn test_tiling_pattern() -> TilingPattern {
