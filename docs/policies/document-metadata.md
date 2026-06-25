@@ -32,6 +32,9 @@ success as a rendering prerequisite.
 - Embedded-file extraction, opening, preview, or execution.
 - Portfolio browser behavior or collection sorting metadata interpretation.
 - File-attachment payload inspection.
+- Text extraction, text search, OCR generation, or OCR confidence metadata.
+  Invisible OCR text is a visual-rendering concern until a dedicated native text
+  extraction API exists.
 - PDFium parity for extended metadata fields; PDFium remains a page
   count/size oracle in `compare-metadata`.
 

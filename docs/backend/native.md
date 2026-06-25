@@ -85,6 +85,21 @@ handles PDF-exported shaped output and records typed unsupported reasons for
 cases outside that subset. See
 `docs/reports/opentype-layout-feature-coverage-2026-06-25.md`.
 
+## OCR And Invisible Text Layers
+
+The text display-list path preserves invisible text runs, including OCR layers
+that use PDF text rendering mode `3`, so future metadata and search extraction
+can still inspect decoded text separately from visual output. Rasterization uses
+`TextRenderingMode::paints_pixels()` to skip glyph bitmap lookup, scratch buffer
+expansion, and pixel compositing for modes that cannot paint pixels.
+
+This keeps searchable scan-style PDFs visually faithful: hidden OCR text does
+not appear in thumbnails, while the visible scan artwork still renders through
+the normal image and path paths. The current slice does not expose a text search
+API or run OCR; it only preserves the visual boundary and avoids unnecessary
+raster work. See
+`docs/reports/ocr-invisible-text-layer-2026-06-25.md`.
+
 ## CMap And Identity Text Decoding
 
 ToUnicode CMaps support explicit `begincodespacerange`, `beginbfchar`, and
