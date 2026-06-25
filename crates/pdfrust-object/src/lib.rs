@@ -348,6 +348,40 @@ impl<'a> Trailer<'a> {
     }
 }
 
+/// Parsed PDF linearization dictionary metadata.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LinearizationDictionary {
+    /// Declared file length from `/L`.
+    pub file_length: usize,
+    /// Declared end offset of the first-page section from `/E`.
+    pub first_page_end: usize,
+    /// First page object number from `/O`.
+    pub first_page_object: ObjectNumber,
+    /// Declared page count from `/N`.
+    pub page_count: usize,
+    /// Declared primary hint table offset and length from `/H`, when present.
+    pub primary_hint_table: Option<(usize, usize)>,
+    /// Declared main xref offset from `/T`, when present.
+    pub main_xref_offset: Option<usize>,
+}
+
+/// Loader metrics exposed for parser and first-page loading diagnostics.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct DocumentLoadMetrics {
+    /// Total input byte length.
+    pub input_bytes: usize,
+    /// Number of indirect objects parsed into the document table.
+    pub loaded_objects: usize,
+    /// Sum of parsed indirect-object byte spans.
+    pub loaded_object_bytes: usize,
+    /// True when the input declares a linearization dictionary.
+    pub is_linearized: bool,
+    /// True when this document was loaded through the bounded first-page path.
+    pub first_page_only: bool,
+    /// Declared first-page section end from `/E`, when present.
+    pub first_page_end: Option<usize>,
+}
+
 /// Loaded classic-xref PDF document.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ClassicDocument<'a> {
@@ -357,6 +391,10 @@ pub struct ClassicDocument<'a> {
     pub trailer: Trailer<'a>,
     /// Indirect objects resolved through in-use xref entries.
     pub objects: ObjectTable<'a>,
+    /// Parsed linearization dictionary, when the document declares one.
+    pub linearization: Option<LinearizationDictionary>,
+    /// Object loader metrics for diagnostics and benchmarks.
+    pub load_metrics: DocumentLoadMetrics,
 }
 
 impl ClassicDocument<'_> {
@@ -368,6 +406,38 @@ impl ClassicDocument<'_> {
     /// inherited page metadata is malformed.
     pub fn page_tree(&self) -> ObjectResult<PageTree> {
         resolve_page_tree(self)
+    }
+
+    /// Resolves the linearized first page without traversing every page node.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ObjectError`] when the linearization dictionary points at a
+    /// malformed or unavailable page object.
+    pub fn linearized_first_page_tree(&self) -> ObjectResult<Option<PageTree>> {
+        let Some(linearization) = self.linearization else {
+            return Ok(None);
+        };
+        let id = ObjectId::new(linearization.first_page_object, GenerationNumber::new(0));
+        let object = required_object(self, id)?;
+        let dictionary = object_dictionary(&object)?;
+        if !dictionary_name_is(dictionary, b"Type", b"Page") {
+            return Err(ObjectError::MissingPageTreeField { field: "Type" });
+        }
+        let inherited = inherit_page_state(dictionary, InheritedPageState::default())?;
+        let media_box = inherited
+            .media_box
+            .ok_or(ObjectError::MissingPageTreeField { field: "MediaBox" })?;
+        Ok(Some(PageTree {
+            pages: vec![PageMetadata {
+                id,
+                media_box,
+                crop_box: inherited.crop_box,
+                rotation_degrees: inherited.rotation_degrees,
+                user_unit: inherited.user_unit,
+                resources: inherited.resources,
+            }],
+        }))
     }
 }
 
@@ -650,21 +720,102 @@ impl<'a> ObjectParser<'a> {
 /// in-use indirect object is malformed.
 pub fn load_classic_document(input: PdfBytes<'_>) -> ObjectResult<ClassicDocument<'_>> {
     let bytes = input.as_bytes();
+    let linearization = parse_linearization_dictionary(bytes).ok().flatten();
     let startxref = locate_startxref(bytes)?;
     let (mut xref, trailer) = parse_classic_xref_chain(bytes, startxref)?;
     extend_classic_xref_with_hybrid_stream(bytes, &mut xref, &trailer)?;
     reject_encrypted_trailer(&trailer)?;
     let mut objects = ObjectTable::new();
+    let mut loaded_object_bytes = 0usize;
 
     for entry in xref.entries() {
-        let object = parse_object_with_xref_recovery(bytes, *entry)?;
+        let (object, span) = parse_object_with_xref_recovery_with_span(bytes, *entry)?;
+        loaded_object_bytes = loaded_object_bytes.saturating_add(span);
         objects.insert(object)?;
+    }
+    let loaded_objects = objects.len();
+
+    let document = ClassicDocument {
+        xref,
+        trailer,
+        objects,
+        linearization,
+        load_metrics: DocumentLoadMetrics {
+            input_bytes: bytes.len(),
+            loaded_objects,
+            loaded_object_bytes,
+            is_linearized: linearization.is_some(),
+            first_page_only: false,
+            first_page_end: linearization.map(|dictionary| dictionary.first_page_end),
+        },
+    };
+    reject_encrypted_catalog(&document)?;
+    Ok(document)
+}
+
+/// Loads the first-page object section of a linearized classic-xref PDF.
+///
+/// # Errors
+///
+/// Returns [`ObjectError`] when the input is not linearized, has invalid
+/// first-page section metadata, or required first-page objects are malformed.
+pub fn load_linearized_first_page_document(
+    input: PdfBytes<'_>,
+) -> ObjectResult<ClassicDocument<'_>> {
+    let bytes = input.as_bytes();
+    let linearization = parse_linearization_dictionary(bytes)?.ok_or_else(|| {
+        ObjectError::malformed(ByteOffset::new(0), "missing linearization dictionary")
+    })?;
+    validate_linearization_dictionary(bytes, linearization)?;
+    let startxref = locate_startxref(bytes)?;
+    let (xref, trailer) = parse_classic_xref_chain(bytes, startxref)?;
+    reject_encrypted_trailer(&trailer)?;
+    let mut objects = ObjectTable::new();
+    let mut loaded_object_bytes = 0usize;
+
+    for entry in xref
+        .entries()
+        .iter()
+        .filter(|entry| entry.offset.get() < linearization.first_page_end)
+    {
+        let (object, span) = parse_object_with_xref_recovery_with_span(bytes, *entry)?;
+        let object_end = entry.offset.get().saturating_add(span);
+        if object_end > linearization.first_page_end {
+            return Err(ObjectError::malformed(
+                entry.offset,
+                "linearized first-page object exceeds first-page section",
+            ));
+        }
+        loaded_object_bytes = loaded_object_bytes.saturating_add(span);
+        objects.insert(object)?;
+    }
+    let loaded_objects = objects.len();
+
+    if objects
+        .get(ObjectId::new(
+            linearization.first_page_object,
+            GenerationNumber::new(0),
+        ))
+        .is_none()
+    {
+        return Err(ObjectError::MissingObject {
+            id: ObjectId::new(linearization.first_page_object, GenerationNumber::new(0)),
+        });
     }
 
     let document = ClassicDocument {
         xref,
         trailer,
         objects,
+        linearization: Some(linearization),
+        load_metrics: DocumentLoadMetrics {
+            input_bytes: bytes.len(),
+            loaded_objects,
+            loaded_object_bytes,
+            is_linearized: true,
+            first_page_only: true,
+            first_page_end: Some(linearization.first_page_end),
+        },
     };
     reject_encrypted_catalog(&document)?;
     Ok(document)
@@ -997,7 +1148,7 @@ fn page_user_unit(value: &PdfPrimitive<'_>) -> ObjectResult<f64> {
 fn parse_object_at_offset<'a>(
     bytes: &'a [u8],
     entry: ClassicXrefEntry,
-) -> ObjectResult<IndirectObject<'a>> {
+) -> ObjectResult<(IndirectObject<'a>, usize)> {
     let start = entry.offset.get();
     if start >= bytes.len() {
         return Err(ObjectError::malformed(
@@ -1005,7 +1156,7 @@ fn parse_object_at_offset<'a>(
             "xref offset is outside input",
         ));
     }
-    let (object, _) = parse_indirect_object_prefix(&bytes[start..], entry.offset)?;
+    let (object, consumed) = parse_indirect_object_prefix(&bytes[start..], entry.offset)?;
     if object.id != entry.id {
         return Err(ObjectError::XrefOffsetMismatch {
             expected: entry.id,
@@ -1013,13 +1164,20 @@ fn parse_object_at_offset<'a>(
             offset: entry.offset,
         });
     }
-    Ok(object)
+    Ok((object, consumed.get()))
 }
 
 fn parse_object_with_xref_recovery<'a>(
     bytes: &'a [u8],
     entry: ClassicXrefEntry,
 ) -> ObjectResult<IndirectObject<'a>> {
+    parse_object_with_xref_recovery_with_span(bytes, entry).map(|(object, _)| object)
+}
+
+fn parse_object_with_xref_recovery_with_span<'a>(
+    bytes: &'a [u8],
+    entry: ClassicXrefEntry,
+) -> ObjectResult<(IndirectObject<'a>, usize)> {
     match parse_object_at_offset(bytes, entry) {
         Ok(object) => Ok(object),
         Err(strict_error) => {
@@ -1040,7 +1198,7 @@ fn recover_xref_offset<'a>(
     bytes: &'a [u8],
     entry: ClassicXrefEntry,
     scan_bytes: usize,
-) -> Option<ObjectResult<IndirectObject<'a>>> {
+) -> Option<ObjectResult<(IndirectObject<'a>, usize)>> {
     let expected_header = format!(
         "{} {} obj",
         entry.id.number.get(),
@@ -1078,6 +1236,80 @@ fn recover_xref_offset<'a>(
     }
 
     None
+}
+
+fn parse_linearization_dictionary(bytes: &[u8]) -> ObjectResult<Option<LinearizationDictionary>> {
+    let Some(offset) = first_indirect_object_offset(bytes)? else {
+        return Ok(None);
+    };
+    let (object, _) = parse_indirect_object_prefix(&bytes[offset..], ByteOffset::new(offset))?;
+    let ObjectValue::Primitive(PdfPrimitive::Dictionary(dictionary)) = object.value else {
+        return Ok(None);
+    };
+    if !dictionary_has_linearized_marker(&dictionary) {
+        return Ok(None);
+    }
+    let first_page_object = ObjectNumber::new(required_u32(&dictionary, b"O")?)?;
+    let primary_hint_table = optional_number_array(&dictionary, b"H")?
+        .and_then(|values| (values.len() >= 2).then_some((values[0], values[1])));
+
+    Ok(Some(LinearizationDictionary {
+        file_length: required_usize(&dictionary, b"L")?,
+        first_page_end: required_usize(&dictionary, b"E")?,
+        first_page_object,
+        page_count: required_usize(&dictionary, b"N")?,
+        primary_hint_table,
+        main_xref_offset: optional_usize(&dictionary, b"T")?,
+    }))
+}
+
+fn validate_linearization_dictionary(
+    bytes: &[u8],
+    dictionary: LinearizationDictionary,
+) -> ObjectResult<()> {
+    if dictionary.file_length != bytes.len() {
+        return Err(ObjectError::malformed(
+            ByteOffset::new(0),
+            "linearized file length does not match input",
+        ));
+    }
+    if dictionary.first_page_end == 0 || dictionary.first_page_end > bytes.len() {
+        return Err(ObjectError::malformed(
+            ByteOffset::new(0),
+            "linearized first-page end is outside input",
+        ));
+    }
+    Ok(())
+}
+
+fn first_indirect_object_offset(bytes: &[u8]) -> ObjectResult<Option<usize>> {
+    if bytes.is_empty() {
+        return Ok(None);
+    }
+    let mut parser = RawParser::new(bytes, 0);
+    if parser.starts_with(b"%PDF-") {
+        parser.skip_until_next_line()?;
+    }
+
+    loop {
+        parser.skip_whitespace()?;
+        match parser.peek() {
+            Some(b'%') => parser.skip_until_next_line()?,
+            Some(_) => return Ok(Some(parser.offset().get())),
+            None => return Ok(None),
+        }
+    }
+}
+
+fn dictionary_has_linearized_marker(dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)]) -> bool {
+    let Some(value) = dictionary_value(dictionary, b"Linearized") else {
+        return false;
+    };
+    match value {
+        PdfPrimitive::Number(PdfNumber::Integer(value)) => *value == 1,
+        PdfPrimitive::Number(PdfNumber::Real(value)) => (*value - 1.0).abs() < f64::EPSILON,
+        _ => false,
+    }
 }
 
 fn parse_xref_stream_and_trailer<'a>(
@@ -1552,6 +1784,27 @@ fn required_usize(
         ObjectError::malformed(ByteOffset::new(0), "required dictionary number is missing")
     })?;
     primitive_usize(value)
+}
+
+fn optional_usize(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    key: &'static [u8],
+) -> ObjectResult<Option<usize>> {
+    dictionary_value(dictionary, key)
+        .map(primitive_usize)
+        .transpose()
+}
+
+fn required_u32(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    key: &'static [u8],
+) -> ObjectResult<u32> {
+    let value = dictionary_value(dictionary, key).ok_or_else(|| {
+        ObjectError::malformed(ByteOffset::new(0), "required dictionary number is missing")
+    })?;
+    let value = primitive_usize(value)?;
+    u32::try_from(value)
+        .map_err(|_| ObjectError::malformed(ByteOffset::new(0), "integer number is out of range"))
 }
 
 fn primitive_usize(value: &PdfPrimitive<'_>) -> ObjectResult<usize> {
@@ -2551,6 +2804,47 @@ mod tests {
             document.trailer.entries()[1].1,
             PdfPrimitive::Reference(pdfrust_syntax::PdfReference::new(1, 0))
         );
+    }
+
+    #[test]
+    fn load_linearized_first_page_document_should_load_bounded_first_page_objects() {
+        let bytes = include_bytes!("../../../fixtures/generated/linearized-first-page.pdf");
+        let full = load_classic_document(PdfBytes::new(bytes)).expect("full document");
+        let first_page = load_linearized_first_page_document(PdfBytes::new(bytes))
+            .expect("linearized first page document");
+        let page_tree = first_page
+            .linearized_first_page_tree()
+            .expect("first page tree")
+            .expect("linearization metadata");
+
+        assert!(full.load_metrics.is_linearized);
+        assert!(!full.load_metrics.first_page_only);
+        assert!(first_page.load_metrics.is_linearized);
+        assert!(first_page.load_metrics.first_page_only);
+        assert!(first_page.objects.len() < full.objects.len());
+        assert!(
+            first_page.load_metrics.loaded_object_bytes < full.load_metrics.loaded_object_bytes
+        );
+        assert_eq!(page_tree.page_count(), 1);
+        assert_eq!(
+            page_tree.first_page_size(),
+            Some(PageSize {
+                width: 160.0,
+                height: 90.0
+            })
+        );
+    }
+
+    #[test]
+    fn load_linearized_first_page_document_should_reject_invalid_hints_without_breaking_full_load()
+    {
+        let bytes = include_bytes!("../../../fixtures/generated/linearized-malformed-hints.pdf");
+
+        load_linearized_first_page_document(PdfBytes::new(bytes)).expect_err("invalid hint");
+        let full = load_classic_document(PdfBytes::new(bytes)).expect("full fallback document");
+
+        assert!(full.load_metrics.is_linearized);
+        assert_eq!(full.page_tree().expect("page tree").page_count(), 2);
     }
 
     #[test]

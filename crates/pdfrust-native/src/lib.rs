@@ -9,9 +9,9 @@ use std::thread;
 
 use pdfrust_content::{tokenize_content, ContentToken};
 use pdfrust_object::{
-    load_classic_document, load_modern_document, ClassicDocument, GenerationNumber, ObjectError,
-    ObjectId, ObjectNumber, ObjectValue, PageBox, PageMetadata as ObjectPageMetadata, PageTree,
-    Reference,
+    load_classic_document, load_linearized_first_page_document, load_modern_document,
+    ClassicDocument, GenerationNumber, ObjectError, ObjectId, ObjectNumber, ObjectValue, PageBox,
+    PageMetadata as ObjectPageMetadata, PageTree, Reference,
 };
 use pdfrust_render::{
     build_form_display_list_with_graphics_resources, build_image_display_list,
@@ -290,9 +290,8 @@ fn inspect_bytes(bytes: &[u8]) -> Result<DocumentMetadata, ThumbnailError> {
 
 fn render_bytes(bytes: &[u8], options: &ThumbnailOptions) -> Result<Thumbnail, ThumbnailError> {
     let input = PdfBytes::new(bytes);
-    let document = load_classic_document(input).map_err(map_object_error)?;
+    let (document, page_tree) = load_render_document(input, options.page_index)?;
     enforce_xfa_render_policy(&document)?;
-    let page_tree = document.page_tree().map_err(map_object_error)?;
     let page = page_tree
         .pages()
         .get(options.page_index as usize)
@@ -445,6 +444,23 @@ fn render_bytes(bytes: &[u8], options: &ThumbnailOptions) -> Result<Thumbnail, T
     }
     let dimensions = raster.dimensions();
     Thumbnail::rgba(dimensions.width, dimensions.height, raster.into_pixels())
+}
+
+fn load_render_document(
+    input: PdfBytes<'_>,
+    page_index: u32,
+) -> Result<(ClassicDocument<'_>, PageTree), ThumbnailError> {
+    if page_index == 0 {
+        if let Ok(document) = load_linearized_first_page_document(input) {
+            if let Ok(Some(page_tree)) = document.linearized_first_page_tree() {
+                return Ok((document, page_tree));
+            }
+        }
+    }
+
+    let document = load_classic_document(input).map_err(map_object_error)?;
+    let page_tree = document.page_tree().map_err(map_object_error)?;
+    Ok((document, page_tree))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -4117,6 +4133,43 @@ mod tests {
         assert_eq!(thumbnail.height, 90);
         assert_eq!(rgba_at(&thumbnail, 30, 45), [38, 38, 38, 255]);
         assert_eq!(rgba_at(&thumbnail, 65, 45), [255, 255, 255, 255]);
+    }
+
+    #[test]
+    fn native_backend_should_render_generated_linearized_first_page_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/linearized-first-page.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 160,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated linearized first page fixture should render");
+
+        assert_eq!(thumbnail.width, 160);
+        assert_eq!(thumbnail.height, 90);
+        assert_eq!(rgba_at(&thumbnail, 24, 44), [26, 64, 115, 255]);
+        assert_eq!(rgba_at(&thumbnail, 110, 44), [222, 240, 255, 255]);
+    }
+
+    #[test]
+    fn native_backend_should_fallback_from_generated_malformed_linearization_hints() {
+        let bytes = include_bytes!("../../../fixtures/generated/linearized-malformed-hints.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 160,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated malformed linearization fixture should render through full fallback");
+
+        assert_eq!(thumbnail.width, 160);
+        assert_eq!(thumbnail.height, 90);
+        assert_eq!(rgba_at(&thumbnail, 24, 44), [26, 64, 115, 255]);
     }
 
     #[test]

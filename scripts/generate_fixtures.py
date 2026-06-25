@@ -2099,6 +2099,56 @@ def file_attachment_annotation_pdf() -> bytes:
     return pdf.render(catalog)
 
 
+def linearized_first_page_pdf(malformed_hint: bool = False) -> bytes:
+    first_content = b"0.87 0.94 1 rg 0 0 160 90 re f 0.1 0.25 0.45 rg 16 28 80 28 re f"
+    second_content = b"0.95 0.9 0.82 rg 0 0 160 90 re f 0.45 0.1 0.1 rg 60 22 72 42 re f"
+    objects: list[bytes] = [
+        b"<< /Linearized 1 /L 0000000000 /H [0 0] /O 4 /E 0000000000 /N 2 /T 0000000000 >>",
+        b"<< /Type /Catalog /Pages 3 0 R >>",
+        b"<< /Type /Pages /Kids [4 0 R 6 0 R] /Count 2 >>",
+        b"<< /Type /Page /Parent 3 0 R /MediaBox [0 0 160 90] /Contents 5 0 R >>",
+        f"<< /Length {len(first_content)} >>\nstream\n".encode("ascii")
+        + first_content
+        + b"\nendstream",
+        b"<< /Type /Page /Parent 3 0 R /MediaBox [0 0 160 90] /Contents 7 0 R >>",
+        f"<< /Length {len(second_content)} >>\nstream\n".encode("ascii")
+        + second_content
+        + b"\nendstream",
+    ]
+    out = bytearray(b"%PDF-1.5\n%\xe2\xe3\xcf\xd3\n")
+    offsets = [0]
+    first_page_end = 0
+    for idx, body in enumerate(objects, start=1):
+        if idx == 6:
+            first_page_end = len(out)
+        offsets.append(len(out))
+        out.extend(f"{idx} 0 obj\n".encode("ascii"))
+        out.extend(body)
+        out.extend(b"\nendobj\n")
+
+    xref_offset = len(out)
+    out.extend(f"xref\n0 {len(objects) + 1}\n".encode("ascii"))
+    out.extend(b"0000000000 65535 f \n")
+    for offset in offsets[1:]:
+        out.extend(f"{offset:010d} 00000 n \n".encode("ascii"))
+    out.extend(
+        f"trailer\n<< /Size {len(objects) + 1} /Root 2 0 R >>\nstartxref\n{xref_offset}\n%%EOF\n".encode(
+            "ascii"
+        )
+    )
+
+    first_page_end_value = 12 if malformed_hint else first_page_end
+    replacements = {
+        b"/L 0000000000": f"/L {len(out):010d}".encode("ascii"),
+        b"/E 0000000000": f"/E {first_page_end_value:010d}".encode("ascii"),
+        b"/T 0000000000": f"/T {xref_offset:010d}".encode("ascii"),
+    }
+    result = bytes(out)
+    for placeholder, value in replacements.items():
+        result = result.replace(placeholder, value, 1)
+    return result
+
+
 def optional_content_layer_pdf(visible: bool) -> bytes:
     pdf = Pdf()
     content = (
@@ -3164,6 +3214,8 @@ def main() -> None:
     write("embedded-source-file.pdf", embedded_source_file_pdf())
     write("portfolio-embedded-files.pdf", portfolio_embedded_files_pdf())
     write("file-attachment-annotation.pdf", file_attachment_annotation_pdf())
+    write("linearized-first-page.pdf", linearized_first_page_pdf())
+    write("linearized-malformed-hints.pdf", linearized_first_page_pdf(malformed_hint=True))
     write("optional-content-layer-on.pdf", optional_content_layer_pdf(visible=True))
     write("optional-content-layer-off.pdf", optional_content_layer_pdf(visible=False))
     write("optional-content-ocmd.pdf", optional_content_ocmd_pdf())
