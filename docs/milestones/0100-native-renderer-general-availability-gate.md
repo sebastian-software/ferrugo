@@ -1,6 +1,6 @@
 # 0100: Native Renderer General Availability Gate
 
-Status: todo
+Status: done
 Phase: 17
 Size: medium
 Depends on: 0099
@@ -52,4 +52,22 @@ targeted typical-document surface without PDFium as a normal dependency.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-25.
+
+- Added `docs/reports/native-renderer-ga-gate-2026-06-25.md`.
+- Decision: no broad visual GA yet. The native renderer is fallback-free for
+  the supported-family technical gate (`browser-print`, `office-export`, and
+  `form`), but PDFium visual comparison still reports supported-family fidelity
+  blockers.
+- Supported native-only gate: 30 total, 30 native rendered, 0 fallback, 0
+  errors.
+- Native benchmark: 75 total, 69 native rendered, 5 fallback required, 1 error,
+  6 budget failures; supported families had 0 budget failures.
+- PDFium visual diff baseline: 75 total, 26 exact, 13 accepted drift, 30
+  blockers, 5 native errors, 0 PDFium errors, 1 both-error case.
+- Fuzz smoke targets completed: `primitive_parse` 165, `xref_load` 154,
+  `stream_decode` 154, `content_tokenize` 165, `render_setup` 165.
+- Package dry-runs completed for `pdfrust-syntax` and `pdfrust-thumbnail`.
+- Validation completed with native-only fmt/check/test, supported corpus gate,
+  benchmark, PDFium visual baseline, PDFium feature test, and all-feature
+  clippy.

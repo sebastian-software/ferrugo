@@ -27,12 +27,23 @@ buffers through `Thumbnail::rgba`; CLI PNG encoding remains owned by
 - Unsupported native features and budget exhaustion return the public
   `unsupported` class.
 
+## GA Gate Status
+
+The 2026-06-25 GA gate keeps the native renderer in a conditional state:
+supported-family technical execution is PDFium-free, but broad visual GA is not
+declared yet. The supported-family native-only gate renders `browser-print`,
+`office-export`, and `form` fixtures without fallback, while the PDFium visual
+baseline still reports fidelity blockers in form synthesis, text/font rendering,
+and page geometry. See
+`docs/reports/native-renderer-ga-gate-2026-06-25.md` for the measured decision.
+
 ## Fallback Policy
 
-PDFium remains the oracle and broad fallback until the retirement gate says the
-native backend covers enough typical documents. Product code should use native
-only where the support matrix marks the document class as rendered, or should
-retry through PDFium when native returns `unsupported`.
+PDFium remains the oracle and explicit fallback until the visual GA gate says
+the native backend covers enough typical documents. Product code should use
+native only where the support matrix marks the document class as rendered and
+the caller accepts the documented fidelity level, or should explicitly retry
+through PDFium when native returns `unsupported`.
 
 Do not retry native `encrypted` or `malformed` errors through a silent repair
 path. Encrypted documents need explicit password/security policy, and malformed
