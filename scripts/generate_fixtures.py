@@ -1645,6 +1645,54 @@ def incremental_update_pdf() -> bytes:
     return bytes(pdf)
 
 
+def incremental_deleted_object_pdf() -> bytes:
+    pdf = bytearray(b"%PDF-1.7\n")
+    offsets: dict[int, int] = {}
+
+    def obj(number: int, body: bytes) -> None:
+        offsets[number] = len(pdf)
+        pdf.extend(f"{number} 0 obj\n".encode("ascii"))
+        pdf.extend(body)
+        pdf.extend(b"\nendobj\n")
+
+    obj(1, b"<< /Type /Catalog /Pages 2 0 R >>")
+    obj(2, b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
+    obj(
+        3,
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 120 80] "
+        b"/Contents 5 0 R /UnusedDeleted 4 0 R >>",
+    )
+    obj(4, b"<< /Deleted true >>")
+    content = b"0 0.5 0 rg 20 20 80 40 re f"
+    obj(
+        5,
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream",
+    )
+
+    first_xref = len(pdf)
+    pdf.extend(b"xref\n0 6\n0000000000 65535 f \n")
+    for number in range(1, 6):
+        pdf.extend(f"{offsets[number]:010} 00000 n \n".encode("ascii"))
+    pdf.extend(
+        f"trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n{first_xref}\n%%EOF\n".encode(
+            "ascii"
+        )
+    )
+
+    second_xref = len(pdf)
+    pdf.extend(
+        (
+            "xref\n4 1\n"
+            "0000000000 00001 f \n"
+            f"trailer\n<< /Size 6 /Root 1 0 R /Prev {first_xref} >>\n"
+            f"startxref\n{second_xref}\n%%EOF\n"
+        ).encode("ascii")
+    )
+    return bytes(pdf)
+
+
 def hybrid_reference_pdf() -> bytes:
     pdf = bytearray(b"%PDF-1.5\n%\xe2\xe3\xcf\xd3\n")
 
@@ -2293,6 +2341,7 @@ def main() -> None:
     write("optional-content-layer-off.pdf", optional_content_layer_pdf(visible=False))
     write("optional-content-ocmd.pdf", optional_content_ocmd_pdf())
     write("incremental-update.pdf", incremental_update_pdf())
+    write("incremental-deleted-object.pdf", incremental_deleted_object_pdf())
     write("hybrid-reference.pdf", hybrid_reference_pdf())
     write("encrypted-placeholder.pdf", encrypted_placeholder_pdf())
     write("malformed-xref-offset-drift.pdf", malformed_xref_offset_drift_pdf())

@@ -265,6 +265,7 @@ pub struct ClassicXrefEntry {
 pub struct ClassicXrefTable {
     startxref: ByteOffset,
     entries: Vec<ClassicXrefEntry>,
+    deleted: Vec<ObjectNumber>,
 }
 
 impl ClassicXrefTable {
@@ -1120,6 +1121,7 @@ fn parse_classic_xref_and_trailer<'a>(
     let mut parser = RawParser::new(bytes, startxref.get());
     parser.consume_keyword(b"xref")?;
     let mut entries = Vec::new();
+    let mut deleted = Vec::new();
 
     loop {
         parser.skip_whitespace()?;
@@ -1150,7 +1152,17 @@ fn parse_classic_xref_and_trailer<'a>(
                     id: ObjectId::new(number, GenerationNumber::new(generation)),
                     offset,
                 });
-            } else if marker != b'f' {
+            } else if marker == b'f' {
+                let raw_number = first_object.checked_add(index).ok_or_else(|| {
+                    ObjectError::malformed(parser.offset(), "xref object number overflow")
+                })?;
+                if raw_number != 0 {
+                    let number = ObjectNumber::new(raw_number).map_err(|_| {
+                        ObjectError::malformed(parser.offset(), "xref object number overflow")
+                    })?;
+                    deleted.push(number);
+                }
+            } else {
                 return Err(ObjectError::malformed(
                     parser.offset(),
                     "xref entry marker must be n or f",
@@ -1174,7 +1186,11 @@ fn parse_classic_xref_and_trailer<'a>(
     };
 
     Ok((
-        ClassicXrefTable { startxref, entries },
+        ClassicXrefTable {
+            startxref,
+            entries,
+            deleted,
+        },
         Trailer { dictionary },
     ))
 }
@@ -1209,18 +1225,36 @@ fn parse_classic_xref_chain<'a>(
     }
 
     let mut entries = Vec::new();
+    let mut deleted = Vec::new();
     for table in &tables {
+        for id in &table.deleted {
+            if !entries
+                .iter()
+                .any(|existing: &ClassicXrefEntry| existing.id.number == *id)
+                && !deleted.contains(id)
+            {
+                deleted.push(*id);
+            }
+        }
         for entry in table.entries() {
             if !entries
                 .iter()
                 .any(|existing: &ClassicXrefEntry| existing.id == entry.id)
+                && !deleted.contains(&entry.id.number)
             {
                 entries.push(*entry);
             }
         }
     }
     let trailer = trailers.remove(0);
-    Ok((ClassicXrefTable { startxref, entries }, trailer))
+    Ok((
+        ClassicXrefTable {
+            startxref,
+            entries,
+            deleted,
+        },
+        trailer,
+    ))
 }
 
 fn trailer_prev_offset(trailer: &Trailer<'_>) -> ObjectResult<Option<ByteOffset>> {
@@ -2576,6 +2610,25 @@ mod tests {
     }
 
     #[test]
+    fn load_classic_document_should_not_resurrect_deleted_incremental_object() {
+        let pdf = build_incremental_deleted_object_pdf();
+        let deleted_id = ObjectId::new(
+            ObjectNumber::new(4).expect("valid object number"),
+            GenerationNumber::new(0),
+        );
+
+        let document =
+            load_classic_document(PdfBytes::new(&pdf)).expect("incremental deletion document");
+
+        assert!(document.objects.get(deleted_id).is_none());
+        assert!(document
+            .xref
+            .entries()
+            .iter()
+            .all(|entry| entry.id.number != deleted_id.number));
+    }
+
+    #[test]
     fn load_classic_document_should_reject_incremental_update_cycle() {
         let pdf = build_cyclic_incremental_xref_pdf();
 
@@ -3000,6 +3053,38 @@ mod tests {
         pdf.extend_from_slice(
             format!(
                 "xref\n0 1\n0000000000 65535 f \ntrailer\n<< /Size 1 /Prev {xref_offset} >>\nstartxref\n{xref_offset}\n%%EOF\n"
+            )
+            .as_bytes(),
+        );
+        pdf
+    }
+
+    fn build_incremental_deleted_object_pdf() -> Vec<u8> {
+        let mut pdf = b"%PDF-1.7\n".to_vec();
+        let object_1 = append_object(
+            &mut pdf,
+            b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n",
+        );
+        let object_2 = append_object(
+            &mut pdf,
+            b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n",
+        );
+        let object_3 = append_object(
+            &mut pdf,
+            b"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 160] >>\nendobj\n",
+        );
+        let object_4 = append_object(&mut pdf, b"4 0 obj\n<< /Deleted true >>\nendobj\n");
+        let first_xref = pdf.len();
+        pdf.extend_from_slice(
+            format!(
+                "xref\n0 5\n0000000000 65535 f \n{object_1:010} 00000 n \n{object_2:010} 00000 n \n{object_3:010} 00000 n \n{object_4:010} 00000 n \ntrailer\n<< /Size 5 /Root 1 0 R >>\nstartxref\n{first_xref}\n%%EOF\n"
+            )
+            .as_bytes(),
+        );
+        let second_xref = pdf.len();
+        pdf.extend_from_slice(
+            format!(
+                "xref\n4 1\n0000000000 00001 f \ntrailer\n<< /Size 5 /Root 1 0 R /Prev {first_xref} >>\nstartxref\n{second_xref}\n%%EOF\n"
             )
             .as_bytes(),
         );

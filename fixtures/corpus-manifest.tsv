@@ -29,6 +29,7 @@ fixtures/generated/image-mask-logo.pdf	scan	scripts/generate_fixtures.py	MIT OR 
 fixtures/generated/image-mask-monochrome-icon.pdf	scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,image-mask,icon,stencil	Generated monochrome ImageMask icon fixture.
 fixtures/generated/image-mask-signature.pdf	form	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,image-mask,signature,stencil	Generated signature-style ImageMask stencil fixture.
 fixtures/generated/image-xobject.pdf	scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,xobject,rgb	Generated unfiltered Image XObject fixture.
+fixtures/generated/incremental-deleted-object.pdf	mixed-layout	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	xref,incremental-update,deleted-object	Generated incremental update fixture with a newer free entry deleting an older object.
 fixtures/generated/incremental-update.pdf	mixed-layout	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	xref,incremental-update	Generated classic incremental update fixture.
 fixtures/generated/indexed-image.pdf	scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,indexed-color	Generated Indexed image color-space fixture.
 fixtures/generated/inline-image.pdf	browser-print	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,inline-image	Generated unfiltered inline image fixture.
