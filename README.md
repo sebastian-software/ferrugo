@@ -74,6 +74,7 @@ full-renderer parity until after those measurements exist.
 - [Minimal PDFium GN args](docs/build/pdfium-gn-args.md)
 - [PDFium build measurement baseline](docs/measurements/pdfium-build-baseline.md)
 - [Fixture policy](docs/fixtures.md)
+- [Native-only packaging](docs/packaging.md)
 - [PDFium backend notes](docs/backend/pdfium.md)
 - [Thumbnail error taxonomy](docs/errors.md)
 - [Differential baseline format](docs/baselines.md)
@@ -82,5 +83,8 @@ full-renderer parity until after those measurements exist.
 ## Workspace
 
 - `crates/pdfrust-thumbnail`: backend-neutral thumbnail facade.
-- `crates/pdfrust-pdfium`: local, serialized PDFium backend shell.
+- `crates/pdfrust-native`: Rust-native parser, interpreter, and renderer
+  backend.
+- `crates/pdfrust-pdfium`: optional local, serialized PDFium backend shell for
+  maintainer comparison workflows.
 - `crates/pdfrust-cli`: local CLI shell for fixture rendering and measurement.

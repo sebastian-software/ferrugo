@@ -16,6 +16,21 @@ cargo build -p pdfrust-cli
 cargo test --no-default-features
 ```
 
+For library consumers that depend on the native backend directly:
+
+```toml
+[dependencies]
+pdfrust-native = "0.1.0"
+pdfrust-thumbnail = "0.1.0"
+```
+
+For CLI consumers that install from this workspace or a git revision, keep the
+default feature set empty:
+
+```sh
+cargo install --path crates/pdfrust-cli --no-default-features
+```
+
 The native-only CLI includes:
 
 - `render` / `render-auto` for Rust-native first rendering.
@@ -27,6 +42,20 @@ The native-only CLI includes:
 PDFium-specific commands remain visible but fail with a usage error in
 native-only builds. This keeps scripts diagnosable while making accidental
 PDFium packaging obvious.
+
+## Consumer Migration Checklist
+
+- Remove `PDFRUST_PDFIUM_LIBRARY` and platform dynamic-library packaging from
+  normal deployment images.
+- Build `pdfrust-cli` without `--features pdfium` for production native-only
+  usage.
+- Use `render-native` when scripts must fail rather than consider fallback.
+- Use `render` or `render-auto --native-only` when scripts should keep the
+  default command spelling while still denying PDFium fallback.
+- Keep `--allow-pdfium-fallback` out of production CI unless the job is
+  explicitly a maintainer comparison job.
+- Treat `unsupported` feature buckets as native renderer backlog, not as a
+  packaging signal to bundle PDFium again.
 
 ## PDFium-Enabled Build
 
@@ -71,3 +100,24 @@ cargo tree -p pdfrust-cli --features pdfium
 The native-only graph has no `pdfrust-pdfium` edge. The PDFium-enabled graph
 adds only the optional `pdfrust-pdfium` crate and its shared
 `pdfrust-thumbnail` facade dependency.
+
+## Package Release Order
+
+Cargo package validation for `pdfrust-cli` expects versioned internal
+dependencies to be available from the registry. Publish or otherwise provide
+the crates in dependency order:
+
+1. `pdfrust-syntax` and `pdfrust-thumbnail`
+2. `pdfrust-object`
+3. `pdfrust-content`
+4. `pdfrust-render`
+5. `pdfrust-native`
+6. `pdfrust-pdfium` when maintainer PDFium workflows are distributed
+7. `pdfrust-cli`
+
+Local package dry-runs can validate leaf crates before the full release train:
+
+```sh
+cargo package -p pdfrust-syntax --allow-dirty --no-verify
+cargo package -p pdfrust-thumbnail --allow-dirty --no-verify
+```

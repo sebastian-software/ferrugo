@@ -21,7 +21,6 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
-| 0098 | [Native-Only Packaging And Consumer Migration](0098-native-only-packaging-and-consumer-migration.md) | 17 | medium | 0097 |
 | 0099 | [PDFium Fallback Removal Drill](0099-pdfium-fallback-removal-drill.md) | 17 | medium | 0098 |
 | 0100 | [Native Renderer General Availability Gate](0100-native-renderer-general-availability-gate.md) | 17 | medium | 0099 |
 | 0101 | [Common Font Fallback And System Font Policy](0101-common-font-fallback-and-system-font-policy.md) | 18 | medium | 0100 |
@@ -74,6 +73,7 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Completed |
 | --- | --- | --- | --- | --- |
+| 0098 | [Native-Only Packaging And Consumer Migration](0098-native-only-packaging-and-consumer-migration.md) | 17 | medium | 2026-06-25 |
 | 0097 | [Fuzzing And Adversarial PDF Hardening](0097-fuzzing-and-adversarial-pdf-hardening.md) | 16 | medium | 2026-06-25 |
 | 0096 | [Hot Path Profiling And Raster Optimization](0096-hot-path-profiling-and-raster-optimization.md) | 16 | medium | 2026-06-25 |
 | 0095 | [Large Document Memory Eviction And Spooling](0095-large-document-memory-eviction-and-spooling.md) | 16 | medium | 2026-06-25 |
