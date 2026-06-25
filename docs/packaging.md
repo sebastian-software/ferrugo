@@ -101,6 +101,22 @@ The native-only graph has no `pdfrust-pdfium` edge. The PDFium-enabled graph
 adds only the optional `pdfrust-pdfium` crate and its shared
 `pdfrust-thumbnail` facade dependency.
 
+## Native-Only Maintenance Gate
+
+The 0120 maintenance gate confirmed that:
+
+- `cargo tree -p pdfrust-cli --no-default-features` has no
+  `pdfrust-pdfium` dependency edge.
+- `cargo tree -p pdfrust-cli --features pdfium` adds the optional
+  `pdfrust-pdfium` dependency only under the explicit feature.
+- `cargo package -p pdfrust-cli --allow-dirty --no-verify --list` contains only
+  CLI package files and Cargo metadata.
+- `cargo package -p pdfrust-cli --allow-dirty --no-verify` is blocked until
+  internal dependencies such as `pdfrust-native` are available from the
+  registry; this is a release-order blocker, not a PDFium dependency leak.
+- `pdfrust-syntax` and `pdfrust-thumbnail` package dry-runs pass as the first
+  release-train leaf crates.
+
 ## Package Release Order
 
 Cargo package validation for `pdfrust-cli` expects versioned internal
