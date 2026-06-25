@@ -1,6 +1,6 @@
 # 0125: Chart Map And Dashboard Export Coverage
 
-Status: todo
+Status: done
 Phase: 22
 Size: medium
 Depends on: 0124
@@ -47,4 +47,18 @@ combine labels, legends, patterns, and many small vector marks.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-25.
+
+- Added four generated fixtures for combo charts with legends, KPI dashboards,
+  marker-cluster maps, and heatmap dashboards with translucent overlays.
+- Added `fixtures/chart-dashboard-manifest.tsv` with eight focused rows across
+  `chart`, `dashboard`, `map`, and `marker-heavy` families.
+- Added a native regression test that asserts expected dimensions and visible
+  non-background pixels for chart, dashboard, and map fixtures.
+- Native fallback gate: 8/8 rendered natively, 0 fallbacks, 0 errors.
+- Native benchmark gate: 8/8 rendered natively, 0 budget failures at
+  `--max-edge 160`, two iterations, `--max-ms 1000`, and
+  `--max-output-bytes 1048576`.
+- PDFium visual oracle: 2 exact matches, 6 strict-threshold blockers, 0 native
+  render errors, 0 PDFium render errors.
+- Report: `docs/reports/chart-dashboard-fidelity-2026-06-25.md`.

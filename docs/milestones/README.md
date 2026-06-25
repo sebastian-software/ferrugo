@@ -21,7 +21,6 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
-| 0125 | [Chart Map And Dashboard Export Coverage](0125-chart-map-and-dashboard-export-coverage.md) | 22 | medium | 0124 |
 | 0126 | [Scientific Paper And Long Report Layout Coverage](0126-scientific-paper-and-long-report-layout-coverage.md) | 23 | medium | 0125 |
 | 0127 | [Book Ebook And Longform Text Coverage](0127-book-ebook-and-longform-text-coverage.md) | 23 | medium | 0126 |
 | 0128 | [Print Production And Prepress Boundary](0128-print-production-and-prepress-boundary.md) | 23 | medium | 0127 |
@@ -107,6 +106,7 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Completed |
 | --- | --- | --- | --- | --- |
+| 0125 | [Chart Map And Dashboard Export Coverage](0125-chart-map-and-dashboard-export-coverage.md) | 22 | medium | 2026-06-25 |
 | 0124 | [Technical Drawing And CAD PDF Fidelity](0124-technical-drawing-and-cad-pdf-fidelity.md) | 22 | medium | 2026-06-25 |
 | 0123 | [Spreadsheet Grid And Dense Table Fidelity](0123-spreadsheet-grid-and-dense-table-fidelity.md) | 22 | medium | 2026-06-25 |
 | 0122 | [Presentation And Slide Export Fidelity](0122-presentation-and-slide-export-fidelity.md) | 22 | medium | 2026-06-25 |

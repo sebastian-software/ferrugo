@@ -141,6 +141,28 @@ cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks \
   --max-edge 160
 ```
 
+## Chart Dashboard Manifest
+
+`fixtures/chart-dashboard-manifest.tsv` is the focused gate for chart,
+dashboard, and map-style exports. It covers chart legends, small labels,
+transparent overlays, map markers, clipped vector shapes, and marker-heavy
+repeated path workloads.
+
+Use this manifest when a change may affect legend/text placement, dashboard
+panels, alpha compositing, repeated markers, or map-like vector layouts:
+
+```sh
+cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks \
+  fixtures/generated \
+  --manifest fixtures/chart-dashboard-manifest.tsv \
+  --include-family chart \
+  --include-family dashboard \
+  --include-family map \
+  --include-family marker-heavy \
+  --fail-on-fallback \
+  --max-edge 160
+```
+
 ## Private Local Corpora
 
 Private or third-party PDFs stay outside Git under `fixtures/local-corpus/`.
