@@ -21,12 +21,6 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
-| 0088 | [Image Mask Stencil And Bitmap Edge Cases](0088-image-mask-stencil-and-bitmap-edge-cases.md) | 15 | medium | 0087 |
-| 0089 | [JPX JBIG2 And Specialized Image Codec Policy](0089-jpx-jbig2-and-specialized-image-codec-policy.md) | 15 | medium | 0088 |
-| 0090 | [Shading Mesh Gradient And Pattern Fidelity](0090-shading-mesh-gradient-and-pattern-fidelity.md) | 15 | medium | 0089 |
-| 0091 | [Annotation Without Appearance Fallbacks](0091-annotation-without-appearance-fallbacks.md) | 15 | medium | 0090 |
-| 0092 | [AcroForm Field Synthesis For Common Widgets](0092-acroform-field-synthesis-for-common-widgets.md) | 15 | medium | 0091 |
-| 0093 | [Incremental Update Edge Case Hardening](0093-incremental-update-edge-case-hardening.md) | 16 | medium | 0092 |
 | 0094 | [Structure Outline Metadata And Page Labels](0094-structure-outline-metadata-and-page-labels.md) | 16 | small | 0093 |
 | 0095 | [Large Document Memory Eviction And Spooling](0095-large-document-memory-eviction-and-spooling.md) | 16 | medium | 0094 |
 | 0096 | [Hot Path Profiling And Raster Optimization](0096-hot-path-profiling-and-raster-optimization.md) | 16 | medium | 0095 |
@@ -54,6 +48,26 @@ Allowed statuses:
 | 0118 | [Real Corpus Acquisition And Privacy Review Loop](0118-real-corpus-acquisition-and-privacy-review-loop.md) | 21 | medium | 0117 |
 | 0119 | [Cross-Platform Rendering Determinism Gate](0119-cross-platform-rendering-determinism-gate.md) | 21 | medium | 0118 |
 | 0120 | [PDFium-Free Maintenance Gate And Deletion Backlog](0120-pdfium-free-maintenance-gate-and-deletion-backlog.md) | 21 | medium | 0119 |
+| 0121 | [Invoice Statement And Business Form Corpus Gate](0121-invoice-statement-and-business-form-corpus-gate.md) | 22 | medium | 0120 |
+| 0122 | [Presentation And Slide Export Fidelity](0122-presentation-and-slide-export-fidelity.md) | 22 | medium | 0121 |
+| 0123 | [Spreadsheet Grid And Dense Table Fidelity](0123-spreadsheet-grid-and-dense-table-fidelity.md) | 22 | medium | 0122 |
+| 0124 | [Technical Drawing And CAD PDF Fidelity](0124-technical-drawing-and-cad-pdf-fidelity.md) | 22 | medium | 0123 |
+| 0125 | [Chart Map And Dashboard Export Coverage](0125-chart-map-and-dashboard-export-coverage.md) | 22 | medium | 0124 |
+| 0126 | [Scientific Paper And Long Report Layout Coverage](0126-scientific-paper-and-long-report-layout-coverage.md) | 23 | medium | 0125 |
+| 0127 | [Book Ebook And Longform Text Coverage](0127-book-ebook-and-longform-text-coverage.md) | 23 | medium | 0126 |
+| 0128 | [Print Production And Prepress Boundary](0128-print-production-and-prepress-boundary.md) | 23 | medium | 0127 |
+| 0129 | [Mobile Scan And Camera PDF Robustness](0129-mobile-scan-and-camera-pdf-robustness.md) | 23 | medium | 0128 |
+| 0130 | [Legal Contract And Redaction Document Coverage](0130-legal-contract-and-redaction-document-coverage.md) | 23 | medium | 0129 |
+| 0131 | [Low-Memory Embedded Renderer Profile](0131-low-memory-embedded-renderer-profile.md) | 24 | medium | 0130 |
+| 0132 | [WASM Renderer Packaging And Size Gate](0132-wasm-renderer-packaging-and-size-gate.md) | 24 | medium | 0131 |
+| 0133 | [Server-Side Batch Rendering Throughput Gate](0133-server-side-batch-rendering-throughput-gate.md) | 24 | medium | 0132 |
+| 0134 | [Persistent Page Cache And Reuse Policy](0134-persistent-page-cache-and-reuse-policy.md) | 24 | medium | 0133 |
+| 0135 | [Renderer Diagnostics And Debug Artifact Bundle](0135-renderer-diagnostics-and-debug-artifact-bundle.md) | 24 | medium | 0134 |
+| 0136 | [Font Subset Regression Corpus Expansion](0136-font-subset-regression-corpus-expansion.md) | 25 | medium | 0135 |
+| 0137 | [Image Downsampling And Color Conversion Optimization](0137-image-downsampling-and-color-conversion-optimization.md) | 25 | medium | 0136 |
+| 0138 | [Transparency And Blend Conformance Corpus](0138-transparency-and-blend-conformance-corpus.md) | 25 | medium | 0137 |
+| 0139 | [Native Renderer Security And Fuzz Refresh](0139-native-renderer-security-and-fuzz-refresh.md) | 25 | medium | 0138 |
+| 0140 | [Typical Document Coverage GA2 Gate](0140-typical-document-coverage-ga2-gate.md) | 25 | medium | 0139 |
 
 ## In Progress
 
@@ -64,6 +78,12 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Completed |
 | --- | --- | --- | --- | --- |
+| 0093 | [Incremental Update Edge Case Hardening](0093-incremental-update-edge-case-hardening.md) | 16 | medium | 2026-06-25 |
+| 0092 | [AcroForm Field Synthesis For Common Widgets](0092-acroform-field-synthesis-for-common-widgets.md) | 15 | medium | 2026-06-25 |
+| 0091 | [Annotation Without Appearance Fallbacks](0091-annotation-without-appearance-fallbacks.md) | 15 | medium | 2026-06-25 |
+| 0090 | [Shading Mesh Gradient And Pattern Fidelity](0090-shading-mesh-gradient-and-pattern-fidelity.md) | 15 | medium | 2026-06-25 |
+| 0089 | [JPX JBIG2 And Specialized Image Codec Policy](0089-jpx-jbig2-and-specialized-image-codec-policy.md) | 15 | medium | 2026-06-25 |
+| 0088 | [Image Mask Stencil And Bitmap Edge Cases](0088-image-mask-stencil-and-bitmap-edge-cases.md) | 15 | medium | 2026-06-25 |
 | 0087 | [Font Hinting Glyph Cache And Subpixel Policy](0087-font-hinting-glyph-cache-and-subpixel-policy.md) | 15 | medium | 2026-06-25 |
 | 0086 | [Type3 Font And CharProc Rendering](0086-type3-font-and-charproc-rendering.md) | 15 | medium | 2026-06-25 |
 | 0085 | [Page Geometry Boxes Rotation And User Units](0085-page-geometry-boxes-rotation-and-user-units.md) | 15 | medium | 2026-06-24 |
