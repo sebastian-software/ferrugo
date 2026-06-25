@@ -43,6 +43,15 @@ PDFium-specific commands remain visible but fail with a usage error in
 native-only builds. This keeps scripts diagnosable while making accidental
 PDFium packaging obvious.
 
+Before changing CLI features or package dependencies, run:
+
+```sh
+bash scripts/check_pdfium_quarantine.sh
+```
+
+This check fails if native-only `pdfrust-cli` regains a `pdfrust-pdfium`
+dependency edge or if runtime crates grow forbidden PDFium integration symbols.
+
 ## Consumer Migration Checklist
 
 - Remove `PDFRUST_PDFIUM_LIBRARY` and platform dynamic-library packaging from
@@ -81,6 +90,8 @@ The PDFium-enabled CLI adds:
 - `visual-diff`
 
 It does not add runtime fallback to `render` / `render-auto`.
+The internal `render-worker` entry point is private child-process plumbing for
+`render-isolated`; direct CLI invocation is rejected.
 
 ## Workspace Defaults
 
@@ -115,6 +126,9 @@ The 0120 maintenance gate confirmed that:
   registry; this is a release-order blocker, not a PDFium dependency leak.
 - `pdfrust-syntax` and `pdfrust-thumbnail` package dry-runs pass as the first
   release-train leaf crates.
+
+The 0142 quarantine gate adds `scripts/check_pdfium_quarantine.sh` as a
+regression check for this boundary.
 
 ## Package Release Order
 

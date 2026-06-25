@@ -86,3 +86,19 @@ cargo run -p pdfrust-cli --features pdfium -- render-isolated fixtures/generated
 `render-worker` is a private child-process entry point. Callers should use
 `render-pdfium` for direct trusted PDFium probes or `render-isolated` for hard
 timeout semantics. The public `render` command is native-only runtime rendering.
+Direct `render-worker` invocation is guarded by the internal
+`PDFRUST_PDFIUM_RENDER_WORKER` marker, which `render-isolated` sets only for its
+child process.
+
+## Quarantine Check
+
+Run the PDFium quarantine check before changing feature flags, CLI dispatch, or
+runtime crate dependencies:
+
+```sh
+bash scripts/check_pdfium_quarantine.sh
+```
+
+The check confirms that native-only `pdfrust-cli` has no `pdfrust-pdfium`
+dependency edge and that runtime crates do not contain forbidden PDFium
+integration symbols.

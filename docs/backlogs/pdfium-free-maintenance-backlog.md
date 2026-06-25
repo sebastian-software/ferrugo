@@ -21,7 +21,6 @@ comparison infrastructure. Each deletion item should be small and reversible.
 
 | Candidate | Earliest milestone | Risk | Rollback |
 | --- | --- | --- | --- |
-| `render-worker` alias for direct PDFium rendering | 0142 | Low: scripts may still use the old alias. | Re-add the alias to the CLI match arm. |
 | Production docs that suggest PDFium fallback for supported families | 0120 complete | Low: docs-only cleanup. | Restore wording from this backlog/report. |
 | Any default-feature PDFium dependency edge | Immediately if found | High if missed, because it would reintroduce runtime packaging baggage. | Revert the dependency or feature change. |
 
@@ -32,6 +31,7 @@ comparison infrastructure. Each deletion item should be small and reversible.
 | `render` / `render-auto --allow-pdfium-fallback` runtime retry | 0141 | Reintroduce the fallback branch in `render_auto_thumbnail`. |
 | `PDFRUST_ALLOW_PDFIUM_FALLBACK` environment runtime opt-in | 0141 | Restore env parsing and fallback policy state. |
 | `PDFRUST_DENY_FALLBACK_REASONS` targeted runtime denial | 0141 | Restore fallback policy parsing if runtime fallback returns. |
+| Direct `render-worker` CLI invocation | 0142 | Keep the private entry point guarded by `PDFRUST_PDFIUM_RENDER_WORKER`; direct invocation now fails with a usage error. |
 
 ## Deferred Until Native Coverage Lands
 
