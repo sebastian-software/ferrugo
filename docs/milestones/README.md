@@ -59,6 +59,26 @@ Allowed statuses:
 | 0138 | [Transparency And Blend Conformance Corpus](0138-transparency-and-blend-conformance-corpus.md) | 25 | medium | 0137 |
 | 0139 | [Native Renderer Security And Fuzz Refresh](0139-native-renderer-security-and-fuzz-refresh.md) | 25 | medium | 0138 |
 | 0140 | [Typical Document Coverage GA2 Gate](0140-typical-document-coverage-ga2-gate.md) | 25 | medium | 0139 |
+| 0141 | [PDFium Runtime Deletion Execution](0141-pdfium-runtime-deletion-execution.md) | 26 | medium | 0140 |
+| 0142 | [PDFium Comparison Tooling Quarantine](0142-pdfium-comparison-tooling-quarantine.md) | 26 | medium | 0141 |
+| 0143 | [Native Renderer Conformance Triage Loop](0143-native-renderer-conformance-triage-loop.md) | 26 | medium | 0142 |
+| 0144 | [Renderer Operator Coverage Audit](0144-renderer-operator-coverage-audit.md) | 26 | medium | 0143 |
+| 0145 | [Office Suite Regression Corpus Refresh](0145-office-suite-regression-corpus-refresh.md) | 26 | medium | 0144 |
+| 0146 | [Browser Print Corpus Refresh](0146-browser-print-corpus-refresh.md) | 27 | medium | 0145 |
+| 0147 | [Scanner And OCR Workflow Corpus](0147-scanner-and-ocr-workflow-corpus.md) | 27 | medium | 0146 |
+| 0148 | [Government Form And Certificate Coverage](0148-government-form-and-certificate-coverage.md) | 27 | medium | 0147 |
+| 0149 | [Financial Report And Statement Fidelity](0149-financial-report-and-statement-fidelity.md) | 27 | medium | 0148 |
+| 0150 | [Academic Publisher Corpus Gate](0150-academic-publisher-corpus-gate.md) | 27 | medium | 0149 |
+| 0151 | [Engineering Drawing Precision Gate](0151-engineering-drawing-precision-gate.md) | 28 | medium | 0150 |
+| 0152 | [Geospatial Map PDF Rendering Coverage](0152-geospatial-map-pdf-rendering-coverage.md) | 28 | medium | 0151 |
+| 0153 | [E-Signature Workflow Document Coverage](0153-e-signature-workflow-document-coverage.md) | 28 | medium | 0152 |
+| 0154 | [Accessibility Tagged PDF Visual Integrity](0154-accessibility-tagged-pdf-visual-integrity.md) | 28 | medium | 0153 |
+| 0155 | [Incremental Loading Interactive Preview](0155-incremental-loading-interactive-preview.md) | 28 | medium | 0154 |
+| 0156 | [Native Renderer API And Semver Policy](0156-native-renderer-api-and-semver-policy.md) | 29 | small | 0155 |
+| 0157 | [Plugin-Free Distribution And Install Gate](0157-plugin-free-distribution-and-install-gate.md) | 29 | medium | 0156 |
+| 0158 | [Memory Arena And Scratch Buffer Audit](0158-memory-arena-and-scratch-buffer-audit.md) | 29 | medium | 0157 |
+| 0159 | [SIMD Raster Hot Path Evaluation](0159-simd-raster-hot-path-evaluation.md) | 29 | medium | 0158 |
+| 0160 | [PDFium-Free 1.0 Readiness Gate](0160-pdfium-free-1-0-readiness-gate.md) | 29 | medium | 0159 |
 
 ## In Progress
 
