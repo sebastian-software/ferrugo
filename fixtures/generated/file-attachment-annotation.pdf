@@ -1,0 +1,51 @@
+%PDF-1.4
+%‚„œ”
+1 0 obj
+<< /Length 123 >>
+stream
+q 1 0 0 1 24 36 cm 1 0.92 0.45 rg 0 0 18 18 re f 0.15 0.15 0.15 RG 1 w 0.5 0.5 17 17 re S 0.15 0.15 0.15 rg 5 4 8 10 re f Q
+endstream
+endobj
+2 0 obj
+<< /Type /Page /Parent 3 0 R /MediaBox [0 0 120 90] /Contents 1 0 R /Annots [7 0 R] >>
+endobj
+3 0 obj
+<< /Type /Pages /Kids [2 0 R] /Count 1 >>
+endobj
+4 0 obj
+<< /Type /XObject /Subtype /Form /BBox [0 0 18 18] /Length 102 >>
+stream
+1 0.92 0.45 rg 0 0 18 18 re f 0.15 0.15 0.15 RG 1 w 0.5 0.5 17 17 re S 0.15 0.15 0.15 rg 5 4 8 10 re f
+endstream
+endobj
+5 0 obj
+<< /Type /EmbeddedFile /Length 17 >>
+stream
+attachment bytes
+endstream
+endobj
+6 0 obj
+<< /Type /Filespec /F (note.txt) /UF (note.txt) /EF << /F 5 0 R >> >>
+endobj
+7 0 obj
+<< /Type /Annot /Subtype /FileAttachment /Name /PushPin /Rect [24 36 42 54] /FS 6 0 R /AP << /N 4 0 R >> >>
+endobj
+8 0 obj
+<< /Type /Catalog /Pages 3 0 R >>
+endobj
+xref
+0 9
+0000000000 65535 f 
+0000000015 00000 n 
+0000000189 00000 n 
+0000000291 00000 n 
+0000000348 00000 n 
+0000000549 00000 n 
+0000000635 00000 n 
+0000000720 00000 n 
+0000000843 00000 n 
+trailer
+<< /Size 9 /Root 8 0 R >>
+startxref
+892
+%%EOF

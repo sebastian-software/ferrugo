@@ -1995,6 +1995,110 @@ def digital_signature_appearance_pdf() -> bytes:
     return pdf.render(catalog)
 
 
+def embedded_source_file_pdf() -> bytes:
+    pdf = Pdf()
+    content = b"0.92 0.96 1 rg 12 28 136 24 re f 0 0 0 RG 1 w 12 28 136 24 re S"
+    embedded = b"fn main() { println!(\"attached source\"); }\n"
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 160 90] "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    embedded_file = pdf.add(
+        f"<< /Type /EmbeddedFile /Subtype /text#2Fplain /Length {len(embedded)} >>\nstream\n".encode("ascii")
+        + embedded
+        + b"endstream"
+    )
+    filespec = pdf.add(
+        f"<< /Type /Filespec /F (main.rs) /UF (main.rs) /EF << /F {embedded_file} 0 R >> >>"
+    )
+    catalog = pdf.add(
+        f"<< /Type /Catalog /Pages {pages} 0 R /Names << /EmbeddedFiles << /Names [(main.rs) {filespec} 0 R] >> >> >>"
+    )
+    return pdf.render(catalog)
+
+
+def portfolio_embedded_files_pdf() -> bytes:
+    pdf = Pdf()
+    content = b"0.96 0.96 0.96 rg 0 0 160 90 re f 0.15 0.2 0.35 rg 20 32 120 26 re f"
+    embedded = b"Portfolio attachment payload\n"
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 160 90] "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    embedded_file = pdf.add(
+        f"<< /Type /EmbeddedFile /Length {len(embedded)} >>\nstream\n".encode("ascii")
+        + embedded
+        + b"endstream"
+    )
+    filespec = pdf.add(
+        f"<< /Type /Filespec /F (portfolio.txt) /UF (portfolio.txt) /EF << /F {embedded_file} 0 R >> >>"
+    )
+    catalog = pdf.add(
+        f"<< /Type /Catalog /Pages {pages} 0 R "
+        f"/Names << /EmbeddedFiles << /Names [(portfolio.txt) {filespec} 0 R] >> >> "
+        "/Collection << /Type /Collection /View /D >> >>"
+    )
+    return pdf.render(catalog)
+
+
+def file_attachment_annotation_pdf() -> bytes:
+    pdf = Pdf()
+    attachment = b"attachment bytes\n"
+    appearance = (
+        b"1 0.92 0.45 rg 0 0 18 18 re f "
+        b"0.15 0.15 0.15 RG 1 w 0.5 0.5 17 17 re S "
+        b"0.15 0.15 0.15 rg 5 4 8 10 re f"
+    )
+    content = b"q 1 0 0 1 24 36 cm " + appearance + b" Q"
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 120 90] "
+        f"/Contents {contents} 0 R /Annots [7 0 R] >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    appearance_object = pdf.add(
+        b"<< /Type /XObject /Subtype /Form /BBox [0 0 18 18] /Length "
+        + str(len(appearance)).encode("ascii")
+        + b" >>\nstream\n"
+        + appearance
+        + b"\nendstream"
+    )
+    embedded_file = pdf.add(
+        f"<< /Type /EmbeddedFile /Length {len(attachment)} >>\nstream\n".encode("ascii")
+        + attachment
+        + b"endstream"
+    )
+    filespec = pdf.add(
+        f"<< /Type /Filespec /F (note.txt) /UF (note.txt) /EF << /F {embedded_file} 0 R >> >>"
+    )
+    annotation = pdf.add(
+        "<< /Type /Annot /Subtype /FileAttachment /Name /PushPin "
+        f"/Rect [24 36 42 54] /FS {filespec} 0 R /AP << /N {appearance_object} 0 R >> >>"
+    )
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert appearance_object == 4
+    assert embedded_file == 5
+    assert filespec == 6
+    assert annotation == 7
+    return pdf.render(catalog)
+
+
 def optional_content_layer_pdf(visible: bool) -> bytes:
     pdf = Pdf()
     content = (
@@ -3057,6 +3161,9 @@ def main() -> None:
     write("acroform-radio-off.pdf", acroform_radio_off_pdf())
     write("acroform-signature-placeholder.pdf", acroform_signature_placeholder_pdf())
     write("digital-signature-appearance.pdf", digital_signature_appearance_pdf())
+    write("embedded-source-file.pdf", embedded_source_file_pdf())
+    write("portfolio-embedded-files.pdf", portfolio_embedded_files_pdf())
+    write("file-attachment-annotation.pdf", file_attachment_annotation_pdf())
     write("optional-content-layer-on.pdf", optional_content_layer_pdf(visible=True))
     write("optional-content-layer-off.pdf", optional_content_layer_pdf(visible=False))
     write("optional-content-ocmd.pdf", optional_content_ocmd_pdf())

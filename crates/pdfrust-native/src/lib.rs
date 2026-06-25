@@ -51,6 +51,7 @@ const MAX_ANNOTATION_FALLBACK_QUADS: usize = 32;
 const MAX_METADATA_OUTLINE_ITEMS: usize = 256;
 const MAX_METADATA_PAGE_LABELS: usize = 4096;
 const MAX_METADATA_SIGNATURE_FIELDS: usize = 4096;
+const MAX_METADATA_ATTACHMENT_ANNOTATIONS: usize = 4096;
 const DEFAULT_SPOOL_BYTES_LIMIT: usize = 0;
 
 /// Rust-native thumbnail backend.
@@ -2341,7 +2342,7 @@ fn metadata_from_classic_document(
     let mut metadata = metadata_from_page_tree(&page_tree)?;
     let catalog = document_catalog_dictionary(document)?;
     metadata.info = document_info(document)?;
-    metadata.structure = document_structure(document, catalog)?;
+    metadata.structure = document_structure(document, catalog, &page_tree)?;
     metadata.outlines = outline_metadata(document, catalog)?;
     metadata.page_labels = page_labels_metadata(document, catalog, page_tree.page_count())?;
     Ok(metadata)
@@ -2390,6 +2391,7 @@ fn document_info(document: &ClassicDocument<'_>) -> Result<DocumentInfo, Thumbna
 fn document_structure(
     document: &ClassicDocument<'_>,
     catalog: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    page_tree: &PageTree,
 ) -> Result<DocumentStructure, ThumbnailError> {
     let (has_signature_fields, has_signature_byte_range) =
         document_signature_structure(document, catalog)?;
@@ -2400,7 +2402,51 @@ fn document_structure(
         has_named_destinations: has_named_destinations(document, catalog)?,
         has_signature_fields,
         has_signature_byte_range,
+        has_embedded_files: has_embedded_files(document, catalog)?,
+        has_portfolio_collection: dictionary_value(catalog, b"Collection").is_some(),
+        has_file_attachment_annotations: has_file_attachment_annotations(document, page_tree)?,
     })
+}
+
+fn has_embedded_files(
+    document: &ClassicDocument<'_>,
+    catalog: &[(PdfName<'_>, PdfPrimitive<'_>)],
+) -> Result<bool, ThumbnailError> {
+    let Some(names_value) = dictionary_value(catalog, b"Names") else {
+        return Ok(false);
+    };
+    let names = metadata_dictionary_from_value(document, names_value)?;
+    Ok(dictionary_value(names, b"EmbeddedFiles").is_some())
+}
+
+fn has_file_attachment_annotations(
+    document: &ClassicDocument<'_>,
+    page_tree: &PageTree,
+) -> Result<bool, ThumbnailError> {
+    let mut visited = 0usize;
+    for page in page_tree.pages() {
+        let object = document
+            .objects
+            .get(page.id)
+            .ok_or(ThumbnailError::Malformed)?;
+        let dictionary = object_dictionary(&object.value)?;
+        let Some(annots) = dictionary_value(dictionary, b"Annots") else {
+            continue;
+        };
+        for annotation in annotation_array(document, annots)? {
+            if visited >= MAX_METADATA_ATTACHMENT_ANNOTATIONS {
+                return Ok(false);
+            }
+            visited += 1;
+            let Some(annotation) = annotation_dictionary(document, annotation)? else {
+                continue;
+            };
+            if dictionary_name_is(annotation, b"Subtype", b"FileAttachment") {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
 }
 
 fn document_signature_structure(
@@ -4055,6 +4101,25 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_render_generated_file_attachment_annotation_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/file-attachment-annotation.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 120,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated file attachment annotation fixture should render");
+
+        assert_eq!(thumbnail.width, 120);
+        assert_eq!(thumbnail.height, 90);
+        assert_eq!(rgba_at(&thumbnail, 30, 45), [38, 38, 38, 255]);
+        assert_eq!(rgba_at(&thumbnail, 65, 45), [255, 255, 255, 255]);
+    }
+
+    #[test]
     fn native_backend_should_render_generated_optional_content_layer_on_fixture() {
         let bytes = include_bytes!("../../../fixtures/generated/optional-content-layer-on.pdf");
         let thumbnail = ThumbnailBackend::render(
@@ -5061,6 +5126,41 @@ mod tests {
 
         assert!(metadata.structure.has_signature_fields);
         assert!(metadata.structure.has_signature_byte_range);
+    }
+
+    #[test]
+    fn native_backend_should_report_embedded_file_and_portfolio_presence() {
+        let embedded = include_bytes!("../../../fixtures/generated/embedded-source-file.pdf");
+        let embedded_metadata = DocumentMetadataBackend::inspect(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(embedded),
+        )
+        .expect("generated embedded source file fixture should inspect");
+        assert!(embedded_metadata.structure.has_embedded_files);
+        assert!(!embedded_metadata.structure.has_portfolio_collection);
+        assert!(!embedded_metadata.structure.has_file_attachment_annotations);
+
+        let portfolio = include_bytes!("../../../fixtures/generated/portfolio-embedded-files.pdf");
+        let portfolio_metadata = DocumentMetadataBackend::inspect(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(portfolio),
+        )
+        .expect("generated portfolio fixture should inspect");
+        assert!(portfolio_metadata.structure.has_embedded_files);
+        assert!(portfolio_metadata.structure.has_portfolio_collection);
+
+        let attachment =
+            include_bytes!("../../../fixtures/generated/file-attachment-annotation.pdf");
+        let attachment_metadata = DocumentMetadataBackend::inspect(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(attachment),
+        )
+        .expect("generated file attachment annotation fixture should inspect");
+        assert!(
+            attachment_metadata
+                .structure
+                .has_file_attachment_annotations
+        );
     }
 
     #[test]

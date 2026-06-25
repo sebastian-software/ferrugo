@@ -28,7 +28,9 @@ fixtures/generated/digital-signature-appearance.pdf	form	scripts/generate_fixtur
 fixtures/generated/dct-image.pdf	scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,dct,jpeg	Generated DCTDecode Image XObject fixture.
 fixtures/generated/embedded-font.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	font,truetype	Generated embedded TrueType font fixture.
 fixtures/generated/encoding-differences.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,encoding	Generated Encoding Differences text fixture.
+fixtures/generated/embedded-source-file.pdf	mixed-layout	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	embedded-file,filespec,source-attachment	Generated embedded source file fixture with catalog EmbeddedFiles name tree.
 fixtures/generated/encrypted-placeholder.pdf	mixed-layout	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	encryption,security	Generated encrypted-trailer placeholder fixture.
+fixtures/generated/file-attachment-annotation.pdf	mixed-layout	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	annotation,file-attachment,appearance,filespec	Generated visible file attachment annotation fixture with inert embedded payload.
 fixtures/generated/form-xobject.pdf	presentation	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	form-xobject,vector	Generated path-only Form XObject fixture.
 fixtures/generated/highlight-annotation-appearance.pdf	mixed-layout	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	annotation,highlight,appearance	Generated text-markup highlight appearance fixture.
 fixtures/generated/highlight-annotation-without-appearance.pdf	mixed-layout	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	annotation,highlight,missing-appearance	Generated text-markup highlight fallback fixture without appearance stream.
@@ -68,6 +70,7 @@ fixtures/generated/output-intent-rgb.pdf	report	scripts/generate_fixtures.py	MIT
 fixtures/generated/overprint-spot-approximation.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	overprint,spot-color,separation	Generated overprint spot-color approximation fixture.
 fixtures/generated/page-size-letter.pdf	browser-print	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	page-size,letter	Generated letter page geometry fixture.
 fixtures/generated/page-targeted-stream.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	2	streaming,page-targeted,malformed-secondary-page	Generated two-page fixture proving page zero renders without decoding a malformed second-page stream.
+fixtures/generated/portfolio-embedded-files.pdf	mixed-layout	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	portfolio,collection,embedded-file	Generated PDF portfolio fixture with Collection dictionary and embedded file name tree.
 fixtures/generated/predictor-image.pdf	scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,flate,predictor	Generated Flate image PNG predictor fixture.
 fixtures/generated/radial-gradient.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	shading,radial-gradient	Generated DeviceRGB radial shading fixture.
 fixtures/generated/rotated-office-export.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	geometry,rotate,office-export	Generated rotated office-export page geometry fixture.

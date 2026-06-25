@@ -1,0 +1,40 @@
+%PDF-1.4
+%‚„œ”
+1 0 obj
+<< /Length 68 >>
+stream
+0.96 0.96 0.96 rg 0 0 160 90 re f 0.15 0.2 0.35 rg 20 32 120 26 re f
+endstream
+endobj
+2 0 obj
+<< /Type /Page /Parent 3 0 R /MediaBox [0 0 160 90] /Contents 1 0 R >>
+endobj
+3 0 obj
+<< /Type /Pages /Kids [2 0 R] /Count 1 >>
+endobj
+4 0 obj
+<< /Type /EmbeddedFile /Length 29 >>
+stream
+Portfolio attachment payload
+endstream
+endobj
+5 0 obj
+<< /Type /Filespec /F (portfolio.txt) /UF (portfolio.txt) /EF << /F 4 0 R >> >>
+endobj
+6 0 obj
+<< /Type /Catalog /Pages 3 0 R /Names << /EmbeddedFiles << /Names [(portfolio.txt) 5 0 R] >> >> /Collection << /Type /Collection /View /D >> >>
+endobj
+xref
+0 7
+0000000000 65535 f 
+0000000015 00000 n 
+0000000133 00000 n 
+0000000219 00000 n 
+0000000276 00000 n 
+0000000374 00000 n 
+0000000469 00000 n 
+trailer
+<< /Size 7 /Root 6 0 R >>
+startxref
+628
+%%EOF

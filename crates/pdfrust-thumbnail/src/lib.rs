@@ -265,6 +265,12 @@ pub struct DocumentStructure {
     pub has_signature_fields: bool,
     /// A signature dictionary exposes `/ByteRange` metadata.
     pub has_signature_byte_range: bool,
+    /// Catalog names expose embedded files.
+    pub has_embedded_files: bool,
+    /// Catalog declares a portfolio `/Collection`.
+    pub has_portfolio_collection: bool,
+    /// Pages expose at least one file-attachment annotation.
+    pub has_file_attachment_annotations: bool,
 }
 
 /// Outline tree metadata.
