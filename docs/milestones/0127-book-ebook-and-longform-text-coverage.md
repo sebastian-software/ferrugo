@@ -1,6 +1,6 @@
 # 0127: Book Ebook And Longform Text Coverage
 
-Status: todo
+Status: done
 Phase: 23
 Size: medium
 Depends on: 0126
@@ -46,4 +46,19 @@ fonts, page labels, front matter, and scanned or mixed illustrations.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-25.
+
+- Added four generated fixtures for book front matter with page labels and
+  outlines, illustrated manual pages, narrow ebook pages, and longform repeated
+  font/image resources.
+- Added `fixtures/longform-text-manifest.tsv` with eight focused rows across
+  `book`, `manual`, `ebook`, and `repeated-resources` families.
+- Added native regression coverage for longform rendering, book metadata,
+  frontmatter/chapter/interior page sampling, and bounded cache diagnostics.
+- Native fallback gate: 8/8 rendered natively, 0 fallbacks, 0 errors.
+- Native benchmark gate: 8/8 rendered natively, 0 budget failures at
+  `--max-edge 160`, two iterations, `--max-ms 1000`, and
+  `--max-output-bytes 1048576`.
+- PDFium visual oracle: 1 exact match, 7 strict-threshold blockers, 0 native
+  render errors, 0 PDFium render errors.
+- Report: `docs/reports/longform-text-fidelity-2026-06-25.md`.

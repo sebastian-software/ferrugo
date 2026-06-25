@@ -185,6 +185,29 @@ cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks \
   --max-edge 160
 ```
 
+## Longform Text Manifest
+
+`fixtures/longform-text-manifest.tsv` is the focused gate for book-like PDFs,
+manuals, ebooks, and repeated-resource longform documents. It covers page
+labels, outlines, front matter, chapter/interior page sampling, narrow text
+pages, illustrated manual pages, and repeated font/image resource use.
+
+Use this manifest when a change may affect long document metadata, page
+sampling, repeated resource reuse, text-heavy thumbnails, or book/manual-style
+layout:
+
+```sh
+cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks \
+  fixtures/generated \
+  --manifest fixtures/longform-text-manifest.tsv \
+  --include-family book \
+  --include-family manual \
+  --include-family ebook \
+  --include-family repeated-resources \
+  --fail-on-fallback \
+  --max-edge 160
+```
+
 ## Private Local Corpora
 
 Private or third-party PDFs stay outside Git under `fixtures/local-corpus/`.
