@@ -848,6 +848,35 @@ pub struct TextGlyph {
     pub character_code: u32,
     /// Unicode text mapped from the source character code.
     pub unicode: String,
+    /// Native text layout handling selected for this mapped glyph.
+    pub layout: TextLayoutStatus,
+}
+
+/// Native text layout handling selected for a decoded PDF glyph.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TextLayoutStatus {
+    /// One source glyph maps to one simple fallback-rasterized Unicode scalar.
+    Simple,
+    /// One source glyph maps to multiple Unicode scalars such as a ligature expansion.
+    LigatureExpanded,
+    /// The mapped text contains combining marks positioned by the fallback renderer.
+    CombiningMarkPositioned,
+    /// The PDF already positioned shaped script glyphs in the content stream.
+    PreShapedScriptPreserved,
+    /// The mapped text needs a layout behavior outside the native fallback subset.
+    Unsupported {
+        /// Typed reason for the unsupported native layout path.
+        reason: TextLayoutFallbackReason,
+    },
+}
+
+/// Why native text layout fell back from full OpenType shaping.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TextLayoutFallbackReason {
+    /// The text needs script shaping that is not implemented by the native fallback renderer.
+    ComplexScriptShaping,
+    /// The text needs OpenType GSUB/GPOS table handling that is not implemented yet.
+    OpenTypeLayoutTables,
 }
 
 /// Supported image color-space metadata.
@@ -1776,6 +1805,55 @@ impl Default for GlyphBitmapCache {
     fn default() -> Self {
         Self::new(DEFAULT_GLYPH_BITMAP_CACHE_LIMIT)
     }
+}
+
+#[derive(Debug, Default)]
+struct TextRasterScratch {
+    atoms: Vec<TextRasterAtom>,
+}
+
+impl TextRasterScratch {
+    fn prepare(&mut self, text: &TextDisplayItem, cell: f64) {
+        self.atoms.clear();
+        for (glyph, origin) in text.glyphs.iter().zip(text.glyph_origins.iter()) {
+            let mut pen_x = origin.x;
+            let mut last_base_x = origin.x;
+            for character in glyph.unicode.chars() {
+                if is_combining_mark(character) {
+                    self.atoms.push(TextRasterAtom {
+                        kind: TextRasterAtomKind::CombiningMark(character),
+                        x: last_base_x,
+                        baseline_y: origin.y,
+                    });
+                    continue;
+                }
+                self.atoms.push(TextRasterAtom {
+                    kind: TextRasterAtomKind::Glyph(character),
+                    x: pen_x,
+                    baseline_y: origin.y,
+                });
+                last_base_x = pen_x;
+                pen_x += fallback_glyph_advance(cell);
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct TextRasterAtom {
+    kind: TextRasterAtomKind,
+    x: f64,
+    baseline_y: f64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TextRasterAtomKind {
+    Glyph(char),
+    CombiningMark(char),
+}
+
+fn fallback_glyph_advance(cell: f64) -> f64 {
+    cell * 6.0
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -3969,6 +4047,7 @@ pub fn rasterize_display_list_into(
     }
     let mut active_clips = Vec::new();
     let mut glyph_cache = GlyphBitmapCache::default();
+    let mut text_scratch = TextRasterScratch::default();
     for item in display_list.items() {
         match item {
             DisplayItem::Path(path) => {
@@ -3998,7 +4077,14 @@ pub fn rasterize_display_list_into(
             }
             DisplayItem::Image(image) => draw_image(device, image, transform)?,
             DisplayItem::Text(text) => {
-                draw_text_run(device, text, transform, options, &mut glyph_cache)?;
+                draw_text_run(
+                    device,
+                    text,
+                    transform,
+                    options,
+                    &mut glyph_cache,
+                    &mut text_scratch,
+                )?;
             }
         }
     }
@@ -4335,6 +4421,7 @@ pub fn rasterize_text(
     transform: PageTransform,
 ) -> RasterResult<()> {
     let mut glyph_cache = GlyphBitmapCache::default();
+    let mut text_scratch = TextRasterScratch::default();
     for item in display_list.items() {
         let DisplayItem::Text(text) = item else {
             continue;
@@ -4345,6 +4432,7 @@ pub fn rasterize_text(
             transform,
             PathRasterOptions::default(),
             &mut glyph_cache,
+            &mut text_scratch,
         )?;
     }
     Ok(())
@@ -6201,6 +6289,7 @@ fn decode_with_to_unicode(
         glyphs.push(TextGlyph {
             character_code,
             unicode: mapped.to_string(),
+            layout: classify_text_layout(mapped),
         });
         byte_offset += width;
     }
@@ -6229,12 +6318,62 @@ fn decode_with_font_encoding(
             ));
         }
         text.push(character);
+        let unicode = character.to_string();
         glyphs.push(TextGlyph {
             character_code: u32::from(*byte),
-            unicode: character.to_string(),
+            unicode,
+            layout: classify_text_layout_char(character),
         });
     }
     Ok(DecodedTextRun { text, glyphs })
+}
+
+fn classify_text_layout(mapped: &str) -> TextLayoutStatus {
+    let mut chars = mapped.chars();
+    let Some(first) = chars.next() else {
+        return TextLayoutStatus::Simple;
+    };
+    if mapped.chars().any(is_combining_mark) {
+        return TextLayoutStatus::CombiningMarkPositioned;
+    }
+    if chars.next().is_some() || is_unicode_ligature(first) {
+        return TextLayoutStatus::LigatureExpanded;
+    }
+    classify_text_layout_char(first)
+}
+
+fn classify_text_layout_char(character: char) -> TextLayoutStatus {
+    if is_pre_shaped_script_character(character) {
+        TextLayoutStatus::PreShapedScriptPreserved
+    } else if character.is_ascii() || matches!(character, '\u{00a0}'..='\u{024f}') {
+        TextLayoutStatus::Simple
+    } else {
+        TextLayoutStatus::Unsupported {
+            reason: TextLayoutFallbackReason::ComplexScriptShaping,
+        }
+    }
+}
+
+fn is_unicode_ligature(character: char) -> bool {
+    matches!(character, '\u{fb00}'..='\u{fb06}')
+}
+
+fn is_combining_mark(character: char) -> bool {
+    matches!(
+        character,
+        '\u{0300}'..='\u{036f}'
+            | '\u{1ab0}'..='\u{1aff}'
+            | '\u{1dc0}'..='\u{1dff}'
+            | '\u{20d0}'..='\u{20ff}'
+            | '\u{fe20}'..='\u{fe2f}'
+    )
+}
+
+fn is_pre_shaped_script_character(character: char) -> bool {
+    matches!(
+        character,
+        '\u{0590}'..='\u{08ff}' | '\u{fb1d}'..='\u{fdff}' | '\u{fe70}'..='\u{feff}'
+    )
 }
 
 fn decode_form_xobject(
@@ -8453,6 +8592,7 @@ fn draw_text_run(
     page_transform: PageTransform,
     options: PathRasterOptions,
     glyph_cache: &mut GlyphBitmapCache,
+    text_scratch: &mut TextRasterScratch,
 ) -> RasterResult<()> {
     let Some(color) = text
         .rendering_mode
@@ -8465,11 +8605,13 @@ fn draw_text_run(
         return draw_type3_text_run(device, text, page_transform, options);
     }
     let cell = text.font_size / 7.0;
-    for (glyph, origin) in text.glyphs.iter().zip(text.glyph_origins.iter()) {
-        let Some(character) = glyph.unicode.chars().next() else {
+    text_scratch.prepare(text, cell);
+    for atom in &text_scratch.atoms {
+        let TextRasterAtomKind::Glyph(character) = atom.kind else {
+            draw_combining_mark(device, page_transform, atom.x, atom.baseline_y, cell, color)?;
             continue;
         };
-        if character == ' ' {
+        if character == ' ' || character == '\u{00a0}' {
             continue;
         }
         let face = text
@@ -8477,7 +8619,14 @@ fn draw_text_run(
             .fallback
             .map_or(FontFallbackFace::Sans, |fallback| fallback.face);
         let bitmap = glyph_cache.bitmap_for(face, character, cell);
-        draw_ascii_glyph(device, page_transform, bitmap, origin.x, origin.y, color)?;
+        draw_ascii_glyph(
+            device,
+            page_transform,
+            bitmap,
+            atom.x,
+            atom.baseline_y,
+            color,
+        )?;
     }
     Ok(())
 }
@@ -8557,6 +8706,28 @@ fn draw_ascii_glyph(
         )?;
     }
     Ok(())
+}
+
+fn draw_combining_mark(
+    device: &mut RasterDevice,
+    page_transform: PageTransform,
+    x: f64,
+    baseline_y: f64,
+    cell: f64,
+    color: Rgba,
+) -> RasterResult<()> {
+    let mark_left = x + cell;
+    let mark_right = x + cell * 4.0;
+    let mark_top = baseline_y + cell * 8.0;
+    let mark_bottom = baseline_y + cell * 7.0;
+    fill_device_rect(
+        device,
+        page_transform.matrix.transform_point(mark_left, mark_top),
+        page_transform
+            .matrix
+            .transform_point(mark_right, mark_bottom),
+        color,
+    )
 }
 
 fn fill_device_rect(
@@ -12353,7 +12524,87 @@ mod tests {
             vec![TextGlyph {
                 character_code: 1,
                 unicode: "Z".to_string(),
+                layout: TextLayoutStatus::Simple,
             }]
+        );
+    }
+
+    #[test]
+    fn text_display_list_should_classify_ligature_tounicode_sequence() {
+        let document = load_tounicode_text_pdf(
+            b"BT /F1 12 Tf <01> Tj ET",
+            b"<< /Type /Font /Subtype /Type1 /BaseFont /SubsetFont /ToUnicode 6 0 R >>",
+            b"/CIDInit /ProcSet findresource begin\n1 beginbfchar\n<01> <00660069>\nendbfchar\nend",
+        );
+        let resources =
+            font_resources_from_document(&document, &[("F1", 4)]).expect("valid font resources");
+        let content = content_stream_from_document(&document);
+        let list = build_text_display_list(
+            tokenize_content(PdfBytes::new(&content)),
+            &resources,
+            DisplayListOptions::default(),
+        )
+        .expect("ligature text should decode");
+
+        let DisplayItem::Text(text) = &list.items()[0] else {
+            panic!("expected text display item");
+        };
+        assert_eq!(text.text, "fi");
+        assert_eq!(text.glyphs[0].layout, TextLayoutStatus::LigatureExpanded);
+    }
+
+    #[test]
+    fn text_display_list_should_classify_combining_mark_sequence() {
+        let document = load_tounicode_text_pdf(
+            b"BT /F1 12 Tf <01> Tj ET",
+            b"<< /Type /Font /Subtype /Type1 /BaseFont /SubsetFont /ToUnicode 6 0 R >>",
+            b"/CIDInit /ProcSet findresource begin\n1 beginbfchar\n<01> <00650301>\nendbfchar\nend",
+        );
+        let resources =
+            font_resources_from_document(&document, &[("F1", 4)]).expect("valid font resources");
+        let content = content_stream_from_document(&document);
+        let list = build_text_display_list(
+            tokenize_content(PdfBytes::new(&content)),
+            &resources,
+            DisplayListOptions::default(),
+        )
+        .expect("combining mark text should decode");
+
+        let DisplayItem::Text(text) = &list.items()[0] else {
+            panic!("expected text display item");
+        };
+        assert_eq!(text.text, "e\u{301}");
+        assert_eq!(
+            text.glyphs[0].layout,
+            TextLayoutStatus::CombiningMarkPositioned
+        );
+    }
+
+    #[test]
+    fn text_display_list_should_expose_unsupported_complex_shaping_reason() {
+        let document = load_tounicode_text_pdf(
+            b"BT /F1 12 Tf <01> Tj ET",
+            b"<< /Type /Font /Subtype /Type0 /BaseFont /ABCDEE+CjkFixture /Encoding /Identity-H /DescendantFonts [<< /Type /Font /Subtype /CIDFontType2 /BaseFont /ABCDEE+CjkFixture /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /DW 1000 >>] /ToUnicode 6 0 R >>",
+            b"/CIDInit /ProcSet findresource begin\n1 beginbfchar\n<01> <65e5>\nendbfchar\nend",
+        );
+        let resources =
+            font_resources_from_document(&document, &[("F1", 4)]).expect("valid font resources");
+        let content = content_stream_from_document(&document);
+        let list = build_text_display_list(
+            tokenize_content(PdfBytes::new(&content)),
+            &resources,
+            DisplayListOptions::default(),
+        )
+        .expect("unsupported shaping text should still decode");
+
+        let DisplayItem::Text(text) = &list.items()[0] else {
+            panic!("expected text display item");
+        };
+        assert_eq!(
+            text.glyphs[0].layout,
+            TextLayoutStatus::Unsupported {
+                reason: TextLayoutFallbackReason::ComplexScriptShaping
+            }
         );
     }
 
@@ -12396,10 +12647,12 @@ mod tests {
                 TextGlyph {
                     character_code: 1,
                     unicode: "A".to_string(),
+                    layout: TextLayoutStatus::Simple,
                 },
                 TextGlyph {
                     character_code: 2,
                     unicode: "Z".to_string(),
+                    layout: TextLayoutStatus::Simple,
                 },
             ]
         );
@@ -12638,6 +12891,81 @@ mod tests {
         cache.bitmap_for(FontFallbackFace::Serif, 'A', 1.0);
 
         assert_eq!(cache.len(), 2);
+    }
+
+    #[test]
+    fn text_raster_scratch_should_expand_ligature_mapping_without_losing_capacity() {
+        let mut scratch = TextRasterScratch::default();
+        let first = fallback_text_item(
+            vec![TextGlyph {
+                character_code: 1,
+                unicode: "fi".to_string(),
+                layout: TextLayoutStatus::LigatureExpanded,
+            }],
+            vec![Point { x: 10.0, y: 20.0 }],
+        );
+
+        scratch.prepare(&first, 2.0);
+        let capacity = scratch.atoms.capacity();
+
+        assert_eq!(
+            scratch.atoms,
+            vec![
+                TextRasterAtom {
+                    kind: TextRasterAtomKind::Glyph('f'),
+                    x: 10.0,
+                    baseline_y: 20.0,
+                },
+                TextRasterAtom {
+                    kind: TextRasterAtomKind::Glyph('i'),
+                    x: 22.0,
+                    baseline_y: 20.0,
+                },
+            ]
+        );
+
+        let second = fallback_text_item(
+            vec![TextGlyph {
+                character_code: 2,
+                unicode: "A".to_string(),
+                layout: TextLayoutStatus::Simple,
+            }],
+            vec![Point { x: 0.0, y: 0.0 }],
+        );
+        scratch.prepare(&second, 2.0);
+
+        assert_eq!(scratch.atoms.capacity(), capacity);
+    }
+
+    #[test]
+    fn text_raster_scratch_should_position_combining_marks_on_previous_base() {
+        let mut scratch = TextRasterScratch::default();
+        let text = fallback_text_item(
+            vec![TextGlyph {
+                character_code: 1,
+                unicode: "e\u{301}".to_string(),
+                layout: TextLayoutStatus::CombiningMarkPositioned,
+            }],
+            vec![Point { x: 15.0, y: 25.0 }],
+        );
+
+        scratch.prepare(&text, 2.0);
+
+        assert_eq!(
+            scratch.atoms,
+            vec![
+                TextRasterAtom {
+                    kind: TextRasterAtomKind::Glyph('e'),
+                    x: 15.0,
+                    baseline_y: 25.0,
+                },
+                TextRasterAtom {
+                    kind: TextRasterAtomKind::CombiningMark('\u{301}'),
+                    x: 15.0,
+                    baseline_y: 25.0,
+                },
+            ]
+        );
     }
 
     #[test]
@@ -14817,6 +15145,23 @@ mod tests {
         let pdf = build_classic_pdf_from_objects(&objects);
         let leaked = Box::leak(pdf.into_boxed_slice());
         load_classic_document(PdfBytes::new(leaked)).expect("Type3 text PDF should load")
+    }
+
+    fn fallback_text_item(glyphs: Vec<TextGlyph>, glyph_origins: Vec<Point>) -> TextDisplayItem {
+        TextDisplayItem {
+            text: glyphs
+                .iter()
+                .map(|glyph| glyph.unicode.as_str())
+                .collect::<String>(),
+            glyphs,
+            glyph_origins,
+            font: FontDescriptor::new("F1", Some("Helvetica")),
+            font_size: 14.0,
+            origin: Point { x: 0.0, y: 0.0 },
+            text_matrix: Matrix::IDENTITY,
+            rendering_mode: TextRenderingMode::Fill,
+            state: GraphicsState::default(),
+        }
     }
 
     fn test_truetype_program() -> FontProgram {

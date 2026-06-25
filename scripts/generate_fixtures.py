@@ -2058,6 +2058,104 @@ def shaped_rtl_text_pdf() -> bytes:
     return pdf.render(catalog)
 
 
+def shaped_text_pdf(
+    content: bytes,
+    cmap: bytes,
+    font_dictionary: str,
+    media_box: str = "[0 0 180 100]",
+) -> bytes:
+    pdf = Pdf()
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        f"<< /Type /Page /Parent 3 0 R /MediaBox {media_box} "
+        "/Resources << /Font << /F1 4 0 R >> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    font = pdf.add(font_dictionary)
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    cmap_stream = pdf.add(
+        b"<< /Length "
+        + str(len(cmap)).encode("ascii")
+        + b" >>\nstream\n"
+        + cmap
+        + b"\nendstream"
+    )
+    assert font == 4
+    assert cmap_stream == 6
+    return pdf.render(catalog)
+
+
+def opentype_ligature_text_pdf() -> bytes:
+    cmap = (
+        b"/CIDInit /ProcSet findresource begin\n"
+        b"1 begincmap\n"
+        b"1 beginbfchar\n"
+        b"<01> <00660069>\n"
+        b"endbfchar\n"
+        b"endcmap\n"
+        b"CMapName currentdict /CMap defineresource pop\n"
+        b"end"
+    )
+    return shaped_text_pdf(
+        b"BT /F1 30 Tf 30 60 Td <01> Tj ET",
+        cmap,
+        "<< /Type /Font /Subtype /Type1 /BaseFont /ABCDEE+LigatureFixture "
+        "/ToUnicode 6 0 R >>",
+    )
+
+
+def combining_mark_text_pdf() -> bytes:
+    cmap = (
+        b"/CIDInit /ProcSet findresource begin\n"
+        b"1 begincmap\n"
+        b"1 beginbfchar\n"
+        b"<01> <00650301>\n"
+        b"endbfchar\n"
+        b"endcmap\n"
+        b"CMapName currentdict /CMap defineresource pop\n"
+        b"end"
+    )
+    return shaped_text_pdf(
+        b"BT /F1 30 Tf 30 60 Td <01> Tj ET",
+        cmap,
+        "<< /Type /Font /Subtype /Type1 /BaseFont /ABCDEE+CombiningFixture "
+        "/ToUnicode 6 0 R >>",
+    )
+
+
+def arabic_shaped_text_pdf() -> bytes:
+    cmap = (
+        b"/CIDInit /ProcSet findresource begin\n"
+        b"1 begincmap\n"
+        b"3 beginbfchar\n"
+        b"<0001> <feb3>\n"
+        b"<0002> <fefc>\n"
+        b"<0003> <fee1>\n"
+        b"endbfchar\n"
+        b"endcmap\n"
+        b"CMapName currentdict /CMap defineresource pop\n"
+        b"end"
+    )
+    return shaped_text_pdf(
+        (
+            b"BT /F1 28 Tf 118 60 Td <0001> Tj ET "
+            b"BT /F1 28 Tf 92 60 Td <0002> Tj ET "
+            b"BT /F1 28 Tf 66 60 Td <0003> Tj ET"
+        ),
+        cmap,
+        "<< /Type /Font /Subtype /Type0 /BaseFont /ABCDEE+ArabicFixture "
+        "/Encoding /Identity-H /DescendantFonts [<< /Type /Font "
+        "/Subtype /CIDFontType2 /BaseFont /ABCDEE+ArabicFixture "
+        "/CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> "
+        "/DW 600 >>] /ToUnicode 6 0 R >>",
+    )
+
+
 def encoding_differences_pdf() -> bytes:
     pdf = Pdf()
     content = b"BT /F1 24 Tf 30 60 Td (A) Tj ET"
@@ -2499,6 +2597,9 @@ def main() -> None:
     write("cid-font-text.pdf", cid_font_text_pdf())
     write("vertical-cjk-text.pdf", vertical_cjk_text_pdf())
     write("shaped-rtl-text.pdf", shaped_rtl_text_pdf())
+    write("opentype-ligature-text.pdf", opentype_ligature_text_pdf())
+    write("combining-mark-text.pdf", combining_mark_text_pdf())
+    write("arabic-shaped-text.pdf", arabic_shaped_text_pdf())
     write("encoding-differences.pdf", encoding_differences_pdf())
     write("text-spacing.pdf", text_spacing_pdf())
     write(

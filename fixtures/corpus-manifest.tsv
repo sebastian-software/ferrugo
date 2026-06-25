@@ -10,12 +10,14 @@ fixtures/generated/acroform-text-field.pdf	form	scripts/generate_fixtures.py	MIT
 fixtures/generated/acroform-text-field-missing-appearance.pdf	form	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	acroform,widget,text-field,missing-appearance	Generated AcroForm text field fallback fixture without appearance stream.
 fixtures/generated/annotation-appearance.pdf	mixed-layout	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	annotation,appearance	Generated normal annotation appearance fixture.
 fixtures/generated/annotation-missing-appearance.pdf	mixed-layout	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	annotation,missing-appearance	Generated annotation without usable appearance stream.
+fixtures/generated/arabic-shaped-text.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,type0,cid,arabic,prepositioned,opentype	Generated pre-positioned Arabic presentation-form Type0 CID text fixture.
 fixtures/generated/axial-gradient.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	shading,axial-gradient	Generated DeviceRGB axial shading fixture.
 fixtures/generated/blend-modes.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	blend-mode,transparency	Generated Multiply and Screen blend-mode fixture.
 fixtures/generated/cid-font-text.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,type0,cid,tounicode	Generated Type0 CID font ToUnicode fixture.
 fixtures/generated/cff-fontfile3-text.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,font,cff,fontfile3	Generated Type1 font resource with embedded CFF FontFile3 fixture.
 fixtures/generated/clipped-paths.pdf	browser-print	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	vector,clipping	Generated even-odd clipping path fixture.
 fixtures/generated/cmyk-image.pdf	scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,cmyk	Generated CMYK image color-space fixture.
+fixtures/generated/combining-mark-text.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,tounicode,combining-mark,opentype	Generated ToUnicode text fixture with a combining mark sequence.
 fixtures/generated/cropped-scan-page.pdf	scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	geometry,cropbox,scan	Generated cropped scan-like page using CropBox selection.
 fixtures/generated/dashed-stroke.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	vector,stroke,dash	Generated dashed stroke fixture.
 fixtures/generated/dct-image.pdf	scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,dct,jpeg	Generated DCTDecode Image XObject fixture.
@@ -46,6 +48,7 @@ fixtures/generated/mixed-text-image.pdf	mixed-layout	scripts/generate_fixtures.p
 fixtures/generated/missing-font-browser-print.pdf	browser-print	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,font,missing-font,browser-print	Generated browser-print text fixture with a missing TrueType font program.
 fixtures/generated/missing-font-invoice.pdf	form	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,font,missing-font,invoice	Generated invoice-style text fixture with a missing TrueType font program.
 fixtures/generated/missing-font-office-export.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,font,missing-font,office-export	Generated office-export text fixture with a missing TrueType font program.
+fixtures/generated/opentype-ligature-text.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,tounicode,ligature,opentype	Generated ToUnicode text fixture where one source glyph expands to a common ligature sequence.
 fixtures/generated/multi-page-report.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	2	text,table,vector,multipage,report	Generated two-page report with repeated headers, table lines, and text.
 fixtures/generated/optional-content-layer-off.pdf	presentation	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	optional-content,layer-off	Generated default-hidden optional content layer fixture.
 fixtures/generated/optional-content-layer-on.pdf	presentation	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	optional-content,layer-on	Generated default-visible optional content layer fixture.
