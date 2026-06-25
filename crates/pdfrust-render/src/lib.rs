@@ -58,6 +58,9 @@ pub const DEFAULT_FONT_PROGRAM_BYTES_LIMIT: usize = 16 * 1024 * 1024;
 /// Default maximum decoded bytes for one image XObject.
 pub const DEFAULT_IMAGE_BYTES_LIMIT: usize = 32 * 1024 * 1024;
 
+/// Default maximum resident decoded image bytes for one page resource map.
+pub const DEFAULT_TOTAL_IMAGE_BYTES_LIMIT: usize = 128 * 1024 * 1024;
+
 /// Default maximum nested soft-mask image depth.
 pub const DEFAULT_SOFT_MASK_DEPTH_LIMIT: usize = 1;
 
@@ -1128,6 +1131,7 @@ impl ImageResources {
         R: ImageObjectResolver<'a> + ?Sized,
     {
         let mut images = Vec::new();
+        let mut total_image_bytes = 0usize;
         let mut non_image_names = Vec::new();
         for (name, value) in dictionary {
             let Some(reference) = reference_from_primitive(value) else {
@@ -1148,13 +1152,32 @@ impl ImageResources {
                 non_image_names.push(name.as_bytes().to_vec());
                 continue;
             }
-            images.push(decode_image_xobject(
+            let image = decode_image_xobject(
                 *name,
                 stream,
                 resolver,
                 options.max_image_bytes,
                 options.max_soft_mask_depth,
-            )?);
+            )?;
+            total_image_bytes = total_image_bytes
+                .checked_add(image_resident_bytes(&image))
+                .ok_or_else(|| {
+                    GraphicsError::new(
+                        None,
+                        GraphicsErrorKind::ImageResourceBytesOverflow {
+                            limit: options.max_total_image_bytes,
+                        },
+                    )
+                })?;
+            if total_image_bytes > options.max_total_image_bytes {
+                return Err(GraphicsError::new(
+                    None,
+                    GraphicsErrorKind::ImageResourceBytesOverflow {
+                        limit: options.max_total_image_bytes,
+                    },
+                ));
+            }
+            images.push(image);
         }
         Ok(Self {
             images,
@@ -1175,6 +1198,15 @@ impl ImageResources {
             .iter()
             .any(|non_image| non_image.as_slice() == name.as_bytes())
     }
+}
+
+fn image_resident_bytes(image: &ImageXObject) -> usize {
+    image.samples.len()
+        + image.soft_mask.as_ref().map_or(0, |samples| samples.len())
+        + image
+            .indexed_lookup
+            .as_ref()
+            .map_or(0, |lookup| lookup.len())
 }
 
 /// External graphics state resource map.
@@ -3021,6 +3053,8 @@ pub struct DisplayListOptions {
     pub max_font_program_bytes: usize,
     /// Maximum decoded bytes accepted for one image XObject.
     pub max_image_bytes: usize,
+    /// Maximum resident decoded image bytes accepted for one page resource map.
+    pub max_total_image_bytes: usize,
     /// Maximum nested soft-mask image depth.
     pub max_soft_mask_depth: usize,
     /// Maximum allowed Form XObject recursion depth.
@@ -3038,6 +3072,7 @@ impl Default for DisplayListOptions {
             max_cmap_entries: DEFAULT_CMAP_ENTRIES_LIMIT,
             max_font_program_bytes: DEFAULT_FONT_PROGRAM_BYTES_LIMIT,
             max_image_bytes: DEFAULT_IMAGE_BYTES_LIMIT,
+            max_total_image_bytes: DEFAULT_TOTAL_IMAGE_BYTES_LIMIT,
             max_soft_mask_depth: DEFAULT_SOFT_MASK_DEPTH_LIMIT,
             max_form_recursion_depth: DEFAULT_FORM_RECURSION_DEPTH_LIMIT,
         }
@@ -9413,6 +9448,11 @@ pub enum GraphicsErrorKind {
         /// Configured decoded image byte limit.
         limit: usize,
     },
+    /// Decoded image resources exceed the configured page resource limit.
+    ImageResourceBytesOverflow {
+        /// Configured decoded image resource byte limit.
+        limit: usize,
+    },
     /// Soft-mask recursion exceeds the configured limit.
     SoftMaskDepthOverflow {
         /// Configured soft-mask depth limit.
@@ -9650,6 +9690,9 @@ impl fmt::Display for GraphicsErrorKind {
             ),
             Self::ImageBytesOverflow { limit } => {
                 write!(f, "decoded image exceeds byte limit {limit}")
+            }
+            Self::ImageResourceBytesOverflow { limit } => {
+                write!(f, "decoded image resources exceed byte limit {limit}")
             }
             Self::SoftMaskDepthOverflow { limit } => {
                 write!(f, "soft-mask recursion exceeds depth limit {limit}")
@@ -12262,6 +12305,36 @@ mod tests {
     }
 
     #[test]
+    fn image_resources_should_enforce_total_image_byte_budget() {
+        let document = load_two_image_xobject_pdf();
+        let xobjects = vec![
+            (
+                PdfName::new(b"Im1"),
+                PdfPrimitive::Reference(pdfrust_syntax::PdfReference::new(4, 0)),
+            ),
+            (
+                PdfName::new(b"Im2"),
+                PdfPrimitive::Reference(pdfrust_syntax::PdfReference::new(5, 0)),
+            ),
+        ];
+        let error = ImageResources::from_xobject_dictionary(
+            &xobjects,
+            &document,
+            DisplayListOptions {
+                max_image_bytes: 8,
+                max_total_image_bytes: 8,
+                ..DisplayListOptions::default()
+            },
+        )
+        .expect_err("combined image samples should exceed configured page image budget");
+
+        assert_eq!(
+            error.kind(),
+            &GraphicsErrorKind::ImageResourceBytesOverflow { limit: 8 }
+        );
+    }
+
+    #[test]
     fn image_resources_should_enforce_image_mask_byte_budget() {
         let document = load_image_xobject_pdf(
             b"q 16 0 0 1 0 0 cm /Im1 Do Q",
@@ -13633,6 +13706,27 @@ mod tests {
             indirect_object_bytes(3, b"<< /Type /Pages /Kids [2 0 R] /Count 1 >>"),
             stream_object_bytes(4, image_dictionary, image_stream),
             indirect_object_bytes(5, b"<< /Type /Catalog /Pages 3 0 R >>"),
+        ];
+        let pdf = build_classic_pdf_from_objects(&objects);
+        let leaked = Box::leak(pdf.into_boxed_slice());
+        load_classic_document(PdfBytes::new(leaked)).expect("image XObject PDF should load")
+    }
+
+    fn load_two_image_xobject_pdf() -> ClassicDocument<'static> {
+        let content_stream = b"q 2 0 0 2 0 0 cm /Im1 Do Q q 2 0 0 2 10 0 cm /Im2 Do Q";
+        let content_dictionary = format!("<< /Length {} >>", content_stream.len());
+        let image_dictionary =
+            b"<< /Type /XObject /Subtype /Image /Width 2 /Height 1 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Length 6 >>";
+        let objects = vec![
+            stream_object_bytes(1, content_dictionary.as_bytes(), content_stream),
+            indirect_object_bytes(
+                2,
+                b"<< /Type /Page /Parent 3 0 R /MediaBox [0 0 120 120] /Resources << /XObject << /Im1 4 0 R /Im2 5 0 R >> >> /Contents 1 0 R >>",
+            ),
+            indirect_object_bytes(3, b"<< /Type /Pages /Kids [2 0 R] /Count 1 >>"),
+            stream_object_bytes(4, image_dictionary, &[255, 0, 0, 0, 255, 0]),
+            stream_object_bytes(5, image_dictionary, &[0, 0, 255, 255, 255, 0]),
+            indirect_object_bytes(6, b"<< /Type /Catalog /Pages 3 0 R >>"),
         ];
         let pdf = build_classic_pdf_from_objects(&objects);
         let leaked = Box::leak(pdf.into_boxed_slice());

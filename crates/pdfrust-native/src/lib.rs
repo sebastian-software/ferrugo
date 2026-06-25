@@ -49,6 +49,7 @@ const ANNOTATION_UNDERLINE_GRAPHICS_STATE: &[u8] = b"AnnotUnderline";
 const MAX_ANNOTATION_FALLBACK_QUADS: usize = 32;
 const MAX_METADATA_OUTLINE_ITEMS: usize = 256;
 const MAX_METADATA_PAGE_LABELS: usize = 4096;
+const DEFAULT_SPOOL_BYTES_LIMIT: usize = 0;
 
 /// Rust-native thumbnail backend.
 ///
@@ -84,6 +85,8 @@ pub struct NativeMemoryDiagnostics {
     pub max_page_pixels: usize,
     /// Maximum decoded bytes accepted for one image XObject.
     pub max_image_bytes: usize,
+    /// Maximum resident decoded image bytes accepted for one page resource map.
+    pub max_total_image_bytes: usize,
     /// Maximum decoded bytes accepted for one embedded font program.
     pub max_font_program_bytes: usize,
     /// Maximum decoded bytes accepted for one ToUnicode CMap stream.
@@ -92,6 +95,10 @@ pub struct NativeMemoryDiagnostics {
     pub max_text_run_bytes: usize,
     /// Maximum display items accepted in one display list.
     pub max_display_items: usize,
+    /// Whether temporary spooling is enabled for sensitive intermediates.
+    pub spooling_enabled: bool,
+    /// Maximum bytes allowed for temporary spooling.
+    pub max_spool_bytes: usize,
 }
 
 /// Bounded multi-page native render scheduler configuration.
@@ -131,10 +138,13 @@ impl Default for NativeMemoryDiagnostics {
         Self {
             max_page_pixels: page.max_page_pixels,
             max_image_bytes: display.max_image_bytes,
+            max_total_image_bytes: display.max_total_image_bytes,
             max_font_program_bytes: display.max_font_program_bytes,
             max_cmap_bytes: display.max_cmap_bytes,
             max_text_run_bytes: display.max_text_run_bytes,
             max_display_items: display.max_display_items,
+            spooling_enabled: false,
+            max_spool_bytes: DEFAULT_SPOOL_BYTES_LIMIT,
         }
     }
 }
@@ -2154,7 +2164,8 @@ fn map_graphics_error(error: GraphicsError) -> ThumbnailError {
         GraphicsErrorKind::UnsupportedImageFilter { .. } => {
             unsupported_feature(BUCKET_IMAGE_FILTER)
         }
-        GraphicsErrorKind::ImageBytesOverflow { .. } => {
+        GraphicsErrorKind::ImageBytesOverflow { .. }
+        | GraphicsErrorKind::ImageResourceBytesOverflow { .. } => {
             unsupported_feature(BUCKET_RENDERER_MEMORY_BUDGET)
         }
         GraphicsErrorKind::UnsupportedSoftMask { .. }
@@ -2611,7 +2622,10 @@ mod tests {
 
         assert_eq!(diagnostics.max_page_pixels, 16 * 1024 * 1024);
         assert_eq!(diagnostics.max_image_bytes, 32 * 1024 * 1024);
+        assert_eq!(diagnostics.max_total_image_bytes, 128 * 1024 * 1024);
         assert_eq!(diagnostics.max_display_items, 8_192);
+        assert!(!diagnostics.spooling_enabled);
+        assert_eq!(diagnostics.max_spool_bytes, 0);
     }
 
     #[test]

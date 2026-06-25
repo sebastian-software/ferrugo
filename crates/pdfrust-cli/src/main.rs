@@ -2378,18 +2378,24 @@ fn native_memory_diagnostics_json(diagnostics: &NativeMemoryDiagnostics) -> Stri
             "{{",
             "\"max_page_pixels\":{},",
             "\"max_image_bytes\":{},",
+            "\"max_total_image_bytes\":{},",
             "\"max_font_program_bytes\":{},",
             "\"max_cmap_bytes\":{},",
             "\"max_text_run_bytes\":{},",
-            "\"max_display_items\":{}",
+            "\"max_display_items\":{},",
+            "\"spooling_enabled\":{},",
+            "\"max_spool_bytes\":{}",
             "}}"
         ),
         diagnostics.max_page_pixels,
         diagnostics.max_image_bytes,
+        diagnostics.max_total_image_bytes,
         diagnostics.max_font_program_bytes,
         diagnostics.max_cmap_bytes,
         diagnostics.max_text_run_bytes,
-        diagnostics.max_display_items
+        diagnostics.max_display_items,
+        diagnostics.spooling_enabled,
+        diagnostics.max_spool_bytes
     )
 }
 
@@ -3480,6 +3486,8 @@ mod tests {
         assert!(json.contains("\"label\":\"A-1\""));
         assert!(json.contains("\"rust_native_memory\""));
         assert!(json.contains("\"max_page_pixels\":16777216"));
+        assert!(json.contains("\"max_total_image_bytes\":134217728"));
+        assert!(json.contains("\"spooling_enabled\":false"));
     }
 
     #[test]
