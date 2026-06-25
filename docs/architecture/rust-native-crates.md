@@ -83,15 +83,18 @@ files, indirect stream lengths, and repair mode remain separate milestones.
 Both classic and modern document loaders expose `page_tree()`, which resolves
 the trailer `/Root`, catalog `/Pages`, page tree `Kids`, inherited page boxes,
 and inherited resource references into `PageTree` and `PageMetadata` values.
-Content streams, rendering, and full metadata extraction remain later
-milestones.
+Content streams and rendering remain separate layers.
 
 `pdfrust-thumbnail` now also owns the backend-neutral `DocumentMetadataBackend`
 contract used by the differential harness. `pdfrust-pdfium` implements it by
 loading a document through PDFium and reading page count plus page sizes.
 `pdfrust-native` implements it through the Rust object model and page tree
-without rendering pixels. The CLI `compare-metadata` command records the PDFium
-oracle and Rust-native candidate results in the baseline format.
+without rendering pixels. It also exposes common classic-document inspection
+signals for document info fields, XMP presence, outlines, page labels, named
+destinations, and tagged-PDF presence. The CLI `compare-metadata` command
+records the PDFium oracle and Rust-native candidate results in the baseline
+format; `extract-corpus-metadata` serializes the extended native metadata for
+corpus work.
 
 `pdfrust-content` starts with a borrowed content-stream tokenizer. It reuses
 `pdfrust-syntax` primitives for operands, represents operators as borrowed byte

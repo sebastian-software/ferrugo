@@ -1,6 +1,6 @@
 # 0094: Structure Outline Metadata And Page Labels
 
-Status: todo
+Status: completed
 Phase: 16
 Size: small
 Depends on: 0093
@@ -46,4 +46,13 @@ PDFium-backed document inspection.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-25.
+
+- Extended `DocumentMetadata` with document info, structure presence, outline,
+  and page-label fields.
+- Added native classic-document extraction for `/Info`, XMP presence, outlines,
+  named destinations, tagged-PDF presence, and direct page labels.
+- Added generated fixture `metadata-outline-page-labels.pdf` plus manifest
+  coverage.
+- Documented support boundaries in `docs/policies/document-metadata.md`.
+- Evidence report: `docs/reports/structure-outline-metadata-2026-06-25.md`.

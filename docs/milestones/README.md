@@ -21,7 +21,6 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
-| 0094 | [Structure Outline Metadata And Page Labels](0094-structure-outline-metadata-and-page-labels.md) | 16 | small | 0093 |
 | 0095 | [Large Document Memory Eviction And Spooling](0095-large-document-memory-eviction-and-spooling.md) | 16 | medium | 0094 |
 | 0096 | [Hot Path Profiling And Raster Optimization](0096-hot-path-profiling-and-raster-optimization.md) | 16 | medium | 0095 |
 | 0097 | [Fuzzing And Adversarial PDF Hardening](0097-fuzzing-and-adversarial-pdf-hardening.md) | 16 | medium | 0096 |
@@ -78,6 +77,7 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Completed |
 | --- | --- | --- | --- | --- |
+| 0094 | [Structure Outline Metadata And Page Labels](0094-structure-outline-metadata-and-page-labels.md) | 16 | small | 2026-06-25 |
 | 0093 | [Incremental Update Edge Case Hardening](0093-incremental-update-edge-case-hardening.md) | 16 | medium | 2026-06-25 |
 | 0092 | [AcroForm Field Synthesis For Common Widgets](0092-acroform-field-synthesis-for-common-widgets.md) | 15 | medium | 2026-06-25 |
 | 0091 | [Annotation Without Appearance Fallbacks](0091-annotation-without-appearance-fallbacks.md) | 15 | medium | 2026-06-25 |
