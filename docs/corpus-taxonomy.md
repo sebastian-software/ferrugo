@@ -97,6 +97,28 @@ cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks \
   --max-edge 160
 ```
 
+## Spreadsheet Grid Manifest
+
+`fixtures/spreadsheet-grid-manifest.tsv` is the focused gate for spreadsheet
+exports, dense numeric grids, clipped cells, and repeated-stroke table stress.
+It uses subtype families such as `frozen-header`, `dense-grid`,
+`clipped-cells`, and `stress-grid`.
+
+Use this manifest when a change may affect hairline strokes, small text,
+clipping, or repeated path workloads in table-heavy documents:
+
+```sh
+cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks \
+  fixtures/generated \
+  --manifest fixtures/spreadsheet-grid-manifest.tsv \
+  --include-family frozen-header \
+  --include-family dense-grid \
+  --include-family clipped-cells \
+  --include-family stress-grid \
+  --fail-on-fallback \
+  --max-edge 160
+```
+
 ## Private Local Corpora
 
 Private or third-party PDFs stay outside Git under `fixtures/local-corpus/`.
