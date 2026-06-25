@@ -1,6 +1,6 @@
 # 0109: Transparency Isolation Knockout And Luminosity Masks
 
-Status: todo
+Status: in-progress
 Phase: 19
 Size: medium
 Depends on: 0108
