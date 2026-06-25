@@ -1,6 +1,6 @@
 # 0103: OpenType Layout Feature Coverage For PDFs
 
-Status: todo
+Status: done
 Phase: 18
 Size: medium
 Depends on: 0102
@@ -46,4 +46,21 @@ ligatures, marks, kerning, and shaped text output.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-25.
+
+- Added typed `TextLayoutStatus` metadata for decoded PDF glyphs.
+- Added native fallback handling for common ToUnicode ligature expansions.
+- Added deterministic combining-mark fallback positioning over the previous
+  base glyph.
+- Preserved pre-positioned Arabic/Hebrew-style script output as shaped text
+  metadata.
+- Added typed unsupported complex-script fallback reasons for decoded glyphs
+  outside the current native shaping subset.
+- Added reusable fallback text raster scratch capacity for expanded text atoms.
+- Added ligature, combining-mark, and Arabic shaped-text generated fixtures
+  plus native backend smoke tests.
+- Supported-family gate: 38 total, 38 native rendered, 0 fallback, 0 errors.
+- PDFium visual comparison marks the new shaped-text fixtures as blockers due
+  to built-in fallback text rasterizer drift, not native fallback.
+- Report: `docs/reports/opentype-layout-feature-coverage-2026-06-25.md`.
+- Implementation commit: `489d359 feat: add native shaped text layout fallback`.

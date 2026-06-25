@@ -21,7 +21,6 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
-| 0103 | [OpenType Layout Feature Coverage For PDFs](0103-opentype-layout-feature-coverage-for-pdfs.md) | 18 | medium | 0102 |
 | 0104 | [Advanced CMap Encodings And Identity Mapping](0104-advanced-cmap-encodings-and-identity-mapping.md) | 18 | medium | 0103 |
 | 0105 | [Separation DeviceN And Spot Color Approximation](0105-separation-devicen-and-spot-color-approximation.md) | 19 | medium | 0104 |
 | 0106 | [ICC Profile Cache And Transform Optimization](0106-icc-profile-cache-and-transform-optimization.md) | 19 | medium | 0105 |
@@ -89,6 +88,7 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Completed |
 | --- | --- | --- | --- | --- |
+| 0103 | [OpenType Layout Feature Coverage For PDFs](0103-opentype-layout-feature-coverage-for-pdfs.md) | 18 | medium | 2026-06-25 |
 | 0102 | [CFF Type1 Charstring Interpreter Hardening](0102-cff-type1-charstring-interpreter-hardening.md) | 18 | medium | 2026-06-25 |
 | 0101 | [Common Font Fallback And System Font Policy](0101-common-font-fallback-and-system-font-policy.md) | 18 | medium | 2026-06-25 |
 | 0100 | [Native Renderer General Availability Gate](0100-native-renderer-general-availability-gate.md) | 17 | medium | 2026-06-25 |

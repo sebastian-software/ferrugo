@@ -66,6 +66,25 @@ non-Type3 text, so CFF/Type1 native rendering is no-fallback but not yet visual
 parity with PDFium. See
 `docs/reports/cff-type1-charstring-hardening-2026-06-25.md`.
 
+## Text Layout Fallback Policy
+
+Decoded PDF glyph metadata now records a native `TextLayoutStatus`. The native
+renderer classifies simple glyphs, ToUnicode ligature expansions, combining-mark
+sequences, pre-positioned shaped scripts, and typed unsupported complex-script
+fallbacks. This makes shaped-text behavior visible to diagnostics instead of
+silently collapsing all text into the same ASCII fallback path.
+
+Fallback rasterization expands one PDF source glyph into all mapped Unicode
+scalars, so common ligature mappings such as `fi` are rendered as visible native
+fallback text. Combining marks are positioned over the previous base glyph by a
+small deterministic mark fallback. Repeated fallback rasterization reuses
+scratch capacity for expanded text atoms.
+
+This is still not full OpenType GSUB/GPOS table shaping. The current milestone
+handles PDF-exported shaped output and records typed unsupported reasons for
+cases outside that subset. See
+`docs/reports/opentype-layout-feature-coverage-2026-06-25.md`.
+
 ## Fallback Policy
 
 PDFium remains the oracle and explicit fallback until the visual GA gate says
