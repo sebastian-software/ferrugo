@@ -1,6 +1,6 @@
 # 0137: Image Downsampling And Color Conversion Optimization
 
-Status: todo
+Status: done
 Phase: 25
 Size: medium
 Depends on: 0136
@@ -47,4 +47,28 @@ copying, and color conversion work for thumbnail-sized outputs.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-26.
+
+- Added in-place PNG predictor reversal for decoded Flate image samples,
+  avoiding a second full decoded-sample allocation for predictor images.
+- Added a per-draw single-entry image sample cache so repeated thumbnail target
+  pixels that map to the same source pixel reuse converted RGBA samples.
+- Added a focused CMYK plus soft-mask cache regression test and kept the
+  existing color conversion, alpha, image mask, Indexed, DCT, and predictor
+  image tests green.
+- Wrote
+  `docs/reports/image-downsampling-color-optimization-2026-06-26.md` with
+  benchmark and visual comparison evidence.
+- Validation:
+  `cargo fmt --check`;
+  `cargo test -p pdfrust-render image_ -- --nocapture`;
+  `cargo check --workspace`;
+  `cargo clippy --workspace --all-targets --all-features -- -D warnings`;
+  `cargo test --workspace`;
+  `cargo test --workspace --no-default-features`;
+  image-heavy native benchmark at `target/image-0137-final-benchmark.json`;
+  PDFium visual comparison at `target/image-0137-visual-diff.json`.
+
+Visual comparison completed without render errors, but the known PDFium
+resampling parity blockers for mobile scan rotation/crop/mixed compression
+remain out of scope for this optimization slice.

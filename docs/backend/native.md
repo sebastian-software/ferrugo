@@ -109,6 +109,26 @@ zero fallbacks, zero errors, and zero benchmark budget failures. The current
 run keeps mean render time below 1.2 ms per family at `max_edge = 160`. See
 `docs/reports/font-subset-regression-2026-06-26.md`.
 
+## Image Decode And Sampling Optimization
+
+The native image path keeps decoded source samples as the only full-image
+sample buffer for supported image XObjects. Flate PNG predictor reversal now
+mutates the decoded buffer in place and truncates it to the final sample length,
+avoiding a second full decoded-sample allocation for predictor images.
+
+During image painting, the rasterizer samples only target thumbnail pixels. A
+per-draw single-entry `ImageSampleCache` reuses the last converted RGBA sample
+when multiple target pixels map to the same source pixel. This reduces repeated
+CMYK, Indexed, Gray, stencil-mask, and soft-mask conversion work during common
+thumbnail scaling without retaining a full RGBA intermediate image.
+
+The 0137 image-heavy gate renders the supported mobile scan, photo scan,
+OCR-over-image, mixed compression, DCT, and predictor fixtures with zero native
+fallbacks, zero errors, and zero benchmark budget failures. PDFium visual
+comparison still records the known scan resampling parity blockers, so image
+resampling fidelity remains a separate backlog item. See
+`docs/reports/image-downsampling-color-optimization-2026-06-26.md`.
+
 ## Text Layout Fallback Policy
 
 Decoded PDF glyph metadata now records a native `TextLayoutStatus`. The native
