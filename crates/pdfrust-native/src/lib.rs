@@ -5,6 +5,7 @@
 use std::borrow::Cow;
 use std::collections::HashSet;
 use std::fs;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 
 use pdfrust_content::{tokenize_content, ContentToken};
@@ -133,6 +134,33 @@ impl Default for ParallelRenderOptions {
     }
 }
 
+/// Cooperative cancellation flag for multi-page native rendering.
+#[derive(Debug, Default)]
+pub struct RenderCancellation {
+    cancelled: AtomicBool,
+}
+
+impl RenderCancellation {
+    /// Creates a non-cancelled token.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            cancelled: AtomicBool::new(false),
+        }
+    }
+
+    /// Requests cancellation of future page scheduling.
+    pub fn cancel(&self) {
+        self.cancelled.store(true, Ordering::Release);
+    }
+
+    /// Returns true when cancellation has been requested.
+    #[must_use]
+    pub fn is_cancelled(&self) -> bool {
+        self.cancelled.load(Ordering::Acquire)
+    }
+}
+
 /// Ordered thumbnails rendered by the bounded parallel scheduler.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParallelRenderResult {
@@ -140,6 +168,27 @@ pub struct ParallelRenderResult {
     pub pages: Vec<Thumbnail>,
     /// Effective worker count after applying worker and memory budgets.
     pub workers: usize,
+}
+
+/// Per-page multi-page render outcome.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParallelPageResult {
+    /// Requested zero-based page index.
+    pub page_index: u32,
+    /// Page thumbnail or stable page-level render error.
+    pub result: Result<Thumbnail, ThumbnailError>,
+}
+
+/// Partial multi-page render result preserving page-level outcomes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParallelRenderPartialResult {
+    /// Page results in the same order as requested page indices that were
+    /// scheduled before cancellation.
+    pub pages: Vec<ParallelPageResult>,
+    /// Effective worker count after applying worker and memory budgets.
+    pub workers: usize,
+    /// True when cancellation stopped scheduling before all requests ran.
+    pub cancelled: bool,
 }
 
 impl Default for NativeMemoryDiagnostics {
@@ -181,12 +230,59 @@ pub fn render_pages_parallel(
     options: &ThumbnailOptions,
     parallel_options: ParallelRenderOptions,
 ) -> Result<ParallelRenderResult, ThumbnailError> {
+    let cancellation = RenderCancellation::new();
+    let partial = render_pages_parallel_partial(
+        source,
+        page_indices,
+        options,
+        parallel_options,
+        &cancellation,
+    )?;
+    let workers = partial.workers;
+    let mut pages = Vec::with_capacity(partial.pages.len());
+    for page in partial.pages {
+        pages.push(page.result?);
+    }
+
+    Ok(ParallelRenderResult { pages, workers })
+}
+
+/// Renders multiple pages while preserving page-level success and error status.
+///
+/// Cancellation is cooperative and checked before each worker batch is
+/// scheduled. Already-started page jobs are allowed to finish and keep their
+/// page-level status.
+///
+/// # Errors
+///
+/// Returns [`ThumbnailError`] when the input cannot be loaded, the scheduler
+/// configuration is invalid, or a memory budget prevents even one page from
+/// being scheduled.
+pub fn render_pages_parallel_partial(
+    source: PdfSource<'_>,
+    page_indices: &[u32],
+    options: &ThumbnailOptions,
+    parallel_options: ParallelRenderOptions,
+    cancellation: &RenderCancellation,
+) -> Result<ParallelRenderPartialResult, ThumbnailError> {
+    let worker_count = effective_worker_count(options, parallel_options)?;
+    if cancellation.is_cancelled() {
+        return Ok(ParallelRenderPartialResult {
+            pages: Vec::new(),
+            workers: worker_count,
+            cancelled: true,
+        });
+    }
     let source_bytes = load_source(source)?;
     let bytes = source_bytes.as_ref();
-    let worker_count = effective_worker_count(options, parallel_options)?;
     let mut pages = Vec::with_capacity(page_indices.len());
+    let mut cancelled = false;
 
     for chunk in page_indices.chunks(worker_count) {
+        if cancellation.is_cancelled() {
+            cancelled = true;
+            break;
+        }
         let batch = thread::scope(|scope| {
             let handles = chunk
                 .iter()
@@ -202,19 +298,22 @@ pub fn render_pages_parallel(
 
             handles
                 .into_iter()
-                .map(|handle| {
-                    handle
+                .zip(chunk.iter().copied())
+                .map(|(handle, page_index)| {
+                    let result = handle
                         .join()
-                        .map_err(|_| ThumbnailError::internal("parallel render worker panicked"))?
+                        .map_err(|_| ThumbnailError::internal("parallel render worker panicked"))?;
+                    Ok(ParallelPageResult { page_index, result })
                 })
-                .collect::<Result<Vec<_>, _>>()
+                .collect::<Result<Vec<_>, ThumbnailError>>()
         })?;
         pages.extend(batch);
     }
 
-    Ok(ParallelRenderResult {
+    Ok(ParallelRenderPartialResult {
         pages,
         workers: worker_count,
+        cancelled,
     })
 }
 
@@ -5093,6 +5192,60 @@ mod tests {
         .expect_err("first requested page should fail deterministically");
 
         assert_eq!(error, ThumbnailError::Malformed);
+    }
+
+    #[test]
+    fn native_parallel_partial_renderer_should_preserve_mixed_page_status() {
+        let bytes = include_bytes!("../../../fixtures/generated/page-targeted-stream.pdf");
+        let cancellation = RenderCancellation::new();
+        let result = render_pages_parallel_partial(
+            PdfSource::from_bytes(bytes),
+            &[0, 1],
+            &ThumbnailOptions {
+                max_edge: 120,
+                ..ThumbnailOptions::default()
+            },
+            ParallelRenderOptions {
+                max_workers: 1,
+                ..ParallelRenderOptions::default()
+            },
+            &cancellation,
+        )
+        .expect("partial scheduler should preserve page errors");
+
+        assert!(!result.cancelled);
+        assert_eq!(result.workers, 1);
+        assert_eq!(result.pages.len(), 2);
+        assert_eq!(result.pages[0].page_index, 0);
+        assert!(result.pages[0].result.is_ok());
+        assert_eq!(result.pages[1].page_index, 1);
+        assert_eq!(result.pages[1].result, Err(ThumbnailError::Malformed));
+    }
+
+    #[test]
+    fn native_parallel_partial_renderer_should_stop_before_cancelled_work() {
+        let bytes = include_bytes!("../../../fixtures/generated/multi-page-report.pdf");
+        let cancellation = RenderCancellation::new();
+        cancellation.cancel();
+
+        let result = render_pages_parallel_partial(
+            PdfSource::from_bytes(bytes),
+            &[0, 1],
+            &ThumbnailOptions {
+                max_edge: 120,
+                ..ThumbnailOptions::default()
+            },
+            ParallelRenderOptions {
+                max_workers: 2,
+                ..ParallelRenderOptions::default()
+            },
+            &cancellation,
+        )
+        .expect("pre-cancelled scheduler should return a partial result");
+
+        assert!(result.cancelled);
+        assert!(result.pages.is_empty());
+        assert_eq!(result.workers, 2);
     }
 
     #[test]
