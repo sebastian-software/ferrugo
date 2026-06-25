@@ -2,16 +2,17 @@
 name = "pdfrust-native"
 version = "0.1.0"
 edition.workspace = true
+description.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-pdfrust-content = { path = "../pdfrust-content" }
-pdfrust-object = { path = "../pdfrust-object" }
-pdfrust-render = { path = "../pdfrust-render" }
-pdfrust-syntax = { path = "../pdfrust-syntax" }
-pdfrust-thumbnail = { path = "../pdfrust-thumbnail" }
+pdfrust-content = { version = "0.1.0", path = "../pdfrust-content" }
+pdfrust-object = { version = "0.1.0", path = "../pdfrust-object" }
+pdfrust-render = { version = "0.1.0", path = "../pdfrust-render" }
+pdfrust-syntax = { version = "0.1.0", path = "../pdfrust-syntax" }
+pdfrust-thumbnail = { version = "0.1.0", path = "../pdfrust-thumbnail" }
 
 [lints]
 workspace = true

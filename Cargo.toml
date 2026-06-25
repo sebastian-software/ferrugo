@@ -22,6 +22,7 @@ default-members = [
 
 [workspace.package]
 edition = "2021"
+description = "Rust-native PDF thumbnail and rendering components."
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/pdfrust/pdfrust"
 rust-version = "1.81"

@@ -2,13 +2,14 @@
 name = "pdfrust-content"
 version = "0.1.0"
 edition.workspace = true
+description.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-pdfrust-object = { path = "../pdfrust-object" }
-pdfrust-syntax = { path = "../pdfrust-syntax" }
+pdfrust-object = { version = "0.1.0", path = "../pdfrust-object" }
+pdfrust-syntax = { version = "0.1.0", path = "../pdfrust-syntax" }
 
 [lints]
 workspace = true
