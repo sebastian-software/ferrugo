@@ -1,6 +1,6 @@
 # 0095: Large Document Memory Eviction And Spooling
 
-Status: todo
+Status: completed
 Phase: 16
 Size: medium
 Depends on: 0094
@@ -47,4 +47,13 @@ and spooling expensive intermediates under explicit policy.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-25.
+
+- Added a page-level decoded image resource budget in addition to the existing
+  per-image byte limit.
+- Exposed the new image budget plus disabled-by-default spooling policy through
+  native memory diagnostics and CLI JSON.
+- Kept temporary spooling disabled with a `0` byte budget pending a future
+  explicit privacy and cleanup policy.
+- Updated `docs/policies/renderer-memory-budgets.md`.
+- Evidence report: `docs/reports/large-document-memory-2026-06-25.md`.
