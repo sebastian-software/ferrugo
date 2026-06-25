@@ -55,21 +55,37 @@ proxy. It does not replace real local corpus ingestion.
 ## Private Local Corpora
 
 Private or third-party PDFs stay outside Git under `fixtures/local-corpus/`.
-Describe them in `fixtures/local-corpus/metadata.toml` using anonymized family,
-page-count, and feature notes. Do not include filenames, customer names, file
-hashes, extracted text, screenshots, or rendered outputs when reporting private
-corpus results.
+Describe them in `fixtures/local-corpus/metadata.toml` using aggregate
+`[[sample]]` entries copied from `fixtures/local-corpus.example.toml`. Do not
+include filenames, customer names, file hashes, extracted text, screenshots, or
+rendered outputs when reporting private corpus results.
 
 Recommended private sampling fields:
 
-- `family`: one of the families above
-- `count`: number of PDFs in that family
+- `category`: one of the production-shaped categories from the corpus intake
+  policy
+- `privacy`: one of `public-redistributable`, `public-reference-only`,
+  `private`, or `synthetic-reduced`
+- `permission`: redistribution or local-review permission classification
+- `redaction_state`: whether the sample is anonymized, not shareable, or
+  reduced to a committed fixture
+- `count`: number of PDFs in that category
 - `page_count_range`: coarse range, for example `1`, `2-10`, `11-50`, `50+`
 - `features`: coarse tags such as `fonts`, `forms`, `scanned`, `annotations`
 - `source_note`: anonymized provenance such as `internal invoice export`
+- `synthetic_replacement`: a `fixtures/generated/*.pdf` replacement or
+  `none-yet`
+- `status`: `candidate`, `reviewed`, `blocked`, or `reduced`
 
 Use aggregated pass rates by family and fallback category when sharing local
 results.
+
+Validate the local metadata shape without exposing document-level details:
+
+```sh
+cargo run -p pdfrust-cli --no-default-features -- validate-local-corpus \
+  fixtures/local-corpus/metadata.toml --allow-missing
+```
 
 ## Local Reporting
 

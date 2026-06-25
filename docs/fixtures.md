@@ -83,7 +83,13 @@ The initial seed set covers:
 
 Real-world PDFs are useful for manual probes, but they must stay out of Git.
 Store them under `fixtures/local-corpus/` and describe them with
-`fixtures/local-corpus.example.toml` before running local measurements.
+`fixtures/local-corpus.example.toml` before running local measurements. The
+metadata is aggregate-only and is validated with:
+
+```sh
+cargo run -p pdfrust-cli --no-default-features -- validate-local-corpus \
+  fixtures/local-corpus/metadata.toml --allow-missing
+```
 
 Do not commit:
 

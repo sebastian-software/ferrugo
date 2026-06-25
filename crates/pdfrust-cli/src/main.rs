@@ -55,6 +55,7 @@ fn run(args: Vec<OsString>) -> Result<(), CliError> {
         Some("compare-metadata") => compare_metadata_command(&args[1..]),
         Some("summarize-fallbacks") => summarize_fallbacks_command(&args[1..]),
         Some("extract-corpus-metadata") => extract_corpus_metadata_command(&args[1..]),
+        Some("validate-local-corpus") => validate_local_corpus_command(&args[1..]),
         Some("benchmark-native") => benchmark_native_command(&args[1..]),
         Some("benchmark-pdfium") => benchmark_pdfium_command(&args[1..]),
         Some("visual-diff") => visual_diff_command(&args[1..]),
@@ -404,6 +405,22 @@ fn extract_corpus_metadata_command(args: &[OsString]) -> Result<(), CliError> {
         println!("{json}");
     }
 
+    Ok(())
+}
+
+fn validate_local_corpus_command(args: &[OsString]) -> Result<(), CliError> {
+    let config = LocalCorpusValidationConfig::parse(args)?;
+    if config.allow_missing && !config.input.exists() {
+        println!("{}", local_corpus_missing_json(&config.input));
+        return Ok(());
+    }
+
+    let content = fs::read_to_string(&config.input).map_err(|source| CliError::ReadFile {
+        path: config.input.clone(),
+        source,
+    })?;
+    let report = validate_local_corpus_metadata(&content)?;
+    println!("{}", local_corpus_validation_json(&report));
     Ok(())
 }
 
@@ -952,6 +969,48 @@ impl CorpusMetadataConfig {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+struct LocalCorpusValidationConfig {
+    input: PathBuf,
+    allow_missing: bool,
+}
+
+impl LocalCorpusValidationConfig {
+    fn parse(args: &[OsString]) -> Result<Self, CliError> {
+        let mut input = None;
+        let mut allow_missing = false;
+
+        let mut index = 0;
+        while index < args.len() {
+            let arg = args[index]
+                .to_str()
+                .ok_or_else(|| CliError::Usage("arguments must be valid UTF-8".to_string()))?;
+            match arg {
+                "--allow-missing" => {
+                    allow_missing = true;
+                }
+                value if value.starts_with('-') => {
+                    return Err(CliError::Usage(format!("unknown option `{value}`")));
+                }
+                value => {
+                    if input.replace(PathBuf::from(value)).is_some() {
+                        return Err(CliError::Usage(
+                            "only one local corpus metadata path is supported".to_string(),
+                        ));
+                    }
+                }
+            }
+            index += 1;
+        }
+
+        Ok(Self {
+            input: input
+                .ok_or_else(|| CliError::Usage("missing local corpus metadata path".to_string()))?,
+            allow_missing,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct BenchmarkConfig {
     input: PathBuf,
     manifest: Option<PathBuf>,
@@ -1345,6 +1404,37 @@ struct CorpusMetadataRecord {
     path: String,
     manifest: Option<CorpusManifestEntry>,
     metadata: MetadataOutcome,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LocalCorpusValidationReport {
+    sample_count: usize,
+    document_count: usize,
+    categories: BTreeMap<String, usize>,
+    privacy: BTreeMap<String, usize>,
+    synthetic_replacements: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LocalCorpusSample {
+    id: String,
+    category: String,
+    privacy: String,
+    permission: String,
+    redaction_state: String,
+    source_note: String,
+    count: usize,
+    page_count_range: String,
+    features: Vec<String>,
+    synthetic_replacement: Option<String>,
+    status: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum LocalCorpusValue {
+    String(String),
+    Integer(usize),
+    StringArray(Vec<String>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -2210,6 +2300,412 @@ fn read_corpus_manifest(path: &Path) -> Result<CorpusManifest, CliError> {
     Ok(CorpusManifest { entries_by_path })
 }
 
+fn validate_local_corpus_metadata(content: &str) -> Result<LocalCorpusValidationReport, CliError> {
+    let mut root = BTreeMap::new();
+    let mut samples = Vec::new();
+    let mut current = None;
+
+    for (line_index, raw_line) in content.lines().enumerate() {
+        let line_number = line_index + 1;
+        let line = raw_line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if line == "[[sample]]" {
+            if let Some(sample) = current.take() {
+                samples.push(local_corpus_sample(sample)?);
+            }
+            current = Some(BTreeMap::new());
+            continue;
+        }
+        if line.starts_with('[') {
+            return Err(CliError::Usage(format!(
+                "local corpus metadata line {line_number} uses unsupported table `{line}`"
+            )));
+        }
+
+        let (key, value) = line.split_once('=').ok_or_else(|| {
+            CliError::Usage(format!(
+                "local corpus metadata line {line_number} must use `key = value`"
+            ))
+        })?;
+        let key = key.trim();
+        reject_private_local_corpus_key(key, line_number)?;
+        let value = parse_local_corpus_value(value.trim(), line_number)?;
+        if let Some(sample) = current.as_mut() {
+            sample.insert(key.to_string(), value);
+        } else {
+            root.insert(key.to_string(), value);
+        }
+    }
+
+    if let Some(sample) = current.take() {
+        samples.push(local_corpus_sample(sample)?);
+    }
+    validate_local_corpus_root(&root)?;
+    if samples.is_empty() {
+        return Err(CliError::Usage(
+            "local corpus metadata must contain at least one [[sample]]".to_string(),
+        ));
+    }
+
+    let mut categories = BTreeMap::new();
+    let mut privacy = BTreeMap::new();
+    let mut document_count = 0usize;
+    let mut synthetic_replacements = 0usize;
+    for sample in &samples {
+        document_count = document_count.saturating_add(sample.count);
+        *categories.entry(sample.category.clone()).or_insert(0) += sample.count;
+        *privacy.entry(sample.privacy.clone()).or_insert(0) += sample.count;
+        if sample.synthetic_replacement.is_some() {
+            synthetic_replacements += 1;
+        }
+    }
+
+    Ok(LocalCorpusValidationReport {
+        sample_count: samples.len(),
+        document_count,
+        categories,
+        privacy,
+        synthetic_replacements,
+    })
+}
+
+fn validate_local_corpus_root(root: &BTreeMap<String, LocalCorpusValue>) -> Result<(), CliError> {
+    for key in root.keys() {
+        if !["schema_version", "review_date", "reviewer", "notes"].contains(&key.as_str()) {
+            return Err(CliError::Usage(format!(
+                "local corpus metadata root key `{key}` is not supported"
+            )));
+        }
+    }
+    match root.get("schema_version") {
+        Some(LocalCorpusValue::Integer(1)) => Ok(()),
+        Some(_) => Err(CliError::Usage(
+            "local corpus metadata schema_version must be 1".to_string(),
+        )),
+        None => Err(CliError::Usage(
+            "local corpus metadata must declare schema_version = 1".to_string(),
+        )),
+    }
+}
+
+fn local_corpus_sample(
+    mut values: BTreeMap<String, LocalCorpusValue>,
+) -> Result<LocalCorpusSample, CliError> {
+    for key in values.keys() {
+        if ![
+            "id",
+            "category",
+            "privacy",
+            "permission",
+            "redaction_state",
+            "source_note",
+            "count",
+            "page_count_range",
+            "features",
+            "synthetic_replacement",
+            "status",
+        ]
+        .contains(&key.as_str())
+        {
+            return Err(CliError::Usage(format!(
+                "local corpus sample key `{key}` is not supported"
+            )));
+        }
+    }
+
+    let id = required_local_string(&mut values, "id")?;
+    validate_local_identifier(&id, "id")?;
+    let category = required_local_string(&mut values, "category")?;
+    validate_local_choice(
+        "category",
+        &category,
+        &[
+            "invoice",
+            "report",
+            "scanned-packet",
+            "form",
+            "statement",
+            "browser-export",
+            "office-export",
+            "presentation",
+            "secure-document",
+            "malformed-recovery",
+        ],
+    )?;
+    let privacy = required_local_string(&mut values, "privacy")?;
+    validate_local_choice(
+        "privacy",
+        &privacy,
+        &[
+            "public-redistributable",
+            "public-reference-only",
+            "private",
+            "synthetic-reduced",
+        ],
+    )?;
+    let permission = required_local_string(&mut values, "permission")?;
+    validate_local_choice(
+        "permission",
+        &permission,
+        &[
+            "redistributable",
+            "reference-only",
+            "local-review-only",
+            "generated",
+        ],
+    )?;
+    let redaction_state = required_local_string(&mut values, "redaction_state")?;
+    validate_local_choice(
+        "redaction_state",
+        &redaction_state,
+        &["none", "anonymized", "not-shareable", "reduced-to-fixture"],
+    )?;
+    let source_note = required_local_string(&mut values, "source_note")?;
+    validate_private_safe_text("source_note", &source_note)?;
+    let count = required_local_integer(&mut values, "count")?;
+    if count == 0 {
+        return Err(CliError::Usage(
+            "local corpus sample count must be greater than zero".to_string(),
+        ));
+    }
+    let page_count_range = required_local_string(&mut values, "page_count_range")?;
+    validate_local_choice(
+        "page_count_range",
+        &page_count_range,
+        &["1", "2-10", "11-50", "50+", "unknown"],
+    )?;
+    let features = required_local_string_array(&mut values, "features")?;
+    if features.is_empty() {
+        return Err(CliError::Usage(
+            "local corpus sample features must not be empty".to_string(),
+        ));
+    }
+    for feature in &features {
+        validate_local_tag("features", feature)?;
+    }
+    let synthetic_replacement = optional_local_string(&mut values, "synthetic_replacement")?;
+    if let Some(path) = &synthetic_replacement {
+        validate_synthetic_replacement(path)?;
+    }
+    let status = required_local_string(&mut values, "status")?;
+    validate_local_choice(
+        "status",
+        &status,
+        &["candidate", "reviewed", "blocked", "reduced"],
+    )?;
+
+    Ok(LocalCorpusSample {
+        id,
+        category,
+        privacy,
+        permission,
+        redaction_state,
+        source_note,
+        count,
+        page_count_range,
+        features,
+        synthetic_replacement,
+        status,
+    })
+}
+
+fn parse_local_corpus_value(raw: &str, line_number: usize) -> Result<LocalCorpusValue, CliError> {
+    if let Some(value) = parse_local_string(raw) {
+        return Ok(LocalCorpusValue::String(value));
+    }
+    if let Some(inner) = raw
+        .strip_prefix('[')
+        .and_then(|value| value.strip_suffix(']'))
+    {
+        if inner.trim().is_empty() {
+            return Ok(LocalCorpusValue::StringArray(Vec::new()));
+        }
+        let mut values = Vec::new();
+        for item in inner.split(',') {
+            let item = parse_local_string(item.trim()).ok_or_else(|| {
+                CliError::Usage(format!(
+                    "local corpus metadata line {line_number} arrays must contain quoted strings"
+                ))
+            })?;
+            values.push(item);
+        }
+        return Ok(LocalCorpusValue::StringArray(values));
+    }
+    let value = raw.parse().map_err(|_| {
+        CliError::Usage(format!(
+            "local corpus metadata line {line_number} values must be strings, string arrays, or unsigned integers"
+        ))
+    })?;
+    Ok(LocalCorpusValue::Integer(value))
+}
+
+fn parse_local_string(raw: &str) -> Option<String> {
+    raw.strip_prefix('"')
+        .and_then(|value| value.strip_suffix('"'))
+        .map(str::to_string)
+}
+
+fn required_local_string(
+    values: &mut BTreeMap<String, LocalCorpusValue>,
+    key: &str,
+) -> Result<String, CliError> {
+    match values.remove(key) {
+        Some(LocalCorpusValue::String(value)) => Ok(value),
+        Some(_) => Err(CliError::Usage(format!(
+            "local corpus sample `{key}` must be a string"
+        ))),
+        None => Err(CliError::Usage(format!(
+            "local corpus sample is missing `{key}`"
+        ))),
+    }
+}
+
+fn optional_local_string(
+    values: &mut BTreeMap<String, LocalCorpusValue>,
+    key: &str,
+) -> Result<Option<String>, CliError> {
+    match values.remove(key) {
+        Some(LocalCorpusValue::String(value)) if value == "none-yet" => Ok(None),
+        Some(LocalCorpusValue::String(value)) => Ok(Some(value)),
+        Some(_) => Err(CliError::Usage(format!(
+            "local corpus sample `{key}` must be a string"
+        ))),
+        None => Ok(None),
+    }
+}
+
+fn required_local_integer(
+    values: &mut BTreeMap<String, LocalCorpusValue>,
+    key: &str,
+) -> Result<usize, CliError> {
+    match values.remove(key) {
+        Some(LocalCorpusValue::Integer(value)) => Ok(value),
+        Some(_) => Err(CliError::Usage(format!(
+            "local corpus sample `{key}` must be an unsigned integer"
+        ))),
+        None => Err(CliError::Usage(format!(
+            "local corpus sample is missing `{key}`"
+        ))),
+    }
+}
+
+fn required_local_string_array(
+    values: &mut BTreeMap<String, LocalCorpusValue>,
+    key: &str,
+) -> Result<Vec<String>, CliError> {
+    match values.remove(key) {
+        Some(LocalCorpusValue::StringArray(value)) => Ok(value),
+        Some(_) => Err(CliError::Usage(format!(
+            "local corpus sample `{key}` must be a string array"
+        ))),
+        None => Err(CliError::Usage(format!(
+            "local corpus sample is missing `{key}`"
+        ))),
+    }
+}
+
+fn reject_private_local_corpus_key(key: &str, line_number: usize) -> Result<(), CliError> {
+    if [
+        "path",
+        "filename",
+        "file_name",
+        "hash",
+        "sha256",
+        "text_excerpt",
+        "screenshot",
+        "rendered_output",
+    ]
+    .contains(&key)
+    {
+        Err(CliError::Usage(format!(
+            "local corpus metadata line {line_number} key `{key}` is disallowed for private safety"
+        )))
+    } else {
+        Ok(())
+    }
+}
+
+fn validate_local_identifier(field: &str, value: &str) -> Result<(), CliError> {
+    if value.is_empty()
+        || value.len() > 64
+        || !value
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+    {
+        return Err(CliError::Usage(format!(
+            "local corpus `{field}` must use lowercase letters, digits, and dashes only"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_local_tag(field: &str, value: &str) -> Result<(), CliError> {
+    if value.is_empty()
+        || value.len() > 48
+        || !value.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-' || byte == b':'
+        })
+    {
+        return Err(CliError::Usage(format!(
+            "local corpus `{field}` tag `{value}` must use lowercase tag characters only"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_local_choice(field: &str, value: &str, allowed: &[&str]) -> Result<(), CliError> {
+    if allowed.contains(&value) {
+        Ok(())
+    } else {
+        Err(CliError::Usage(format!(
+            "local corpus `{field}` value `{value}` is not supported"
+        )))
+    }
+}
+
+fn validate_private_safe_text(field: &str, value: &str) -> Result<(), CliError> {
+    let lowercase = value.to_ascii_lowercase();
+    let has_forbidden_marker = lowercase.contains('@')
+        || lowercase.contains('/')
+        || lowercase.contains('\\')
+        || lowercase.contains(".pdf")
+        || has_long_hex_run(&lowercase);
+    if value.is_empty() || value.len() > 160 || has_forbidden_marker {
+        return Err(CliError::Usage(format!(
+            "local corpus `{field}` must be anonymized aggregate text"
+        )));
+    }
+    Ok(())
+}
+
+fn has_long_hex_run(value: &str) -> bool {
+    let mut run = 0usize;
+    for byte in value.bytes() {
+        if byte.is_ascii_hexdigit() {
+            run += 1;
+            if run >= 32 {
+                return true;
+            }
+        } else {
+            run = 0;
+        }
+    }
+    false
+}
+
+fn validate_synthetic_replacement(value: &str) -> Result<(), CliError> {
+    if value.starts_with("fixtures/generated/") && value.ends_with(".pdf") {
+        Ok(())
+    } else {
+        Err(CliError::Usage(
+            "local corpus synthetic_replacement must point to fixtures/generated/*.pdf or use \"none-yet\""
+                .to_string(),
+        ))
+    }
+}
+
 fn normalize_manifest_path(path: &Path) -> String {
     let path = path.to_string_lossy().replace('\\', "/");
     path.find("fixtures/")
@@ -2492,6 +2988,42 @@ fn corpus_metadata_record_json(record: &CorpusMetadataRecord) -> String {
         json_string(&record.path),
         manifest_entry_json(record.manifest.as_ref()),
         metadata_outcome_json(&record.metadata)
+    )
+}
+
+fn local_corpus_missing_json(path: &Path) -> String {
+    format!(
+        concat!(
+            "{{\n",
+            "  \"schema_version\": 1,\n",
+            "  \"status\": \"missing\",\n",
+            "  \"path\": {},\n",
+            "  \"sample_count\": 0,\n",
+            "  \"document_count\": 0\n",
+            "}}\n"
+        ),
+        json_string(&path.to_string_lossy())
+    )
+}
+
+fn local_corpus_validation_json(report: &LocalCorpusValidationReport) -> String {
+    format!(
+        concat!(
+            "{{\n",
+            "  \"schema_version\": 1,\n",
+            "  \"status\": \"valid\",\n",
+            "  \"sample_count\": {},\n",
+            "  \"document_count\": {},\n",
+            "  \"categories\": {},\n",
+            "  \"privacy\": {},\n",
+            "  \"synthetic_replacements\": {}\n",
+            "}}\n"
+        ),
+        report.sample_count,
+        report.document_count,
+        string_count_map_json(&report.categories),
+        string_count_map_json(&report.privacy),
+        report.synthetic_replacements
     )
 }
 
@@ -2794,6 +3326,15 @@ fn count_map_json(counts: &BTreeMap<&'static str, usize>) -> String {
     format!("{{{values}}}")
 }
 
+fn string_count_map_json(counts: &BTreeMap<String, usize>) -> String {
+    let values = counts
+        .iter()
+        .map(|(key, value)| format!("{}:{}", json_string(key), value))
+        .collect::<Vec<_>>()
+        .join(",");
+    format!("{{{values}}}")
+}
+
 fn family_summary_map_json(families: &BTreeMap<String, FamilyFallbackSummary>) -> String {
     let values = families
         .iter()
@@ -3068,11 +3609,11 @@ fn crc32(bytes: impl IntoIterator<Item = u8>) -> u32 {
 
 fn print_usage() {
     println!(
-        "Usage: pdfrust-cli <render|render-auto|render-native|render-pdfium|render-isolated|compare-metadata|summarize-fallbacks|extract-corpus-metadata|benchmark-native|benchmark-pdfium|visual-diff> <input.pdf> \
+        "Usage: pdfrust-cli <render|render-auto|render-native|render-pdfium|render-isolated|compare-metadata|summarize-fallbacks|extract-corpus-metadata|validate-local-corpus|benchmark-native|benchmark-pdfium|visual-diff> <input.pdf> \
          [--output PATH] [--page-index N] [--max-edge N] [--background #RRGGBB] \
          [--timeout SECONDS] [--iterations N] [--max-ms N] [--max-output-bytes N] \
          [--allow-pdfium-fallback] [--native-only] [--deny-fallback-reason BUCKET] [--manifest PATH] [--include-family FAMILY] \
-         [--max-mae N] [--max-p95 N] [--max-changed-ratio N]"
+         [--allow-missing] [--max-mae N] [--max-p95 N] [--max-changed-ratio N]"
     );
 }
 
@@ -3436,6 +3977,78 @@ mod tests {
         assert!(json.contains("\"mark_info_marked\":true"));
         assert!(json.contains("\"structure_role_count\":1"));
         assert!(json.contains("\"has_marked_content_references\":true"));
+    }
+
+    #[test]
+    fn local_corpus_metadata_should_validate_aggregate_samples() {
+        let report = validate_local_corpus_metadata(
+            r#"
+schema_version = 1
+review_date = "2026-06-25"
+reviewer = "local"
+
+[[sample]]
+id = "invoice-export-private"
+category = "invoice"
+privacy = "private"
+permission = "local-review-only"
+redaction_state = "reduced-to-fixture"
+source_note = "internal invoice export"
+count = 3
+page_count_range = "2-10"
+features = ["text", "tables", "embedded-fonts"]
+synthetic_replacement = "fixtures/generated/office-table.pdf"
+status = "reviewed"
+"#,
+        )
+        .expect("aggregate local corpus metadata should validate");
+
+        assert_eq!(report.sample_count, 1);
+        assert_eq!(report.document_count, 3);
+        assert_eq!(report.categories.get("invoice"), Some(&3));
+        assert_eq!(report.privacy.get("private"), Some(&3));
+        assert_eq!(report.synthetic_replacements, 1);
+    }
+
+    #[test]
+    fn local_corpus_validation_should_allow_missing_when_requested() {
+        let config = LocalCorpusValidationConfig::parse(&[
+            OsString::from("fixtures/local-corpus/metadata.toml"),
+            OsString::from("--allow-missing"),
+        ])
+        .expect("valid config");
+        let json = local_corpus_missing_json(&config.input);
+
+        assert!(config.allow_missing);
+        assert!(json.contains("\"status\": \"missing\""));
+        assert!(json.contains("\"document_count\": 0"));
+    }
+
+    #[test]
+    fn local_corpus_metadata_should_reject_private_path_fields() {
+        let error = validate_local_corpus_metadata(
+            r#"
+schema_version = 1
+
+[[sample]]
+id = "invoice-export-private"
+category = "invoice"
+privacy = "private"
+permission = "local-review-only"
+redaction_state = "not-shareable"
+source_note = "internal invoice export"
+count = 1
+page_count_range = "1"
+features = ["text"]
+path = "fixtures/local-corpus/customer.pdf"
+status = "candidate"
+"#,
+        )
+        .expect_err("private path fields should be rejected");
+
+        assert!(error
+            .to_string()
+            .contains("key `path` is disallowed for private safety"));
     }
 
     #[test]

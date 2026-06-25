@@ -45,6 +45,55 @@ Expected backend behavior is encoded as a feature tag:
 Use additional tags such as `perf-risk`, `visual-risk`, or `memory-risk` when a
 fixture needs special interpretation.
 
+Local-only corpus metadata lives in `fixtures/local-corpus/metadata.toml` and
+must use aggregate `[[sample]]` entries. The committed
+`fixtures/local-corpus.example.toml` is the schema template. Each sample must
+include:
+
+- anonymized `id`
+- production-shaped `category`
+- `privacy`
+- `permission`
+- `redaction_state`
+- anonymized `source_note`
+- aggregate `count`
+- coarse `page_count_range`
+- coarse `features`
+- `synthetic_replacement`
+- review `status`
+
+Allowed privacy classifications are:
+
+- `public-redistributable`
+- `public-reference-only`
+- `private`
+- `synthetic-reduced`
+
+Allowed permission classifications are:
+
+- `redistributable`
+- `reference-only`
+- `local-review-only`
+- `generated`
+
+Allowed redaction states are:
+
+- `none`
+- `anonymized`
+- `not-shareable`
+- `reduced-to-fixture`
+
+Allowed review statuses are:
+
+- `candidate`
+- `reviewed`
+- `blocked`
+- `reduced`
+
+The local metadata validator rejects path-like fields, filenames, hashes,
+screenshots, rendered outputs, and extracted text fields. It emits aggregate
+counts only.
+
 ## Categories
 
 The real-world-style corpus uses production-shaped categories:
@@ -83,3 +132,18 @@ Private local corpus results must be reported only as aggregates:
 
 Do not publish document names, hashes, extracted text, screenshots, or rendered
 outputs from private samples.
+
+Validate local metadata with:
+
+```sh
+cargo run -p pdfrust-cli --no-default-features -- validate-local-corpus \
+  fixtures/local-corpus/metadata.toml --allow-missing
+```
+
+Use the committed synthetic-realistic manifest for shareable replacement checks:
+
+```sh
+cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks \
+  fixtures/generated --manifest fixtures/real-world-style-manifest.tsv \
+  --max-edge 160 --output target/pdfrust-thumbnails/real-world-style-fallbacks.json
+```
