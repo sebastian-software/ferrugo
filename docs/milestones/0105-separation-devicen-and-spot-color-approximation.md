@@ -1,6 +1,6 @@
 # 0105: Separation DeviceN And Spot Color Approximation
 
-Status: todo
+Status: done
 Phase: 19
 Size: medium
 Depends on: 0104
@@ -46,4 +46,15 @@ alternate spaces with predictable RGB thumbnail output.
 
 ## Completion Notes
 
-Empty until done.
+- Added `ColorSpaceResources` for page `/ColorSpace` resources and native
+  support for `/Separation` and `/DeviceN` spot-color fill/stroke content.
+- Added bounded Type 2 tint-transform evaluation for DeviceGray, DeviceRGB,
+  and DeviceCMYK alternate spaces.
+- Added `DeviceColor::Spot` and `SpotColorApproximation` diagnostics so RGB
+  thumbnail approximations are visible to callers and reports.
+- Added generated fixtures:
+  - `fixtures/generated/separation-spot-color.pdf`
+  - `fixtures/generated/devicen-spot-color.pdf`
+- Wrote `docs/reports/spot-color-approximation-2026-06-25.md`.
+- Validation passed for focused render/native tests, supported-family
+  native-only gate, and PDFium visual comparison artifact generation.

@@ -99,6 +99,20 @@ back to PDFium. ToUnicode CMaps may also use `/Identity-H usecmap` or
 remain unsupported until named CMap resource lookup and cycle detection exist.
 See `docs/reports/cmap-identity-coverage-2026-06-25.md`.
 
+## Spot Color Approximation
+
+Page `/ColorSpace` resources now support common `/Separation` and `/DeviceN`
+spot-color spaces for vector fill and stroke content. The native renderer
+evaluates bounded Type 2 tint transforms and converts DeviceGray, DeviceRGB,
+and DeviceCMYK alternate spaces into RGB thumbnail output. Captured colors use
+`DeviceColor::Spot` so callers and reports can distinguish approximated spot
+color from direct device RGB/Gray input.
+
+This is not a press-proofing implementation. Native output is an RGB thumbnail
+approximation and does not expose separations, unbounded function sampling, or
+overprint simulation. See
+`docs/reports/spot-color-approximation-2026-06-25.md`.
+
 ## Fallback Policy
 
 PDFium remains the oracle and explicit fallback until the visual GA gate says
