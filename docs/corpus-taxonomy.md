@@ -289,6 +289,33 @@ cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks \
   --max-edge 160
 ```
 
+## Low-Memory Profile Manifest
+
+`fixtures/low-memory-profile-manifest.tsv` is the focused gate for the native
+low-memory renderer profile. It combines small common pages, a dense business
+invoice, an image-dominant mobile scan, a vector-stress page, and repeated
+longform resources so cache and buffer limits stay observable without relying
+on private PDFs.
+
+The manifest uses families `common`, `scan`, `vector-stress`, and
+`repeated-resources`. Run it with `--native-profile low-memory` and
+`--fail-on-fallback` when changes may affect decoded image budgets, display
+item caps, raster intermediates, or font/cache limits under constrained
+thumbnail settings.
+
+```sh
+cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks \
+  fixtures/generated \
+  --manifest fixtures/low-memory-profile-manifest.tsv \
+  --include-family common \
+  --include-family scan \
+  --include-family vector-stress \
+  --include-family repeated-resources \
+  --fail-on-fallback \
+  --max-edge 160 \
+  --native-profile low-memory
+```
+
 ## Private Local Corpora
 
 Private or third-party PDFs stay outside Git under `fixtures/local-corpus/`.

@@ -1,6 +1,6 @@
 # 0131: Low-Memory Embedded Renderer Profile
 
-Status: todo
+Status: done
 Phase: 24
 Size: medium
 Depends on: 0130
@@ -47,4 +47,16 @@ serverless jobs, and constrained batch processing.
 
 ## Completion Notes
 
-Empty until done.
+- Added `NativeRenderLimits` and `NativeBackend::low_memory()` so decoded image,
+  page raster, display-list, font/cache, vector, pattern, and transparency
+  intermediate budgets can be configured without changing the default backend.
+- Added `--native-profile low-memory` to native fallback-summary and benchmark
+  gates.
+- Added `fixtures/low-memory-profile-manifest.tsv` and documented its focused
+  corpus role.
+- Added unit coverage for tighter diagnostics, deterministic typed budget
+  errors under intentionally tiny limits, and successful low-memory rendering
+  for common thumbnails.
+- Native low-memory gate rendered 5/5 focused fixtures with zero fallbacks and
+  zero benchmark budget failures.
+- Report: `docs/reports/low-memory-renderer-profile-2026-06-25.md`.
