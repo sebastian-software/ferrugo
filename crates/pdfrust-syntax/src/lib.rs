@@ -7,6 +7,9 @@ use std::fmt;
 /// Stable crate role used by architecture smoke tests and documentation.
 pub const CRATE_ROLE: &str = "syntax";
 
+/// Default maximum nested array/dictionary depth accepted by the primitive parser.
+pub const DEFAULT_MAX_PRIMITIVE_NESTING: usize = 128;
+
 /// Result alias for syntax parsing operations.
 pub type SyntaxResult<T> = Result<T, SyntaxError>;
 
@@ -254,12 +257,14 @@ pub fn parse_primitive_prefix(input: PdfBytes<'_>) -> SyntaxResult<(PdfPrimitive
 
 struct PrimitiveParser<'a> {
     cursor: ByteCursor<'a>,
+    nesting: usize,
 }
 
 impl<'a> PrimitiveParser<'a> {
     const fn new(input: PdfBytes<'a>) -> Self {
         Self {
             cursor: input.cursor(),
+            nesting: 0,
         }
     }
 
@@ -444,13 +449,16 @@ impl<'a> PrimitiveParser<'a> {
     }
 
     fn parse_array(&mut self) -> SyntaxResult<PdfPrimitive<'a>> {
+        let offset = self.cursor.offset();
         self.expect_byte(b'[')?;
+        self.enter_nested(offset)?;
         let mut values = Vec::new();
         loop {
             self.skip_whitespace_and_comments()?;
             match self.cursor.peek() {
                 Some(b']') => {
                     self.cursor.advance(1)?;
+                    self.leave_nested();
                     return Ok(PdfPrimitive::Array(values));
                 }
                 Some(_) => values.push(self.parse_value()?),
@@ -465,12 +473,15 @@ impl<'a> PrimitiveParser<'a> {
     }
 
     fn parse_dictionary(&mut self) -> SyntaxResult<PdfPrimitive<'a>> {
+        let offset = self.cursor.offset();
         self.expect_bytes(b"<<")?;
+        self.enter_nested(offset)?;
         let mut entries = Vec::new();
         loop {
             self.skip_whitespace_and_comments()?;
             if self.starts_with(b">>") {
                 self.cursor.advance(2)?;
+                self.leave_nested();
                 return Ok(PdfPrimitive::Dictionary(entries));
             }
             if self.cursor.peek().is_none() {
@@ -483,6 +494,18 @@ impl<'a> PrimitiveParser<'a> {
             let value = self.parse_value()?;
             entries.push((key, value));
         }
+    }
+
+    fn enter_nested(&mut self, offset: ByteOffset) -> SyntaxResult<()> {
+        if self.nesting >= DEFAULT_MAX_PRIMITIVE_NESTING {
+            return Err(SyntaxError::new(offset, SyntaxErrorKind::MalformedInput));
+        }
+        self.nesting += 1;
+        Ok(())
+    }
+
+    fn leave_nested(&mut self) {
+        self.nesting -= 1;
     }
 
     fn expect_byte(&mut self, expected: u8) -> SyntaxResult<()> {
@@ -767,6 +790,19 @@ mod tests {
 
         assert_eq!(error.offset(), ByteOffset::new(5));
         assert_eq!(error.kind(), SyntaxErrorKind::InvalidToken);
+    }
+
+    #[test]
+    fn parse_primitive_should_reject_excessive_nesting() {
+        let input = include_bytes!("../../../fixtures/adversarial/deep-primitive-array.input");
+
+        let error = parse_primitive(PdfBytes::new(input)).expect_err("nesting limit");
+
+        assert_eq!(
+            error.offset(),
+            ByteOffset::new(DEFAULT_MAX_PRIMITIVE_NESTING)
+        );
+        assert_eq!(error.kind(), SyntaxErrorKind::MalformedInput);
     }
 
     #[test]
