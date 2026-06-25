@@ -34,6 +34,8 @@ const PDFIUM_FEATURE_MESSAGE: &str =
     "PDFium support is disabled; rebuild pdfrust-cli with --features pdfium";
 const PDFIUM_RUNTIME_FALLBACK_REMOVED_MESSAGE: &str =
     "PDFium runtime fallback has been removed from render/render-auto; use render-pdfium or maintainer comparison commands with --features pdfium";
+#[cfg(any(feature = "pdfium", test))]
+const PDFIUM_RENDER_WORKER_ENV: &str = "PDFRUST_PDFIUM_RENDER_WORKER";
 
 fn main() -> ExitCode {
     match run(env::args_os().skip(1).collect()) {
@@ -49,7 +51,8 @@ fn run(args: Vec<OsString>) -> Result<(), CliError> {
     let command = args.first().and_then(|arg| arg.to_str());
     match command {
         Some("render") | Some("render-auto") => render_auto_command(&args[1..]),
-        Some("render-pdfium") | Some("render-worker") => render_direct_command(&args[1..]),
+        Some("render-pdfium") => render_direct_command(&args[1..]),
+        Some("render-worker") => render_worker_command(&args[1..]),
         Some("render-native") => render_native_command(&args[1..]),
         Some("render-isolated") => render_isolated_command(&args[1..]),
         Some("compare-metadata") => compare_metadata_command(&args[1..]),
@@ -82,6 +85,24 @@ fn render_direct_command(args: &[OsString]) -> Result<(), CliError> {
 
     #[cfg(feature = "pdfium")]
     {
+        render_direct_command_pdfium(args)
+    }
+}
+
+fn render_worker_command(args: &[OsString]) -> Result<(), CliError> {
+    #[cfg(not(feature = "pdfium"))]
+    {
+        let _ = args;
+        return Err(pdfium_feature_disabled());
+    }
+
+    #[cfg(feature = "pdfium")]
+    {
+        if env::var_os(PDFIUM_RENDER_WORKER_ENV).is_none() {
+            return Err(CliError::Usage(
+                "render-worker is private maintainer tooling; use render-isolated".to_string(),
+            ));
+        }
         render_direct_command_pdfium(args)
     }
 }
@@ -619,6 +640,7 @@ fn render_isolated(config: RenderConfig) -> Result<(), CliError> {
     let mut child = Command::new(executable)
         .arg("render-worker")
         .args(worker_args(&config, &temp_output))
+        .env(PDFIUM_RENDER_WORKER_ENV, "1")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
@@ -5457,6 +5479,20 @@ mod tests {
         assert_eq!(
             error.to_string(),
             format!("usage error: {PDFIUM_RUNTIME_FALLBACK_REMOVED_MESSAGE}")
+        );
+    }
+
+    #[cfg(feature = "pdfium")]
+    #[test]
+    fn render_worker_should_reject_direct_cli_invocation() {
+        env::remove_var(PDFIUM_RENDER_WORKER_ENV);
+
+        let error = run(vec![OsString::from("render-worker")])
+            .expect_err("render-worker should only be launched by render-isolated");
+
+        assert_eq!(
+            error.to_string(),
+            "usage error: render-worker is private maintainer tooling; use render-isolated"
         );
     }
 
