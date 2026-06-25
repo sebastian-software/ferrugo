@@ -1617,6 +1617,84 @@ def acroform_text_field_pdf() -> bytes:
     return pdf.render(catalog)
 
 
+def xfa_static_appearance_pdf() -> bytes:
+    pdf = Pdf()
+    content = (
+        b"q 1 0 0 1 30 30 cm "
+        b"0.85 0.92 1 rg 0 0 60 20 re f 0 0 0 RG 1 w 0.5 0.5 59 19 re S "
+        b"Q"
+    )
+    appearance = b"0.85 0.92 1 rg 0 0 60 20 re f 0 0 0 RG 1 w 0.5 0.5 59 19 re S"
+    xfa_packet = (
+        b"<xdp:xdp xmlns:xdp=\"http://ns.adobe.com/xdp/\">"
+        b"<template><subform name=\"static\" layout=\"tb\"/></template>"
+        b"</xdp:xdp>"
+    )
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 140 80] "
+        f"/Contents {contents} 0 R /Annots [5 0 R] >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    appearance_object = pdf.add(
+        b"<< /Type /XObject /Subtype /Form /BBox [0 0 60 20] /Length "
+        + str(len(appearance)).encode("ascii")
+        + b" >>\nstream\n"
+        + appearance
+        + b"\nendstream"
+    )
+    field = pdf.add(
+        "<< /Type /Annot /Subtype /Widget /FT /Tx /T (Name) /V (Ada) "
+        "/Rect [30 30 90 50] "
+        f"/AP << /N {appearance_object} 0 R >> >>"
+    )
+    xfa = pdf.add(
+        f"<< /Length {len(xfa_packet)} >>\nstream\n".encode("ascii")
+        + xfa_packet
+        + b"\nendstream"
+    )
+    catalog = pdf.add(
+        f"<< /Type /Catalog /Pages {pages} 0 R "
+        f"/AcroForm << /Fields [{field} 0 R] /XFA {xfa} 0 R >> >>"
+    )
+    assert field == 5
+    return pdf.render(catalog)
+
+
+def xfa_dynamic_no_static_appearance_pdf() -> bytes:
+    pdf = Pdf()
+    content = b""
+    xfa_packet = (
+        b"<xdp:xdp xmlns:xdp=\"http://ns.adobe.com/xdp/\">"
+        b"<template><subform name=\"dynamic\" layout=\"flowed\"/></template>"
+        b"<datasets><data><value>runtime-only</value></data></datasets>"
+        b"</xdp:xdp>"
+    )
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 140 80] "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    xfa = pdf.add(
+        f"<< /Length {len(xfa_packet)} >>\nstream\n".encode("ascii")
+        + xfa_packet
+        + b"\nendstream"
+    )
+    catalog = pdf.add(
+        f"<< /Type /Catalog /Pages {pages} 0 R /AcroForm << /XFA {xfa} 0 R >> >>"
+    )
+    return pdf.render(catalog)
+
+
 def acroform_text_field_missing_appearance_pdf() -> bytes:
     pdf = Pdf()
     content = b""
@@ -2916,6 +2994,8 @@ def main() -> None:
     )
     write("widget-annotation-appearance.pdf", widget_annotation_appearance_pdf())
     write("acroform-text-field.pdf", acroform_text_field_pdf())
+    write("xfa-static-appearance.pdf", xfa_static_appearance_pdf())
+    write("xfa-dynamic-no-static-appearance.pdf", xfa_dynamic_no_static_appearance_pdf())
     write(
         "acroform-text-field-missing-appearance.pdf",
         acroform_text_field_missing_appearance_pdf(),

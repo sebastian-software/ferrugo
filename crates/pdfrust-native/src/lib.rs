@@ -38,6 +38,7 @@ const BUCKET_GRAPHICS_STROKE_CLIP: &str = "graphics.stroke-clip";
 const BUCKET_GRAPHICS_TRANSPARENCY: &str = "graphics.transparency";
 const BUCKET_IMAGE_COLOR_SPACE: &str = "image.color-space";
 const BUCKET_IMAGE_FILTER: &str = "image.filter";
+const BUCKET_FORM_XFA_DYNAMIC: &str = "form.xfa-dynamic";
 const BUCKET_RENDERER_FORM_XOBJECT: &str = "renderer.form-xobject-composition";
 const BUCKET_RENDERER_MEMORY_BUDGET: &str = "renderer.memory-budget";
 const BUCKET_RENDERER_UNSUPPORTED: &str = "native.unsupported";
@@ -288,6 +289,7 @@ fn inspect_bytes(bytes: &[u8]) -> Result<DocumentMetadata, ThumbnailError> {
 fn render_bytes(bytes: &[u8], options: &ThumbnailOptions) -> Result<Thumbnail, ThumbnailError> {
     let input = PdfBytes::new(bytes);
     let document = load_classic_document(input).map_err(map_object_error)?;
+    enforce_xfa_render_policy(&document)?;
     let page_tree = document.page_tree().map_err(map_object_error)?;
     let page = page_tree
         .pages()
@@ -1063,6 +1065,45 @@ fn document_catalog<'a>(
         .get(reference.id)
         .ok_or(ThumbnailError::Malformed)?;
     Ok(Some(object_dictionary(&object.value)?))
+}
+
+fn enforce_xfa_render_policy(document: &ClassicDocument<'_>) -> Result<(), ThumbnailError> {
+    let catalog = document_catalog_dictionary(document)?;
+    let Some(acroform_value) = dictionary_value(catalog, b"AcroForm") else {
+        return Ok(());
+    };
+    let acroform = resource_dictionary(document, acroform_value)?;
+    if dictionary_value(acroform, b"XFA").is_none() {
+        return Ok(());
+    }
+    if acroform_has_static_fields(document, acroform)? {
+        return Ok(());
+    }
+    Err(unsupported_feature(BUCKET_FORM_XFA_DYNAMIC))
+}
+
+fn acroform_has_static_fields(
+    document: &ClassicDocument<'_>,
+    acroform: &[(PdfName<'_>, PdfPrimitive<'_>)],
+) -> Result<bool, ThumbnailError> {
+    let Some(fields) = dictionary_value(acroform, b"Fields") else {
+        return Ok(false);
+    };
+    match fields {
+        PdfPrimitive::Array(items) => Ok(!items.is_empty()),
+        PdfPrimitive::Reference(reference) => {
+            let reference = object_reference(*reference)?;
+            let object = document
+                .objects
+                .get(reference.id)
+                .ok_or(ThumbnailError::Malformed)?;
+            let ObjectValue::Primitive(PdfPrimitive::Array(items)) = &object.value else {
+                return Err(ThumbnailError::Malformed);
+            };
+            Ok(!items.is_empty())
+        }
+        _ => Err(ThumbnailError::Malformed),
+    }
 }
 
 fn optional_content_reference_array(
@@ -3705,6 +3746,50 @@ mod tests {
         assert_eq!(rgba_at(&thumbnail, 40, 40), [217, 235, 255, 255]);
         assert_low_intensity(rgba_at(&thumbnail, 30, 30), 96);
         assert_eq!(rgba_at(&thumbnail, 95, 40), [255, 255, 255, 255]);
+    }
+
+    #[test]
+    fn native_backend_should_render_generated_static_xfa_appearance_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/xfa-static-appearance.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 140,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated static XFA appearance fixture should render");
+
+        assert_eq!(thumbnail.width, 140);
+        assert_eq!(thumbnail.height, 80);
+        assert_eq!(rgba_at(&thumbnail, 40, 40), [217, 235, 255, 255]);
+        assert_low_intensity(rgba_at(&thumbnail, 30, 30), 96);
+        assert_eq!(rgba_at(&thumbnail, 95, 40), [255, 255, 255, 255]);
+    }
+
+    #[test]
+    fn native_backend_should_reject_generated_dynamic_xfa_without_static_appearance() {
+        let bytes =
+            include_bytes!("../../../fixtures/generated/xfa-dynamic-no-static-appearance.pdf");
+        let error = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 140,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect_err("dynamic XFA without static appearances should not render silently");
+
+        assert_eq!(
+            error.class(),
+            pdfrust_thumbnail::ThumbnailErrorClass::Unsupported
+        );
+        assert_eq!(
+            error.unsupported_feature_bucket(),
+            Some(BUCKET_FORM_XFA_DYNAMIC)
+        );
     }
 
     #[test]

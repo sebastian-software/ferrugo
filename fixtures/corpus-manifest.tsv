@@ -8,6 +8,8 @@ fixtures/generated/acroform-radio-missing-appearance.pdf	form	scripts/generate_f
 fixtures/generated/acroform-signature-placeholder.pdf	form	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	acroform,signature,appearance	Generated signature placeholder widget appearance fixture.
 fixtures/generated/acroform-text-field.pdf	form	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	acroform,text-field,appearance	Generated text field widget appearance fixture.
 fixtures/generated/acroform-text-field-missing-appearance.pdf	form	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	acroform,widget,text-field,missing-appearance	Generated AcroForm text field fallback fixture without appearance stream.
+fixtures/generated/xfa-dynamic-no-static-appearance.pdf	mixed-layout	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	xfa,dynamic,unsupported	Generated dynamic XFA fixture without static AcroForm appearances.
+fixtures/generated/xfa-static-appearance.pdf	form	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	xfa,acroform,appearance	Generated XFA hybrid fixture with static AcroForm appearance.
 fixtures/generated/annotation-appearance.pdf	mixed-layout	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	annotation,appearance	Generated normal annotation appearance fixture.
 fixtures/generated/annotation-missing-appearance.pdf	mixed-layout	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	annotation,missing-appearance	Generated annotation without usable appearance stream.
 fixtures/generated/arabic-shaped-text.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,type0,cid,arabic,prepositioned,opentype	Generated pre-positioned Arabic presentation-form Type0 CID text fixture.
