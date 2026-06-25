@@ -85,6 +85,26 @@ Allowed statuses:
 | 0178 | [Security Fuzz Nightly And Crash Triage Loop](0178-security-fuzz-nightly-and-crash-triage-loop.md) | 33 | medium | 0177 |
 | 0179 | [Corpus Governance And Regression Dashboard](0179-corpus-governance-and-regression-dashboard.md) | 33 | medium | 0178 |
 | 0180 | [PDFium-Free 1.1 Coverage Gate](0180-pdfium-free-1-1-coverage-gate.md) | 33 | medium | 0179 |
+| 0181 | [PDF 2.0 Feature Usage Corpus Gate](0181-pdf-2-0-feature-usage-corpus-gate.md) | 34 | medium | 0180 |
+| 0182 | [Accessible Tagged PDF Reading Order Coverage](0182-accessible-tagged-pdf-reading-order-coverage.md) | 34 | medium | 0181 |
+| 0183 | [Mixed Vector Raster Transparency Edge Cases](0183-mixed-vector-raster-transparency-edge-cases.md) | 34 | medium | 0182 |
+| 0184 | [Print Shop Imposition And Booklet PDF Coverage](0184-print-shop-imposition-and-booklet-pdf-coverage.md) | 34 | medium | 0183 |
+| 0185 | [PDF/A And Archival Document Conformance Boundary](0185-pdf-a-and-archival-document-conformance-boundary.md) | 34 | medium | 0184 |
+| 0186 | [Native Text Extraction And Search Parity Gate](0186-native-text-extraction-and-search-parity-gate.md) | 35 | medium | 0185 |
+| 0187 | [Incremental Document Streaming Memory Budget](0187-incremental-document-streaming-memory-budget.md) | 35 | medium | 0186 |
+| 0188 | [Resource Deduplication And Shared Object Cache](0188-resource-deduplication-and-shared-object-cache.md) | 35 | medium | 0187 |
+| 0189 | [Layout Stress Corpus For Tables Columns And Footnotes](0189-layout-stress-corpus-for-tables-columns-and-footnotes.md) | 35 | medium | 0188 |
+| 0190 | [Cross-Producer Regression Bisect Workflow](0190-cross-producer-regression-bisect-workflow.md) | 35 | medium | 0189 |
+| 0191 | [DeviceN Spot Color Visual Review Samples](0191-devicen-spot-color-visual-review-samples.md) | 36 | medium | 0190 |
+| 0192 | [Optional Content UI State And Layer Flattening Policy](0192-optional-content-ui-state-and-layer-flattening-policy.md) | 36 | medium | 0191 |
+| 0193 | [Annotation Print Preview Fidelity Gate](0193-annotation-print-preview-fidelity-gate.md) | 36 | medium | 0192 |
+| 0194 | [Forms Appearance State Mutation Boundary](0194-forms-appearance-state-mutation-boundary.md) | 36 | medium | 0193 |
+| 0195 | [High Page Count Batch Thumbnail Gate](0195-high-page-count-batch-thumbnail-gate.md) | 36 | medium | 0194 |
+| 0196 | [WASM Low Memory Mobile Browser Gate](0196-wasm-low-memory-mobile-browser-gate.md) | 37 | medium | 0195 |
+| 0197 | [Serverless Cold Start And Binary Size Budget](0197-serverless-cold-start-and-binary-size-budget.md) | 37 | medium | 0196 |
+| 0198 | [Native Renderer Telemetry Privacy And Diagnostics Policy](0198-native-renderer-telemetry-privacy-and-diagnostics-policy.md) | 37 | small | 0197 |
+| 0199 | [Unsupported Feature Burn-Down Release Candidate Gate](0199-unsupported-feature-burn-down-release-candidate-gate.md) | 37 | medium | 0198 |
+| 0200 | [PDFium-Free 1.2 Readiness Gate](0200-pdfium-free-1-2-readiness-gate.md) | 37 | medium | 0199 |
 
 ## In Progress
 
