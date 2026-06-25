@@ -27,6 +27,19 @@ buffers through `Thumbnail::rgba`; CLI PNG encoding remains owned by
 - Unsupported native features and budget exhaustion return the public
   `unsupported` class.
 
+## Untrusted Input And Fuzz Boundary
+
+The native backend treats PDF bytes as untrusted input. Parser, font, image, and
+raster paths use explicit recursion, byte, pixel, cache, and decoded-sample
+budgets; exceeding those limits returns typed public errors rather than
+attempting unbounded repair or allocation.
+
+The 0139 refresh adds a minimized huge-image-dimensions adversarial PDF and
+checks declared image sample sizes before image stream decoding. Current fuzz
+smoke targets cover primitive parsing, xref setup, stream decoding, content
+tokenization, and native render setup. See `docs/fuzzing.md` and
+`docs/reports/native-renderer-security-fuzz-refresh-2026-06-26.md`.
+
 ## GA Gate Status
 
 The 2026-06-25 GA gate keeps the native renderer in a conditional state:

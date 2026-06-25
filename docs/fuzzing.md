@@ -19,6 +19,7 @@ Run one target against saved inputs:
 
 ```sh
 cargo run --manifest-path fuzz/Cargo.toml --bin render_setup -- fixtures/adversarial/truncated-header.pdf
+cargo run --manifest-path fuzz/Cargo.toml --bin render_setup -- fixtures/adversarial/huge-image-dimensions.pdf
 ```
 
 The committed adversarial corpus lives in `fixtures/adversarial/`. These files
@@ -34,6 +35,15 @@ Current targets:
 | `stream_decode` | stream object parsing and bounded filter decoding |
 | `content_tokenize` | decoded content stream tokenization and inline-image parsing |
 | `render_setup` | native metadata inspection and first-page render setup |
+
+Current minimized adversarial inputs:
+
+| Input | Expected boundary |
+| --- | --- |
+| `truncated-header.pdf` | malformed native metadata/render setup |
+| `huge-image-dimensions.pdf` | `renderer.memory-budget` before sample allocation |
+| `deep-primitive-array.input` | primitive parser nesting budget |
+| `unterminated-inline-image.content` | content tokenizer `UnexpectedEof` |
 
 Panics are not caught by the harness. A panic or abort fails the smoke command
 and should be minimized into `fixtures/adversarial/` before the code path is

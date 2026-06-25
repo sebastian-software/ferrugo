@@ -1,6 +1,6 @@
 # 0139: Native Renderer Security And Fuzz Refresh
 
-Status: todo
+Status: done
 Phase: 25
 Size: medium
 Depends on: 0138
@@ -46,4 +46,15 @@ renderer after the broader document-family expansion.
 
 ## Completion Notes
 
-Empty until done.
+- Added `fixtures/adversarial/huge-image-dimensions.pdf` and seeded it into
+  the `render_setup` fuzz smoke target.
+- Added renderer and native backend regressions proving huge declared image
+  sample dimensions fail as `renderer.memory-budget` before allocation.
+- Moved declared XObject and inline-image sample-size checks ahead of decode
+  work while preserving existing image data length validation.
+- Refreshed `docs/fuzzing.md`, `docs/backend/native.md`, and the security/fuzz
+  report:
+  `docs/reports/native-renderer-security-fuzz-refresh-2026-06-26.md`.
+- Current fuzz smoke counts:
+  `primitive_parse` 165, `xref_load` 154, `stream_decode` 154,
+  `content_tokenize` 165, `render_setup` 176.
