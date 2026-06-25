@@ -834,6 +834,20 @@ def scanned_page_pdf() -> bytes:
     return pdf.render(catalog)
 
 
+def ocr_invisible_text_layer_pdf() -> bytes:
+    return page_pdf(
+        "[0 0 220 160]",
+        (
+            "0.94 0.94 0.9 rg 0 0 220 160 re f "
+            "0.82 0.82 0.78 rg 18 28 184 18 re f "
+            "0.78 0.78 0.74 rg 18 58 150 12 re f "
+            "0.76 0.76 0.72 rg 18 84 176 16 re f "
+            "BT /F1 12 Tf 3 Tr 20 32 Td (Invisible OCR text line one) Tj "
+            "0 28 Td (Invisible OCR text line two) Tj ET"
+        ),
+    )
+
+
 def mixed_text_image_pdf() -> bytes:
     pdf = Pdf()
     image = bytes(
@@ -3147,6 +3161,7 @@ def main() -> None:
     write("unsupported-jbig2-image.pdf", unsupported_image_codec_pdf("JBIG2Decode"))
     write("unsupported-jpx-image.pdf", unsupported_image_codec_pdf("JPXDecode"))
     write("scanned-page.pdf", scanned_page_pdf())
+    write("ocr-invisible-text-layer.pdf", ocr_invisible_text_layer_pdf())
     write("mixed-text-image.pdf", mixed_text_image_pdf())
     write("transparency-group.pdf", transparency_group_pdf())
     write("transparency-knockout-group.pdf", transparency_knockout_group_pdf())

@@ -77,6 +77,7 @@ fixtures/generated/predictor-image.pdf	scan	scripts/generate_fixtures.py	MIT OR 
 fixtures/generated/radial-gradient.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	shading,radial-gradient	Generated DeviceRGB radial shading fixture.
 fixtures/generated/rotated-office-export.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	geometry,rotate,office-export	Generated rotated office-export page geometry fixture.
 fixtures/generated/scanned-page.pdf	scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,page-sized,devicegray	Generated page-sized scan-like DeviceGray image fixture.
+fixtures/generated/ocr-invisible-text-layer.pdf	scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	ocr,invisible-text,text-rendering-mode,scan	Generated searchable scan-style fixture with invisible OCR text layer.
 fixtures/generated/separation-spot-color.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	color,spot,separation,tint-transform	Generated Separation spot-color vector fixture with DeviceCMYK alternate tint approximation.
 fixtures/generated/shaped-rtl-text.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,type0,cid,rtl,prepositioned	Generated pre-positioned RTL Type0 CID text fixture.
 fixtures/generated/soft-mask-image.pdf	scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,soft-mask,alpha	Generated soft-mask image alpha fixture.

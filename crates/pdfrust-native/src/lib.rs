@@ -3345,6 +3345,25 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_keep_generated_ocr_text_layer_invisible() {
+        let bytes = include_bytes!("../../../fixtures/generated/ocr-invisible-text-layer.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 220,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated OCR text layer fixture should render");
+
+        assert_eq!(thumbnail.width, 220);
+        assert_eq!(thumbnail.height, 160);
+        assert_eq!(rgba_at(&thumbnail, 20, 124), [209, 209, 199, 255]);
+        assert_eq!(rgba_at(&thumbnail, 20, 100), [199, 199, 189, 255]);
+    }
+
+    #[test]
     fn native_backend_should_render_generated_cropped_scan_page_fixture() {
         let bytes = include_bytes!("../../../fixtures/generated/cropped-scan-page.pdf");
         let thumbnail = ThumbnailBackend::render(

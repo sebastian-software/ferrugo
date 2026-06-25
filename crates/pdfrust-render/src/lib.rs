@@ -1027,6 +1027,12 @@ pub enum TextRenderingMode {
 }
 
 impl TextRenderingMode {
+    /// Returns true when this text rendering mode can paint glyph pixels.
+    #[must_use]
+    pub const fn paints_pixels(self) -> bool {
+        !matches!(self, Self::Invisible | Self::Clip)
+    }
+
     fn from_pdf_value(value: i64) -> Option<Self> {
         match value {
             0 => Some(Self::Fill),
@@ -1042,6 +1048,9 @@ impl TextRenderingMode {
     }
 
     fn paint_color(self, state: GraphicsState) -> Option<DeviceColor> {
+        if !self.paints_pixels() {
+            return None;
+        }
         match self {
             Self::Fill | Self::FillClip | Self::FillStroke | Self::FillStrokeClip => {
                 Some(state.fill_color)
@@ -10097,6 +10106,9 @@ fn draw_text_run(
     glyph_cache: &mut GlyphBitmapCache,
     text_scratch: &mut TextRasterScratch,
 ) -> RasterResult<()> {
+    if !text.rendering_mode.paints_pixels() {
+        return Ok(());
+    }
     let Some(color) = text
         .rendering_mode
         .paint_color(text.state)
@@ -15142,6 +15154,44 @@ mod tests {
             .filter(|pixel| *pixel != [255, 255, 255, 255])
             .count();
         assert!(non_white_pixels > 0);
+    }
+
+    #[test]
+    fn rasterize_text_should_skip_invisible_ocr_layer_pixels() {
+        let list = build_text_display_list(
+            tokenize_content(PdfBytes::new(
+                b"BT /F1 18 Tf 3 Tr 10 20 Td (Hidden OCR) Tj ET",
+            )),
+            &test_font_resources(),
+            DisplayListOptions::default(),
+        )
+        .expect("invisible text should decode");
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 120.0,
+                    max_y: 60.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            120,
+        )
+        .expect("page transform");
+        let mut device = transform.create_device(Rgba::WHITE).expect("raster device");
+
+        rasterize_text(&list, &mut device, transform).expect("invisible text should be skipped");
+
+        assert!(device
+            .pixels()
+            .chunks_exact(PixelFormat::Rgba8.bytes_per_pixel())
+            .all(|pixel| pixel == [255, 255, 255, 255]));
+        let DisplayItem::Text(text) = &list.items()[0] else {
+            panic!("expected invisible text item");
+        };
+        assert!(!text.rendering_mode.paints_pixels());
     }
 
     #[test]
