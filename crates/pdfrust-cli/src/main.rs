@@ -361,6 +361,8 @@ fn summarize_fallbacks_command(args: &[OsString]) -> Result<(), CliError> {
         Some(path) => Some(read_corpus_manifest(path)?),
         None => None,
     };
+    let fixtures =
+        filter_fixtures_by_family(&fixtures, manifest.as_ref(), &config.include_families)?;
     let summary = summarize_native_fallbacks(&fixtures, &options, manifest.as_ref());
     let json = fallback_summary_json(&summary);
 
@@ -812,6 +814,7 @@ struct FallbackSummaryConfig {
     background: Rgba,
     timeout: Duration,
     fail_on_fallback: bool,
+    include_families: Vec<String>,
 }
 
 impl FallbackSummaryConfig {
@@ -824,6 +827,7 @@ impl FallbackSummaryConfig {
         let mut background = Rgba::WHITE;
         let mut timeout = DEFAULT_TIMEOUT;
         let mut fail_on_fallback = false;
+        let mut include_families = Vec::new();
 
         let mut index = 0;
         while index < args.len() {
@@ -859,6 +863,11 @@ impl FallbackSummaryConfig {
                 "--fail-on-fallback" => {
                     fail_on_fallback = true;
                 }
+                "--include-family" => {
+                    index += 1;
+                    include_families
+                        .push(required_str(args, index, "--include-family")?.to_string());
+                }
                 value if value.starts_with('-') => {
                     return Err(CliError::Usage(format!("unknown option `{value}`")));
                 }
@@ -888,6 +897,7 @@ impl FallbackSummaryConfig {
             background,
             timeout,
             fail_on_fallback,
+            include_families,
         })
     }
 }
@@ -1609,6 +1619,34 @@ fn pdf_inputs(input: &Path) -> Result<Vec<PathBuf>, CliError> {
     }
     paths.sort();
     Ok(paths)
+}
+
+fn filter_fixtures_by_family(
+    paths: &[PathBuf],
+    manifest: Option<&CorpusManifest>,
+    include_families: &[String],
+) -> Result<Vec<PathBuf>, CliError> {
+    if include_families.is_empty() {
+        return Ok(paths.to_vec());
+    }
+    let manifest = manifest
+        .ok_or_else(|| CliError::Usage("--include-family requires --manifest".to_string()))?;
+    let filtered = paths
+        .iter()
+        .filter(|path| {
+            manifest
+                .family_for_path(path)
+                .is_some_and(|family| include_families.iter().any(|allowed| allowed == family))
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    if filtered.is_empty() {
+        return Err(CliError::Usage(format!(
+            "--include-family matched no fixtures: {}",
+            include_families.join(",")
+        )));
+    }
+    Ok(filtered)
 }
 
 fn summarize_native_fallbacks(
@@ -3005,7 +3043,7 @@ fn print_usage() {
         "Usage: pdfrust-cli <render|render-auto|render-native|render-pdfium|render-isolated|compare-metadata|summarize-fallbacks|extract-corpus-metadata|benchmark-native|benchmark-pdfium|visual-diff> <input.pdf> \
          [--output PATH] [--page-index N] [--max-edge N] [--background #RRGGBB] \
          [--timeout SECONDS] [--iterations N] [--max-ms N] [--max-output-bytes N] \
-         [--allow-pdfium-fallback] [--native-only] [--deny-fallback-reason BUCKET] [--manifest PATH] \
+         [--allow-pdfium-fallback] [--native-only] [--deny-fallback-reason BUCKET] [--manifest PATH] [--include-family FAMILY] \
          [--max-mae N] [--max-p95 N] [--max-changed-ratio N]"
     );
 }
@@ -3187,6 +3225,27 @@ mod tests {
     }
 
     #[test]
+    fn fallback_summary_config_should_accept_family_filters() {
+        let config = FallbackSummaryConfig::parse(&[
+            OsString::from("fixtures/generated"),
+            OsString::from("--manifest"),
+            OsString::from("fixtures/corpus-manifest.tsv"),
+            OsString::from("--include-family"),
+            OsString::from("browser-print"),
+            OsString::from("--include-family"),
+            OsString::from("report"),
+            OsString::from("--fail-on-fallback"),
+        ])
+        .expect("valid fallback summary config");
+
+        assert_eq!(
+            config.include_families,
+            vec!["browser-print".to_string(), "report".to_string()]
+        );
+        assert!(config.fail_on_fallback);
+    }
+
+    #[test]
     fn fallback_reason_should_use_native_feature_bucket() {
         let error = ThumbnailError::unsupported_feature("graphics.optional-content");
 
@@ -3231,6 +3290,57 @@ mod tests {
                 .get("unclassified")
                 .map(|family| family.total),
             Some(3)
+        );
+    }
+
+    #[test]
+    fn fallback_summary_should_filter_by_manifest_family() {
+        let fixture_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let manifest_path = fixture_root.join("fixtures/corpus-manifest.tsv");
+        let manifest = read_corpus_manifest(&manifest_path).expect("manifest should parse");
+        let paths = vec![
+            fixture_root.join("fixtures/generated/vector-paths.pdf"),
+            fixture_root.join("fixtures/generated/optional-content-ocmd.pdf"),
+        ];
+        let filtered =
+            filter_fixtures_by_family(&paths, Some(&manifest), &[String::from("browser-print")])
+                .expect("browser-print fixture should match");
+        let options = ThumbnailOptions {
+            page_index: 0,
+            max_edge: 120,
+            background: Rgba::WHITE,
+            output_format: pdfrust_thumbnail::OutputFormat::Png,
+            timeout: Duration::from_secs(5),
+        };
+
+        let summary = summarize_native_fallbacks(&filtered, &options, Some(&manifest));
+
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(summary.total, 1);
+        assert_eq!(summary.native_rendered, 1);
+        assert_eq!(summary.fallback_required, 0);
+        assert_eq!(
+            summary
+                .families
+                .get("browser-print")
+                .map(|family| family.total),
+            Some(1)
+        );
+        assert!(!summary.families.contains_key("presentation"));
+    }
+
+    #[test]
+    fn fallback_summary_family_filter_should_require_manifest() {
+        let error = filter_fixtures_by_family(
+            &[PathBuf::from("fixtures/generated/vector-paths.pdf")],
+            None,
+            &[String::from("browser-print")],
+        )
+        .expect_err("family filter should require manifest");
+
+        assert_eq!(
+            error.to_string(),
+            "usage error: --include-family requires --manifest"
         );
     }
 
