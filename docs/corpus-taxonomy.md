@@ -237,6 +237,32 @@ cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks \
   --max-edge 160
 ```
 
+## Mobile Scan Manifest
+
+`fixtures/mobile-scan-manifest.tsv` is the focused gate for PDFs produced by
+mobile scanners and camera apps. It covers page rotation metadata, CropBox
+selection, image-dominant scan pages, invisible OCR overlays, Flate/DCT image
+compression, and scanner-style unsupported image filters.
+
+The manifest uses supported families `rotation`, `crop`, `ocr-layer`, and
+`compression`, plus an `unsupported-filter` family for CCITT, JBIG2, and JPX
+scanner codec backlog tracking. Use `--fail-on-fallback` only for the supported
+families; the unsupported filter family is expected to remain in the
+`image.filter` fallback bucket until those codecs are implemented or delegated
+by policy.
+
+```sh
+cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks \
+  fixtures/generated \
+  --manifest fixtures/mobile-scan-manifest.tsv \
+  --include-family rotation \
+  --include-family crop \
+  --include-family ocr-layer \
+  --include-family compression \
+  --fail-on-fallback \
+  --max-edge 160
+```
+
 ## Private Local Corpora
 
 Private or third-party PDFs stay outside Git under `fixtures/local-corpus/`.
