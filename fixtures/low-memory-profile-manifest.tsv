@@ -1,0 +1,6 @@
+path	family	source	license	page_count	features	notes
+fixtures/generated/text-page.pdf	common	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,simple	Small text page that should render under constrained thumbnail budgets.
+fixtures/generated/business-invoice-dense.pdf	common	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	invoice,dense-text,table	Dense business invoice smoke fixture for low-memory thumbnail rendering.
+fixtures/generated/mobile-cropped-photo-scan.pdf	scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	scan,cropbox,image	Mobile scanner crop fixture that exercises decoded image budgets.
+fixtures/generated/vector-stress.pdf	vector-stress	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	vector,path-stress	High-segment vector fixture for deterministic budget and timing observation.
+fixtures/generated/longform-repeated-resources.pdf	repeated-resources	scripts/generate_fixtures.py	MIT OR Apache-2.0	3	text,repeated-resources,longform	Repeated-resource longform fixture for cache-limit diagnostics.

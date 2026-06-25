@@ -364,7 +364,8 @@ fn summarize_fallbacks_command(args: &[OsString]) -> Result<(), CliError> {
     };
     let fixtures =
         filter_fixtures_by_family(&fixtures, manifest.as_ref(), &config.include_families)?;
-    let summary = summarize_native_fallbacks(&fixtures, &options, manifest.as_ref());
+    let native = config.native_profile.backend();
+    let summary = summarize_native_fallbacks(&native, &fixtures, &options, manifest.as_ref());
     let json = fallback_summary_json(&summary);
 
     if let Some(output) = config.output {
@@ -440,7 +441,7 @@ fn benchmark_native_command(args: &[OsString]) -> Result<(), CliError> {
     };
     let fixtures =
         filter_fixtures_by_family(&fixtures, manifest.as_ref(), &config.include_families)?;
-    let native = NativeBackend::new();
+    let native = config.native_profile.backend();
     let report = benchmark_backend(
         &native,
         "rust-native",
@@ -838,6 +839,7 @@ struct FallbackSummaryConfig {
     timeout: Duration,
     fail_on_fallback: bool,
     include_families: Vec<String>,
+    native_profile: NativeProfile,
 }
 
 impl FallbackSummaryConfig {
@@ -851,6 +853,7 @@ impl FallbackSummaryConfig {
         let mut timeout = DEFAULT_TIMEOUT;
         let mut fail_on_fallback = false;
         let mut include_families = Vec::new();
+        let mut native_profile = NativeProfile::Default;
 
         let mut index = 0;
         while index < args.len() {
@@ -891,6 +894,11 @@ impl FallbackSummaryConfig {
                     include_families
                         .push(required_str(args, index, "--include-family")?.to_string());
                 }
+                "--native-profile" => {
+                    index += 1;
+                    native_profile =
+                        parse_native_profile(required_str(args, index, "--native-profile")?)?;
+                }
                 value if value.starts_with('-') => {
                     return Err(CliError::Usage(format!("unknown option `{value}`")));
                 }
@@ -921,7 +929,33 @@ impl FallbackSummaryConfig {
             timeout,
             fail_on_fallback,
             include_families,
+            native_profile,
         })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NativeProfile {
+    Default,
+    LowMemory,
+}
+
+impl NativeProfile {
+    fn backend(self) -> NativeBackend {
+        match self {
+            Self::Default => NativeBackend::new(),
+            Self::LowMemory => NativeBackend::low_memory(),
+        }
+    }
+}
+
+fn parse_native_profile(value: &str) -> Result<NativeProfile, CliError> {
+    match value {
+        "default" => Ok(NativeProfile::Default),
+        "low-memory" => Ok(NativeProfile::LowMemory),
+        _ => Err(CliError::Usage(format!(
+            "unknown --native-profile `{value}`; expected `default` or `low-memory`"
+        ))),
     }
 }
 
@@ -1030,6 +1064,7 @@ struct BenchmarkConfig {
     max_ms: u64,
     max_output_bytes: usize,
     fail_on_budget: bool,
+    native_profile: NativeProfile,
 }
 
 #[cfg(feature = "pdfium")]
@@ -1079,6 +1114,7 @@ impl BenchmarkConfig {
         let mut max_ms = 250;
         let mut max_output_bytes = 4 * 160 * 160;
         let mut fail_on_budget = false;
+        let mut native_profile = NativeProfile::Default;
 
         let mut index = 0;
         while index < args.len() {
@@ -1131,6 +1167,11 @@ impl BenchmarkConfig {
                 "--fail-on-budget" => {
                     fail_on_budget = true;
                 }
+                "--native-profile" => {
+                    index += 1;
+                    native_profile =
+                        parse_native_profile(required_str(args, index, "--native-profile")?)?;
+                }
                 value if value.starts_with('-') => {
                     return Err(CliError::Usage(format!("unknown option `{value}`")));
                 }
@@ -1169,6 +1210,7 @@ impl BenchmarkConfig {
             max_ms,
             max_output_bytes,
             fail_on_budget,
+            native_profile,
         })
     }
 }
@@ -1790,11 +1832,11 @@ fn filter_fixtures_by_family(
 }
 
 fn summarize_native_fallbacks(
+    native: &NativeBackend,
     paths: &[PathBuf],
     options: &ThumbnailOptions,
     manifest: Option<&CorpusManifest>,
 ) -> FallbackSummary {
-    let native = NativeBackend::new();
     let mut summary = FallbackSummary::new(paths.len());
 
     for path in paths {
@@ -2970,6 +3012,10 @@ fn native_memory_diagnostics_json(diagnostics: &NativeMemoryDiagnostics) -> Stri
             "\"max_text_run_bytes\":{},",
             "\"max_display_items\":{},",
             "\"max_font_fallback_cache_entries\":{},",
+            "\"max_transparency_group_pixels\":{},",
+            "\"max_flattened_segments\":{},",
+            "\"max_pattern_tiles\":{},",
+            "\"max_pattern_cell_cache_entries\":{},",
             "\"spooling_enabled\":{},",
             "\"max_spool_bytes\":{}",
             "}}"
@@ -2982,6 +3028,10 @@ fn native_memory_diagnostics_json(diagnostics: &NativeMemoryDiagnostics) -> Stri
         diagnostics.max_text_run_bytes,
         diagnostics.max_display_items,
         diagnostics.max_font_fallback_cache_entries,
+        diagnostics.max_transparency_group_pixels,
+        diagnostics.max_flattened_segments,
+        diagnostics.max_pattern_tiles,
+        diagnostics.max_pattern_cell_cache_entries,
         diagnostics.spooling_enabled,
         diagnostics.max_spool_bytes
     )
@@ -3918,7 +3968,8 @@ mod tests {
             timeout: Duration::from_secs(5),
         };
 
-        let summary = summarize_native_fallbacks(&paths, &options, None);
+        let native = NativeBackend::new();
+        let summary = summarize_native_fallbacks(&native, &paths, &options, None);
 
         assert_eq!(summary.total, 3);
         assert_eq!(summary.native_rendered, 1);
@@ -3957,7 +4008,8 @@ mod tests {
             timeout: Duration::from_secs(5),
         };
 
-        let summary = summarize_native_fallbacks(&filtered, &options, Some(&manifest));
+        let native = NativeBackend::new();
+        let summary = summarize_native_fallbacks(&native, &filtered, &options, Some(&manifest));
 
         assert_eq!(filtered.len(), 1);
         assert_eq!(summary.total, 1);
@@ -4147,6 +4199,7 @@ status = "candidate"
             Some(PathBuf::from("fixtures/corpus-manifest.tsv"))
         );
         assert!(config.include_families.is_empty());
+        assert_eq!(config.native_profile, NativeProfile::Default);
     }
 
     #[test]
@@ -4166,6 +4219,18 @@ status = "candidate"
             config.include_families,
             vec!["invoice".to_string(), "statement".to_string()]
         );
+    }
+
+    #[test]
+    fn benchmark_config_should_accept_low_memory_native_profile() {
+        let config = BenchmarkConfig::parse(&[
+            OsString::from("fixtures/generated"),
+            OsString::from("--native-profile"),
+            OsString::from("low-memory"),
+        ])
+        .expect("valid benchmark config");
+
+        assert_eq!(config.native_profile, NativeProfile::LowMemory);
     }
 
     #[test]
@@ -4197,6 +4262,7 @@ status = "candidate"
             max_ms: 60_000,
             max_output_bytes: 1,
             fail_on_budget: false,
+            native_profile: NativeProfile::Default,
         };
 
         let native = NativeBackend::new();

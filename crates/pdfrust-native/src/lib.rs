@@ -59,16 +59,37 @@ const DEFAULT_SPOOL_BYTES_LIMIT: usize = 0;
 
 /// Rust-native thumbnail backend.
 ///
-/// The backend is intentionally a placeholder until the parser, object model,
-/// content interpreter, and rasterizer land in later milestones.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub struct NativeBackend;
+/// The backend owns the render budget profile used by the native renderer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeBackend {
+    limits: NativeRenderLimits,
+}
 
 impl NativeBackend {
-    /// Creates a new Rust-native backend placeholder.
+    /// Creates a Rust-native backend using the default desktop-oriented render
+    /// budgets.
     #[must_use]
-    pub const fn new() -> Self {
-        Self
+    pub fn new() -> Self {
+        Self::with_render_limits(NativeRenderLimits::default())
+    }
+
+    /// Creates a Rust-native backend using constrained low-memory render
+    /// budgets for embedded, serverless, and batch-thumbnail workloads.
+    #[must_use]
+    pub const fn low_memory() -> Self {
+        Self::with_render_limits(NativeRenderLimits::low_memory())
+    }
+
+    /// Creates a Rust-native backend using explicit render budgets.
+    #[must_use]
+    pub const fn with_render_limits(limits: NativeRenderLimits) -> Self {
+        Self { limits }
+    }
+
+    /// Returns the active native render budget snapshot.
+    #[must_use]
+    pub const fn render_limits(&self) -> NativeRenderLimits {
+        self.limits
     }
 
     /// Returns the stable backend name.
@@ -79,8 +100,166 @@ impl NativeBackend {
 
     /// Returns the current default memory and cache budget snapshot.
     #[must_use]
-    pub fn memory_diagnostics(&self) -> NativeMemoryDiagnostics {
-        NativeMemoryDiagnostics::default()
+    pub const fn memory_diagnostics(&self) -> NativeMemoryDiagnostics {
+        self.limits.memory_diagnostics()
+    }
+}
+
+impl Default for NativeBackend {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Rust-native renderer memory and cache budget profile.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeRenderLimits {
+    /// Maximum pixels accepted in one page raster buffer.
+    pub max_page_pixels: usize,
+    /// Maximum decoded bytes accepted for one image XObject.
+    pub max_image_bytes: usize,
+    /// Maximum resident decoded image bytes accepted for one page resource map.
+    pub max_total_image_bytes: usize,
+    /// Maximum decoded ICC profile bytes accepted for one image color space.
+    pub max_icc_profile_bytes: usize,
+    /// Maximum scratch bytes accepted for one ICC transform.
+    pub max_icc_transform_workspace_bytes: usize,
+    /// Maximum cached ICC transform entries.
+    pub max_icc_transform_cache_entries: usize,
+    /// Maximum decoded bytes accepted for one embedded font program.
+    pub max_font_program_bytes: usize,
+    /// Maximum decoded bytes accepted for one ToUnicode CMap stream.
+    pub max_cmap_bytes: usize,
+    /// Maximum bytes accepted in one decoded text run.
+    pub max_text_run_bytes: usize,
+    /// Maximum display items accepted in one display list.
+    pub max_display_items: usize,
+    /// Maximum cached deterministic font fallback resolutions.
+    pub max_font_fallback_cache_entries: usize,
+    /// Maximum pixels accepted in one transparency group intermediate raster.
+    pub max_transparency_group_pixels: usize,
+    /// Maximum flattened path line segments accepted in one rasterization pass.
+    pub max_flattened_segments: usize,
+    /// Maximum repeated pattern tiles accepted in one rasterization pass.
+    pub max_pattern_tiles: usize,
+    /// Maximum cached tiling pattern cells in one rasterization pass.
+    pub max_pattern_cell_cache_entries: usize,
+    /// Whether temporary spooling is enabled for sensitive intermediates.
+    pub spooling_enabled: bool,
+    /// Maximum bytes allowed for temporary spooling.
+    pub max_spool_bytes: usize,
+}
+
+impl NativeRenderLimits {
+    /// Returns the default desktop-oriented Rust-native renderer budgets.
+    #[must_use]
+    pub fn default_profile() -> Self {
+        Self::default()
+    }
+
+    /// Returns constrained budgets intended for low-memory thumbnail workloads.
+    #[must_use]
+    pub const fn low_memory() -> Self {
+        Self {
+            max_page_pixels: 384 * 384,
+            max_image_bytes: 12 * 1024 * 1024,
+            max_total_image_bytes: 24 * 1024 * 1024,
+            max_icc_profile_bytes: 256 * 1024,
+            max_icc_transform_workspace_bytes: 32 * 1024,
+            max_icc_transform_cache_entries: 8,
+            max_font_program_bytes: 4 * 1024 * 1024,
+            max_cmap_bytes: 256 * 1024,
+            max_text_run_bytes: 16 * 1024,
+            max_display_items: 2_048,
+            max_font_fallback_cache_entries: 32,
+            max_transparency_group_pixels: 512 * 512,
+            max_flattened_segments: 16_384,
+            max_pattern_tiles: 16_384,
+            max_pattern_cell_cache_entries: 8,
+            spooling_enabled: false,
+            max_spool_bytes: DEFAULT_SPOOL_BYTES_LIMIT,
+        }
+    }
+
+    const fn memory_diagnostics(self) -> NativeMemoryDiagnostics {
+        NativeMemoryDiagnostics {
+            max_page_pixels: self.max_page_pixels,
+            max_image_bytes: self.max_image_bytes,
+            max_total_image_bytes: self.max_total_image_bytes,
+            max_icc_profile_bytes: self.max_icc_profile_bytes,
+            max_icc_transform_workspace_bytes: self.max_icc_transform_workspace_bytes,
+            max_icc_transform_cache_entries: self.max_icc_transform_cache_entries,
+            max_font_program_bytes: self.max_font_program_bytes,
+            max_cmap_bytes: self.max_cmap_bytes,
+            max_text_run_bytes: self.max_text_run_bytes,
+            max_display_items: self.max_display_items,
+            max_font_fallback_cache_entries: self.max_font_fallback_cache_entries,
+            max_transparency_group_pixels: self.max_transparency_group_pixels,
+            max_flattened_segments: self.max_flattened_segments,
+            max_pattern_tiles: self.max_pattern_tiles,
+            max_pattern_cell_cache_entries: self.max_pattern_cell_cache_entries,
+            spooling_enabled: self.spooling_enabled,
+            max_spool_bytes: self.max_spool_bytes,
+        }
+    }
+
+    fn display_options(self) -> DisplayListOptions {
+        DisplayListOptions {
+            max_display_items: self.max_display_items,
+            max_text_run_bytes: self.max_text_run_bytes,
+            max_cmap_bytes: self.max_cmap_bytes,
+            max_font_program_bytes: self.max_font_program_bytes,
+            max_image_bytes: self.max_image_bytes,
+            max_total_image_bytes: self.max_total_image_bytes,
+            max_icc_profile_bytes: self.max_icc_profile_bytes,
+            max_icc_transform_workspace_bytes: self.max_icc_transform_workspace_bytes,
+            max_icc_transform_cache_entries: self.max_icc_transform_cache_entries,
+            max_font_fallback_cache_entries: self.max_font_fallback_cache_entries,
+            ..DisplayListOptions::default()
+        }
+    }
+
+    const fn page_transform_options(self) -> PageTransformOptions {
+        PageTransformOptions {
+            max_page_pixels: self.max_page_pixels,
+        }
+    }
+
+    fn path_raster_options(self) -> PathRasterOptions {
+        PathRasterOptions {
+            max_flattened_segments: self.max_flattened_segments,
+            max_transparency_group_pixels: self.max_transparency_group_pixels,
+            max_pattern_tiles: self.max_pattern_tiles,
+            max_pattern_cell_cache_entries: self.max_pattern_cell_cache_entries,
+            ..PathRasterOptions::default()
+        }
+    }
+}
+
+impl Default for NativeRenderLimits {
+    fn default() -> Self {
+        let display = DisplayListOptions::default();
+        let page = PageTransformOptions::default();
+        let path = PathRasterOptions::default();
+        Self {
+            max_page_pixels: page.max_page_pixels,
+            max_image_bytes: display.max_image_bytes,
+            max_total_image_bytes: display.max_total_image_bytes,
+            max_icc_profile_bytes: display.max_icc_profile_bytes,
+            max_icc_transform_workspace_bytes: display.max_icc_transform_workspace_bytes,
+            max_icc_transform_cache_entries: display.max_icc_transform_cache_entries,
+            max_font_program_bytes: display.max_font_program_bytes,
+            max_cmap_bytes: display.max_cmap_bytes,
+            max_text_run_bytes: display.max_text_run_bytes,
+            max_display_items: display.max_display_items,
+            max_font_fallback_cache_entries: display.max_font_fallback_cache_entries,
+            max_transparency_group_pixels: path.max_transparency_group_pixels,
+            max_flattened_segments: path.max_flattened_segments,
+            max_pattern_tiles: path.max_pattern_tiles,
+            max_pattern_cell_cache_entries: path.max_pattern_cell_cache_entries,
+            spooling_enabled: false,
+            max_spool_bytes: DEFAULT_SPOOL_BYTES_LIMIT,
+        }
     }
 }
 
@@ -109,6 +288,14 @@ pub struct NativeMemoryDiagnostics {
     pub max_display_items: usize,
     /// Maximum cached deterministic font fallback resolutions.
     pub max_font_fallback_cache_entries: usize,
+    /// Maximum pixels accepted in one transparency group intermediate raster.
+    pub max_transparency_group_pixels: usize,
+    /// Maximum flattened path line segments accepted in one rasterization pass.
+    pub max_flattened_segments: usize,
+    /// Maximum repeated pattern tiles accepted in one rasterization pass.
+    pub max_pattern_tiles: usize,
+    /// Maximum cached tiling pattern cells in one rasterization pass.
+    pub max_pattern_cell_cache_entries: usize,
     /// Whether temporary spooling is enabled for sensitive intermediates.
     pub spooling_enabled: bool,
     /// Maximum bytes allowed for temporary spooling.
@@ -195,23 +382,7 @@ pub struct ParallelRenderPartialResult {
 
 impl Default for NativeMemoryDiagnostics {
     fn default() -> Self {
-        let display = DisplayListOptions::default();
-        let page = PageTransformOptions::default();
-        Self {
-            max_page_pixels: page.max_page_pixels,
-            max_image_bytes: display.max_image_bytes,
-            max_total_image_bytes: display.max_total_image_bytes,
-            max_icc_profile_bytes: display.max_icc_profile_bytes,
-            max_icc_transform_workspace_bytes: display.max_icc_transform_workspace_bytes,
-            max_icc_transform_cache_entries: display.max_icc_transform_cache_entries,
-            max_font_program_bytes: display.max_font_program_bytes,
-            max_cmap_bytes: display.max_cmap_bytes,
-            max_text_run_bytes: display.max_text_run_bytes,
-            max_display_items: display.max_display_items,
-            max_font_fallback_cache_entries: display.max_font_fallback_cache_entries,
-            spooling_enabled: false,
-            max_spool_bytes: DEFAULT_SPOOL_BYTES_LIMIT,
-        }
+        NativeRenderLimits::default().memory_diagnostics()
     }
 }
 
@@ -293,7 +464,7 @@ pub fn render_pages_parallel_partial(
                     scope.spawn(move || {
                         let mut page_options = *options;
                         page_options.page_index = page_index;
-                        render_bytes(bytes, &page_options)
+                        render_bytes(bytes, &page_options, NativeRenderLimits::default())
                     })
                 })
                 .collect::<Vec<_>>();
@@ -353,7 +524,7 @@ impl ThumbnailBackend for NativeBackend {
         options: &ThumbnailOptions,
     ) -> Result<Thumbnail, ThumbnailError> {
         let bytes = load_source(source)?;
-        render_bytes(&bytes, options)
+        render_bytes(&bytes, options, self.limits)
     }
 }
 
@@ -389,7 +560,11 @@ fn inspect_bytes(bytes: &[u8]) -> Result<DocumentMetadata, ThumbnailError> {
     }
 }
 
-fn render_bytes(bytes: &[u8], options: &ThumbnailOptions) -> Result<Thumbnail, ThumbnailError> {
+fn render_bytes(
+    bytes: &[u8],
+    options: &ThumbnailOptions,
+    limits: NativeRenderLimits,
+) -> Result<Thumbnail, ThumbnailError> {
     let input = PdfBytes::new(bytes);
     let (document, page_tree) = load_render_document(input, options.page_index)?;
     enforce_xfa_render_policy(&document)?;
@@ -402,10 +577,11 @@ fn render_bytes(bytes: &[u8], options: &ThumbnailOptions) -> Result<Thumbnail, T
     let optional_content_state = document_optional_content_state(&document)?;
     let content = filter_optional_content(&content, &optional_content, &optional_content_state)?;
     let xobject_invocations = xobject_invocation_names(&content)?;
-    let display_options = DisplayListOptions::default();
+    let display_options = limits.display_options();
+    let path_options = limits.path_raster_options();
     let ext_graphics_states = page_ext_graphics_state_resources(&document, page)?;
     let shadings = page_shading_resources(&document, page, display_options)?;
-    let patterns = page_tiling_pattern_resources(&document, page)?;
+    let patterns = page_tiling_pattern_resources(&document, page, display_options)?;
     let color_spaces = page_color_space_resources(&document, page)?;
     let display_list = build_path_display_list_with_graphics_resources(
         tokenize_content(PdfBytes::new(&content)),
@@ -416,8 +592,12 @@ fn render_bytes(bytes: &[u8], options: &ThumbnailOptions) -> Result<Thumbnail, T
         display_options,
     )
     .map_err(map_graphics_error)?;
-    let transform =
-        PageTransform::new(page_geometry(*page), options.max_edge).map_err(map_raster_error)?;
+    let transform = PageTransform::new_with_options(
+        page_geometry(*page),
+        options.max_edge,
+        limits.page_transform_options(),
+    )
+    .map_err(map_raster_error)?;
     let form_resources = page_form_resources(&document, page, &xobject_invocations)?;
     let form_list = build_form_display_list_with_graphics_resources(
         tokenize_content(PdfBytes::new(&content)),
@@ -426,21 +606,22 @@ fn render_bytes(bytes: &[u8], options: &ThumbnailOptions) -> Result<Thumbnail, T
         &shadings,
         &patterns,
         &color_spaces,
-        DisplayListOptions::default(),
+        display_options,
     )
     .map_err(map_graphics_error)?;
-    let image_resources = page_image_resources(&document, page, &xobject_invocations)?;
+    let image_resources =
+        page_image_resources(&document, page, &xobject_invocations, display_options)?;
     let image_list = build_image_display_list(
         tokenize_content(PdfBytes::new(&content)),
         &image_resources,
-        DisplayListOptions::default(),
+        display_options,
     )
     .map_err(map_graphics_error)?;
-    let font_resources = page_font_resources(&document, page)?;
+    let font_resources = page_font_resources(&document, page, display_options)?;
     let text_list = build_text_display_list(
         tokenize_content(PdfBytes::new(&content)),
         &font_resources,
-        DisplayListOptions::default(),
+        display_options,
     )
     .map_err(map_graphics_error)?;
     let mut raster = transform
@@ -465,28 +646,13 @@ fn render_bytes(bytes: &[u8], options: &ThumbnailOptions) -> Result<Thumbnail, T
             &image_list,
             &text_list,
         );
-        rasterize_display_list_into(
-            &ordered_list,
-            &mut raster,
-            transform,
-            PathRasterOptions::default(),
-        )
-        .map_err(map_raster_error)?;
+        rasterize_display_list_into(&ordered_list, &mut raster, transform, path_options)
+            .map_err(map_raster_error)?;
     } else {
-        rasterize_paths_into(
-            &display_list,
-            &mut raster,
-            transform,
-            PathRasterOptions::default(),
-        )
-        .map_err(map_raster_error)?;
-        rasterize_paths_into(
-            &form_list,
-            &mut raster,
-            transform,
-            PathRasterOptions::default(),
-        )
-        .map_err(map_raster_error)?;
+        rasterize_paths_into(&display_list, &mut raster, transform, path_options)
+            .map_err(map_raster_error)?;
+        rasterize_paths_into(&form_list, &mut raster, transform, path_options)
+            .map_err(map_raster_error)?;
         rasterize_images(&image_list, &mut raster, transform).map_err(map_raster_error)?;
         rasterize_text(&text_list, &mut raster, transform).map_err(map_raster_error)?;
     }
@@ -500,16 +666,11 @@ fn render_bytes(bytes: &[u8], options: &ThumbnailOptions) -> Result<Thumbnail, T
             &shadings,
             &patterns,
             &color_spaces,
-            DisplayListOptions::default(),
+            display_options,
         )
         .map_err(map_graphics_error)?;
-        rasterize_paths_into(
-            &annotation_list,
-            &mut raster,
-            transform,
-            PathRasterOptions::default(),
-        )
-        .map_err(map_raster_error)?;
+        rasterize_paths_into(&annotation_list, &mut raster, transform, path_options)
+            .map_err(map_raster_error)?;
     }
     if !annotation_fallback_content.is_empty() {
         let annotation_ext_graphics_states =
@@ -520,20 +681,15 @@ fn render_bytes(bytes: &[u8], options: &ThumbnailOptions) -> Result<Thumbnail, T
             &ShadingResources::empty(),
             &TilingPatternResources::empty(),
             &ColorSpaceResources::empty(),
-            DisplayListOptions::default(),
+            display_options,
         )
         .map_err(map_graphics_error)?;
-        rasterize_paths_into(
-            &annotation_list,
-            &mut raster,
-            transform,
-            PathRasterOptions::default(),
-        )
-        .map_err(map_raster_error)?;
+        rasterize_paths_into(&annotation_list, &mut raster, transform, path_options)
+            .map_err(map_raster_error)?;
         match build_text_display_list(
             tokenize_content(PdfBytes::new(&annotation_fallback_content)),
             &font_resources,
-            DisplayListOptions::default(),
+            display_options,
         ) {
             Ok(annotation_text_list) => {
                 rasterize_text(&annotation_text_list, &mut raster, transform)
@@ -887,6 +1043,7 @@ fn page_color_space_resources(
 fn page_tiling_pattern_resources(
     document: &ClassicDocument<'_>,
     page: &ObjectPageMetadata,
+    options: DisplayListOptions,
 ) -> Result<TilingPatternResources, ThumbnailError> {
     let object = document
         .objects
@@ -944,7 +1101,7 @@ fn page_tiling_pattern_resources(
                 name.as_bytes().to_vec(),
                 stream.dictionary(),
                 &content,
-                DisplayListOptions::default(),
+                options,
             )
             .map_err(map_graphics_error)?,
         );
@@ -956,6 +1113,7 @@ fn page_image_resources(
     document: &ClassicDocument<'_>,
     page: &ObjectPageMetadata,
     xobject_invocations: &[Vec<u8>],
+    options: DisplayListOptions,
 ) -> Result<ImageResources, ThumbnailError> {
     let object = document
         .objects
@@ -988,12 +1146,8 @@ fn page_image_resources(
         return Ok(ImageResources::empty());
     };
     let xobjects = filter_invoked_resources(xobjects, xobject_invocations);
-    ImageResources::from_xobject_dictionary(
-        xobjects.as_slice(),
-        document,
-        DisplayListOptions::default(),
-    )
-    .map_err(map_graphics_error)
+    ImageResources::from_xobject_dictionary(xobjects.as_slice(), document, options)
+        .map_err(map_graphics_error)
 }
 
 fn page_form_resources(
@@ -1435,6 +1589,7 @@ fn optional_content_marker_visible(
 fn page_font_resources(
     document: &ClassicDocument<'_>,
     page: &ObjectPageMetadata,
+    options: DisplayListOptions,
 ) -> Result<FontResources, ThumbnailError> {
     let object = document
         .objects
@@ -1465,8 +1620,7 @@ fn page_font_resources(
     else {
         return Ok(FontResources::empty());
     };
-    FontResources::from_font_dictionary(fonts, document, DisplayListOptions::default())
-        .map_err(map_graphics_error)
+    FontResources::from_font_dictionary(fonts, document, options).map_err(map_graphics_error)
 }
 
 fn annotation_array<'a>(
@@ -3094,8 +3248,95 @@ mod tests {
         assert_eq!(diagnostics.max_icc_transform_cache_entries, 32);
         assert_eq!(diagnostics.max_display_items, 8_192);
         assert_eq!(diagnostics.max_font_fallback_cache_entries, 128);
+        assert_eq!(diagnostics.max_transparency_group_pixels, 16 * 1024 * 1024);
+        assert_eq!(diagnostics.max_flattened_segments, 65_536);
+        assert_eq!(diagnostics.max_pattern_tiles, 65_536);
+        assert_eq!(diagnostics.max_pattern_cell_cache_entries, 32);
         assert!(!diagnostics.spooling_enabled);
         assert_eq!(diagnostics.max_spool_bytes, 0);
+    }
+
+    #[test]
+    fn native_low_memory_profile_should_expose_tighter_memory_diagnostics() {
+        let default = NativeBackend::new().memory_diagnostics();
+        let low_memory = NativeBackend::low_memory().memory_diagnostics();
+
+        assert!(low_memory.max_page_pixels < default.max_page_pixels);
+        assert!(low_memory.max_image_bytes < default.max_image_bytes);
+        assert!(low_memory.max_total_image_bytes < default.max_total_image_bytes);
+        assert!(low_memory.max_font_program_bytes < default.max_font_program_bytes);
+        assert!(low_memory.max_display_items < default.max_display_items);
+        assert!(low_memory.max_transparency_group_pixels < default.max_transparency_group_pixels);
+        assert!(low_memory.max_page_pixels > 0);
+        assert!(low_memory.max_total_image_bytes >= low_memory.max_image_bytes);
+    }
+
+    #[test]
+    fn native_low_memory_profile_should_render_common_thumbnail_fixtures() {
+        let backend = NativeBackend::low_memory();
+
+        for &(bytes, label) in &[
+            (
+                include_bytes!("../../../fixtures/generated/text-page.pdf").as_slice(),
+                "text page",
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/business-invoice-dense.pdf").as_slice(),
+                "dense business invoice",
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/mobile-cropped-photo-scan.pdf")
+                    .as_slice(),
+                "cropped mobile scan",
+            ),
+        ] {
+            let thumbnail = backend
+                .render(
+                    PdfSource::from_bytes(bytes),
+                    &ThumbnailOptions {
+                        page_index: 0,
+                        max_edge: 160,
+                        background: pdfrust_thumbnail::Rgba::WHITE,
+                        output_format: pdfrust_thumbnail::OutputFormat::Rgba,
+                        timeout: std::time::Duration::from_secs(5),
+                    },
+                )
+                .unwrap_or_else(|error| panic!("{label} should render under low memory: {error}"));
+
+            assert!(thumbnail.width <= 160);
+            assert!(thumbnail.height <= 160);
+            assert!(!thumbnail.bytes.is_empty());
+        }
+    }
+
+    #[test]
+    fn native_low_memory_budget_errors_should_remain_typed() {
+        let bytes = include_bytes!("../../../fixtures/generated/text-page.pdf");
+        let limits = NativeRenderLimits {
+            max_page_pixels: 1,
+            ..NativeRenderLimits::low_memory()
+        };
+        let error = NativeBackend::with_render_limits(limits)
+            .render(
+                PdfSource::from_bytes(bytes),
+                &ThumbnailOptions {
+                    page_index: 0,
+                    max_edge: 160,
+                    background: pdfrust_thumbnail::Rgba::WHITE,
+                    output_format: pdfrust_thumbnail::OutputFormat::Rgba,
+                    timeout: std::time::Duration::from_secs(5),
+                },
+            )
+            .expect_err("tight page raster budget should fail deterministically");
+
+        assert_eq!(
+            error.class(),
+            pdfrust_thumbnail::ThumbnailErrorClass::Unsupported
+        );
+        assert_eq!(
+            error.unsupported_feature_bucket(),
+            Some(BUCKET_RENDERER_MEMORY_BUDGET)
+        );
     }
 
     #[test]
