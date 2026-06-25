@@ -98,6 +98,12 @@ pub const DEFAULT_PATTERN_TILE_LIMIT: usize = 65_536;
 /// Default maximum cached tiling pattern cells per rasterization pass.
 pub const DEFAULT_PATTERN_CELL_CACHE_LIMIT: usize = 32;
 
+/// Default maximum decoded bytes accepted for one mesh shading stream.
+pub const DEFAULT_MESH_SHADING_BYTES_LIMIT: usize = 1024 * 1024;
+
+/// Default maximum triangles accepted in one decoded mesh shading.
+pub const DEFAULT_MESH_SHADING_TRIANGLE_LIMIT: usize = 8_192;
+
 /// Maximum dash segments tracked in the graphics state.
 pub const MAX_STROKE_DASH_SEGMENTS: usize = 8;
 
@@ -795,6 +801,8 @@ pub enum Shading {
     Axial(AxialShading),
     /// Radial gradient shading.
     Radial(RadialShading),
+    /// Free-form Gouraud triangle mesh shading.
+    Mesh(MeshShading),
 }
 
 /// Axial shading data used by thumbnail rasterization.
@@ -837,6 +845,29 @@ pub struct RadialShading {
     pub extend_start: bool,
     /// Whether samples after the end circle extend the end color.
     pub extend_end: bool,
+}
+
+/// Bounded triangle mesh shading data used by thumbnail rasterization.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MeshShading {
+    /// Decoded Gouraud triangles.
+    pub triangles: Vec<MeshTriangle>,
+}
+
+/// One decoded mesh shading triangle.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MeshTriangle {
+    /// Triangle vertices in shading coordinates.
+    pub vertices: [MeshVertex; 3],
+}
+
+/// One decoded mesh shading vertex.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MeshVertex {
+    /// Vertex point in shading coordinates.
+    pub point: Point,
+    /// Vertex color.
+    pub color: DeviceColor,
 }
 
 /// PDF tiling pattern paint mode.
@@ -1645,11 +1676,85 @@ impl ShadingResources {
         Ok(Self { shadings })
     }
 
+    /// Resolves shadings from a PDF `/Shading` resource dictionary and
+    /// decodes stream-backed mesh shadings through the provided resolver.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`GraphicsError`] when a shading resource is malformed, missing,
+    /// or outside the configured mesh shading budgets.
+    pub fn from_shading_dictionary_with_resolver<'a, R>(
+        dictionary: &[(PdfName<'a>, PdfPrimitive<'a>)],
+        resolver: &'a R,
+        options: DisplayListOptions,
+    ) -> GraphicsResult<Self>
+    where
+        R: ShadingObjectResolver<'a> + ?Sized,
+    {
+        let mut shadings = Vec::new();
+        for (name, value) in dictionary {
+            let shading = match value {
+                PdfPrimitive::Dictionary(shading_dictionary) => decode_shading(shading_dictionary)?,
+                _ => {
+                    let reference = reference_from_primitive(value)
+                        .ok_or_else(|| invalid_shading_resource(name.as_bytes()))?;
+                    let object = resolver
+                        .resolve_shading_object(reference)?
+                        .ok_or_else(|| invalid_shading_resource(name.as_bytes()))?;
+                    let ObjectValue::Stream(stream) = &object.value else {
+                        return Err(invalid_shading_resource(name.as_bytes()));
+                    };
+                    decode_shading_stream(name.as_bytes(), stream, options)?
+                }
+            };
+            shadings.push((name.as_bytes().to_vec(), shading));
+        }
+        Ok(Self { shadings })
+    }
+
     /// Returns the shading matching a PDF resource name.
     #[must_use]
     pub fn get(&self, name: PdfName<'_>) -> Option<&Shading> {
         self.shadings.iter().find_map(|(resource, shading)| {
             (resource.as_slice() == name.as_bytes()).then_some(shading)
+        })
+    }
+}
+
+/// Resolves shading stream references from a loaded PDF document.
+pub trait ShadingObjectResolver<'a> {
+    /// Resolves an indirect object reference.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`GraphicsError`] when object-stream parsing fails.
+    fn resolve_shading_object(
+        &'a self,
+        reference: Reference,
+    ) -> GraphicsResult<Option<IndirectObject<'a>>>;
+}
+
+impl<'a> ShadingObjectResolver<'a> for ClassicDocument<'a> {
+    fn resolve_shading_object(
+        &'a self,
+        reference: Reference,
+    ) -> GraphicsResult<Option<IndirectObject<'a>>> {
+        Ok(self.objects.get(reference.id).cloned())
+    }
+}
+
+impl<'a> ShadingObjectResolver<'a> for ModernDocument<'a> {
+    fn resolve_shading_object(
+        &'a self,
+        reference: Reference,
+    ) -> GraphicsResult<Option<IndirectObject<'a>>> {
+        self.get_object(reference.id).map_err(|error| {
+            GraphicsError::new(
+                error.offset(),
+                GraphicsErrorKind::ObjectModel {
+                    message: error.to_string(),
+                },
+            )
         })
     }
 }
@@ -4277,6 +4382,10 @@ pub struct DisplayListOptions {
     pub max_form_recursion_depth: usize,
     /// Maximum cached deterministic font fallback resolutions.
     pub max_font_fallback_cache_entries: usize,
+    /// Maximum decoded bytes accepted for one mesh shading stream.
+    pub max_mesh_shading_bytes: usize,
+    /// Maximum triangles accepted in one decoded mesh shading.
+    pub max_mesh_shading_triangles: usize,
 }
 
 impl Default for DisplayListOptions {
@@ -4297,6 +4406,8 @@ impl Default for DisplayListOptions {
             max_soft_mask_depth: DEFAULT_SOFT_MASK_DEPTH_LIMIT,
             max_form_recursion_depth: DEFAULT_FORM_RECURSION_DEPTH_LIMIT,
             max_font_fallback_cache_entries: DEFAULT_FONT_FALLBACK_CACHE_LIMIT,
+            max_mesh_shading_bytes: DEFAULT_MESH_SHADING_BYTES_LIMIT,
+            max_mesh_shading_triangles: DEFAULT_MESH_SHADING_TRIANGLE_LIMIT,
         }
     }
 }
@@ -4640,6 +4751,7 @@ fn rasterize_shading_item(
         Shading::Radial(shading) => {
             rasterize_radial_shading(*shading, item.state, device, transform)
         }
+        Shading::Mesh(shading) => rasterize_mesh_shading(shading, item.state, device, transform),
     }
 }
 
@@ -4756,6 +4868,103 @@ fn sample_radial_color(shading: RadialShading, t: f64) -> Rgba {
         b: interpolate_channel(start.b, end.b, ratio),
         a: 255,
     }
+}
+
+fn rasterize_mesh_shading(
+    shading: &MeshShading,
+    state: GraphicsState,
+    device: &mut RasterDevice,
+    transform: PageTransform,
+) -> RasterResult<()> {
+    for triangle in &shading.triangles {
+        let vertices = triangle.vertices.map(|vertex| {
+            let user_point = state.ctm.transform_point(vertex.point.x, vertex.point.y);
+            MeshVertex {
+                point: transform.matrix.transform_point(user_point.x, user_point.y),
+                color: vertex.color,
+            }
+        });
+        rasterize_mesh_triangle(vertices, state, device)?;
+    }
+    Ok(())
+}
+
+fn rasterize_mesh_triangle(
+    vertices: [MeshVertex; 3],
+    state: GraphicsState,
+    device: &mut RasterDevice,
+) -> RasterResult<()> {
+    let bounds = PathBounds {
+        min_x: vertices
+            .iter()
+            .map(|vertex| vertex.point.x)
+            .fold(f64::INFINITY, f64::min),
+        min_y: vertices
+            .iter()
+            .map(|vertex| vertex.point.y)
+            .fold(f64::INFINITY, f64::min),
+        max_x: vertices
+            .iter()
+            .map(|vertex| vertex.point.x)
+            .fold(f64::NEG_INFINITY, f64::max),
+        max_y: vertices
+            .iter()
+            .map(|vertex| vertex.point.y)
+            .fold(f64::NEG_INFINITY, f64::max),
+    };
+    let Some(bounds) = device_pixel_bounds(bounds, device.dimensions(), 0.0) else {
+        return Ok(());
+    };
+    let a = vertices[0].point;
+    let b = vertices[1].point;
+    let c = vertices[2].point;
+    let denominator = (b.y - c.y).mul_add(a.x - c.x, (c.x - b.x) * (a.y - c.y));
+    if denominator.abs() <= f64::EPSILON {
+        return Ok(());
+    }
+    let colors = vertices.map(|vertex| device_color_to_rgba(vertex.color));
+    for y in bounds.min_y..bounds.max_y {
+        for x in bounds.min_x..bounds.max_x {
+            let point = Point {
+                x: f64::from(x) + 0.5,
+                y: f64::from(y) + 0.5,
+            };
+            let w0 = ((b.y - c.y) * (point.x - c.x) + (c.x - b.x) * (point.y - c.y)) / denominator;
+            let w1 = ((c.y - a.y) * (point.x - c.x) + (a.x - c.x) * (point.y - c.y)) / denominator;
+            let w2 = 1.0 - w0 - w1;
+            if w0 <= f64::EPSILON || w1 < -f64::EPSILON || w2 < -f64::EPSILON {
+                continue;
+            }
+            blend_pixel(
+                device,
+                x,
+                y,
+                interpolate_triangle_color(colors, [w0, w1, w2]),
+                state.blend_mode,
+                state.fill_alpha,
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn interpolate_triangle_color(colors: [Rgba; 3], weights: [f64; 3]) -> Rgba {
+    Rgba {
+        r: interpolate_triangle_channel([colors[0].r, colors[1].r, colors[2].r], weights),
+        g: interpolate_triangle_channel([colors[0].g, colors[1].g, colors[2].g], weights),
+        b: interpolate_triangle_channel([colors[0].b, colors[1].b, colors[2].b], weights),
+        a: 255,
+    }
+}
+
+fn interpolate_triangle_channel(channels: [u8; 3], weights: [f64; 3]) -> u8 {
+    f64::from(channels[0])
+        .mul_add(
+            weights[0],
+            f64::from(channels[1]).mul_add(weights[1], f64::from(channels[2]) * weights[2]),
+        )
+        .round()
+        .clamp(0.0, 255.0) as u8
 }
 
 fn interpolate_channel(start: u8, end: u8, ratio: f64) -> u8 {
@@ -7253,6 +7462,240 @@ fn decode_shading(dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)]) -> GraphicsRes
             }))
         }
         _ => Err(unsupported_shading(b"ShadingType")),
+    }
+}
+
+fn decode_shading_stream(
+    resource_name: &[u8],
+    stream: &StreamObject<'_>,
+    options: DisplayListOptions,
+) -> GraphicsResult<Shading> {
+    let Some(PdfPrimitive::Number(PdfNumber::Integer(shading_type))) =
+        dictionary_value(stream.dictionary(), b"ShadingType")
+    else {
+        return Err(invalid_shading_resource(resource_name));
+    };
+    if *shading_type != 4 {
+        return decode_shading(stream.dictionary());
+    }
+    let decoded = stream
+        .decode_with_options(StreamDecodeOptions {
+            max_decoded_len: options.max_mesh_shading_bytes,
+        })
+        .map_err(|error| match error {
+            pdfrust_object::ObjectError::StreamLimitExceeded { .. } => GraphicsError::new(
+                None,
+                GraphicsErrorKind::ShadingBytesOverflow {
+                    limit: options.max_mesh_shading_bytes,
+                },
+            ),
+            _ => GraphicsError::new(
+                None,
+                GraphicsErrorKind::ObjectModel {
+                    message: error.to_string(),
+                },
+            ),
+        })?;
+    decode_type4_mesh_shading(stream.dictionary(), &decoded, options)
+}
+
+fn decode_type4_mesh_shading(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    data: &[u8],
+    options: DisplayListOptions,
+) -> GraphicsResult<Shading> {
+    let color_space = shading_color_space(dictionary)?;
+    let color_components = shading_component_count(color_space);
+    let bits_per_coordinate = required_shading_u8(dictionary, b"BitsPerCoordinate")?;
+    let bits_per_component = required_shading_u8(dictionary, b"BitsPerComponent")?;
+    let bits_per_flag = required_shading_u8(dictionary, b"BitsPerFlag")?;
+    if bits_per_coordinate != 8 {
+        return Err(unsupported_shading(b"BitsPerCoordinate"));
+    }
+    if bits_per_component != 8 {
+        return Err(unsupported_shading(b"BitsPerComponent"));
+    }
+    if !matches!(bits_per_flag, 2 | 8) {
+        return Err(unsupported_shading(b"BitsPerFlag"));
+    }
+    let decode = required_mesh_decode_ranges(dictionary, color_components)?;
+    let record_bits = usize::from(bits_per_flag)
+        + 2 * usize::from(bits_per_coordinate)
+        + color_components * usize::from(bits_per_component);
+    let mut reader = MeshBitReader::new(data);
+    let mut records = Vec::new();
+    while reader.remaining_bits() >= record_bits {
+        let flag = reader
+            .read_bits(bits_per_flag)
+            .ok_or_else(|| invalid_shading_resource(b"BitsPerFlag"))? as u8;
+        let point = Point {
+            x: decode_mesh_component(
+                reader
+                    .read_bits(bits_per_coordinate)
+                    .ok_or_else(|| invalid_shading_resource(b"BitsPerCoordinate"))?,
+                decode[0],
+                decode[1],
+                bits_per_coordinate,
+            ),
+            y: decode_mesh_component(
+                reader
+                    .read_bits(bits_per_coordinate)
+                    .ok_or_else(|| invalid_shading_resource(b"BitsPerCoordinate"))?,
+                decode[2],
+                decode[3],
+                bits_per_coordinate,
+            ),
+        };
+        let color = decode_mesh_color(&mut reader, color_space, bits_per_component, &decode[4..])?;
+        records.push((flag, MeshVertex { point, color }));
+    }
+    if records.len() < 3 {
+        return Err(invalid_shading_resource(b"Data"));
+    }
+    let mut triangles = Vec::new();
+    let mut index = 0usize;
+    while index < records.len() {
+        if records[index].0 != 0 {
+            return Err(unsupported_shading(b"MeshFlag"));
+        }
+        let Some((_, first)) = records.get(index).copied() else {
+            break;
+        };
+        let Some((_, second)) = records.get(index + 1).copied() else {
+            return Err(invalid_shading_resource(b"Data"));
+        };
+        let Some((_, third)) = records.get(index + 2).copied() else {
+            return Err(invalid_shading_resource(b"Data"));
+        };
+        if triangles.len() >= options.max_mesh_shading_triangles {
+            return Err(GraphicsError::new(
+                None,
+                GraphicsErrorKind::ShadingTriangleOverflow {
+                    limit: options.max_mesh_shading_triangles,
+                },
+            ));
+        }
+        triangles.push(MeshTriangle {
+            vertices: [first, second, third],
+        });
+        index += 3;
+    }
+    Ok(Shading::Mesh(MeshShading { triangles }))
+}
+
+fn required_shading_u8(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    key: &'static [u8],
+) -> GraphicsResult<u8> {
+    let Some(PdfPrimitive::Number(PdfNumber::Integer(value))) = dictionary_value(dictionary, key)
+    else {
+        return Err(invalid_shading_resource(key));
+    };
+    u8::try_from(*value).map_err(|_| invalid_shading_resource(key))
+}
+
+fn required_mesh_decode_ranges(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    color_components: usize,
+) -> GraphicsResult<Vec<f64>> {
+    let Some(PdfPrimitive::Array(values)) = dictionary_value(dictionary, b"Decode") else {
+        return Err(invalid_shading_resource(b"Decode"));
+    };
+    let expected = 4 + color_components * 2;
+    if values.len() != expected {
+        return Err(invalid_shading_resource(b"Decode"));
+    }
+    values
+        .iter()
+        .map(|value| {
+            number_from_primitive(value).ok_or_else(|| invalid_shading_resource(b"Decode"))
+        })
+        .collect()
+}
+
+fn shading_component_count(color_space: ShadingColorSpace) -> usize {
+    match color_space {
+        ShadingColorSpace::DeviceGray => 1,
+        ShadingColorSpace::DeviceRgb => 3,
+    }
+}
+
+fn decode_mesh_color(
+    reader: &mut MeshBitReader<'_>,
+    color_space: ShadingColorSpace,
+    bits_per_component: u8,
+    decode: &[f64],
+) -> GraphicsResult<DeviceColor> {
+    match color_space {
+        ShadingColorSpace::DeviceGray => {
+            let value = reader
+                .read_bits(bits_per_component)
+                .ok_or_else(|| invalid_shading_resource(b"BitsPerComponent"))?;
+            Ok(DeviceColor::Gray(DeviceGray(
+                decode_mesh_component(value, decode[0], decode[1], bits_per_component)
+                    .clamp(0.0, 1.0),
+            )))
+        }
+        ShadingColorSpace::DeviceRgb => {
+            let r = reader
+                .read_bits(bits_per_component)
+                .ok_or_else(|| invalid_shading_resource(b"BitsPerComponent"))?;
+            let g = reader
+                .read_bits(bits_per_component)
+                .ok_or_else(|| invalid_shading_resource(b"BitsPerComponent"))?;
+            let b = reader
+                .read_bits(bits_per_component)
+                .ok_or_else(|| invalid_shading_resource(b"BitsPerComponent"))?;
+            Ok(DeviceColor::Rgb {
+                r: decode_mesh_component(r, decode[0], decode[1], bits_per_component)
+                    .clamp(0.0, 1.0),
+                g: decode_mesh_component(g, decode[2], decode[3], bits_per_component)
+                    .clamp(0.0, 1.0),
+                b: decode_mesh_component(b, decode[4], decode[5], bits_per_component)
+                    .clamp(0.0, 1.0),
+            })
+        }
+    }
+}
+
+fn decode_mesh_component(raw: u32, min: f64, max: f64, bits: u8) -> f64 {
+    let max_raw = (1u32 << bits) - 1;
+    min + (max - min) * f64::from(raw) / f64::from(max_raw)
+}
+
+#[derive(Debug, Clone, Copy)]
+struct MeshBitReader<'a> {
+    data: &'a [u8],
+    bit_offset: usize,
+}
+
+impl<'a> MeshBitReader<'a> {
+    fn new(data: &'a [u8]) -> Self {
+        Self {
+            data,
+            bit_offset: 0,
+        }
+    }
+
+    fn remaining_bits(&self) -> usize {
+        self.data
+            .len()
+            .saturating_mul(8)
+            .saturating_sub(self.bit_offset)
+    }
+
+    fn read_bits(&mut self, bits: u8) -> Option<u32> {
+        if bits == 0 || bits > 24 || self.remaining_bits() < usize::from(bits) {
+            return None;
+        }
+        let mut value = 0u32;
+        for _ in 0..bits {
+            let byte = self.data[self.bit_offset / 8];
+            let bit = (byte >> (7 - (self.bit_offset % 8))) & 1;
+            value = (value << 1) | u32::from(bit);
+            self.bit_offset += 1;
+        }
+        Some(value)
     }
 }
 
@@ -11609,6 +12052,16 @@ pub enum GraphicsErrorKind {
         /// Unsupported shading feature.
         feature: Vec<u8>,
     },
+    /// Decoded shading stream data exceeds the configured byte limit.
+    ShadingBytesOverflow {
+        /// Configured decoded shading byte limit.
+        limit: usize,
+    },
+    /// Decoded mesh shading exceeds the configured triangle limit.
+    ShadingTriangleOverflow {
+        /// Configured decoded mesh triangle limit.
+        limit: usize,
+    },
     /// Color-space resource dictionary is malformed.
     InvalidColorSpaceResource {
         /// Invalid color-space resource or field name.
@@ -11867,6 +12320,12 @@ impl fmt::Display for GraphicsErrorKind {
                 "unsupported shading feature {}",
                 String::from_utf8_lossy(feature)
             ),
+            Self::ShadingBytesOverflow { limit } => {
+                write!(f, "decoded shading stream exceeds byte limit {limit}")
+            }
+            Self::ShadingTriangleOverflow { limit } => {
+                write!(f, "mesh shading exceeds triangle limit {limit}")
+            }
             Self::InvalidColorSpaceResource { name } => write!(
                 f,
                 "invalid color-space resource {}",
@@ -13085,6 +13544,66 @@ mod tests {
         assert_eq!(shading.start_radius, 0.0);
         assert_eq!(shading.end_center, Point { x: 60.0, y: 60.0 });
         assert_eq!(shading.end_radius, 60.0);
+    }
+
+    #[test]
+    fn shading_resources_should_decode_generated_type4_mesh_stream() {
+        let document = generated_fixture_document("type4-mesh-shading.pdf");
+        let object = document
+            .objects
+            .get(ObjectId::new(
+                ObjectNumber::new(2).expect("object number"),
+                GenerationNumber::new(0),
+            ))
+            .expect("mesh shading stream");
+        let ObjectValue::Stream(stream) = &object.value else {
+            panic!("expected shading stream");
+        };
+
+        let shading =
+            decode_shading_stream(b"Sh1", stream, DisplayListOptions::default()).expect("mesh");
+
+        let Shading::Mesh(mesh) = shading else {
+            panic!("expected mesh shading");
+        };
+        assert_eq!(mesh.triangles.len(), 1);
+        assert_eq!(
+            mesh.triangles[0].vertices[0].color,
+            DeviceColor::Rgb {
+                r: 1.0,
+                g: 0.0,
+                b: 0.0,
+            }
+        );
+    }
+
+    #[test]
+    fn shading_resources_should_enforce_mesh_triangle_budget() {
+        let document = generated_fixture_document("type4-mesh-shading.pdf");
+        let object = document
+            .objects
+            .get(ObjectId::new(
+                ObjectNumber::new(2).expect("object number"),
+                GenerationNumber::new(0),
+            ))
+            .expect("mesh shading stream");
+        let ObjectValue::Stream(stream) = &object.value else {
+            panic!("expected shading stream");
+        };
+        let error = decode_shading_stream(
+            b"Sh1",
+            stream,
+            DisplayListOptions {
+                max_mesh_shading_triangles: 0,
+                ..DisplayListOptions::default()
+            },
+        )
+        .expect_err("triangle budget should reject mesh");
+
+        assert_eq!(
+            error.kind(),
+            &GraphicsErrorKind::ShadingTriangleOverflow { limit: 0 }
+        );
     }
 
     #[test]

@@ -1066,6 +1066,49 @@ def mesh_shading_unsupported_pdf() -> bytes:
     return pdf.render(catalog)
 
 
+def type4_mesh_shading_pdf() -> bytes:
+    def pack_bits(records: list[list[tuple[int, int]]]) -> bytes:
+        bits = ""
+        for record in records:
+            for value, width in record:
+                bits += format(value, f"0{width}b")
+        padding = (-len(bits)) % 8
+        bits += "0" * padding
+        return int(bits, 2).to_bytes(len(bits) // 8, "big")
+
+    vertices = [
+        # flag, x, y, r, g, b
+        [(0, 8), (0, 8), (0, 8), (255, 8), (0, 8), (0, 8)],
+        [(0, 8), (255, 8), (0, 8), (0, 8), (255, 8), (0, 8)],
+        [(0, 8), (0, 8), (255, 8), (0, 8), (0, 8), (255, 8)],
+    ]
+    mesh = pack_bits(vertices)
+    pdf = Pdf()
+    content = b"/Sh1 sh"
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    shading = pdf.add(
+        b"<< /Type /Shading /ShadingType 4 /ColorSpace /DeviceRGB /BitsPerCoordinate 8 "
+        b"/BitsPerComponent 8 /BitsPerFlag 8 "
+        b"/Decode [0 120 0 120 0 1 0 1 0 1] /Length "
+        + str(len(mesh)).encode("ascii")
+        + b" >>\nstream\n"
+        + mesh
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 4 0 R /MediaBox [0 0 120 120] "
+        f"/Resources << /Shading << /Sh1 {shading} 0 R >> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    return pdf.render(catalog)
+
+
 def separation_spot_color_pdf() -> bytes:
     pdf = Pdf()
     content = (
@@ -2777,6 +2820,7 @@ def main() -> None:
     write("axial-gradient.pdf", axial_gradient_pdf())
     write("radial-gradient.pdf", radial_gradient_pdf())
     write("mesh-shading-unsupported.pdf", mesh_shading_unsupported_pdf())
+    write("type4-mesh-shading.pdf", type4_mesh_shading_pdf())
     write("separation-spot-color.pdf", separation_spot_color_pdf())
     write("devicen-spot-color.pdf", devicen_spot_color_pdf())
     write("tiling-pattern.pdf", tiling_pattern_pdf())

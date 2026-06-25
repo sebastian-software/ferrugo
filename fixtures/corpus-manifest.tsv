@@ -82,6 +82,7 @@ fixtures/generated/type1-fontfile-text.pdf	office-export	scripts/generate_fixtur
 fixtures/generated/type3-barcode-font.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,type3,charproc,barcode	Generated Type3 barcode-like glyph CharProc fixture.
 fixtures/generated/type3-symbol-font.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,type3,charproc,symbol	Generated Type3 symbol-like glyph CharProc fixture.
 fixtures/generated/type3-vector-text.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,type3,charproc,vector	Generated Type3 vector glyph CharProc text fixture.
+fixtures/generated/type4-mesh-shading.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	shading,mesh,type4,gouraud	Generated Type 4 Gouraud triangle mesh shading fixture.
 fixtures/generated/unsupported-ccitt-image.pdf	scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,codec,ccitt,unsupported	Generated CCITTFaxDecode unsupported-codec fixture.
 fixtures/generated/unsupported-jbig2-image.pdf	scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,codec,jbig2,unsupported	Generated JBIG2Decode unsupported-codec fixture.
 fixtures/generated/unsupported-jpx-image.pdf	scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,codec,jpx,unsupported	Generated JPXDecode unsupported-codec fixture.

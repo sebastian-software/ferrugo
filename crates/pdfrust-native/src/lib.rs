@@ -300,7 +300,7 @@ fn render_bytes(bytes: &[u8], options: &ThumbnailOptions) -> Result<Thumbnail, T
     let xobject_invocations = xobject_invocation_names(&content)?;
     let display_options = DisplayListOptions::default();
     let ext_graphics_states = page_ext_graphics_state_resources(&document, page)?;
-    let shadings = page_shading_resources(&document, page)?;
+    let shadings = page_shading_resources(&document, page, display_options)?;
     let patterns = page_tiling_pattern_resources(&document, page)?;
     let color_spaces = page_color_space_resources(&document, page)?;
     let display_list = build_path_display_list_with_graphics_resources(
@@ -690,6 +690,7 @@ fn page_ext_graphics_state_resources(
 fn page_shading_resources(
     document: &ClassicDocument<'_>,
     page: &ObjectPageMetadata,
+    options: DisplayListOptions,
 ) -> Result<ShadingResources, ThumbnailError> {
     let object = document
         .objects
@@ -721,7 +722,8 @@ fn page_shading_resources(
     else {
         return Ok(ShadingResources::empty());
     };
-    ShadingResources::from_shading_dictionary(shadings).map_err(map_graphics_error)
+    ShadingResources::from_shading_dictionary_with_resolver(shadings, document, options)
+        .map_err(map_graphics_error)
 }
 
 fn page_color_space_resources(
@@ -2221,7 +2223,9 @@ fn map_graphics_error(error: GraphicsError) -> ThumbnailError {
             unsupported_feature(BUCKET_IMAGE_FILTER)
         }
         GraphicsErrorKind::ImageBytesOverflow { .. }
-        | GraphicsErrorKind::ImageResourceBytesOverflow { .. } => {
+        | GraphicsErrorKind::ImageResourceBytesOverflow { .. }
+        | GraphicsErrorKind::ShadingBytesOverflow { .. }
+        | GraphicsErrorKind::ShadingTriangleOverflow { .. } => {
             unsupported_feature(BUCKET_RENDERER_MEMORY_BUDGET)
         }
         GraphicsErrorKind::UnsupportedSoftMask { .. }
@@ -3273,6 +3277,29 @@ mod tests {
     fn native_backend_should_report_generated_unsupported_mesh_shading_fixture() {
         let bytes = include_bytes!("../../../fixtures/generated/mesh-shading-unsupported.pdf");
         assert_unsupported_feature_fixture(bytes, "graphics.pattern-shading");
+    }
+
+    #[test]
+    fn native_backend_should_render_generated_type4_mesh_shading_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/type4-mesh-shading.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 120,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated Type 4 mesh shading fixture should render through native backend");
+
+        assert_eq!(thumbnail.width, 120);
+        assert_eq!(thumbnail.height, 120);
+        let red_corner = rgba_at(&thumbnail, 8, 112);
+        let green_corner = rgba_at(&thumbnail, 104, 112);
+        let blue_corner = rgba_at(&thumbnail, 8, 16);
+        assert!(red_corner[0] > red_corner[1] && red_corner[0] > red_corner[2]);
+        assert!(green_corner[1] > green_corner[0] && green_corner[1] > green_corner[2]);
+        assert!(blue_corner[2] > blue_corner[0] && blue_corner[2] > blue_corner[1]);
     }
 
     #[test]
