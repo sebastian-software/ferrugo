@@ -316,6 +316,36 @@ cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks \
   --native-profile low-memory
 ```
 
+## Server Batch Manifest
+
+`fixtures/server-batch-manifest.tsv` is the focused gate for server-side batch
+thumbnail throughput. It reuses existing supported fixtures across small,
+mixed-size, image-heavy, repeated-resource, and vector-stress families so the
+batch benchmark can measure throughput, latency distribution, RSS high-water
+sampling, typed errors, and bounded in-flight work without introducing new PDF
+fixtures.
+
+Use this manifest with `benchmark-batch-native` when a change may affect
+multi-input scheduling, server defaults, or per-document isolation.
+
+```sh
+cargo run -p pdfrust-cli --no-default-features -- benchmark-batch-native \
+  fixtures/generated \
+  --manifest fixtures/server-batch-manifest.tsv \
+  --include-family small \
+  --include-family mixed-size \
+  --include-family image-heavy \
+  --include-family repeated-resources \
+  --include-family vector-stress \
+  --repetitions 2 \
+  --max-workers 2 \
+  --max-in-flight-pixels 51200 \
+  --max-edge 160 \
+  --max-p95-ms 1000 \
+  --max-errors 0 \
+  --fail-on-budget
+```
+
 ## Private Local Corpora
 
 Private or third-party PDFs stay outside Git under `fixtures/local-corpus/`.

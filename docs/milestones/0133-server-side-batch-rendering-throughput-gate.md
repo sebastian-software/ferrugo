@@ -1,6 +1,6 @@
 # 0133: Server-Side Batch Rendering Throughput Gate
 
-Status: todo
+Status: done
 Phase: 24
 Size: medium
 Depends on: 0132
@@ -46,4 +46,16 @@ generation across many independent PDF inputs.
 
 ## Completion Notes
 
-Empty until done.
+- Added `benchmark-batch-native` with worker and in-flight pixel budgets,
+  repetitions, latency distribution, throughput, typed per-input outcomes, and
+  optional RSS sampling.
+- Added `fixtures/server-batch-manifest.tsv` for reproducible server batch
+  scenarios across small, mixed-size, image-heavy, repeated-resource, and
+  vector-stress fixtures.
+- Batch gate rendered 16/16 jobs natively with 0 fallbacks, 0 errors, and 0
+  budget failures using two workers.
+- Measured throughput: 26.408 jobs/sec; latency p50 26.687 ms, p95 184.736 ms,
+  max 184.736 ms.
+- RSS sampling in an unsandboxed run reported start 2848 KiB and high-water
+  5664 KiB.
+- Report: `docs/reports/server-batch-throughput-2026-06-25.md`.
