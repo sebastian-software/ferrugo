@@ -1,6 +1,6 @@
 # 0104: Advanced CMap Encodings And Identity Mapping
 
-Status: todo
+Status: done
 Phase: 18
 Size: medium
 Depends on: 0103
@@ -46,4 +46,19 @@ CMaps, and non-trivial code-space ranges.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-25.
+
+- Added ToUnicode code-space range parsing and bounded range storage.
+- Added longest-match CMap lookup that respects code-space ranges.
+- Added two-byte Identity-H/V fallback mapping for Type0 fonts without a
+  ToUnicode stream.
+- Accepted `/Identity-H usecmap` and `/Identity-V usecmap` as explicit base CMap
+  references while keeping other `usecmap` names unsupported.
+- Added deterministic `InvalidCMap` coverage for malformed code-space ranges.
+- Added generated CMap fixtures for Identity-H, Identity-V, and explicit
+  ToUnicode code-space ranges plus native backend smoke tests.
+- Supported-family gate: 41 total, 41 native rendered, 0 fallback, 0 errors.
+- PDFium visual comparison marks the new CMap fixtures as blockers due to
+  synthetic CID/font rasterizer drift, not native fallback.
+- Report: `docs/reports/cmap-identity-coverage-2026-06-25.md`.
+- Implementation commit: `ec9243f feat: add advanced cmap identity decoding`.

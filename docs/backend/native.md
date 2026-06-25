@@ -85,6 +85,20 @@ handles PDF-exported shaped output and records typed unsupported reasons for
 cases outside that subset. See
 `docs/reports/opentype-layout-feature-coverage-2026-06-25.md`.
 
+## CMap And Identity Text Decoding
+
+ToUnicode CMaps support explicit `begincodespacerange`, `beginbfchar`, and
+`beginbfrange` sections with bounded decoded bytes and entry counts. Text lookup
+uses longest matching source codes and respects parsed code-space ranges.
+
+Type0 fonts that use `/Encoding /Identity-H` or `/Encoding /Identity-V` without
+a ToUnicode stream receive a bounded two-byte identity fallback map. This keeps
+common synthetic and subset CID fixtures native-renderable rather than falling
+back to PDFium. ToUnicode CMaps may also use `/Identity-H usecmap` or
+`/Identity-V usecmap` as an explicit base. Other named `usecmap` references
+remain unsupported until named CMap resource lookup and cycle detection exist.
+See `docs/reports/cmap-identity-coverage-2026-06-25.md`.
+
 ## Fallback Policy
 
 PDFium remains the oracle and explicit fallback until the visual GA gate says
