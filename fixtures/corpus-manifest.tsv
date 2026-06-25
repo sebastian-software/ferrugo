@@ -15,6 +15,7 @@ fixtures/generated/annotation-missing-appearance.pdf	mixed-layout	scripts/genera
 fixtures/generated/arabic-shaped-text.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,type0,cid,arabic,prepositioned,opentype	Generated pre-positioned Arabic presentation-form Type0 CID text fixture.
 fixtures/generated/axial-gradient.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	shading,axial-gradient	Generated DeviceRGB axial shading fixture.
 fixtures/generated/blend-modes.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	blend-mode,transparency	Generated Multiply and Screen blend-mode fixture.
+fixtures/generated/blend-mode-array-fallback.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	blend-mode,array,unsupported-first,fallback,transparency,expected:native	Generated blend-mode array fixture with visually invariant black source fallback.
 fixtures/generated/cid-font-text.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,type0,cid,tounicode	Generated Type0 CID font ToUnicode fixture.
 fixtures/generated/cff-fontfile3-text.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,font,cff,fontfile3	Generated Type1 font resource with embedded CFF FontFile3 fixture.
 fixtures/generated/subset-truetype-widths.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,font,subset,truetype,widths,fontfile2	Generated subset TrueType fixture with explicit widths and embedded FontFile2.
@@ -127,6 +128,7 @@ fixtures/generated/tagged-accessibility-metadata.pdf	office-export	scripts/gener
 fixtures/generated/text-page.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,type1	Generated simple text page fixture.
 fixtures/generated/text-note-annotation-without-appearance.pdf	mixed-layout	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	annotation,text-note,missing-appearance	Generated text note annotation fallback fixture without appearance stream.
 fixtures/generated/text-spacing.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,spacing,invisible-text	Generated text spacing and invisible render-mode fixture.
+fixtures/generated/extgstate-luminosity-soft-mask.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	transparency,soft-mask,luminosity,unsupported,expected:pdfium-fallback	Generated ExtGState luminosity soft-mask boundary fixture.
 fixtures/generated/technical-linework-dimensions.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	technical-drawing,linework,dimensions,dash,thin-strokes,small-text	Generated technical drawing with fine outlines, dashed construction grid, dimension lines, and labels.
 fixtures/generated/technical-hatch-clipping.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	technical-drawing,hatch,clipping,dash,section	Generated section drawing with clipped hatch lines, dashed center line, and label.
 fixtures/generated/technical-large-coordinate-plan.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	technical-drawing,large-coordinate,page-box,dash,small-text	Generated large-coordinate site plan with downscaled linework and dimension label.
@@ -136,6 +138,7 @@ fixtures/generated/tounicode-text.pdf	office-export	scripts/generate_fixtures.py
 fixtures/generated/transparency-alpha.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	transparency,alpha,extgstate	Generated ExtGState fill and stroke alpha fixture.
 fixtures/generated/transparency-group.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	transparency,form-xobject	Generated path-only transparency group fixture.
 fixtures/generated/transparency-knockout-group.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	transparency,form-xobject,knockout	Generated isolated knockout transparency group fixture.
+fixtures/generated/transparency-isolated-alpha-group.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	transparency,form-xobject,isolated,alpha,expected:native	Generated isolated transparency group with overlapping alpha content.
 fixtures/generated/type1-fontfile-text.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,font,type1,fontfile	Generated Type1 FontFile text fixture with bounded synthetic charstring program.
 fixtures/generated/type3-barcode-font.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,type3,charproc,barcode	Generated Type3 barcode-like glyph CharProc fixture.
 fixtures/generated/type3-symbol-font.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,type3,charproc,symbol	Generated Type3 symbol-like glyph CharProc fixture.
@@ -144,6 +147,7 @@ fixtures/generated/type4-mesh-shading.pdf	report	scripts/generate_fixtures.py	MI
 fixtures/generated/unsupported-ccitt-image.pdf	scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,codec,ccitt,unsupported	Generated CCITTFaxDecode unsupported-codec fixture.
 fixtures/generated/unsupported-jbig2-image.pdf	scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,codec,jbig2,unsupported	Generated JBIG2Decode unsupported-codec fixture.
 fixtures/generated/unsupported-jpx-image.pdf	scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,codec,jpx,unsupported	Generated JPXDecode unsupported-codec fixture.
+fixtures/generated/unsupported-blend-mode.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	blend-mode,overlay,unsupported,expected:pdfium-fallback	Generated unsupported Overlay blend-mode boundary fixture.
 fixtures/generated/uncolored-tiling-pattern.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	pattern,tiling,uncolored,pattern-color-space	Generated uncolored tiling pattern fixture using a Pattern color space.
 fixtures/generated/user-unit-page.pdf	browser-print	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	geometry,userunit	Generated non-default UserUnit page geometry fixture.
 fixtures/generated/vector-paths.pdf	browser-print	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	vector,path	Generated vector path drawing fixture.

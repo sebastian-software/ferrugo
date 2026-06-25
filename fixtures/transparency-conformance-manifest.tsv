@@ -1,0 +1,10 @@
+path	family	source	license	page_count	features	notes
+fixtures/generated/transparency-alpha.pdf	alpha	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	transparency,alpha,extgstate,expected:native	Existing ExtGState fill and stroke alpha fixture.
+fixtures/generated/transparency-group.pdf	group	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	transparency,form-xobject,isolated,expected:native	Existing isolated transparency group fixture.
+fixtures/generated/transparency-knockout-group.pdf	group	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	transparency,form-xobject,knockout,expected:native	Existing isolated knockout transparency group fixture.
+fixtures/generated/transparency-isolated-alpha-group.pdf	group	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	transparency,form-xobject,isolated,alpha,expected:native	Generated isolated transparency group with overlapping alpha content.
+fixtures/generated/blend-modes.pdf	blend	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	blend-mode,multiply,screen,transparency,expected:native	Existing Multiply and Screen blend-mode fixture.
+fixtures/generated/blend-mode-array-fallback.pdf	blend	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	blend-mode,array,unsupported-first,fallback,multiply,expected:native	Generated blend-mode array fixture with visually invariant black source fallback.
+fixtures/generated/soft-mask-image.pdf	image-soft-mask	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,soft-mask,alpha,expected:native	Existing image soft-mask alpha fixture.
+fixtures/generated/extgstate-luminosity-soft-mask.pdf	unsupported-soft-mask	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	transparency,soft-mask,luminosity,unsupported,expected:pdfium-fallback	Generated ExtGState luminosity soft-mask boundary fixture.
+fixtures/generated/unsupported-blend-mode.pdf	unsupported-blend	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	blend-mode,overlay,unsupported,expected:pdfium-fallback	Generated unsupported Overlay blend-mode boundary fixture.

@@ -4102,6 +4102,26 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_render_generated_isolated_alpha_group_fixture() {
+        let bytes =
+            include_bytes!("../../../fixtures/generated/transparency-isolated-alpha-group.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 120,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated isolated alpha group fixture should render through native backend");
+
+        assert_eq!(thumbnail.width, 120);
+        assert_eq!(thumbnail.height, 120);
+        assert_eq!(rgba_at(&thumbnail, 25, 85), [192, 64, 64, 255]);
+        assert_eq!(rgba_at(&thumbnail, 55, 55), [96, 32, 160, 255]);
+    }
+
+    #[test]
     fn native_backend_should_render_generated_blend_modes_fixture() {
         let bytes = include_bytes!("../../../fixtures/generated/blend-modes.pdf");
         let thumbnail = ThumbnailBackend::render(
@@ -4119,6 +4139,37 @@ mod tests {
         assert_eq!(rgba_at(&thumbnail, 60, 60), [128, 128, 128, 255]);
         assert_eq!(rgba_at(&thumbnail, 20, 100), [128, 0, 0, 255]);
         assert_eq!(rgba_at(&thumbnail, 80, 100), [128, 128, 255, 255]);
+    }
+
+    #[test]
+    fn native_backend_should_render_generated_blend_mode_array_fallback_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/blend-mode-array-fallback.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 120,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated blend mode array fixture should render through native backend");
+
+        assert_eq!(thumbnail.width, 120);
+        assert_eq!(thumbnail.height, 120);
+        assert_eq!(rgba_at(&thumbnail, 40, 80), [0, 0, 0, 255]);
+    }
+
+    #[test]
+    fn native_backend_should_report_generated_unsupported_blend_mode_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/unsupported-blend-mode.pdf");
+        assert_unsupported_feature_fixture(bytes, "graphics.transparency");
+    }
+
+    #[test]
+    fn native_backend_should_report_generated_extgstate_luminosity_soft_mask_fixture() {
+        let bytes =
+            include_bytes!("../../../fixtures/generated/extgstate-luminosity-soft-mask.pdf");
+        assert_unsupported_feature_fixture(bytes, "graphics.transparency");
     }
 
     #[test]
