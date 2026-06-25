@@ -163,6 +163,28 @@ cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks \
   --max-edge 160
 ```
 
+## Scientific Report Manifest
+
+`fixtures/scientific-report-manifest.tsv` is the focused gate for scientific
+papers, equation/figure pages, long reports, references, and footnotes. It
+covers multi-column layout, subset-font proxies, symbol-like text, multi-page
+report sampling, and dense note placement.
+
+Use this manifest when a change may affect paper layout, small scientific text,
+figure placement, symbol glyphs, or long-report page scheduling:
+
+```sh
+cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks \
+  fixtures/generated \
+  --manifest fixtures/scientific-report-manifest.tsv \
+  --include-family paper \
+  --include-family equation-figure \
+  --include-family long-report \
+  --include-family references-footnotes \
+  --fail-on-fallback \
+  --max-edge 160
+```
+
 ## Private Local Corpora
 
 Private or third-party PDFs stay outside Git under `fixtures/local-corpus/`.
