@@ -53,6 +53,8 @@ cargo run -p pdfrust-cli -- benchmark-native fixtures/generated \
 Each report includes:
 
 - `backend`: `rust-native` or `pdfium`.
+- `platform`: target `os`, `arch`, `family`, `endian`, and
+  `pointer_width_bits`.
 - `config`: iteration count, render-time budget, and output-byte budget.
 - `summary`: total fixture count, native render count, fallback count, error
   count, and budget-failure count.

@@ -1,6 +1,6 @@
 # 0119: Cross-Platform Rendering Determinism Gate
 
-Status: todo
+Status: done
 Phase: 21
 Size: medium
 Depends on: 0118
@@ -46,4 +46,21 @@ CPU architectures.
 
 ## Completion Notes
 
-Empty until done.
+- Added target platform metadata to native/PDFium benchmark reports and
+  PDFium visual-diff reports.
+- Added `docs/policies/cross-platform-determinism.md` to define artifact
+  requirements, default tolerances, and hard blockers for native-only release
+  candidates.
+- Updated benchmark and visual-diff policy docs to describe the platform
+  metadata contract.
+- Local macOS/aarch64 supported-family native gate passed with 46/46 native
+  renders, 0 fallbacks, and 0 errors.
+- Local macOS/aarch64 benchmark reported 106 fixtures, 99 native renders, 6
+  fallbacks, 1 error, and 7 budget failures; supported families had no budget
+  failures.
+- Local PDFium visual-diff reported 106 fixtures, 35 exact, 22 accepted drift,
+  42 blockers, 6 native errors, 0 PDFium errors, and 1 both-error case.
+- Cross-platform readiness remains gated on additional Linux/target artifacts;
+  missing platform artifacts are now documented release-candidate blockers.
+- Report: `docs/reports/cross-platform-determinism-gate-2026-06-25.md`.
+- Implementation commit: `fb149f6 feat: add platform metadata to renderer reports`.

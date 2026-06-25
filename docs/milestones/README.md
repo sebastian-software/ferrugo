@@ -21,7 +21,6 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
-| 0119 | [Cross-Platform Rendering Determinism Gate](0119-cross-platform-rendering-determinism-gate.md) | 21 | medium | 0118 |
 | 0120 | [PDFium-Free Maintenance Gate And Deletion Backlog](0120-pdfium-free-maintenance-gate-and-deletion-backlog.md) | 21 | medium | 0119 |
 | 0121 | [Invoice Statement And Business Form Corpus Gate](0121-invoice-statement-and-business-form-corpus-gate.md) | 22 | medium | 0120 |
 | 0122 | [Presentation And Slide Export Fidelity](0122-presentation-and-slide-export-fidelity.md) | 22 | medium | 0121 |
@@ -113,6 +112,7 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Completed |
 | --- | --- | --- | --- | --- |
+| 0119 | [Cross-Platform Rendering Determinism Gate](0119-cross-platform-rendering-determinism-gate.md) | 21 | medium | 2026-06-25 |
 | 0118 | [Real Corpus Acquisition And Privacy Review Loop](0118-real-corpus-acquisition-and-privacy-review-loop.md) | 21 | medium | 2026-06-25 |
 | 0117 | [Tagged PDF Metadata And Accessibility Signals](0117-tagged-pdf-metadata-and-accessibility-signals.md) | 21 | medium | 2026-06-25 |
 | 0116 | [OCR Text Layer And Invisible Text Handling](0116-ocr-text-layer-and-invisible-text-handling.md) | 21 | medium | 2026-06-25 |

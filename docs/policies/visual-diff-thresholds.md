@@ -3,6 +3,11 @@
 This policy covers local native-versus-PDFium visual review runs produced by
 `pdfrust-cli visual-diff`.
 
+Visual-diff JSON includes target platform metadata (`os`, `arch`, `family`,
+`endian`, and `pointer_width_bits`). Use that block when comparing drift across
+machines, and do not infer cross-platform coverage from an artifact that lacks
+the target platform needed for a release gate.
+
 ## Default Thresholds
 
 The default classification thresholds are intentionally conservative:
