@@ -21,7 +21,6 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
-| 0112 | [Digital Signature Appearance And Validation Boundary](0112-digital-signature-appearance-and-validation-boundary.md) | 20 | small | 0111 |
 | 0113 | [Embedded Files Portfolio And Attachment Visibility](0113-embedded-files-portfolio-and-attachment-visibility.md) | 20 | medium | 0112 |
 | 0114 | [Linearized PDF Fast First Page Loading](0114-linearized-pdf-fast-first-page-loading.md) | 20 | medium | 0113 |
 | 0115 | [Multi-Page Document Scheduler And Cancellation](0115-multi-page-document-scheduler-and-cancellation.md) | 20 | medium | 0114 |
@@ -95,6 +94,7 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
+| 0112 | [Digital Signature Appearance And Validation Boundary](0112-digital-signature-appearance-and-validation-boundary.md) | 20 | small | 0111 |
 
 ## Done
 

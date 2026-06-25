@@ -1,6 +1,6 @@
 # 0112: Digital Signature Appearance And Validation Boundary
 
-Status: todo
+Status: in-progress
 Phase: 20
 Size: small
 Depends on: 0111
