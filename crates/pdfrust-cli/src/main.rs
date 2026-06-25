@@ -438,6 +438,8 @@ fn benchmark_native_command(args: &[OsString]) -> Result<(), CliError> {
         Some(path) => Some(read_corpus_manifest(path)?),
         None => None,
     };
+    let fixtures =
+        filter_fixtures_by_family(&fixtures, manifest.as_ref(), &config.include_families)?;
     let native = NativeBackend::new();
     let report = benchmark_backend(
         &native,
@@ -479,6 +481,8 @@ fn benchmark_pdfium_command_enabled(args: &[OsString]) -> Result<(), CliError> {
         Some(path) => Some(read_corpus_manifest(path)?),
         None => None,
     };
+    let fixtures =
+        filter_fixtures_by_family(&fixtures, manifest.as_ref(), &config.include_families)?;
     let pdfium = PdfiumBackend::from_env().map_err(|err| CliError::Backend(err.to_string()))?;
     let report = benchmark_backend(
         &pdfium,
@@ -520,6 +524,8 @@ fn visual_diff_command_enabled(args: &[OsString]) -> Result<(), CliError> {
         Some(path) => Some(read_corpus_manifest(path)?),
         None => None,
     };
+    let fixtures =
+        filter_fixtures_by_family(&fixtures, manifest.as_ref(), &config.include_families)?;
     let native = NativeBackend::new();
     let pdfium = PdfiumBackend::from_env().map_err(|err| CliError::Backend(err.to_string()))?;
     let report = visual_diff_report(
@@ -1014,6 +1020,7 @@ impl LocalCorpusValidationConfig {
 struct BenchmarkConfig {
     input: PathBuf,
     manifest: Option<PathBuf>,
+    include_families: Vec<String>,
     output: Option<PathBuf>,
     page_index: u32,
     max_edge: u32,
@@ -1030,6 +1037,7 @@ struct BenchmarkConfig {
 struct VisualDiffConfig {
     input: PathBuf,
     manifest: Option<PathBuf>,
+    include_families: Vec<String>,
     output: Option<PathBuf>,
     page_index: u32,
     max_edge: u32,
@@ -1061,6 +1069,7 @@ impl BenchmarkConfig {
     fn parse(args: &[OsString]) -> Result<Self, CliError> {
         let mut input = None;
         let mut manifest = None;
+        let mut include_families = Vec::new();
         let mut output = None;
         let mut page_index = DEFAULT_PAGE_INDEX;
         let mut max_edge = 160;
@@ -1084,6 +1093,11 @@ impl BenchmarkConfig {
                 "--manifest" => {
                     index += 1;
                     manifest = Some(required_path(args, index, "--manifest")?);
+                }
+                "--include-family" => {
+                    index += 1;
+                    include_families
+                        .push(required_str(args, index, "--include-family")?.to_string());
                 }
                 "--page-index" => {
                     index += 1;
@@ -1145,6 +1159,7 @@ impl BenchmarkConfig {
         Ok(Self {
             input: input.ok_or_else(|| CliError::Usage("missing input path".to_string()))?,
             manifest,
+            include_families,
             output,
             page_index,
             max_edge,
@@ -1163,6 +1178,7 @@ impl VisualDiffConfig {
     fn parse(args: &[OsString]) -> Result<Self, CliError> {
         let mut input = None;
         let mut manifest = None;
+        let mut include_families = Vec::new();
         let mut output = None;
         let mut page_index = DEFAULT_PAGE_INDEX;
         let mut max_edge = 160;
@@ -1179,6 +1195,11 @@ impl VisualDiffConfig {
                 "--manifest" => {
                     index += 1;
                     manifest = Some(required_path(args, index, "--manifest")?);
+                }
+                "--include-family" => {
+                    index += 1;
+                    include_families
+                        .push(required_str(args, index, "--include-family")?.to_string());
                 }
                 "--output" | "-o" => {
                     index += 1;
@@ -1246,6 +1267,7 @@ impl VisualDiffConfig {
         Ok(Self {
             input: input.ok_or_else(|| CliError::Usage("missing input path".to_string()))?,
             manifest,
+            include_families,
             output,
             page_index,
             max_edge,
@@ -4124,6 +4146,26 @@ status = "candidate"
             config.manifest,
             Some(PathBuf::from("fixtures/corpus-manifest.tsv"))
         );
+        assert!(config.include_families.is_empty());
+    }
+
+    #[test]
+    fn benchmark_config_should_accept_family_filters() {
+        let config = BenchmarkConfig::parse(&[
+            OsString::from("fixtures/generated"),
+            OsString::from("--manifest"),
+            OsString::from("fixtures/corpus-manifest.tsv"),
+            OsString::from("--include-family"),
+            OsString::from("invoice"),
+            OsString::from("--include-family"),
+            OsString::from("statement"),
+        ])
+        .expect("valid benchmark config");
+
+        assert_eq!(
+            config.include_families,
+            vec!["invoice".to_string(), "statement".to_string()]
+        );
     }
 
     #[test]
@@ -4145,6 +4187,7 @@ status = "candidate"
         let config = BenchmarkConfig {
             input: fixture_root.join("fixtures/generated"),
             manifest: Some(manifest_path),
+            include_families: Vec::new(),
             output: None,
             page_index: 0,
             max_edge: 120,

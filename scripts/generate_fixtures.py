@@ -3118,6 +3118,96 @@ def multi_page_report_pdf() -> bytes:
     return pdf.render(catalog)
 
 
+def business_invoice_dense_pdf() -> bytes:
+    return page_pdf(
+        "[0 0 300 200]",
+        (
+            "q 0.97 0.98 1 rg 0 0 300 200 re f Q "
+            "q 0.08 0.30 0.58 rg 20 158 32 24 re f 0.02 0.12 0.24 rg 56 158 66 24 re f Q "
+            "q 0.72 0.04 0.04 RG 1.2 w 220 150 48 20 re S Q "
+            "q 0 0 0 rg 210 34 2 26 re f 216 34 1 26 re f 221 34 3 26 re f "
+            "228 34 1 26 re f 233 34 4 26 re f 242 34 2 26 re f 248 34 1 26 re f Q "
+            "q 0.15 0.22 0.36 RG 0.7 w "
+            "20 68 m 280 68 l 280 136 l 20 136 l h S "
+            "20 120 m 280 120 l S 20 104 m 280 104 l S 20 88 m 280 88 l S "
+            "132 68 m 132 136 l S 192 68 m 192 136 l S 236 68 m 236 136 l S "
+            "170 30 m 280 30 l S Q "
+            "BT /F1 10 Tf 20 184 Td (PD Acme) Tj 200 0 Td (Invoice 1007) Tj "
+            "-200 -20 Td (Bill To: Example LLC) Tj 200 0 Td (PAID) Tj "
+            "-200 -30 Td (Item) Tj 112 0 Td (Qty) Tj 60 0 Td (Rate) Tj 44 0 Td (Amount) Tj "
+            "-216 -16 Td (Design) Tj 112 0 Td (2) Tj 60 0 Td (120) Tj 44 0 Td (240) Tj "
+            "-216 -16 Td (Hosting) Tj 112 0 Td (1) Tj 60 0 Td (80) Tj 44 0 Td (80) Tj "
+            "-216 -16 Td (Tax) Tj 112 0 Td (1) Tj 60 0 Td (24) Tj 44 0 Td (24) Tj "
+            "56 -24 Td (Total Due 344) Tj -198 -20 Td (Signature) Tj ET"
+        ),
+    )
+
+
+def account_statement_ledger_pdf() -> bytes:
+    return page_pdf(
+        "[0 0 300 200]",
+        (
+            "q 0.96 0.96 0.94 rg 0 0 300 200 re f Q "
+            "q 0.10 0.45 0.28 rg 20 162 22 22 re f 46 162 60 22 re f Q "
+            "q 0.15 0.22 0.36 RG 0.7 w "
+            "20 42 m 280 42 l 280 146 l 20 146 l h S "
+            "20 130 m 280 130 l S 20 114 m 280 114 l S 20 98 m 280 98 l S "
+            "20 82 m 280 82 l S 20 66 m 280 66 l S "
+            "80 42 m 80 146 l S 162 42 m 162 146 l S 220 42 m 220 146 l S Q "
+            "q 0 0 0 rg 34 24 1 12 re f 38 24 3 12 re f 45 24 1 12 re f "
+            "50 24 2 12 re f 57 24 1 12 re f 62 24 4 12 re f Q "
+            "BT /F1 9 Tf 20 184 Td (Account Statement) Tj 178 0 Td (Period 2026-06) Tj "
+            "-178 -30 Td (Date) Tj 60 0 Td (Description) Tj 82 0 Td (Debit) Tj 58 0 Td (Credit) Tj "
+            "-200 -16 Td (06-01) Tj 60 0 Td (Opening) Tj 82 0 Td (0) Tj 58 0 Td (500) Tj "
+            "-200 -16 Td (06-03) Tj 60 0 Td (Invoice) Tj 82 0 Td (120) Tj 58 0 Td (0) Tj "
+            "-200 -16 Td (06-10) Tj 60 0 Td (Payment) Tj 82 0 Td (0) Tj 58 0 Td (120) Tj "
+            "-200 -16 Td (06-18) Tj 60 0 Td (Service) Tj 82 0 Td (64) Tj 58 0 Td (0) Tj "
+            "-200 -16 Td (06-25) Tj 60 0 Td (Balance) Tj 82 0 Td (64) Tj 58 0 Td (500) Tj ET"
+        ),
+    )
+
+
+def thermal_receipt_pdf() -> bytes:
+    return page_pdf(
+        "[0 0 160 260]",
+        (
+            "q 0.98 0.98 0.94 rg 0 0 160 260 re f Q "
+            "q 0.2 0.2 0.2 RG 0.6 w 18 44 m 142 44 l 18 190 m 142 190 l S Q "
+            "q 0 0 0 rg 34 20 1 18 re f 38 20 2 18 re f 44 20 1 18 re f "
+            "50 20 4 18 re f 60 20 1 18 re f 66 20 3 18 re f 74 20 1 18 re f "
+            "82 20 2 18 re f 90 20 1 18 re f 96 20 5 18 re f Q "
+            "BT /F1 9 Tf 36 230 Td (PD MARKET) Tj -10 -18 Td (Receipt 42) Tj "
+            "-8 -26 Td (Coffee) Tj 78 0 Td (4.50) Tj "
+            "-78 -14 Td (Bagel) Tj 78 0 Td (3.25) Tj "
+            "-78 -14 Td (Tax) Tj 78 0 Td (0.62) Tj "
+            "-78 -22 Td (Total) Tj 78 0 Td (8.37) Tj "
+            "-72 -28 Td (CARD APPROVED) Tj "
+            "-2 -88 Td (Thank you) Tj ET"
+        ),
+    )
+
+
+def business_form_stamp_signature_pdf() -> bytes:
+    return page_pdf(
+        "[0 0 260 180]",
+        (
+            "q 0.95 0.97 0.98 rg 0 0 260 180 re f Q "
+            "q 0.15 0.22 0.36 RG 0.8 w 18 22 224 132 re S "
+            "18 124 m 242 124 l S 18 94 m 242 94 l S 18 64 m 242 64 l S "
+            "126 22 m 126 154 l S Q "
+            "q 0.78 0.06 0.05 RG 1.5 w 176 112 46 24 re S Q "
+            "q 0.05 0.14 0.28 rg 168 28 1 12 re f 172 28 3 12 re f 179 28 1 12 re f "
+            "184 28 2 12 re f 191 28 1 12 re f 196 28 4 12 re f Q "
+            "q 0 0 0 RG 1 w 34 76 10 10 re S 38 80 m 43 86 l S 43 86 m 51 70 l S "
+            "34 48 10 10 re S 152 48 m 222 48 l S Q "
+            "BT /F1 10 Tf 24 142 Td (Business Intake Form) Tj 156 0 Td (REVIEWED) Tj "
+            "-156 -32 Td (Company) Tj 108 0 Td (Example LLC) Tj "
+            "-108 -30 Td (Approved) Tj 108 0 Td (Yes) Tj "
+            "-108 -30 Td (Signature) Tj 108 0 Td (A Example) Tj ET"
+        ),
+    )
+
+
 def page_targeted_stream_pdf() -> bytes:
     pdf = Pdf()
     content_1 = b"q 0.1 0.6 0.2 rg 20 20 80 40 re f Q"
@@ -3324,6 +3414,10 @@ def main() -> None:
     write("type3-barcode-font.pdf", type3_barcode_font_pdf())
     write("office-table.pdf", office_table_pdf())
     write("multi-page-report.pdf", multi_page_report_pdf())
+    write("business-invoice-dense.pdf", business_invoice_dense_pdf())
+    write("account-statement-ledger.pdf", account_statement_ledger_pdf())
+    write("thermal-receipt.pdf", thermal_receipt_pdf())
+    write("business-form-stamp-signature.pdf", business_form_stamp_signature_pdf())
     write("page-targeted-stream.pdf", page_targeted_stream_pdf())
 
 

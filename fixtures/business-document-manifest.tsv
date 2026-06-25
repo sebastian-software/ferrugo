@@ -1,0 +1,8 @@
+path	family	source	license	page_count	features	notes
+fixtures/generated/business-invoice-dense.pdf	invoice	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	invoice,business-document,table,barcode,logo,stamp,signature,dense-totals,expected:native	Dense generated invoice with logo block, totals table, barcode marker, stamp, and signature line.
+fixtures/generated/account-statement-ledger.pdf	statement	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	statement,business-document,ledger,barcode,dense-table,expected:native	Generated account statement ledger with dense transaction rows and barcode marker.
+fixtures/generated/thermal-receipt.pdf	receipt	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	receipt,business-document,barcode,total,expected:native	Narrow generated thermal receipt with totals and barcode marker.
+fixtures/generated/business-form-stamp-signature.pdf	business-form	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	business-form,form,stamp,signature,barcode,checkbox,expected:native	Static generated business form with stamp, checkbox, barcode marker, and signature block.
+fixtures/generated/office-table.pdf	invoice	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	invoice,table,text,expected:native	Existing invoice-like office table baseline.
+fixtures/generated/multi-page-report.pdf	statement	scripts/generate_fixtures.py	MIT OR Apache-2.0	2	statement,multipage,table,text,expected:native	Existing generated report/statement baseline with repeated headers.
+fixtures/generated/missing-font-invoice.pdf	invoice	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	invoice,missing-font,text,expected:native	Invoice-style missing-font fixture for deterministic fallback text coverage.
