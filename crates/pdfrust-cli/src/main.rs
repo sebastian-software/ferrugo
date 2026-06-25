@@ -2879,11 +2879,13 @@ fn document_info_json(info: &pdfrust_thumbnail::DocumentInfo) -> String {
 
 fn document_structure_json(structure: &pdfrust_thumbnail::DocumentStructure) -> String {
     format!(
-        "{{\"has_xmp_metadata\":{},\"has_mark_info\":{},\"has_struct_tree_root\":{},\"has_named_destinations\":{}}}",
+        "{{\"has_xmp_metadata\":{},\"has_mark_info\":{},\"has_struct_tree_root\":{},\"has_named_destinations\":{},\"has_signature_fields\":{},\"has_signature_byte_range\":{}}}",
         structure.has_xmp_metadata,
         structure.has_mark_info,
         structure.has_struct_tree_root,
-        structure.has_named_destinations
+        structure.has_named_destinations,
+        structure.has_signature_fields,
+        structure.has_signature_byte_range
     )
 }
 

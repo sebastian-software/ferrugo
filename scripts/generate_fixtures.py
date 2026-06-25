@@ -1955,6 +1955,46 @@ def acroform_signature_placeholder_pdf() -> bytes:
     return pdf.render(catalog)
 
 
+def digital_signature_appearance_pdf() -> bytes:
+    pdf = Pdf()
+    appearance = (
+        b"0.94 0.94 0.94 rg 0 0 100 30 re f "
+        b"0 0 0 RG 1 w 0.5 0.5 99 29 re S "
+        b"0.25 0.25 0.25 RG 2 w 8 8 m 92 22 l S"
+    )
+    content = b"q 1 0 0 1 20 35 cm " + appearance + b" Q"
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 160 90] "
+        f"/Contents {contents} 0 R /Annots [6 0 R] >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    appearance_object = pdf.add(
+        b"<< /Type /XObject /Subtype /Form /BBox [0 0 100 30] /Length "
+        + str(len(appearance)).encode("ascii")
+        + b" >>\nstream\n"
+        + appearance
+        + b"\nendstream"
+    )
+    signature = pdf.add(
+        "<< /Type /Sig /Filter /Adobe.PPKLite /SubFilter /adbe.pkcs7.detached "
+        "/ByteRange [0 0 0 0] /Contents <00> /M (D:20260625120000Z) >>"
+    )
+    field = pdf.add(
+        "<< /Type /Annot /Subtype /Widget /FT /Sig /T (SignedByExample) "
+        f"/V {signature} 0 R /Rect [20 35 120 65] "
+        f"/AP << /N {appearance_object} 0 R >> >>"
+    )
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R /AcroForm << /Fields [{field} 0 R] >> >>")
+    assert signature == 5
+    assert field == 6
+    return pdf.render(catalog)
+
+
 def optional_content_layer_pdf(visible: bool) -> bytes:
     pdf = Pdf()
     content = (
@@ -3016,6 +3056,7 @@ def main() -> None:
     )
     write("acroform-radio-off.pdf", acroform_radio_off_pdf())
     write("acroform-signature-placeholder.pdf", acroform_signature_placeholder_pdf())
+    write("digital-signature-appearance.pdf", digital_signature_appearance_pdf())
     write("optional-content-layer-on.pdf", optional_content_layer_pdf(visible=True))
     write("optional-content-layer-off.pdf", optional_content_layer_pdf(visible=False))
     write("optional-content-ocmd.pdf", optional_content_ocmd_pdf())

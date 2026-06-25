@@ -24,6 +24,7 @@ fixtures/generated/combining-mark-text.pdf	office-export	scripts/generate_fixtur
 fixtures/generated/cropped-scan-page.pdf	scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	geometry,cropbox,scan	Generated cropped scan-like page using CropBox selection.
 fixtures/generated/dashed-stroke.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	vector,stroke,dash	Generated dashed stroke fixture.
 fixtures/generated/devicen-spot-color.pdf	presentation	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	color,spot,devicen,tint-transform	Generated DeviceN spot-color vector fixture with Type 2 tint approximation.
+fixtures/generated/digital-signature-appearance.pdf	form	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	acroform,signature,appearance,byterange	Generated visible digital signature appearance fixture with ByteRange metadata.
 fixtures/generated/dct-image.pdf	scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,dct,jpeg	Generated DCTDecode Image XObject fixture.
 fixtures/generated/embedded-font.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	font,truetype	Generated embedded TrueType font fixture.
 fixtures/generated/encoding-differences.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,encoding	Generated Encoding Differences text fixture.

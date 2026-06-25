@@ -261,6 +261,10 @@ pub struct DocumentStructure {
     pub has_struct_tree_root: bool,
     /// Catalog exposes named destinations through `/Dests` or `/Names /Dests`.
     pub has_named_destinations: bool,
+    /// Document exposes at least one AcroForm signature field.
+    pub has_signature_fields: bool,
+    /// A signature dictionary exposes `/ByteRange` metadata.
+    pub has_signature_byte_range: bool,
 }
 
 /// Outline tree metadata.

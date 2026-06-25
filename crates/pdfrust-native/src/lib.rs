@@ -50,6 +50,7 @@ const ANNOTATION_UNDERLINE_GRAPHICS_STATE: &[u8] = b"AnnotUnderline";
 const MAX_ANNOTATION_FALLBACK_QUADS: usize = 32;
 const MAX_METADATA_OUTLINE_ITEMS: usize = 256;
 const MAX_METADATA_PAGE_LABELS: usize = 4096;
+const MAX_METADATA_SIGNATURE_FIELDS: usize = 4096;
 const DEFAULT_SPOOL_BYTES_LIMIT: usize = 0;
 
 /// Rust-native thumbnail backend.
@@ -2390,12 +2391,91 @@ fn document_structure(
     document: &ClassicDocument<'_>,
     catalog: &[(PdfName<'_>, PdfPrimitive<'_>)],
 ) -> Result<DocumentStructure, ThumbnailError> {
+    let (has_signature_fields, has_signature_byte_range) =
+        document_signature_structure(document, catalog)?;
     Ok(DocumentStructure {
         has_xmp_metadata: dictionary_value(catalog, b"Metadata").is_some(),
         has_mark_info: dictionary_value(catalog, b"MarkInfo").is_some(),
         has_struct_tree_root: dictionary_value(catalog, b"StructTreeRoot").is_some(),
         has_named_destinations: has_named_destinations(document, catalog)?,
+        has_signature_fields,
+        has_signature_byte_range,
     })
+}
+
+fn document_signature_structure(
+    document: &ClassicDocument<'_>,
+    catalog: &[(PdfName<'_>, PdfPrimitive<'_>)],
+) -> Result<(bool, bool), ThumbnailError> {
+    let Some(acroform_value) = dictionary_value(catalog, b"AcroForm") else {
+        return Ok((false, false));
+    };
+    let acroform = resource_dictionary(document, acroform_value)?;
+    let Some(fields_value) = dictionary_value(acroform, b"Fields") else {
+        return Ok((false, false));
+    };
+    let fields = metadata_array_from_value(document, fields_value)?;
+    let mut has_signature_fields = false;
+    let mut has_signature_byte_range = false;
+    for field in fields.iter().take(MAX_METADATA_SIGNATURE_FIELDS) {
+        let Some(dictionary) = annotation_dictionary(document, field)? else {
+            continue;
+        };
+        if !dictionary_name_is(dictionary, b"FT", b"Sig") {
+            continue;
+        }
+        has_signature_fields = true;
+        if signature_value_has_byte_range(document, dictionary_value(dictionary, b"V"))? {
+            has_signature_byte_range = true;
+        }
+        if has_signature_byte_range {
+            break;
+        }
+    }
+    Ok((has_signature_fields, has_signature_byte_range))
+}
+
+fn metadata_array_from_value<'a>(
+    document: &'a ClassicDocument<'a>,
+    value: &'a PdfPrimitive<'a>,
+) -> Result<&'a [PdfPrimitive<'a>], ThumbnailError> {
+    match value {
+        PdfPrimitive::Array(items) => Ok(items),
+        PdfPrimitive::Reference(reference) => {
+            let reference = object_reference(*reference)?;
+            let object = document
+                .objects
+                .get(reference.id)
+                .ok_or(ThumbnailError::Malformed)?;
+            let ObjectValue::Primitive(PdfPrimitive::Array(items)) = &object.value else {
+                return Err(ThumbnailError::Malformed);
+            };
+            Ok(items)
+        }
+        _ => Err(ThumbnailError::Malformed),
+    }
+}
+
+fn signature_value_has_byte_range(
+    document: &ClassicDocument<'_>,
+    value: Option<&PdfPrimitive<'_>>,
+) -> Result<bool, ThumbnailError> {
+    let Some(value) = value else {
+        return Ok(false);
+    };
+    let dictionary = match value {
+        PdfPrimitive::Dictionary(dictionary) => dictionary.as_slice(),
+        PdfPrimitive::Reference(reference) => {
+            let reference = object_reference(*reference)?;
+            let object = document
+                .objects
+                .get(reference.id)
+                .ok_or(ThumbnailError::Malformed)?;
+            object_dictionary(&object.value)?
+        }
+        _ => return Err(ThumbnailError::Malformed),
+    };
+    Ok(dictionary_value(dictionary, b"ByteRange").is_some())
 }
 
 fn has_named_destinations(
@@ -3955,6 +4035,26 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_render_generated_digital_signature_appearance_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/digital-signature-appearance.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 160,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated digital signature appearance fixture should render");
+
+        assert_eq!(thumbnail.width, 160);
+        assert_eq!(thumbnail.height, 90);
+        assert_eq!(rgba_at(&thumbnail, 30, 35), [240, 240, 240, 255]);
+        assert_low_intensity(rgba_at(&thumbnail, 20, 25), 96);
+        assert_eq!(rgba_at(&thumbnail, 130, 45), [255, 255, 255, 255]);
+    }
+
+    #[test]
     fn native_backend_should_render_generated_optional_content_layer_on_fixture() {
         let bytes = include_bytes!("../../../fixtures/generated/optional-content-layer-on.pdf");
         let thumbnail = ThumbnailBackend::render(
@@ -4950,6 +5050,17 @@ mod tests {
         assert!(metadata.structure.has_named_destinations);
         assert_eq!(metadata.outlines.item_count, 2);
         assert_eq!(metadata.page_labels.labels[0].label, "A-1");
+    }
+
+    #[test]
+    fn native_backend_should_report_signature_presence_without_validation() {
+        let bytes = include_bytes!("../../../fixtures/generated/digital-signature-appearance.pdf");
+        let metadata =
+            DocumentMetadataBackend::inspect(&NativeBackend::new(), PdfSource::from_bytes(bytes))
+                .expect("generated digital signature fixture should inspect");
+
+        assert!(metadata.structure.has_signature_fields);
+        assert!(metadata.structure.has_signature_byte_range);
     }
 
     #[test]
