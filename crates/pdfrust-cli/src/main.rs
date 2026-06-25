@@ -1440,6 +1440,7 @@ enum LocalCorpusValue {
 #[derive(Debug, Clone, PartialEq)]
 struct BenchmarkReport {
     backend: &'static str,
+    platform: PlatformMetadata,
     total: usize,
     native_rendered: usize,
     fallback_required: usize,
@@ -1455,6 +1456,7 @@ struct BenchmarkReport {
 #[cfg(feature = "pdfium")]
 #[derive(Debug, Clone, PartialEq)]
 struct VisualDiffReport {
+    platform: PlatformMetadata,
     thresholds: VisualDiffThresholds,
     total: usize,
     exact: usize,
@@ -1466,6 +1468,32 @@ struct VisualDiffReport {
     families: BTreeMap<String, FamilyVisualDiffSummary>,
     subsystems: BTreeMap<String, FamilyVisualDiffSummary>,
     fixtures: Vec<VisualDiffRecord>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PlatformMetadata {
+    os: &'static str,
+    arch: &'static str,
+    family: &'static str,
+    endian: &'static str,
+    pointer_width_bits: usize,
+}
+
+impl PlatformMetadata {
+    fn current() -> Self {
+        let endian = if cfg!(target_endian = "little") {
+            "little"
+        } else {
+            "big"
+        };
+        Self {
+            os: std::env::consts::OS,
+            arch: std::env::consts::ARCH,
+            family: std::env::consts::FAMILY,
+            endian,
+            pointer_width_bits: std::mem::size_of::<usize>() * 8,
+        }
+    }
 }
 
 #[cfg(feature = "pdfium")]
@@ -1850,6 +1878,7 @@ fn benchmark_backend<B: ThumbnailBackend>(
 
     BenchmarkReport {
         backend: backend_name,
+        platform: PlatformMetadata::current(),
         total: paths.len(),
         native_rendered,
         fallback_required,
@@ -1994,6 +2023,7 @@ fn visual_diff_report<N: ThumbnailBackend, P: ThumbnailBackend>(
     }
 
     VisualDiffReport {
+        platform: PlatformMetadata::current(),
         thresholds,
         total: paths.len(),
         exact,
@@ -3039,6 +3069,7 @@ fn benchmark_report_json(report: &BenchmarkReport) -> String {
             "{{\n",
             "  \"schema_version\": 1,\n",
             "  \"backend\": {},\n",
+            "  \"platform\": {},\n",
             "  \"config\": {{\"iterations\":{},\"max_ms\":{},\"max_output_bytes\":{}}},\n",
             "  \"summary\": {{\"total\":{},\"native_rendered\":{},\"fallback_required\":{},\"errors\":{},\"budget_failures\":{}}},\n",
             "  \"families\": {},\n",
@@ -3046,6 +3077,7 @@ fn benchmark_report_json(report: &BenchmarkReport) -> String {
             "}}\n"
         ),
         json_string(report.backend),
+        platform_metadata_json(&report.platform),
         report.iterations,
         report.max_ms,
         report.max_output_bytes,
@@ -3056,6 +3088,25 @@ fn benchmark_report_json(report: &BenchmarkReport) -> String {
         report.budget_failures,
         benchmark_family_map_json(&report.families),
         fixtures
+    )
+}
+
+fn platform_metadata_json(platform: &PlatformMetadata) -> String {
+    format!(
+        concat!(
+            "{{",
+            "\"os\":{},",
+            "\"arch\":{},",
+            "\"family\":{},",
+            "\"endian\":{},",
+            "\"pointer_width_bits\":{}",
+            "}}"
+        ),
+        json_string(platform.os),
+        json_string(platform.arch),
+        json_string(platform.family),
+        json_string(platform.endian),
+        platform.pointer_width_bits
     )
 }
 
@@ -3133,6 +3184,7 @@ fn visual_diff_report_json(report: &VisualDiffReport) -> String {
         concat!(
             "{{\n",
             "  \"schema_version\": 1,\n",
+            "  \"platform\": {},\n",
             "  \"thresholds\": {{\"max_mean_abs_error\":{:.3},\"max_p95_channel_delta\":{},\"max_changed_ratio\":{:.6}}},\n",
             "  \"summary\": {{\"total\":{},\"exact\":{},\"accepted_drift\":{},\"blockers\":{},\"native_errors\":{},\"pdfium_errors\":{},\"both_errors\":{}}},\n",
             "  \"families\": {},\n",
@@ -3140,6 +3192,7 @@ fn visual_diff_report_json(report: &VisualDiffReport) -> String {
             "  \"fixtures\": [{}]\n",
             "}}\n"
         ),
+        platform_metadata_json(&report.platform),
         report.thresholds.max_mean_abs_error,
         report.thresholds.max_p95_channel_delta,
         report.thresholds.max_changed_ratio,
@@ -4119,7 +4172,10 @@ status = "candidate"
         assert_eq!(report.native_rendered, 1);
         assert_eq!(report.fallback_required, 1);
         assert_eq!(report.budget_failures, 2);
+        assert_eq!(report.platform, PlatformMetadata::current());
         assert!(json.contains("\"backend\": \"rust-native\""));
+        assert!(json.contains("\"platform\": {"));
+        assert!(json.contains("\"pointer_width_bits\":"));
         assert!(json.contains("\"family\":\"browser-print\""));
         assert!(json.contains("\"family\":\"presentation\""));
         assert!(json.contains("\"output_bytes\""));
