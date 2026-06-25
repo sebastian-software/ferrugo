@@ -1,6 +1,6 @@
 # 0121: Invoice Statement And Business Form Corpus Gate
 
-Status: todo
+Status: done
 Phase: 22
 Size: medium
 Depends on: 0120
@@ -46,4 +46,15 @@ receipts, and business forms that represent everyday document traffic.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-25.
+
+- Added synthetic business-document fixtures for dense invoices, account
+  statements, thermal receipts, and stamped/signed static forms.
+- Added `fixtures/business-document-manifest.tsv` for subtype-focused gates.
+- Extended benchmark and visual-diff CLI commands with the existing
+  `--include-family` manifest filter.
+- Added native regression coverage for the new business-document fixtures.
+- Native business-document gate renders 7/7 fixtures without fallback or
+  errors.
+- Visual-diff comparison against PDFium has no render errors, but all 7
+  fixtures remain fidelity blockers under the current strict thresholds.

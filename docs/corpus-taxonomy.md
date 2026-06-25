@@ -52,6 +52,28 @@ Expected backend behavior is encoded in feature tags such as
 Use this manifest for retirement planning only as a first synthetic-realistic
 proxy. It does not replace real local corpus ingestion.
 
+## Business-Document Manifest
+
+`fixtures/business-document-manifest.tsv` is the focused gate for invoices,
+statements, receipts, and static business forms. It keeps the same seven-column
+TSV shape but uses subtype families such as `invoice`, `statement`, `receipt`,
+and `business-form`.
+
+Use this manifest when a change should prove that everyday business documents
+remain native-renderable without PDFium fallback:
+
+```sh
+cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks \
+  fixtures/generated \
+  --manifest fixtures/business-document-manifest.tsv \
+  --include-family invoice \
+  --include-family statement \
+  --include-family receipt \
+  --include-family business-form \
+  --fail-on-fallback \
+  --max-edge 160
+```
+
 ## Private Local Corpora
 
 Private or third-party PDFs stay outside Git under `fixtures/local-corpus/`.
