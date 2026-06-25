@@ -8526,7 +8526,7 @@ fn decode_image_samples(
                     },
                 ));
             }
-            apply_png_predictor(&decoded, predictor)
+            apply_png_predictor(decoded, predictor)
         }
         ImageFilter::DctDecode => {
             decode_dct_image(stream.raw(), width, height, color_space, max_image_bytes)
@@ -8694,38 +8694,37 @@ fn decode_parms_u32(
         .map_err(|_| invalid_image_resource(b"DecodeParms"))
 }
 
-fn apply_png_predictor(encoded: &[u8], predictor: ImagePredictor) -> GraphicsResult<Vec<u8>> {
-    if encoded.len() != predictor.encoded_len() {
+fn apply_png_predictor(mut samples: Vec<u8>, predictor: ImagePredictor) -> GraphicsResult<Vec<u8>> {
+    if samples.len() != predictor.encoded_len() {
         return Err(GraphicsError::new(
             None,
             GraphicsErrorKind::InvalidImageDataLength {
                 expected: predictor.encoded_len(),
-                actual: encoded.len(),
+                actual: samples.len(),
             },
         ));
     }
-    let mut decoded = Vec::with_capacity(predictor.decoded_len());
     for row_index in 0..predictor.row_count {
-        let (filter, row) = predictor_row(encoded, predictor, row_index)?;
-        apply_png_predictor_row(&mut decoded, row, filter, predictor);
+        apply_png_predictor_row(&mut samples, predictor, row_index)?;
     }
-    Ok(decoded)
+    samples.truncate(predictor.decoded_len());
+    Ok(samples)
 }
 
-fn predictor_row(
-    encoded: &[u8],
+fn predictor_row_start(
+    samples: &[u8],
     predictor: ImagePredictor,
     row_index: usize,
-) -> GraphicsResult<(PngFilter, &[u8])> {
+) -> GraphicsResult<(PngFilter, usize)> {
     match predictor.kind {
         PngPredictorKind::Fixed(filter) => {
             let start = row_index * predictor.row_len;
-            Ok((filter, &encoded[start..start + predictor.row_len]))
+            Ok((filter, start))
         }
         PngPredictorKind::Adaptive => {
             let encoded_row_len = predictor.row_len + 1;
             let start = row_index * encoded_row_len;
-            let filter = match encoded[start] {
+            let filter = match samples[start] {
                 0 => PngFilter::None,
                 1 => PngFilter::Sub,
                 2 => PngFilter::Up,
@@ -8740,31 +8739,32 @@ fn predictor_row(
                     ));
                 }
             };
-            Ok((filter, &encoded[start + 1..start + encoded_row_len]))
+            Ok((filter, start + 1))
         }
     }
 }
 
 fn apply_png_predictor_row(
-    decoded: &mut Vec<u8>,
-    row: &[u8],
-    filter: PngFilter,
+    samples: &mut [u8],
     predictor: ImagePredictor,
-) {
-    let row_start = decoded.len();
-    for (index, sample) in row.iter().copied().enumerate() {
+    row_index: usize,
+) -> GraphicsResult<()> {
+    let output_start = row_index * predictor.row_len;
+    let (filter, input_start) = predictor_row_start(samples, predictor, row_index)?;
+    for index in 0..predictor.row_len {
+        let sample = samples[input_start + index];
         let left = if index >= predictor.bytes_per_pixel {
-            decoded[row_start + index - predictor.bytes_per_pixel]
+            samples[output_start + index - predictor.bytes_per_pixel]
         } else {
             0
         };
-        let up = if row_start >= predictor.row_len {
-            decoded[row_start - predictor.row_len + index]
+        let up = if output_start >= predictor.row_len {
+            samples[output_start - predictor.row_len + index]
         } else {
             0
         };
-        let up_left = if row_start >= predictor.row_len && index >= predictor.bytes_per_pixel {
-            decoded[row_start - predictor.row_len + index - predictor.bytes_per_pixel]
+        let up_left = if output_start >= predictor.row_len && index >= predictor.bytes_per_pixel {
+            samples[output_start - predictor.row_len + index - predictor.bytes_per_pixel]
         } else {
             0
         };
@@ -8775,8 +8775,9 @@ fn apply_png_predictor_row(
             PngFilter::Average => ((u16::from(left) + u16::from(up)) / 2) as u8,
             PngFilter::Paeth => paeth_predictor(left, up, up_left),
         };
-        decoded.push(sample.wrapping_add(predicted));
+        samples[output_start + index] = sample.wrapping_add(predicted);
     }
+    Ok(())
 }
 
 fn paeth_predictor(left: u8, up: u8, up_left: u8) -> u8 {
