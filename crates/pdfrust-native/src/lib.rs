@@ -3335,6 +3335,26 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_render_generated_uncolored_tiling_pattern_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/uncolored-tiling-pattern.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 120,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated uncolored tiling-pattern fixture should render through native backend");
+
+        assert_eq!(thumbnail.width, 120);
+        assert_eq!(thumbnail.height, 120);
+        assert_eq!(rgba_at(&thumbnail, 6, 114), [51, 179, 77, 255]);
+        assert_eq!(rgba_at(&thumbnail, 18, 114), [255, 255, 255, 255]);
+        assert_eq!(rgba_at(&thumbnail, 30, 90), [51, 179, 77, 255]);
+    }
+
+    #[test]
     fn native_backend_should_render_generated_dashed_stroke_fixture() {
         let bytes = include_bytes!("../../../fixtures/generated/dashed-stroke.pdf");
         let thumbnail = ThumbnailBackend::render(

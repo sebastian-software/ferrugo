@@ -95,6 +95,9 @@ pub const DEFAULT_TRANSPARENCY_GROUP_PIXELS_LIMIT: usize = 16 * 1024 * 1024;
 /// Default maximum number of repeated pattern tiles in one rasterization pass.
 pub const DEFAULT_PATTERN_TILE_LIMIT: usize = 65_536;
 
+/// Default maximum cached tiling pattern cells per rasterization pass.
+pub const DEFAULT_PATTERN_CELL_CACHE_LIMIT: usize = 32;
+
 /// Maximum dash segments tracked in the graphics state.
 pub const MAX_STROKE_DASH_SEGMENTS: usize = 8;
 
@@ -286,6 +289,8 @@ pub struct PathRasterOptions {
     pub max_transparency_group_pixels: usize,
     /// Maximum repeated pattern tiles accepted in one rasterization pass.
     pub max_pattern_tiles: usize,
+    /// Maximum cached tiling pattern cells in one rasterization pass.
+    pub max_pattern_cell_cache_entries: usize,
 }
 
 impl Default for PathRasterOptions {
@@ -295,6 +300,7 @@ impl Default for PathRasterOptions {
             max_flattened_segments: DEFAULT_FLATTENED_PATH_SEGMENT_LIMIT,
             max_transparency_group_pixels: DEFAULT_TRANSPARENCY_GROUP_PIXELS_LIMIT,
             max_pattern_tiles: DEFAULT_PATTERN_TILE_LIMIT,
+            max_pattern_cell_cache_entries: DEFAULT_PATTERN_CELL_CACHE_LIMIT,
         }
     }
 }
@@ -508,8 +514,10 @@ pub enum AlternateColorSpace {
 pub enum FillColorSpace {
     /// Normal device color operators.
     Device,
-    /// PDF `/Pattern` color space.
+    /// PDF `/Pattern` color space for colored tiling patterns.
     Pattern,
+    /// PDF `[/Pattern <base-space>]` color space for uncolored tiling patterns.
+    UncoloredPattern(PatternBaseColorSpace),
     /// PDF `/Separation` or `/DeviceN` color-space resource.
     Spot(usize),
 }
@@ -521,6 +529,73 @@ pub enum StrokeColorSpace {
     Device,
     /// PDF `/Separation` or `/DeviceN` color-space resource.
     Spot(usize),
+}
+
+/// Base color space used by an uncolored tiling pattern.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PatternBaseColorSpace {
+    /// PDF `/DeviceGray`.
+    DeviceGray,
+    /// PDF `/DeviceRGB`.
+    DeviceRgb,
+    /// PDF `/DeviceCMYK`.
+    DeviceCmyk,
+}
+
+impl PatternBaseColorSpace {
+    fn component_count(self) -> usize {
+        match self {
+            Self::DeviceGray => 1,
+            Self::DeviceRgb => 3,
+            Self::DeviceCmyk => 4,
+        }
+    }
+
+    fn color_from_operands(
+        self,
+        offset: ByteOffset,
+        operator: &'static [u8],
+        operands: &[PdfPrimitive<'_>],
+    ) -> GraphicsResult<DeviceColor> {
+        match self {
+            Self::DeviceGray => Ok(DeviceColor::Gray(DeviceGray(
+                number_from_primitive(&operands[0])
+                    .ok_or_else(|| invalid_operand(offset, operator))?
+                    .clamp(0.0, 1.0),
+            ))),
+            Self::DeviceRgb => Ok(DeviceColor::Rgb {
+                r: number_from_primitive(&operands[0])
+                    .ok_or_else(|| invalid_operand(offset, operator))?
+                    .clamp(0.0, 1.0),
+                g: number_from_primitive(&operands[1])
+                    .ok_or_else(|| invalid_operand(offset, operator))?
+                    .clamp(0.0, 1.0),
+                b: number_from_primitive(&operands[2])
+                    .ok_or_else(|| invalid_operand(offset, operator))?
+                    .clamp(0.0, 1.0),
+            }),
+            Self::DeviceCmyk => {
+                let color = alternate_color_to_rgb(
+                    AlternateColorSpace::DeviceCmyk,
+                    [
+                        number_from_primitive(&operands[0])
+                            .ok_or_else(|| invalid_operand(offset, operator))?,
+                        number_from_primitive(&operands[1])
+                            .ok_or_else(|| invalid_operand(offset, operator))?,
+                        number_from_primitive(&operands[2])
+                            .ok_or_else(|| invalid_operand(offset, operator))?,
+                        number_from_primitive(&operands[3])
+                            .ok_or_else(|| invalid_operand(offset, operator))?,
+                    ],
+                );
+                Ok(DeviceColor::Rgb {
+                    r: color[0],
+                    g: color[1],
+                    b: color[2],
+                })
+            }
+        }
+    }
 }
 
 /// Stroke dash pattern tracked in graphics state.
@@ -764,11 +839,22 @@ pub struct RadialShading {
     pub extend_end: bool,
 }
 
-/// Decoded colored tiling pattern resource.
+/// PDF tiling pattern paint mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TilingPatternPaint {
+    /// Pattern stream supplies its own colors.
+    Colored,
+    /// Caller supplies the paint color through a pattern color space.
+    Uncolored,
+}
+
+/// Decoded tiling pattern resource.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TilingPattern {
     /// Pattern resource name without the leading slash.
     pub resource_name: Vec<u8>,
+    /// Whether the pattern stream is colored or caller-colored.
+    pub paint: TilingPatternPaint,
     /// Pattern cell bounding box.
     pub bbox: PathBounds,
     /// Horizontal tile step.
@@ -1572,6 +1658,7 @@ impl ShadingResources {
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct ColorSpaceResources {
     color_spaces: Vec<(Vec<u8>, SpotColorSpace)>,
+    pattern_color_spaces: Vec<(Vec<u8>, PatternBaseColorSpace)>,
 }
 
 impl ColorSpaceResources {
@@ -1580,13 +1667,17 @@ impl ColorSpaceResources {
     pub const fn empty() -> Self {
         Self {
             color_spaces: Vec::new(),
+            pattern_color_spaces: Vec::new(),
         }
     }
 
     /// Creates a color-space resource map from decoded spot color spaces.
     #[must_use]
     pub fn new(color_spaces: Vec<(Vec<u8>, SpotColorSpace)>) -> Self {
-        Self { color_spaces }
+        Self {
+            color_spaces,
+            pattern_color_spaces: Vec::new(),
+        }
     }
 
     /// Resolves spot color spaces from a PDF `/ColorSpace` resource dictionary.
@@ -1602,13 +1693,21 @@ impl ColorSpaceResources {
         dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
     ) -> GraphicsResult<Self> {
         let mut color_spaces = Vec::new();
+        let mut pattern_color_spaces = Vec::new();
         for (name, value) in dictionary {
+            if let Some(base) = decode_pattern_color_space(value)? {
+                pattern_color_spaces.push((name.as_bytes().to_vec(), base));
+                continue;
+            }
             let Some(color_space) = decode_spot_color_space(value)? else {
                 continue;
             };
             color_spaces.push((name.as_bytes().to_vec(), color_space));
         }
-        Ok(Self { color_spaces })
+        Ok(Self {
+            color_spaces,
+            pattern_color_spaces,
+        })
     }
 
     /// Returns the resource index matching a PDF color-space name.
@@ -1625,6 +1724,12 @@ impl ColorSpaceResources {
         self.color_spaces
             .get(index)
             .map(|(_, color_space)| color_space)
+    }
+
+    fn pattern_base_for_name(&self, name: PdfName<'_>) -> Option<PatternBaseColorSpace> {
+        self.pattern_color_spaces
+            .iter()
+            .find_map(|(resource, base)| (resource.as_slice() == name.as_bytes()).then_some(*base))
     }
 }
 
@@ -4425,6 +4530,7 @@ pub fn rasterize_paths_into(
         return Err(RasterError::new(RasterErrorKind::InvalidSupersampling));
     }
     let mut active_clips = Vec::new();
+    let mut pattern_cache = PatternCellCache::new(options.max_pattern_cell_cache_entries);
     for item in display_list.items() {
         match item {
             DisplayItem::Path(path) => {
@@ -4436,6 +4542,7 @@ pub fn rasterize_paths_into(
                         options,
                         clips: &active_clips,
                     },
+                    &mut pattern_cache,
                 )?;
             }
             DisplayItem::ClipPlaceholder { segments, rule, .. } => {
@@ -4477,6 +4584,7 @@ pub fn rasterize_display_list_into(
     }
     let mut active_clips = Vec::new();
     let mut glyph_cache = GlyphBitmapCache::default();
+    let mut pattern_cache = PatternCellCache::new(options.max_pattern_cell_cache_entries);
     let mut text_scratch = TextRasterScratch::default();
     for item in display_list.items() {
         match item {
@@ -4489,6 +4597,7 @@ pub fn rasterize_display_list_into(
                         options,
                         clips: &active_clips,
                     },
+                    &mut pattern_cache,
                 )?;
             }
             DisplayItem::ClipPlaceholder { segments, rule, .. } => {
@@ -4659,6 +4768,7 @@ fn rasterize_path_item(
     path: &PathDisplayItem,
     device: &mut RasterDevice,
     context: PathRasterContext<'_>,
+    pattern_cache: &mut PatternCellCache,
 ) -> RasterResult<()> {
     let flattened = flatten_path_segments(
         &path.segments,
@@ -4669,7 +4779,13 @@ fn rasterize_path_item(
         PaintMode::Fill { rule } => {
             if let Some(pattern) = &path.fill_pattern {
                 fill_path_with_tiling_pattern(
-                    device, &flattened, rule, pattern, path.state, context,
+                    device,
+                    &flattened,
+                    rule,
+                    pattern,
+                    path.state,
+                    context,
+                    pattern_cache,
                 )?;
             } else {
                 fill_path(
@@ -4704,7 +4820,13 @@ fn rasterize_path_item(
         PaintMode::FillStroke { rule } => {
             if let Some(pattern) = &path.fill_pattern {
                 fill_path_with_tiling_pattern(
-                    device, &flattened, rule, pattern, path.state, context,
+                    device,
+                    &flattened,
+                    rule,
+                    pattern,
+                    path.state,
+                    context,
+                    pattern_cache,
                 )?;
             } else {
                 fill_path(
@@ -5344,6 +5466,15 @@ impl<'r> DisplayListInterpreter<'r> {
             self.current.fill_color_space = FillColorSpace::Pattern;
             return Ok(());
         }
+        if let Some(base) = self
+            .resources
+            .color_spaces
+            .and_then(|color_spaces| color_spaces.pattern_base_for_name(name))
+        {
+            self.current.fill_color_space = FillColorSpace::UncoloredPattern(base);
+            self.current.fill_pattern = None;
+            return Ok(());
+        }
         if let Some(index) = self
             .resources
             .color_spaces
@@ -5386,6 +5517,9 @@ impl<'r> DisplayListInterpreter<'r> {
         match self.current.fill_color_space {
             FillColorSpace::Device => Ok(()),
             FillColorSpace::Pattern => self.set_fill_pattern(offset, operator, operands),
+            FillColorSpace::UncoloredPattern(base) => {
+                self.set_uncolored_fill_pattern(offset, operator, operands, base)
+            }
             FillColorSpace::Spot(index) => {
                 let color = self.spot_color(offset, operator, operands, index)?;
                 self.current.fill_color = color;
@@ -5428,6 +5562,37 @@ impl<'r> DisplayListInterpreter<'r> {
                     },
                 )
             })?;
+        self.current.fill_pattern = Some(pattern);
+        Ok(())
+    }
+
+    fn set_uncolored_fill_pattern(
+        &mut self,
+        offset: ByteOffset,
+        operator: &'static [u8],
+        operands: &[PdfPrimitive<'_>],
+        base: PatternBaseColorSpace,
+    ) -> GraphicsResult<()> {
+        let expected = base.component_count() + 1;
+        expect_operand_count(offset, operator, operands, expected)?;
+        let name = match operands.last() {
+            Some(PdfPrimitive::Name(name)) => *name,
+            _ => return Err(invalid_operand(offset, operator)),
+        };
+        let pattern = self
+            .resources
+            .patterns
+            .and_then(|patterns| patterns.index_of(name))
+            .ok_or_else(|| {
+                GraphicsError::new(
+                    Some(offset),
+                    GraphicsErrorKind::MissingPattern {
+                        name: name.as_bytes().to_vec(),
+                    },
+                )
+            })?;
+        self.current.fill_color =
+            base.color_from_operands(offset, operator, &operands[..base.component_count()])?;
         self.current.fill_pattern = Some(pattern);
         Ok(())
     }
@@ -7105,6 +7270,37 @@ fn decode_spot_color_space(value: &PdfPrimitive<'_>) -> GraphicsResult<Option<Sp
     }
 }
 
+fn decode_pattern_color_space(
+    value: &PdfPrimitive<'_>,
+) -> GraphicsResult<Option<PatternBaseColorSpace>> {
+    let PdfPrimitive::Array(items) = value else {
+        return Ok(None);
+    };
+    let [PdfPrimitive::Name(kind), base] = items.as_slice() else {
+        return Ok(None);
+    };
+    if kind.as_bytes() != b"Pattern" {
+        return Ok(None);
+    }
+    pattern_base_color_space(base).map(Some)
+}
+
+fn pattern_base_color_space(value: &PdfPrimitive<'_>) -> GraphicsResult<PatternBaseColorSpace> {
+    match value {
+        PdfPrimitive::Name(name) if matches!(name.as_bytes(), b"DeviceGray" | b"G") => {
+            Ok(PatternBaseColorSpace::DeviceGray)
+        }
+        PdfPrimitive::Name(name) if matches!(name.as_bytes(), b"DeviceRGB" | b"RGB") => {
+            Ok(PatternBaseColorSpace::DeviceRgb)
+        }
+        PdfPrimitive::Name(name) if matches!(name.as_bytes(), b"DeviceCMYK" | b"CMYK") => {
+            Ok(PatternBaseColorSpace::DeviceCmyk)
+        }
+        PdfPrimitive::Name(name) => Err(unsupported_spot_color_space(name.as_bytes())),
+        _ => Err(invalid_color_space_resource(b"Pattern")),
+    }
+}
+
 fn decode_separation_color_space(items: &[PdfPrimitive<'_>]) -> GraphicsResult<SpotColorSpace> {
     let [_, PdfPrimitive::Name(_colorant), alternate, function] = items else {
         return Err(invalid_color_space_resource(b"Separation"));
@@ -7260,10 +7456,10 @@ pub fn decode_tiling_pattern(
     else {
         return Err(invalid_pattern_resource(&resource_name));
     };
-    let Some(PdfPrimitive::Number(PdfNumber::Integer(1))) =
-        dictionary_value(dictionary, b"PaintType")
-    else {
-        return Err(unsupported_pattern(b"PaintType"));
+    let paint = match dictionary_value(dictionary, b"PaintType") {
+        Some(PdfPrimitive::Number(PdfNumber::Integer(1))) => TilingPatternPaint::Colored,
+        Some(PdfPrimitive::Number(PdfNumber::Integer(2))) => TilingPatternPaint::Uncolored,
+        _ => return Err(unsupported_pattern(b"PaintType")),
     };
     match dictionary_value(dictionary, b"TilingType") {
         Some(PdfPrimitive::Number(PdfNumber::Integer(1..=3))) => {}
@@ -7279,6 +7475,7 @@ pub fn decode_tiling_pattern(
     let items = build_path_display_list(tokenize_content(PdfBytes::new(content)), options)?;
     Ok(TilingPattern {
         resource_name,
+        paint,
         bbox,
         x_step,
         y_step,
@@ -8383,6 +8580,95 @@ struct PatternSample {
     color: Rgba,
 }
 
+#[derive(Debug, Default, Clone)]
+struct PatternCellCache {
+    entries: Vec<CachedPatternCell>,
+    uncached_samples: Vec<PatternSample>,
+    max_entries: usize,
+}
+
+impl PatternCellCache {
+    fn new(max_entries: usize) -> Self {
+        Self {
+            entries: Vec::new(),
+            uncached_samples: Vec::new(),
+            max_entries,
+        }
+    }
+
+    fn samples_for(
+        &mut self,
+        pattern: &TilingPattern,
+        fill_color: DeviceColor,
+        transform: PageTransform,
+        options: PathRasterOptions,
+    ) -> RasterResult<&[PatternSample]> {
+        let key = PatternCellCacheKey::new(pattern, fill_color, transform.scale);
+        if let Some(index) = self.entries.iter().position(|entry| entry.key == key) {
+            return Ok(self.entries[index].samples.as_slice());
+        }
+        let samples = build_pattern_samples(pattern, fill_color, options)?;
+        if self.max_entries == 0 {
+            self.entries.clear();
+            self.uncached_samples = samples;
+            return Ok(self.uncached_samples.as_slice());
+        }
+        if self.entries.len() >= self.max_entries {
+            self.entries.remove(0);
+        }
+        self.entries.push(CachedPatternCell { key, samples });
+        Ok(self
+            .entries
+            .last()
+            .expect("pattern cache entry was just inserted")
+            .samples
+            .as_slice())
+    }
+
+    #[cfg(test)]
+    fn len(&self) -> usize {
+        self.entries.len()
+    }
+}
+
+#[derive(Debug, Clone)]
+struct CachedPatternCell {
+    key: PatternCellCacheKey,
+    samples: Vec<PatternSample>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PatternCellCacheKey {
+    resource_name: Vec<u8>,
+    paint: TilingPatternPaint,
+    fill_color: Rgba,
+    transform_scale_microunits: i64,
+}
+
+impl PatternCellCacheKey {
+    fn new(pattern: &TilingPattern, fill_color: DeviceColor, transform_scale: f64) -> Self {
+        let fill_color = match pattern.paint {
+            TilingPatternPaint::Colored => Rgba {
+                r: 0,
+                g: 0,
+                b: 0,
+                a: 0,
+            },
+            TilingPatternPaint::Uncolored => device_color_to_rgba(fill_color),
+        };
+        Self {
+            resource_name: pattern.resource_name.clone(),
+            paint: pattern.paint,
+            fill_color,
+            transform_scale_microunits: quantize_pattern_scale(transform_scale),
+        }
+    }
+}
+
+fn quantize_pattern_scale(scale: f64) -> i64 {
+    (scale * 1_000_000.0).round() as i64
+}
+
 fn fill_path_with_tiling_pattern(
     device: &mut RasterDevice,
     path: &FlattenedPath,
@@ -8390,9 +8676,15 @@ fn fill_path_with_tiling_pattern(
     pattern: &TilingPattern,
     state: GraphicsState,
     context: PathRasterContext<'_>,
+    pattern_cache: &mut PatternCellCache,
 ) -> RasterResult<()> {
     validate_pattern_tile_budget(path, pattern, context.options)?;
-    let pattern_samples = pattern_samples(pattern, context.options)?;
+    let pattern_samples = pattern_cache.samples_for(
+        pattern,
+        state.fill_color,
+        context.transform,
+        context.options,
+    )?;
     if pattern_samples.is_empty() {
         return Ok(());
     }
@@ -8426,7 +8718,7 @@ fn fill_path_with_tiling_pattern(
                 continue;
             }
             let user = inverse.transform_point(f64::from(x) + 0.5, f64::from(y) + 0.5);
-            let Some(source) = pattern_color_at(pattern, &pattern_samples, user) else {
+            let Some(source) = pattern_color_at(pattern, pattern_samples, user) else {
                 continue;
             };
             blend_pixel(
@@ -8534,8 +8826,9 @@ fn stroke_pixel_bounds(
     bounds.and_then(|bounds| device_pixel_bounds(bounds, dimensions, radius.ceil() + 1.0))
 }
 
-fn pattern_samples(
+fn build_pattern_samples(
     pattern: &TilingPattern,
+    fill_color: DeviceColor,
     options: PathRasterOptions,
 ) -> RasterResult<Vec<PatternSample>> {
     let mut samples = Vec::new();
@@ -8554,7 +8847,10 @@ fn pattern_samples(
                 options.max_flattened_segments,
             )?,
             rule,
-            color: device_color_to_rgba(path.state.fill_color),
+            color: device_color_to_rgba(match pattern.paint {
+                TilingPatternPaint::Colored => path.state.fill_color,
+                TilingPatternPaint::Uncolored => fill_color,
+            }),
         });
     }
     Ok(samples)
@@ -9346,6 +9642,7 @@ fn draw_type3_text_run(
         })
     })?;
     let base = text.state.ctm.multiply(text.text_matrix);
+    let mut pattern_cache = PatternCellCache::new(options.max_pattern_cell_cache_entries);
     for (glyph, origin) in text.glyphs.iter().zip(text.glyph_origins.iter()) {
         let Some(char_proc) = type3.char_proc_for_code(glyph.character_code, &text.font.encoding)
         else {
@@ -9376,6 +9673,7 @@ fn draw_type3_text_run(
                     options,
                     clips: &[],
                 },
+                &mut pattern_cache,
             )?;
         }
     }
@@ -13028,6 +13326,7 @@ mod tests {
         let pattern = test_tiling_pattern();
 
         assert_eq!(pattern.resource_name, b"P1");
+        assert_eq!(pattern.paint, TilingPatternPaint::Colored);
         assert_eq!(pattern.x_step, 10.0);
         assert_eq!(pattern.y_step, 10.0);
         assert_eq!(pattern.items.len(), 2);
@@ -13131,6 +13430,181 @@ mod tests {
                 a: 255,
             }
         );
+    }
+
+    #[test]
+    fn rasterize_paths_should_apply_uncolored_tiling_pattern_fill_color() {
+        let pattern = decode_tiling_pattern(
+            b"P2".to_vec(),
+            &[
+                (
+                    PdfName::new(b"PatternType"),
+                    PdfPrimitive::Number(PdfNumber::Integer(1)),
+                ),
+                (
+                    PdfName::new(b"PaintType"),
+                    PdfPrimitive::Number(PdfNumber::Integer(2)),
+                ),
+                (
+                    PdfName::new(b"TilingType"),
+                    PdfPrimitive::Number(PdfNumber::Integer(1)),
+                ),
+                (
+                    PdfName::new(b"BBox"),
+                    PdfPrimitive::Array(vec![
+                        PdfPrimitive::Number(PdfNumber::Integer(0)),
+                        PdfPrimitive::Number(PdfNumber::Integer(0)),
+                        PdfPrimitive::Number(PdfNumber::Integer(10)),
+                        PdfPrimitive::Number(PdfNumber::Integer(10)),
+                    ]),
+                ),
+                (
+                    PdfName::new(b"XStep"),
+                    PdfPrimitive::Number(PdfNumber::Integer(10)),
+                ),
+                (
+                    PdfName::new(b"YStep"),
+                    PdfPrimitive::Number(PdfNumber::Integer(10)),
+                ),
+            ],
+            b"0 0 10 10 re f",
+            DisplayListOptions::default(),
+        )
+        .expect("valid uncolored tiling pattern");
+        let patterns = TilingPatternResources::new(vec![pattern]);
+        let color_spaces = ColorSpaceResources::from_color_space_dictionary(&[(
+            PdfName::new(b"CS1"),
+            PdfPrimitive::Array(vec![
+                PdfPrimitive::Name(PdfName::new(b"Pattern")),
+                PdfPrimitive::Name(PdfName::new(b"DeviceRGB")),
+            ]),
+        )])
+        .expect("valid pattern color space");
+        let ext_graphics_states = ExtGraphicsStateResources::empty();
+        let shadings = ShadingResources::empty();
+        let list = build_path_display_list_with_graphics_resources(
+            tokenize_content(PdfBytes::new(b"/CS1 cs 0.2 0.7 0.3 /P2 scn 0 0 20 10 re f")),
+            &ext_graphics_states,
+            &shadings,
+            &patterns,
+            &color_spaces,
+            DisplayListOptions::default(),
+        )
+        .expect("valid uncolored tiling pattern fill");
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 20.0,
+                    max_y: 10.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            20,
+        )
+        .expect("pattern transform");
+        let raster = rasterize_paths(
+            &list,
+            transform,
+            Rgba::WHITE,
+            PathRasterOptions {
+                supersample: 1,
+                ..PathRasterOptions::default()
+            },
+        )
+        .expect("pattern should rasterize");
+
+        assert_eq!(
+            raster.pixel(5, 5).expect("first tile"),
+            Rgba {
+                r: 51,
+                g: 179,
+                b: 77,
+                a: 255,
+            }
+        );
+        assert_eq!(
+            raster.pixel(15, 5).expect("second tile"),
+            Rgba {
+                r: 51,
+                g: 179,
+                b: 77,
+                a: 255,
+            }
+        );
+    }
+
+    #[test]
+    fn pattern_cell_cache_should_evict_by_entry_budget() {
+        let first = test_tiling_pattern();
+        let mut second = test_tiling_pattern();
+        second.resource_name = b"P2".to_vec();
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 20.0,
+                    max_y: 20.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            20,
+        )
+        .expect("pattern transform");
+        let mut cache = PatternCellCache::new(1);
+
+        cache
+            .samples_for(
+                &first,
+                DeviceColor::BLACK,
+                transform,
+                PathRasterOptions::default(),
+            )
+            .expect("first pattern samples");
+        cache
+            .samples_for(
+                &second,
+                DeviceColor::BLACK,
+                transform,
+                PathRasterOptions::default(),
+            )
+            .expect("second pattern samples");
+
+        assert_eq!(cache.len(), 1);
+    }
+
+    #[test]
+    fn pattern_cell_cache_should_keep_no_entries_when_disabled() {
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 20.0,
+                    max_y: 20.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            20,
+        )
+        .expect("pattern transform");
+        let mut cache = PatternCellCache::new(0);
+
+        cache
+            .samples_for(
+                &test_tiling_pattern(),
+                DeviceColor::BLACK,
+                transform,
+                PathRasterOptions::default(),
+            )
+            .expect("uncached pattern samples");
+
+        assert_eq!(cache.len(), 0);
     }
 
     #[test]

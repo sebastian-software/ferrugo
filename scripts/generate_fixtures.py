@@ -1144,6 +1144,35 @@ def tiling_pattern_pdf() -> bytes:
     return pdf.render(catalog)
 
 
+def uncolored_tiling_pattern_pdf() -> bytes:
+    pdf = Pdf()
+    content = b"/CS1 cs 0.2 0.7 0.3 /P1 scn 0 0 120 120 re f"
+    pattern = b"0 0 12 12 re f"
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 120 120] "
+        "/Resources << /ColorSpace << /CS1 [/Pattern /DeviceRGB] >> "
+        "/Pattern << /P1 4 0 R >> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    pattern_object = pdf.add(
+        b"<< /Type /Pattern /PatternType 1 /PaintType 2 /TilingType 1 "
+        b"/BBox [0 0 12 12] /XStep 24 /YStep 24 /Length "
+        + str(len(pattern)).encode("ascii")
+        + b" >>\nstream\n"
+        + pattern
+        + b"\nendstream"
+    )
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert pattern_object == 4
+    return pdf.render(catalog)
+
+
 def dashed_stroke_pdf() -> bytes:
     return page_pdf(
         "[0 0 120 120]",
@@ -2751,6 +2780,7 @@ def main() -> None:
     write("separation-spot-color.pdf", separation_spot_color_pdf())
     write("devicen-spot-color.pdf", devicen_spot_color_pdf())
     write("tiling-pattern.pdf", tiling_pattern_pdf())
+    write("uncolored-tiling-pattern.pdf", uncolored_tiling_pattern_pdf())
     write("dashed-stroke.pdf", dashed_stroke_pdf())
     write("line-caps.pdf", line_caps_pdf())
     write("line-joins.pdf", line_joins_pdf())
