@@ -3371,6 +3371,115 @@ def business_form_stamp_signature_pdf() -> bytes:
     )
 
 
+def legal_contract_signature_blocks_pdf() -> bytes:
+    return page_pdf(
+        "[0 0 320 420]",
+        (
+            "q 1 1 1 rg 0 0 320 420 re f Q "
+            "q 0.12 0.12 0.12 RG 0.7 w 32 72 256 276 re S "
+            "32 318 m 288 318 l S 32 136 m 288 136 l S Q "
+            "q 0.10 0.10 0.10 RG 1.2 w 54 96 m 132 108 l 204 92 l 260 104 l S Q "
+            "q 0.75 0.05 0.04 RG 1.5 w 220 294 44 24 re S Q "
+            "BT /F1 12 Tf 52 382 Td (Mutual Services Agreement) Tj "
+            "/F1 8 Tf 52 296 Td (1. Services. Provider will perform the services in Exhibit A.) Tj "
+            "0 -18 Td (2. Term. This agreement starts on the effective date.) Tj "
+            "0 -18 Td (3. Confidentiality. Each party protects confidential information.) Tj "
+            "0 -18 Td (4. Notices. Written notices are delivered to the addresses above.) Tj "
+            "0 -118 Td (Authorized Signature) Tj 150 0 Td (Reviewed Stamp) Tj ET"
+        ),
+    )
+
+
+def legal_visible_redactions_pdf() -> bytes:
+    return page_pdf(
+        "[0 0 300 380]",
+        (
+            "q 1 1 1 rg 0 0 300 380 re f Q "
+            "BT /F1 10 Tf 36 338 Td (Declaration In Support Of Motion) Tj "
+            "/F1 8 Tf 36 300 Td (Party name: Example Holdings LLC) Tj "
+            "0 -24 Td (Account number: 1234-5678-9000) Tj "
+            "0 -24 Td (Personal identifier: 555-44-3333) Tj "
+            "0 -24 Td (Address: 100 Main Street, Example City) Tj "
+            "0 -24 Td (Exhibit reference: Confidential attachment A) Tj ET "
+            "q 0 0 0 rg 110 270 126 13 re f 132 246 88 13 re f 86 222 160 13 re f Q "
+            "BT /F1 7 Tf 36 54 Td (Redaction rectangles are visible page content; semantic redaction is not validated.) Tj ET"
+        ),
+    )
+
+
+def legal_filing_stamp_comments_pdf() -> bytes:
+    return page_pdf(
+        "[0 0 320 400]",
+        (
+            "q 0.98 0.98 0.96 rg 0 0 320 400 re f Q "
+            "q 0.12 0.12 0.12 RG 0.7 w 34 64 252 274 re S 34 304 m 286 304 l S Q "
+            "q 1 0.92 0.28 rg 48 244 176 18 re f Q "
+            "q 0.76 0.04 0.03 RG 1.5 w 214 318 48 28 re S Q "
+            "q 0.15 0.24 0.48 rg 232 122 34 24 re f Q "
+            "BT /F1 12 Tf 48 362 Td (Court Filing Packet) Tj "
+            "/F1 8 Tf 48 286 Td (Motion for administrative review and supporting memorandum.) Tj "
+            "0 -38 Td (Highlighted clause remains visible in the thumbnail.) Tj "
+            "0 -76 Td (Comment marker) Tj 150 198 Td (FILED) Tj ET"
+        ),
+    )
+
+
+def legal_scanned_attachment_packet_pdf() -> bytes:
+    pdf = Pdf()
+    scan_width = 160
+    scan_height = 220
+    scan = bytes(218 + ((x * 2 + y * 3) % 28) for y in range(scan_height) for x in range(scan_width))
+    scan_compressed = zlib.compress(scan)
+    content_1 = (
+        b"q 1 1 1 rg 0 0 260 340 re f Q "
+        b"q 0.1 0.1 0.1 RG 0.7 w 28 52 204 224 re S Q "
+        b"BT /F1 10 Tf 42 298 Td (Attachment Index) Tj "
+        b"/F1 8 Tf 42 250 Td (Attachment A: scanned exhibit with signature.) Tj "
+        b"0 -20 Td (Attachment B: visible redaction sample.) Tj ET"
+    )
+    content_2 = (
+        b"q 220 0 0 300 20 20 cm /Scan Do Q "
+        b"q 0 0 0 rg 84 198 96 14 re f Q "
+        b"BT /F1 8 Tf 42 306 Td (Scanned Exhibit) Tj ET"
+    )
+    contents_1 = pdf.add(
+        f"<< /Length {len(content_1)} >>\nstream\n".encode("ascii")
+        + content_1
+        + b"\nendstream"
+    )
+    contents_2 = pdf.add(
+        f"<< /Length {len(content_2)} >>\nstream\n".encode("ascii")
+        + content_2
+        + b"\nendstream"
+    )
+    page_1 = pdf.add(
+        "<< /Type /Page /Parent 6 0 R /MediaBox [0 0 260 340] "
+        "/Resources << /Font << /F1 5 0 R >> >> "
+        f"/Contents {contents_1} 0 R >>"
+    )
+    page_2 = pdf.add(
+        "<< /Type /Page /Parent 6 0 R /MediaBox [0 0 260 340] "
+        "/Resources << /Font << /F1 5 0 R >> /XObject << /Scan 7 0 R >> >> "
+        f"/Contents {contents_2} 0 R >>"
+    )
+    font = pdf.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page_1} 0 R {page_2} 0 R] /Count 2 >>")
+    scan_object = pdf.add(
+        (
+            f"<< /Type /XObject /Subtype /Image /Width {scan_width} /Height {scan_height} "
+            f"/ColorSpace /DeviceGray /BitsPerComponent 8 /Filter /FlateDecode "
+            f"/Length {len(scan_compressed)} >>\nstream\n"
+        ).encode("ascii")
+        + scan_compressed
+        + b"\nendstream"
+    )
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert font == 5
+    assert pages == 6
+    assert scan_object == 7
+    return pdf.render(catalog)
+
+
 def slide_title_gradient_pdf() -> bytes:
     pdf = Pdf()
     content = (
@@ -4507,6 +4616,10 @@ def main() -> None:
     write("account-statement-ledger.pdf", account_statement_ledger_pdf())
     write("thermal-receipt.pdf", thermal_receipt_pdf())
     write("business-form-stamp-signature.pdf", business_form_stamp_signature_pdf())
+    write("legal-contract-signature-blocks.pdf", legal_contract_signature_blocks_pdf())
+    write("legal-visible-redactions.pdf", legal_visible_redactions_pdf())
+    write("legal-filing-stamp-comments.pdf", legal_filing_stamp_comments_pdf())
+    write("legal-scanned-attachment-packet.pdf", legal_scanned_attachment_packet_pdf())
     write("slide-title-gradient.pdf", slide_title_gradient_pdf())
     write("slide-layered-image-shadow.pdf", slide_layered_image_shadow_pdf())
     write("slide-rotated-callout.pdf", slide_rotated_callout_pdf())

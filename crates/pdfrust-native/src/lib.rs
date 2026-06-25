@@ -5266,6 +5266,123 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_render_generated_legal_document_fixtures() {
+        let fixtures: &[(&[u8], u32, u32, &str, usize)] = &[
+            (
+                include_bytes!("../../../fixtures/generated/legal-contract-signature-blocks.pdf")
+                    as &[u8],
+                320,
+                420,
+                "legal contract signature blocks",
+                3_000,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/legal-visible-redactions.pdf")
+                    as &[u8],
+                300,
+                380,
+                "legal visible redactions",
+                6_000,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/legal-filing-stamp-comments.pdf")
+                    as &[u8],
+                320,
+                400,
+                "legal filing stamp comments",
+                3_000,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/legal-scanned-attachment-packet.pdf")
+                    as &[u8],
+                260,
+                340,
+                "legal scanned attachment packet first page",
+                1_000,
+            ),
+        ];
+
+        for &(bytes, expected_width, expected_height, label, min_visible_pixels) in fixtures {
+            let thumbnail = ThumbnailBackend::render(
+                &NativeBackend::new(),
+                PdfSource::from_bytes(bytes),
+                &ThumbnailOptions {
+                    max_edge: expected_width.max(expected_height),
+                    ..ThumbnailOptions::default()
+                },
+            )
+            .unwrap_or_else(|error| panic!("{label} fixture should render: {error}"));
+
+            assert_eq!(
+                thumbnail.width, expected_width,
+                "{label} fixture width should match"
+            );
+            assert_eq!(
+                thumbnail.height, expected_height,
+                "{label} fixture height should match"
+            );
+            let visible_pixels = thumbnail
+                .bytes
+                .chunks_exact(4)
+                .filter(|pixel| *pixel != [255, 255, 255, 255])
+                .count();
+            assert!(
+                visible_pixels >= min_visible_pixels,
+                "{label} fixture should preserve legal document visual content"
+            );
+        }
+    }
+
+    #[test]
+    fn native_backend_should_keep_generated_legal_redaction_rectangles_visible() {
+        let bytes = include_bytes!("../../../fixtures/generated/legal-visible-redactions.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 380,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("legal visible redaction fixture should render");
+
+        assert_eq!(rgba_at(&thumbnail, 120, 103), [0, 0, 0, 255]);
+        assert_eq!(rgba_at(&thumbnail, 150, 127), [0, 0, 0, 255]);
+        assert_eq!(rgba_at(&thumbnail, 120, 151), [0, 0, 0, 255]);
+    }
+
+    #[test]
+    fn native_parallel_renderer_should_sample_generated_legal_attachment_pages() {
+        let bytes =
+            include_bytes!("../../../fixtures/generated/legal-scanned-attachment-packet.pdf");
+        let metadata =
+            DocumentMetadataBackend::inspect(&NativeBackend::new(), PdfSource::from_bytes(bytes))
+                .expect("legal scanned attachment packet should inspect");
+
+        assert_eq!(metadata.page_count(), 2);
+
+        let result = render_pages_parallel(
+            PdfSource::from_bytes(bytes),
+            &[0, 1],
+            &ThumbnailOptions {
+                max_edge: 340,
+                ..ThumbnailOptions::default()
+            },
+            ParallelRenderOptions {
+                max_workers: 2,
+                max_in_flight_pixels: 340 * 340 * 2,
+            },
+        )
+        .expect("legal attachment pages should render through parallel scheduler");
+
+        assert_eq!(result.pages.len(), 2);
+        for page in result.pages {
+            assert_eq!(page.width, 260);
+            assert_eq!(page.height, 340);
+        }
+    }
+
+    #[test]
     fn native_backend_should_render_generated_presentation_slide_fixtures() {
         let fixtures: &[(&[u8], u32, u32, &str)] = &[
             (
