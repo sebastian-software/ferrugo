@@ -1,6 +1,6 @@
 # 0108: Advanced Shading Mesh Tessellation
 
-Status: in-progress
+Status: done
 Phase: 19
 Size: medium
 Depends on: 0107
@@ -46,4 +46,32 @@ presentations, charts, and design-heavy business PDFs.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-25.
+
+- Commit `f4c6a5b`: added native Type 4 free-form Gouraud mesh shading support
+  for bounded 8-bit coordinate/component meshes with explicit flag-0 triangle
+  records.
+- Added `fixtures/generated/type4-mesh-shading.pdf` and manifest coverage for a
+  report-family mesh fixture.
+- Added byte and triangle budgets:
+  `DisplayListOptions::max_mesh_shading_bytes` and
+  `DisplayListOptions::max_mesh_shading_triangles`.
+- Preserved the existing unsupported mesh fixture as a typed fallback boundary
+  for mesh features outside this slice.
+- Report:
+  `docs/reports/mesh-shading-tessellation-2026-06-25.md`.
+
+Validation:
+
+- `python3 scripts/generate_fixtures.py`
+- `cargo fmt --check`
+- `cargo check --workspace`
+- `cargo check --workspace --no-default-features`
+- `cargo test -p pdfrust-render`
+- `cargo test -p pdfrust-native`
+- `cargo test --workspace`
+- `cargo test --workspace --no-default-features`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/shading-0108-benchmark.json`
+- `cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --include-family browser-print --include-family office-export --include-family form --fail-on-fallback --max-edge 160 --output target/shading-0108-supported-gate.json`
+- `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium/out/pdfrust-dylib:/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --max-mae 2.0 --max-p95 16 --max-changed-ratio 0.05 --output target/shading-0108-visual-diff.json`

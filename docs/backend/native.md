@@ -154,6 +154,26 @@ The generated colored and uncolored tiling pattern fixtures render natively and
 match PDFium exactly in the 0107 comparison run. See
 `docs/reports/tiling-pattern-color-spaces-2026-06-25.md`.
 
+## Mesh Shading Tessellation
+
+The native shading path resolves stream-backed `/Shading` resources and supports
+a bounded subset of Type 4 free-form Gouraud triangle meshes. The current
+implementation accepts `/DeviceGray` and `/DeviceRGB` meshes with 8-bit
+coordinates, 8-bit color components, and 2- or 8-bit flags. The first slice
+decodes explicit flag-0 triangle records; connected mesh continuation flags and
+other mesh shading types remain typed unsupported boundaries.
+
+Mesh streams are decoded with explicit renderer budgets:
+
+- Decoded mesh stream bytes: 1 MiB.
+- Decoded mesh triangles per shading: 8192.
+
+Budget exhaustion is reported as `renderer.memory-budget` through the native
+backend. This keeps adversarial or extremely dense mesh streams from scaling
+work unboundedly with source complexity. The generated Type 4 fixture renders
+natively and compares against PDFium as accepted low-amplitude drift in the 0108
+run. See `docs/reports/mesh-shading-tessellation-2026-06-25.md`.
+
 ## Fallback Policy
 
 PDFium remains the oracle and explicit fallback until the visual GA gate says
