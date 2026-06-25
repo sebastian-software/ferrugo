@@ -207,6 +207,18 @@ visible and diagnosable while leaving device-separation compositing, full CMYK
 knockout behavior, and prepress conformance for later print-production
 milestones. See `docs/reports/overprint-simulation-2026-06-25.md`.
 
+## Digital Signature Boundary
+
+Visible signature widgets use the same static AcroForm appearance rendering as
+other widget annotations. Document metadata exposes presence-only signature
+signals for AcroForm signature fields and `/ByteRange` dictionaries so callers
+can distinguish signed-looking documents from unsigned forms without implying
+cryptographic validation.
+
+The native renderer does not validate certificate chains, hash signed byte
+ranges, parse PKCS#7/CMS contents, or report legal signature status. See
+`docs/reports/signature-boundary-2026-06-25.md`.
+
 ## Fallback Policy
 
 PDFium remains the oracle and explicit fallback until the visual GA gate says

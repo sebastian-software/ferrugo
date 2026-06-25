@@ -1,6 +1,6 @@
 # 0112: Digital Signature Appearance And Validation Boundary
 
-Status: in-progress
+Status: done
 Phase: 20
 Size: small
 Depends on: 0111
@@ -46,4 +46,18 @@ from cryptographic signature validation.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-25.
+
+- Commit `d9682c0` adds presence-only signature metadata on
+  `DocumentStructure`: `has_signature_fields` and `has_signature_byte_range`.
+- Existing signature widget appearances remain rendered as static AcroForm
+  appearances.
+- Added `fixtures/generated/digital-signature-appearance.pdf` with a visible
+  signature widget and `/V` signature dictionary containing `/ByteRange`.
+- The metadata path reports signature presence without validating
+  certificates, hashing byte ranges, parsing CMS/PKCS#7 contents, or claiming
+  legal status.
+- Corpus benchmark artifact: `target/signature-0112-benchmark.json`.
+- Supported-family gate artifact: `target/signature-0112-supported-gate.json`.
+- PDFium visual-diff artifact: `target/signature-0112-visual-diff.json`.
+- Report: `docs/reports/signature-boundary-2026-06-25.md`.

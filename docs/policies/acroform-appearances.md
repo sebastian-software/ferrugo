@@ -43,6 +43,17 @@ unsupported bucket `form.xfa-dynamic`.
 The renderer does not decode XFA packets to build layout, execute scripts, or
 derive field values. XFA data is treated as a policy signal only.
 
+## Digital Signature Boundary
+
+Signature widgets are rendered as static AcroForm widget appearances. The
+native metadata path may report that signature fields and `/ByteRange` metadata
+are present, but this is a presence signal only. It is not certificate-chain
+validation, hash verification, legal status, or proof that `/Contents` is
+well-formed.
+
+The renderer must not mutate signed documents, recalculate signature values, or
+interpret signature contents while generating thumbnails.
+
 ## Missing Or Dynamic Appearances
 
 If a widget does not have a usable normal appearance stream, the native renderer
