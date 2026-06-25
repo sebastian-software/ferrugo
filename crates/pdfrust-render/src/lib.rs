@@ -9946,6 +9946,7 @@ fn draw_image(
     let min_y = bounds.min_y.floor().max(0.0) as u32;
     let max_x = bounds.max_x.ceil().min(f64::from(dimensions.width)) as u32;
     let max_y = bounds.max_y.ceil().min(f64::from(dimensions.height)) as u32;
+    let mut sample_cache = ImageSampleCache::default();
 
     for y in min_y..max_y {
         for x in min_x..max_x {
@@ -9953,7 +9954,9 @@ fn draw_image(
             if !(0.0..1.0).contains(&sample.x) || !(0.0..1.0).contains(&sample.y) {
                 continue;
             }
-            let pixel = sample_image(&image.image, sample.x, sample.y, image.state.fill_color);
+            let (sample_x, sample_y) = image_sample_coords(&image.image, sample.x, sample.y);
+            let pixel =
+                sample_cache.sample(&image.image, sample_x, sample_y, image.state.fill_color);
             composite_image_pixel(device, x, y, pixel)?;
         }
     }
@@ -9983,9 +9986,53 @@ fn transform_bounds(bounds: PathBounds, transform: Matrix) -> PathBounds {
     include_point(Some(bounds), p3)
 }
 
-fn sample_image(image: &ImageXObject, x: f64, y: f64, stencil_color: DeviceColor) -> Rgba {
+#[derive(Debug, Default)]
+struct ImageSampleCache {
+    last: Option<CachedImageSample>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct CachedImageSample {
+    x: u32,
+    y: u32,
+    color: Rgba,
+}
+
+impl ImageSampleCache {
+    fn sample(
+        &mut self,
+        image: &ImageXObject,
+        sample_x: u32,
+        sample_y: u32,
+        stencil_color: DeviceColor,
+    ) -> Rgba {
+        if let Some(last) = self.last {
+            if last.x == sample_x && last.y == sample_y {
+                return last.color;
+            }
+        }
+        let color = sample_image_at(image, sample_x, sample_y, stencil_color);
+        self.last = Some(CachedImageSample {
+            x: sample_x,
+            y: sample_y,
+            color,
+        });
+        color
+    }
+}
+
+fn image_sample_coords(image: &ImageXObject, x: f64, y: f64) -> (u32, u32) {
     let sample_x = ((x * f64::from(image.width)).floor() as u32).min(image.width - 1);
     let sample_y = (((1.0 - y) * f64::from(image.height)).floor() as u32).min(image.height - 1);
+    (sample_x, sample_y)
+}
+
+fn sample_image_at(
+    image: &ImageXObject,
+    sample_x: u32,
+    sample_y: u32,
+    stencil_color: DeviceColor,
+) -> Rgba {
     if let ImageKind::StencilMask { paint_one_bits } = image.kind {
         let paints = sample_image_mask_bit(image, sample_x, sample_y) == paint_one_bits;
         let mut color = device_color_to_rgba(stencil_color);
@@ -16500,6 +16547,40 @@ mod tests {
                 a: 255,
             }
         );
+    }
+
+    #[test]
+    fn image_sample_cache_should_reuse_last_converted_sample() {
+        let image = ImageXObject {
+            resource_name: b"Im1".to_vec(),
+            width: 1,
+            height: 1,
+            bits_per_component: 8,
+            color_space: ImageColorSpace::DeviceCmyk,
+            samples: Arc::from([0, 255, 255, 0].as_slice()),
+            kind: ImageKind::Color,
+            indexed_lookup: None,
+            soft_mask: Some(Arc::from([128].as_slice())),
+        };
+        let mut cache = ImageSampleCache::default();
+
+        let first = cache.sample(&image, 0, 0, DeviceColor::BLACK);
+        let second = cache.sample(&image, 0, 0, DeviceColor::BLACK);
+
+        assert_eq!(
+            first,
+            Rgba {
+                r: 255,
+                g: 0,
+                b: 0,
+                a: 128,
+            }
+        );
+        assert_eq!(second, first);
+        let cached = cache.last.expect("cached sample");
+        assert_eq!(cached.x, 0);
+        assert_eq!(cached.y, 0);
+        assert_eq!(cached.color, first);
     }
 
     #[test]
