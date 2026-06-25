@@ -1,6 +1,6 @@
 # 0109: Transparency Isolation Knockout And Luminosity Masks
 
-Status: in-progress
+Status: done
 Phase: 19
 Size: medium
 Depends on: 0108
@@ -46,4 +46,32 @@ luminosity soft masks in typical office and design PDFs.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-25.
+
+- Commit `d814920`: preserved alpha on transparency group intermediate surfaces
+  and applied caller graphics-state alpha/blend mode during final group
+  compositing.
+- Group rasterization now runs the full nested display list on the bounded
+  intermediate surface instead of path-only rendering.
+- Added `fixtures/generated/transparency-knockout-group.pdf` to cover inherited
+  ExtGState alpha inside an isolated `/K true` transparency group.
+- The `/K true` fixture follows the local PDFium oracle: overlap remains normal
+  semi-transparent group composition with low-amplitude drift, not a divergent
+  hard-knockout interpretation.
+- Report:
+  `docs/reports/transparency-group-alpha-2026-06-25.md`.
+
+Validation:
+
+- `python3 scripts/generate_fixtures.py`
+- `cargo fmt --check`
+- `cargo check --workspace`
+- `cargo check --workspace --no-default-features`
+- `cargo test -p pdfrust-render`
+- `cargo test -p pdfrust-native`
+- `cargo test --workspace`
+- `cargo test --workspace --no-default-features`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/transparency-0109-benchmark.json`
+- `cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --include-family browser-print --include-family office-export --include-family form --fail-on-fallback --max-edge 160 --output target/transparency-0109-supported-gate.json`
+- `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium/out/pdfrust-dylib:/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --max-mae 2.0 --max-p95 16 --max-changed-ratio 0.05 --output target/transparency-0109-visual-diff.json`

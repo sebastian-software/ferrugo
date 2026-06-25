@@ -97,12 +97,12 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
-| 0109 | [Transparency Isolation Knockout And Luminosity Masks](0109-transparency-isolation-knockout-and-luminosity-masks.md) | 19 | medium | 0108 |
 
 ## Done
 
 | ID | Milestone | Phase | Size | Completed |
 | --- | --- | --- | --- | --- |
+| 0109 | [Transparency Isolation Knockout And Luminosity Masks](0109-transparency-isolation-knockout-and-luminosity-masks.md) | 19 | medium | 2026-06-25 |
 | 0108 | [Advanced Shading Mesh Tessellation](0108-advanced-shading-mesh-tessellation.md) | 19 | medium | 2026-06-25 |
 | 0107 | [Tiling Patterns And Pattern Color Spaces](0107-tiling-patterns-and-pattern-color-spaces.md) | 19 | medium | 2026-06-25 |
 | 0106 | [ICC Profile Cache And Transform Optimization](0106-icc-profile-cache-and-transform-optimization.md) | 19 | medium | 2026-06-25 |

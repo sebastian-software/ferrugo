@@ -174,6 +174,24 @@ work unboundedly with source complexity. The generated Type 4 fixture renders
 natively and compares against PDFium as accepted low-amplitude drift in the 0108
 run. See `docs/reports/mesh-shading-tessellation-2026-06-25.md`.
 
+## Transparency Group Alpha
+
+Transparency groups render into bounded intermediate rasters before being
+composited back to the page. The group path preserves alpha on transparent
+intermediate surfaces, applies the caller graphics-state alpha when the group is
+painted, and uses the caller blend mode for final group compositing.
+
+The group rasterizer now executes the full display list inside the intermediate
+surface, not only path items. Intermediate size remains clipped to the
+transformed group bounds and bounded by
+`PathRasterOptions::max_transparency_group_pixels`.
+
+`/K true` group metadata is parsed and covered by a generated fixture. The local
+PDFium oracle renders the fixture overlap as normal semi-transparent group
+composition, so the native renderer follows that comparison behavior for now
+instead of introducing a divergent hard-knockout interpretation. See
+`docs/reports/transparency-group-alpha-2026-06-25.md`.
+
 ## Fallback Policy
 
 PDFium remains the oracle and explicit fallback until the visual GA gate says
