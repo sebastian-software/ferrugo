@@ -1,6 +1,6 @@
 # 0118: Real Corpus Acquisition And Privacy Review Loop
 
-Status: todo
+Status: in-progress
 Phase: 21
 Size: medium
 Depends on: 0117
