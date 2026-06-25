@@ -37,6 +37,29 @@ baseline still reports fidelity blockers in form synthesis, text/font rendering,
 and page geometry. See
 `docs/reports/native-renderer-ga-gate-2026-06-25.md` for the measured decision.
 
+## Page Artifact Cache Policy
+
+The native renderer default policy is `isolated-render`: each thumbnail render
+owns its decoded page resources and pass-local caches, and no document-derived
+artifact is persisted to disk by default. Longer-lived page reuse remains
+caller-owned until the backend grows an explicit document-session cache with
+bounded memory accounting and tenant lifetime boundaries.
+
+Reusable page artifacts must be keyed by `NativePageCacheKey`, which includes a
+caller-provided document identity, page index, max edge, background color,
+native renderer version, and native profile. The CLI repeated-render benchmark
+uses a streaming content hash as the document identity for fixture evidence;
+host applications may instead provide a tenant-scoped document version id or a
+strong content hash.
+
+The current repeated-render gate does not show enough improvement to justify
+shared persistent page artifacts as a default: the 0134 benchmark rendered four
+fixtures three times each with 0 fallbacks and 0 budget failures, while repeated
+render means stayed close to first-render timings. This rejects a global or
+on-disk page cache for now and keeps future cache experiments behind explicit
+policy and key boundaries. See
+`docs/reports/page-cache-reuse-policy-2026-06-25.md`.
+
 ## Font Fallback Policy
 
 Missing and substituted fonts use a deterministic built-in fallback policy

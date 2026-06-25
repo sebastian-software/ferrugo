@@ -1,6 +1,6 @@
 # 0134: Persistent Page Cache And Reuse Policy
 
-Status: todo
+Status: done
 Phase: 24
 Size: medium
 Depends on: 0133
@@ -47,4 +47,23 @@ artifacts across repeated thumbnail requests.
 
 ## Completion Notes
 
-Empty until done.
+- Added the native `NativePageCachePolicy::IsolatedRender` default and
+  `NativePageCacheKey` shape for caller-owned reusable page artifacts.
+- Added `benchmark-repeat-native`, which reports cache policy, versioned
+  cache keys, first-render timings, repeated-render timings, and budget
+  failures.
+- Added `fixtures/page-cache-policy-manifest.tsv` and benchmark artifact
+  `target/page-cache-0134-repeat-benchmark.json`.
+- Documented the decision to reject a default persistent/global page cache for
+  now because repeated-render timings stayed close to first-render timings
+  while persistence would add memory, invalidation, and privacy risk.
+- Report: `docs/reports/page-cache-reuse-policy-2026-06-25.md`.
+- Validation:
+  - `cargo fmt --check`
+  - `cargo test -p pdfrust-native native_page_cache -- --nocapture`
+  - `cargo test -p pdfrust-cli repeat_benchmark -- --nocapture`
+  - `cargo run -p pdfrust-cli --no-default-features -- benchmark-repeat-native fixtures/generated --manifest fixtures/page-cache-policy-manifest.tsv --include-family small --include-family business --include-family repeated-resources --include-family vector-stress --repetitions 3 --max-edge 160 --max-first-ms 1000 --max-repeat-mean-ms 1000 --max-errors 0 --fail-on-budget --output target/page-cache-0134-repeat-benchmark.json`
+  - `cargo check --workspace`
+  - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+  - `cargo test --workspace`
+  - `cargo test --workspace --no-default-features`

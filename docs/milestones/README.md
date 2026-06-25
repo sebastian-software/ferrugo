@@ -21,7 +21,6 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
-| 0134 | [Persistent Page Cache And Reuse Policy](0134-persistent-page-cache-and-reuse-policy.md) | 24 | medium | 0133 |
 | 0135 | [Renderer Diagnostics And Debug Artifact Bundle](0135-renderer-diagnostics-and-debug-artifact-bundle.md) | 24 | medium | 0134 |
 | 0136 | [Font Subset Regression Corpus Expansion](0136-font-subset-regression-corpus-expansion.md) | 25 | medium | 0135 |
 | 0137 | [Image Downsampling And Color Conversion Optimization](0137-image-downsampling-and-color-conversion-optimization.md) | 25 | medium | 0136 |
@@ -98,6 +97,7 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Completed |
 | --- | --- | --- | --- | --- |
+| 0134 | [Persistent Page Cache And Reuse Policy](0134-persistent-page-cache-and-reuse-policy.md) | 24 | medium | 2026-06-25 |
 | 0133 | [Server-Side Batch Rendering Throughput Gate](0133-server-side-batch-rendering-throughput-gate.md) | 24 | medium | 2026-06-25 |
 | 0132 | [WASM Renderer Packaging And Size Gate](0132-wasm-renderer-packaging-and-size-gate.md) | 24 | medium | 2026-06-25 |
 | 0131 | [Low-Memory Embedded Renderer Profile](0131-low-memory-embedded-renderer-profile.md) | 24 | medium | 2026-06-25 |
