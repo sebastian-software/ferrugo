@@ -1,6 +1,6 @@
 # 0111: XFA And Dynamic Form Fallback Policy
 
-Status: in-progress
+Status: done
 Phase: 20
 Size: small
 Depends on: 0110
@@ -46,4 +46,18 @@ pretending to support interactive form runtimes.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-25.
+
+- Commit `7a5f58a` adds early native `/AcroForm /XFA` render policy detection.
+- XFA/AcroForm hybrids with non-empty static `/Fields` continue through the
+  existing static page and annotation appearance render paths.
+- XFA documents without static fields return typed unsupported bucket
+  `form.xfa-dynamic` before rendering, without decoding or executing XFA
+  packets.
+- Added generated fixtures:
+  - `fixtures/generated/xfa-static-appearance.pdf`
+  - `fixtures/generated/xfa-dynamic-no-static-appearance.pdf`
+- Corpus benchmark artifact: `target/xfa-0111-benchmark.json`.
+- Supported-family gate artifact: `target/xfa-0111-supported-gate.json`.
+- PDFium visual-diff artifact: `target/xfa-0111-visual-diff.json`.
+- Report: `docs/reports/xfa-fallback-policy-2026-06-25.md`.
