@@ -247,6 +247,21 @@ model and uses linearization metadata to reduce parsed object graph size for
 the first page when the hints are valid. See
 `docs/reports/linearized-first-page-loading-2026-06-25.md`.
 
+## Multi-Page Scheduler And Cancellation
+
+The native backend exposes a bounded multi-page scheduler for consumers that
+need several thumbnails from the same document. `render_pages_parallel` keeps
+the strict all-success behavior and preserves requested page order.
+`render_pages_parallel_partial` returns page-level outcomes so callers can keep
+successful pages when later requested pages fail.
+
+Scheduling is bounded by `ParallelRenderOptions::max_workers` and
+`max_in_flight_pixels`. `RenderCancellation` is a cooperative token checked
+before worker batches are scheduled; already-started page jobs are allowed to
+finish and release their temporary buffers normally. The scheduler does not
+require an async runtime. See
+`docs/reports/multi-page-scheduler-cancellation-2026-06-25.md`.
+
 ## Fallback Policy
 
 PDFium remains the oracle and explicit fallback until the visual GA gate says

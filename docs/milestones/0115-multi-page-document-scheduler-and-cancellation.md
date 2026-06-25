@@ -1,6 +1,6 @@
 # 0115: Multi-Page Document Scheduler And Cancellation
 
-Status: in-progress
+Status: done
 Phase: 20
 Size: medium
 Depends on: 0114
@@ -46,4 +46,12 @@ memory, and cancellation behavior explicit.
 
 ## Completion Notes
 
-Empty until done.
+Completed 2026-06-25.
+
+- Added `RenderCancellation` as a cooperative cancellation token.
+- Added `render_pages_parallel_partial` with per-page success/error outcomes.
+- Kept `render_pages_parallel` as the strict all-success API on top of the
+  partial scheduler.
+- Added tests for mixed page status and pre-scheduling cancellation.
+- Validation evidence is recorded in
+  `docs/reports/multi-page-scheduler-cancellation-2026-06-25.md`.
