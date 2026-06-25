@@ -7354,6 +7354,7 @@ fn decode_form_xobject(
 fn decode_ext_graphics_state(
     dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
 ) -> GraphicsResult<ExtGraphicsState> {
+    ext_graphics_state_soft_mask(dictionary)?;
     Ok(ExtGraphicsState {
         blend_mode: ext_graphics_state_blend_mode(dictionary)?,
         fill_alpha: ext_graphics_state_alpha(dictionary, b"ca")?,
@@ -7427,6 +7428,23 @@ fn blend_mode_from_name(name: &[u8]) -> GraphicsResult<BlendMode> {
             },
         )),
     }
+}
+
+fn ext_graphics_state_soft_mask(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+) -> GraphicsResult<()> {
+    let Some(value) = dictionary_value(dictionary, b"SMask") else {
+        return Ok(());
+    };
+    if matches!(value, PdfPrimitive::Name(name) if name.as_bytes() == b"None") {
+        return Ok(());
+    }
+    Err(GraphicsError::new(
+        None,
+        GraphicsErrorKind::UnsupportedSoftMask {
+            feature: b"SMask".to_vec(),
+        },
+    ))
 }
 
 fn ext_graphics_state_bool(
@@ -13429,6 +13447,53 @@ mod tests {
                 stroke_overprint: false,
                 overprint_mode: 0,
             })
+        );
+    }
+
+    #[test]
+    fn ext_graphics_state_resources_should_accept_none_soft_mask() {
+        let dictionary = vec![(
+            PdfName::new(b"GS1"),
+            PdfPrimitive::Dictionary(vec![(
+                PdfName::new(b"SMask"),
+                PdfPrimitive::Name(PdfName::new(b"None")),
+            )]),
+        )];
+        let resources = ExtGraphicsStateResources::from_extgstate_dictionary(&dictionary)
+            .expect("soft-mask none state");
+
+        assert_eq!(
+            resources.get(PdfName::new(b"GS1")),
+            Some(ExtGraphicsState::default())
+        );
+    }
+
+    #[test]
+    fn ext_graphics_state_resources_should_reject_luminosity_soft_mask() {
+        let dictionary = vec![(
+            PdfName::new(b"GS1"),
+            PdfPrimitive::Dictionary(vec![(
+                PdfName::new(b"SMask"),
+                PdfPrimitive::Dictionary(vec![
+                    (
+                        PdfName::new(b"S"),
+                        PdfPrimitive::Name(PdfName::new(b"Luminosity")),
+                    ),
+                    (
+                        PdfName::new(b"G"),
+                        PdfPrimitive::Name(PdfName::new(b"FormMask")),
+                    ),
+                ]),
+            )]),
+        )];
+        let error = ExtGraphicsStateResources::from_extgstate_dictionary(&dictionary)
+            .expect_err("luminosity soft mask should be typed unsupported");
+
+        assert_eq!(
+            error.kind(),
+            &GraphicsErrorKind::UnsupportedSoftMask {
+                feature: b"SMask".to_vec(),
+            }
         );
     }
 
