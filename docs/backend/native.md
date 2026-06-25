@@ -113,6 +113,28 @@ approximation and does not expose separations, unbounded function sampling, or
 overprint simulation. See
 `docs/reports/spot-color-approximation-2026-06-25.md`.
 
+## ICCBased Image Color Spaces
+
+Image XObjects now accept `/ICCBased` color spaces with bounded decoded profile
+streams. Supported channel counts map to the existing native image sample paths:
+one component to DeviceGray, three components to DeviceRGB, and four components
+to DeviceCMYK. Unsupported channel counts remain typed image color-space
+failures.
+
+Validated ICC transform metadata is reusable through a caller-owned
+`IccTransformCache`. The cache is keyed by stable decoded-profile identity and
+records hits, misses, evictions, and the largest validated transform workspace.
+Default limits are exposed through native memory diagnostics:
+
+- ICC profile bytes: 1 MiB.
+- ICC transform workspace bytes: 64 KiB.
+- ICC transform cache entries: 32.
+
+This is not full color management. RGB and Gray ICCBased fixtures currently
+match PDFium exactly, while CMYK ICCBased images render natively through the
+DeviceCMYK thumbnail approximation and remain a known visual-parity gap. See
+`docs/reports/icc-cache-transform-2026-06-25.md`.
+
 ## Fallback Policy
 
 PDFium remains the oracle and explicit fallback until the visual GA gate says

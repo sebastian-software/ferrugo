@@ -1,6 +1,6 @@
 # 0106: ICC Profile Cache And Transform Optimization
 
-Status: todo
+Status: done
 Phase: 19
 Size: medium
 Depends on: 0105
@@ -46,4 +46,17 @@ documents.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-25.
+
+- Added a bounded ICCBased image color-space path with profile byte limits,
+  transform workspace limits, and cache entry limits.
+- Added `IccTransformCache` metrics for hits, misses, evictions, and maximum
+  validated transform workspace size.
+- Added native memory diagnostics for ICC profile, transform workspace, and
+  transform cache budgets.
+- Added generated ICCBased RGB, Gray, and CMYK image fixtures plus native
+  smoke coverage.
+- Verified native benchmark budgets for the new ICC fixtures. RGB and Gray
+  match PDFium exactly; ICCBased CMYK renders natively but remains a visual
+  approximation gap.
+- Report: `docs/reports/icc-cache-transform-2026-06-25.md`.
