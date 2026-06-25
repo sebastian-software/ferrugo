@@ -188,6 +188,57 @@ def metadata_outline_page_labels_pdf() -> bytes:
     return pdf.render(catalog, trailer_entries=f"/Info {info} 0 R ")
 
 
+def tagged_accessibility_metadata_pdf() -> bytes:
+    pdf = Pdf()
+    content = b"/Figure << /MCID 0 >> BDC 0.1 0.3 0.7 rg 20 40 120 40 re f EMC"
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 220 140] "
+        f"/Resources << >> /Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    structure = pdf.add(
+        f"<< /Type /StructElem /S /Document /P 5 0 R /Pg {page} 0 R "
+        f"/K [<< /Type /MCR /Pg {page} 0 R /MCID 0 >>] >>"
+    )
+    struct_tree = pdf.add(
+        f"<< /Type /StructTreeRoot /K [{structure} 0 R] "
+        "/RoleMap << /Document /Document >> >>"
+    )
+    info = pdf.add("<< /Title (Tagged Accessibility Fixture) /Author (pdfrust) >>")
+    catalog = pdf.add(
+        f"<< /Type /Catalog /Pages {pages} 0 R /Lang (en-US) "
+        "/MarkInfo << /Marked true >> "
+        f"/StructTreeRoot {struct_tree} 0 R >>"
+    )
+    return pdf.render(catalog, trailer_entries=f"/Info {info} 0 R ")
+
+
+def malformed_tagged_structure_pdf() -> bytes:
+    pdf = Pdf()
+    content = b"0.2 0.2 0.2 rg 20 20 80 40 re f"
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 120 80] "
+        f"/Resources << >> /Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    catalog = pdf.add(
+        f"<< /Type /Catalog /Pages {pages} 0 R "
+        "/MarkInfo << /Marked true >> "
+        "/StructTreeRoot << /Type /StructTreeRoot /K << /S /Document /K true >> >> >>"
+    )
+    return pdf.render(catalog)
+
+
 def malformed_xref_offset_drift_pdf() -> bytes:
     pdf = Pdf()
     content = b"q 0.9 0 0 rg 10 10 60 40 re f Q"
@@ -3120,6 +3171,8 @@ def main() -> None:
     write("cropped-scan-page.pdf", cropped_scan_page_pdf())
     write("user-unit-page.pdf", user_unit_page_pdf())
     write("metadata-outline-page-labels.pdf", metadata_outline_page_labels_pdf())
+    write("tagged-accessibility-metadata.pdf", tagged_accessibility_metadata_pdf())
+    write("malformed-tagged-structure.pdf", malformed_tagged_structure_pdf())
     write(
         "text-page.pdf",
         page_pdf(

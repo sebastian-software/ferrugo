@@ -55,6 +55,7 @@ fixtures/generated/link-annotation-without-appearance.pdf	mixed-layout	scripts/g
 fixtures/generated/linearized-first-page.pdf	browser-print	scripts/generate_fixtures.py	MIT OR Apache-2.0	2	linearized,first-page,fast-load	Generated linearized-style two-page fixture with first-page objects before the /E boundary.
 fixtures/generated/linearized-malformed-hints.pdf	browser-print	scripts/generate_fixtures.py	MIT OR Apache-2.0	2	linearized,malformed-hints,fallback	Generated linearized-style fixture with invalid /E hint to prove safe fallback.
 fixtures/generated/malformed-xref-offset-drift.pdf	mixed-layout	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	xref,recovery	Generated malformed xref offset-drift fixture.
+fixtures/generated/malformed-tagged-structure.pdf	adversarial	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	malformed,tagged-pdf,structure-tree	Generated malformed tagged PDF structure tree fixture for metadata error classification.
 fixtures/generated/markup-annotations-without-appearance.pdf	mixed-layout	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	annotation,underline,square,circle,missing-appearance	Generated markup annotation fallback fixture without appearance streams.
 fixtures/generated/metadata-outline-page-labels.pdf	mixed-layout	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	metadata,outline,page-labels,named-destinations,tagged-pdf	Generated metadata fixture with info dictionary, outlines, page labels, named destinations, and tagged-PDF presence.
 fixtures/generated/mesh-shading-unsupported.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	shading,mesh,unsupported	Generated unsupported mesh shading fixture.
@@ -81,6 +82,7 @@ fixtures/generated/ocr-invisible-text-layer.pdf	scan	scripts/generate_fixtures.p
 fixtures/generated/separation-spot-color.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	color,spot,separation,tint-transform	Generated Separation spot-color vector fixture with DeviceCMYK alternate tint approximation.
 fixtures/generated/shaped-rtl-text.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,type0,cid,rtl,prepositioned	Generated pre-positioned RTL Type0 CID text fixture.
 fixtures/generated/soft-mask-image.pdf	scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,soft-mask,alpha	Generated soft-mask image alpha fixture.
+fixtures/generated/tagged-accessibility-metadata.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	tagged-pdf,accessibility,metadata,marked-content	Generated tagged office-style fixture with language, role map, and marked-content reference.
 fixtures/generated/text-page.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,type1	Generated simple text page fixture.
 fixtures/generated/text-note-annotation-without-appearance.pdf	mixed-layout	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	annotation,text-note,missing-appearance	Generated text note annotation fallback fixture without appearance stream.
 fixtures/generated/text-spacing.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,spacing,invisible-text	Generated text spacing and invisible render-mode fixture.

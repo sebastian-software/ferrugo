@@ -25,9 +25,10 @@ use pdfrust_render::{
 };
 use pdfrust_syntax::{PdfBytes, PdfName, PdfNumber, PdfPrimitive, PdfReference, PdfString};
 use pdfrust_thumbnail::{
-    DocumentInfo, DocumentMetadata, DocumentMetadataBackend, DocumentStructure, OutlineMetadata,
-    PageLabel, PageLabelsMetadata, PageMetadata as ThumbnailPageMetadata, PageSize, PdfSource,
-    Thumbnail, ThumbnailBackend, ThumbnailError, ThumbnailOptions,
+    AccessibilityMetadata, DocumentInfo, DocumentMetadata, DocumentMetadataBackend,
+    DocumentStructure, OutlineMetadata, PageLabel, PageLabelsMetadata,
+    PageMetadata as ThumbnailPageMetadata, PageSize, PdfSource, Thumbnail, ThumbnailBackend,
+    ThumbnailError, ThumbnailOptions,
 };
 
 /// Stable crate role used by architecture smoke tests and documentation.
@@ -53,6 +54,7 @@ const MAX_METADATA_OUTLINE_ITEMS: usize = 256;
 const MAX_METADATA_PAGE_LABELS: usize = 4096;
 const MAX_METADATA_SIGNATURE_FIELDS: usize = 4096;
 const MAX_METADATA_ATTACHMENT_ANNOTATIONS: usize = 4096;
+const MAX_METADATA_STRUCTURE_ITEMS: usize = 4096;
 const DEFAULT_SPOOL_BYTES_LIMIT: usize = 0;
 
 /// Rust-native thumbnail backend.
@@ -2460,6 +2462,7 @@ fn metadata_from_classic_document(
     metadata.structure = document_structure(document, catalog, &page_tree)?;
     metadata.outlines = outline_metadata(document, catalog)?;
     metadata.page_labels = page_labels_metadata(document, catalog, page_tree.page_count())?;
+    metadata.accessibility = accessibility_metadata(document, catalog)?;
     Ok(metadata)
 }
 
@@ -2532,6 +2535,127 @@ fn has_embedded_files(
     };
     let names = metadata_dictionary_from_value(document, names_value)?;
     Ok(dictionary_value(names, b"EmbeddedFiles").is_some())
+}
+
+fn accessibility_metadata(
+    document: &ClassicDocument<'_>,
+    catalog: &[(PdfName<'_>, PdfPrimitive<'_>)],
+) -> Result<AccessibilityMetadata, ThumbnailError> {
+    let mut metadata = AccessibilityMetadata {
+        language: metadata_string(catalog, b"Lang"),
+        mark_info_marked: mark_info_marked(document, catalog)?,
+        ..AccessibilityMetadata::default()
+    };
+    let Some(struct_tree_value) = dictionary_value(catalog, b"StructTreeRoot") else {
+        return Ok(metadata);
+    };
+    let struct_tree_root = metadata_dictionary_from_value(document, struct_tree_value)?;
+    metadata.has_role_map = dictionary_value(struct_tree_root, b"RoleMap").is_some();
+    let Some(kids) = dictionary_value(struct_tree_root, b"K") else {
+        return Ok(metadata);
+    };
+    let summary = summarize_structure_tree(document, kids)?;
+    metadata.structure_role_count = summary.role_count;
+    metadata.has_marked_content_references = summary.has_marked_content_references;
+    metadata.truncated = summary.truncated;
+    Ok(metadata)
+}
+
+fn mark_info_marked(
+    document: &ClassicDocument<'_>,
+    catalog: &[(PdfName<'_>, PdfPrimitive<'_>)],
+) -> Result<Option<bool>, ThumbnailError> {
+    let Some(mark_info_value) = dictionary_value(catalog, b"MarkInfo") else {
+        return Ok(None);
+    };
+    let mark_info = metadata_dictionary_from_value(document, mark_info_value)?;
+    match dictionary_value(mark_info, b"Marked") {
+        Some(PdfPrimitive::Boolean(value)) => Ok(Some(*value)),
+        Some(_) => Err(ThumbnailError::Malformed),
+        None => Ok(None),
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct StructureTreeSummary {
+    role_count: usize,
+    has_marked_content_references: bool,
+    truncated: bool,
+}
+
+fn summarize_structure_tree(
+    document: &ClassicDocument<'_>,
+    root_kids: &PdfPrimitive<'_>,
+) -> Result<StructureTreeSummary, ThumbnailError> {
+    let mut summary = StructureTreeSummary::default();
+    let mut stack = Vec::new();
+    push_structure_value(&mut stack, root_kids);
+    let mut visited = HashSet::new();
+    let mut reached_items = 0usize;
+
+    while let Some(value) = stack.pop() {
+        if reached_items == MAX_METADATA_STRUCTURE_ITEMS {
+            summary.truncated = true;
+            break;
+        }
+        reached_items += 1;
+        match value {
+            PdfPrimitive::Reference(reference) => {
+                let reference = object_reference(*reference)?;
+                if !visited.insert(reference.id) {
+                    continue;
+                }
+                let object = document
+                    .objects
+                    .get(reference.id)
+                    .ok_or(ThumbnailError::Malformed)?;
+                let dictionary = object_dictionary(&object.value)?;
+                summarize_structure_dictionary(document, dictionary, &mut stack, &mut summary)?;
+            }
+            PdfPrimitive::Dictionary(dictionary) => {
+                summarize_structure_dictionary(document, dictionary, &mut stack, &mut summary)?;
+            }
+            PdfPrimitive::Array(values) => {
+                for value in values.iter().rev() {
+                    push_structure_value(&mut stack, value);
+                }
+            }
+            PdfPrimitive::Number(_) => {
+                summary.has_marked_content_references = true;
+            }
+            _ => return Err(ThumbnailError::Malformed),
+        }
+    }
+
+    Ok(summary)
+}
+
+fn summarize_structure_dictionary<'a>(
+    document: &ClassicDocument<'a>,
+    dictionary: &'a [(PdfName<'a>, PdfPrimitive<'a>)],
+    stack: &mut Vec<&'a PdfPrimitive<'a>>,
+    summary: &mut StructureTreeSummary,
+) -> Result<(), ThumbnailError> {
+    if dictionary_name_is(dictionary, b"Type", b"MCR")
+        || dictionary_value(dictionary, b"MCID").is_some()
+    {
+        summary.has_marked_content_references = true;
+        return Ok(());
+    }
+    if dictionary_value(dictionary, b"S").is_some() {
+        summary.role_count += 1;
+    }
+    if let Some(kids) = dictionary_value(dictionary, b"K") {
+        push_structure_value(stack, kids);
+    }
+    if let Some(parent) = dictionary_value(dictionary, b"Pg") {
+        let _ = metadata_dictionary_from_value(document, parent)?;
+    }
+    Ok(())
+}
+
+fn push_structure_value<'a>(stack: &mut Vec<&'a PdfPrimitive<'a>>, value: &'a PdfPrimitive<'a>) {
+    stack.push(value);
 }
 
 fn has_file_attachment_annotations(
@@ -5340,6 +5464,52 @@ mod tests {
         assert!(metadata.structure.has_named_destinations);
         assert_eq!(metadata.outlines.item_count, 2);
         assert_eq!(metadata.page_labels.labels[0].label, "A-1");
+    }
+
+    #[test]
+    fn native_backend_should_report_tagged_pdf_accessibility_signals() {
+        let bytes = include_bytes!("../../../fixtures/generated/tagged-accessibility-metadata.pdf");
+        let metadata =
+            DocumentMetadataBackend::inspect(&NativeBackend::new(), PdfSource::from_bytes(bytes))
+                .expect("generated tagged metadata fixture should inspect");
+
+        assert_eq!(
+            metadata.info.title.as_deref(),
+            Some("Tagged Accessibility Fixture")
+        );
+        assert!(metadata.structure.has_mark_info);
+        assert!(metadata.structure.has_struct_tree_root);
+        assert_eq!(metadata.accessibility.language.as_deref(), Some("en-US"));
+        assert_eq!(metadata.accessibility.mark_info_marked, Some(true));
+        assert!(metadata.accessibility.has_role_map);
+        assert_eq!(metadata.accessibility.structure_role_count, 1);
+        assert!(metadata.accessibility.has_marked_content_references);
+        assert!(!metadata.accessibility.truncated);
+    }
+
+    #[test]
+    fn native_backend_should_report_untagged_accessibility_defaults() {
+        let bytes = include_bytes!("../../../fixtures/generated/text-page.pdf");
+        let metadata =
+            DocumentMetadataBackend::inspect(&NativeBackend::new(), PdfSource::from_bytes(bytes))
+                .expect("generated untagged fixture should inspect");
+
+        assert_eq!(metadata.accessibility.language, None);
+        assert_eq!(metadata.accessibility.mark_info_marked, None);
+        assert!(!metadata.accessibility.has_role_map);
+        assert_eq!(metadata.accessibility.structure_role_count, 0);
+        assert!(!metadata.accessibility.has_marked_content_references);
+        assert!(!metadata.accessibility.truncated);
+    }
+
+    #[test]
+    fn native_backend_should_report_malformed_tagged_structure_metadata() {
+        let bytes = include_bytes!("../../../fixtures/generated/malformed-tagged-structure.pdf");
+        let error =
+            DocumentMetadataBackend::inspect(&NativeBackend::new(), PdfSource::from_bytes(bytes))
+                .expect_err("malformed tagged structure should fail metadata inspection");
+
+        assert_eq!(error, ThumbnailError::Malformed);
     }
 
     #[test]

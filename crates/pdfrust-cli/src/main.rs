@@ -2846,13 +2846,14 @@ fn metadata_outcome_json(outcome: &MetadataOutcome) -> String {
                 .collect::<Vec<_>>()
                 .join(",");
             format!(
-                "{{\"status\":\"success\",\"page_count\":{},\"pages\":[{}],\"info\":{},\"structure\":{},\"outlines\":{},\"page_labels\":{}}}",
+                "{{\"status\":\"success\",\"page_count\":{},\"pages\":[{}],\"info\":{},\"structure\":{},\"outlines\":{},\"page_labels\":{},\"accessibility\":{}}}",
                 metadata.page_count(),
                 pages,
                 document_info_json(&metadata.info),
                 document_structure_json(&metadata.structure),
                 outline_metadata_json(&metadata.outlines),
-                page_labels_metadata_json(&metadata.page_labels)
+                page_labels_metadata_json(&metadata.page_labels),
+                accessibility_metadata_json(&metadata.accessibility)
             )
         }
         MetadataOutcome::Error { class, message } => format!(
@@ -2918,8 +2919,28 @@ fn page_labels_metadata_json(page_labels: &pdfrust_thumbnail::PageLabelsMetadata
     )
 }
 
+fn accessibility_metadata_json(accessibility: &pdfrust_thumbnail::AccessibilityMetadata) -> String {
+    format!(
+        "{{\"language\":{},\"mark_info_marked\":{},\"has_role_map\":{},\"structure_role_count\":{},\"has_marked_content_references\":{},\"truncated\":{}}}",
+        optional_json_string(accessibility.language.as_deref()),
+        optional_json_bool(accessibility.mark_info_marked),
+        accessibility.has_role_map,
+        accessibility.structure_role_count,
+        accessibility.has_marked_content_references,
+        accessibility.truncated
+    )
+}
+
 fn optional_json_string(value: Option<&str>) -> String {
     value.map_or_else(|| "null".to_string(), json_string)
+}
+
+fn optional_json_bool(value: Option<bool>) -> &'static str {
+    match value {
+        Some(true) => "true",
+        Some(false) => "false",
+        None => "null",
+    }
 }
 
 fn json_string_array(values: &[String]) -> String {
@@ -3399,17 +3420,22 @@ mod tests {
         let fixture_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let manifest_path = fixture_root.join("fixtures/corpus-manifest.tsv");
         let manifest = read_corpus_manifest(&manifest_path).expect("manifest should parse");
-        let paths = vec![fixture_root.join("fixtures/generated/vector-paths.pdf")];
+        let paths = vec![fixture_root.join("fixtures/generated/tagged-accessibility-metadata.pdf")];
 
         let records = extract_native_corpus_metadata(&paths, Some(&manifest));
         let json = corpus_metadata_json(&records);
 
         assert_eq!(records.len(), 1);
-        assert!(json.contains("\"family\":\"browser-print\""));
+        assert!(json.contains("\"family\":\"office-export\""));
         assert!(json.contains("\"source\":\"scripts/generate_fixtures.py\""));
         assert!(json.contains("\"status\":\"success\""));
         assert!(json.contains("\"width\":220.000"));
-        assert!(json.contains("\"height\":180.000"));
+        assert!(json.contains("\"height\":140.000"));
+        assert!(json.contains("\"accessibility\":"));
+        assert!(json.contains("\"language\":\"en-US\""));
+        assert!(json.contains("\"mark_info_marked\":true"));
+        assert!(json.contains("\"structure_role_count\":1"));
+        assert!(json.contains("\"has_marked_content_references\":true"));
     }
 
     #[test]

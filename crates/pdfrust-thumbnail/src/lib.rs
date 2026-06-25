@@ -201,6 +201,8 @@ pub struct DocumentMetadata {
     pub outlines: OutlineMetadata,
     /// Page label metadata.
     pub page_labels: PageLabelsMetadata,
+    /// Tagged-PDF and accessibility-related metadata.
+    pub accessibility: AccessibilityMetadata,
 }
 
 impl DocumentMetadata {
@@ -213,6 +215,7 @@ impl DocumentMetadata {
             structure: DocumentStructure::default(),
             outlines: OutlineMetadata::default(),
             page_labels: PageLabelsMetadata::default(),
+            accessibility: AccessibilityMetadata::default(),
         }
     }
 
@@ -271,6 +274,23 @@ pub struct DocumentStructure {
     pub has_portfolio_collection: bool,
     /// Pages expose at least one file-attachment annotation.
     pub has_file_attachment_annotations: bool,
+}
+
+/// Bounded tagged-PDF and accessibility metadata signals.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct AccessibilityMetadata {
+    /// Catalog `/Lang` value when present.
+    pub language: Option<String>,
+    /// `/MarkInfo /Marked` value when present.
+    pub mark_info_marked: Option<bool>,
+    /// Structure tree root exposes a `/RoleMap` dictionary.
+    pub has_role_map: bool,
+    /// Number of structure element role names reached before the traversal budget.
+    pub structure_role_count: usize,
+    /// Structure tree references at least one marked-content sequence.
+    pub has_marked_content_references: bool,
+    /// Structure traversal stopped because the bounded item budget was reached.
+    pub truncated: bool,
 }
 
 /// Outline tree metadata.
