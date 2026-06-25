@@ -3815,6 +3815,183 @@ def long_report_sampling_pdf() -> bytes:
     return pdf.render(catalog)
 
 
+def book_frontmatter_page_labels_pdf() -> bytes:
+    pdf = Pdf()
+
+    def page_content(title: str, body_width: int) -> bytes:
+        ops: list[str] = [
+            "q 1 1 1 rg 0 0 260 360 re f Q",
+            "q 0.16 0.18 0.22 RG 0.5 w 34 54 m 226 54 l 34 302 m 226 302 l S Q",
+            f"BT /F1 12 Tf 44 324 Td ({title}) Tj ET",
+        ]
+        for row in range(14):
+            y = 286 - row * 14
+            width = body_width - (row % 4) * 16
+            ops.append(f"q 0.18 0.18 0.18 rg 44 {y} {width} 2 re f Q")
+        ops.append("BT /F1 6 Tf 116 30 Td (page marker) Tj ET")
+        return " ".join(ops).encode("ascii")
+
+    contents = [
+        pdf.add(
+            f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+            + content
+            + b"\nendstream"
+        )
+        for content in [
+            page_content("Preface", 156),
+            page_content("Contents", 172),
+            page_content("Chapter One", 166),
+            page_content("Chapter Two", 150),
+            page_content("Appendix", 162),
+        ]
+    ]
+    page_objects = [
+        pdf.add(
+            "<< /Type /Page /Parent 11 0 R /MediaBox [0 0 260 360] "
+            "/Resources << /Font << /F1 12 0 R >> >> "
+            f"/Contents {content} 0 R >>"
+        )
+        for content in contents
+    ]
+    pages = pdf.add(
+        "<< /Type /Pages /Kids ["
+        + " ".join(f"{page} 0 R" for page in page_objects)
+        + "] /Count 5 >>"
+    )
+    font = pdf.add("<< /Type /Font /Subtype /Type1 /BaseFont /Times-Roman >>")
+    outline_one = pdf.add(
+        f"<< /Title (Preface) /Parent 16 0 R /Dest [{page_objects[0]} 0 R /Fit] /Next 14 0 R >>"
+    )
+    outline_two = pdf.add(
+        f"<< /Title (Chapter One) /Parent 16 0 R /Dest [{page_objects[2]} 0 R /Fit] /Next 15 0 R >>"
+    )
+    outline_three = pdf.add(
+        f"<< /Title (Appendix) /Parent 16 0 R /Dest [{page_objects[4]} 0 R /Fit] >>"
+    )
+    outlines = pdf.add(
+        f"<< /Type /Outlines /First {outline_one} 0 R /Last {outline_three} 0 R /Count 3 >>"
+    )
+    info = pdf.add(
+        "<< /Title (Longform Book Fixture) /Author (pdfrust) /Creator (fixture generator) >>"
+    )
+    catalog = pdf.add(
+        f"<< /Type /Catalog /Pages {pages} 0 R /Outlines {outlines} 0 R "
+        "/PageLabels << /Nums [0 << /S /r /St 1 >> 2 << /P (Ch-) /S /D /St 1 >>] >> >>"
+    )
+    assert pages == 11
+    assert font == 12
+    assert outlines == 16
+    return pdf.render(catalog, trailer_entries=f"/Info {info} 0 R ")
+
+
+def manual_illustrated_chapter_pdf() -> bytes:
+    return page_pdf(
+        "[0 0 320 260]",
+        (
+            "q 0.98 0.98 0.96 rg 0 0 320 260 re f Q "
+            "q 0.12 0.16 0.24 rg 24 214 272 20 re f Q "
+            "q 0.90 0.93 0.96 rg 30 86 116 94 re f Q "
+            "q 0.18 0.30 0.48 RG 0.8 w 44 104 m 74 156 l 112 118 l 138 168 l S "
+            "172 88 100 80 re S 172 144 m 272 144 l 172 118 m 272 118 l "
+            "212 88 m 212 168 l S Q "
+            "BT /F1 12 Tf 30 219 Td (Manual Chapter 3) Tj ET "
+            "BT /F1 7 Tf 32 190 Td (Installation steps) Tj 0 -22 Td (1. Mount bracket) Tj "
+            "0 -16 Td (2. Connect cable) Tj 0 -16 Td (3. Verify display) Tj "
+            "144 44 Td (Part) Tj 40 0 Td (Qty) Tj 44 0 Td (Note) Tj ET"
+        ),
+    )
+
+
+def ebook_narrow_longform_pdf() -> bytes:
+    ops: list[str] = [
+        "q 0.99 0.98 0.94 rg 0 0 180 300 re f Q",
+        "BT /F1 13 Tf 28 270 Td (Chapter 4) Tj ET",
+    ]
+    for row in range(18):
+        y = 244 - row * 11
+        width = 124 - (row % 5) * 9
+        ops.append(f"q 0.20 0.18 0.16 rg 28 {y} {width} 1.6 re f Q")
+    ops.extend(
+        [
+            "q 0.54 0.38 0.20 RG 0.6 w 28 34 m 152 34 l S Q",
+            "BT /F1 6 Tf 68 20 Td (ebook flow sample) Tj ET",
+        ]
+    )
+    return page_pdf("[0 0 180 300]", " ".join(ops))
+
+
+def longform_repeated_resources_pdf() -> bytes:
+    pdf = Pdf()
+    image = bytes(
+        [
+            242,
+            248,
+            255,
+            190,
+            214,
+            240,
+            80,
+            120,
+            180,
+            230,
+            236,
+            244,
+        ]
+        * 4
+    )
+    image_object = pdf.add(
+        b"<< /Type /XObject /Subtype /Image /Width 4 /Height 4 "
+        b"/ColorSpace /DeviceRGB /BitsPerComponent 8 /Length "
+        + str(len(image)).encode("ascii")
+        + b" >>\nstream\n"
+        + image
+        + b"\nendstream"
+    )
+
+    def page_content(title: str) -> bytes:
+        ops: list[str] = [
+            "q 1 1 1 rg 0 0 240 320 re f Q",
+            "q 88 0 0 68 34 186 cm /Img Do Q",
+            f"BT /F1 11 Tf 34 282 Td ({title}) Tj ET",
+        ]
+        for row in range(10):
+            y = 160 - row * 12
+            ops.append(f"q 0.16 0.16 0.16 rg 34 {y} {150 - (row % 3) * 18} 2 re f Q")
+        ops.append("BT /F1 6 Tf 94 24 Td (shared resources) Tj ET")
+        return " ".join(ops).encode("ascii")
+
+    content_objects = [
+        pdf.add(
+            f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+            + content
+            + b"\nendstream"
+        )
+        for content in [
+            page_content("Illustrated Essay p1"),
+            page_content("Illustrated Essay p2"),
+            page_content("Illustrated Essay p3"),
+        ]
+    ]
+    page_objects = [
+        pdf.add(
+            "<< /Type /Page /Parent 8 0 R /MediaBox [0 0 240 320] "
+            f"/Resources << /Font << /F1 9 0 R >> /XObject << /Img {image_object} 0 R >> >> "
+            f"/Contents {content} 0 R >>"
+        )
+        for content in content_objects
+    ]
+    pages = pdf.add(
+        "<< /Type /Pages /Kids ["
+        + " ".join(f"{page} 0 R" for page in page_objects)
+        + "] /Count 3 >>"
+    )
+    font = pdf.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert pages == 8
+    assert font == 9
+    return pdf.render(catalog)
+
+
 def page_targeted_stream_pdf() -> bytes:
     pdf = Pdf()
     content_1 = b"q 0.1 0.6 0.2 rg 20 20 80 40 re f Q"
@@ -4045,6 +4222,10 @@ def main() -> None:
     write("scientific-equation-figure.pdf", scientific_equation_figure_pdf())
     write("reference-footnote-layout.pdf", reference_footnote_layout_pdf())
     write("long-report-sampling.pdf", long_report_sampling_pdf())
+    write("book-frontmatter-page-labels.pdf", book_frontmatter_page_labels_pdf())
+    write("manual-illustrated-chapter.pdf", manual_illustrated_chapter_pdf())
+    write("ebook-narrow-longform.pdf", ebook_narrow_longform_pdf())
+    write("longform-repeated-resources.pdf", longform_repeated_resources_pdf())
     write("page-targeted-stream.pdf", page_targeted_stream_pdf())
 
 

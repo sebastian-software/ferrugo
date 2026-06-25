@@ -5521,6 +5521,143 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_render_generated_longform_text_fixtures() {
+        type LongformFixture = (&'static [u8], u32, u32, &'static str, usize);
+
+        let fixtures: &[LongformFixture] = &[
+            (
+                include_bytes!("../../../fixtures/generated/book-frontmatter-page-labels.pdf")
+                    as &[u8],
+                260,
+                360,
+                "book frontmatter",
+                4_000,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/manual-illustrated-chapter.pdf")
+                    as &[u8],
+                320,
+                260,
+                "illustrated manual chapter",
+                7_000,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/ebook-narrow-longform.pdf") as &[u8],
+                180,
+                300,
+                "narrow ebook page",
+                6_000,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/longform-repeated-resources.pdf")
+                    as &[u8],
+                240,
+                320,
+                "longform repeated resources",
+                8_000,
+            ),
+        ];
+
+        for &(bytes, expected_width, expected_height, label, min_visible_pixels) in fixtures {
+            let thumbnail = ThumbnailBackend::render(
+                &NativeBackend::new(),
+                PdfSource::from_bytes(bytes),
+                &ThumbnailOptions {
+                    max_edge: expected_width.max(expected_height),
+                    ..ThumbnailOptions::default()
+                },
+            )
+            .unwrap_or_else(|error| panic!("{label} fixture should render: {error}"));
+
+            assert_eq!(
+                thumbnail.width, expected_width,
+                "{label} fixture width should match"
+            );
+            assert_eq!(
+                thumbnail.height, expected_height,
+                "{label} fixture height should match"
+            );
+            let visible_pixels = thumbnail
+                .bytes
+                .chunks_exact(4)
+                .filter(|pixel| *pixel != [255, 255, 255, 255])
+                .count();
+            assert!(
+                visible_pixels >= min_visible_pixels,
+                "{label} fixture should preserve longform text structure"
+            );
+        }
+    }
+
+    #[test]
+    fn native_backend_should_inspect_generated_longform_book_metadata() {
+        let bytes = include_bytes!("../../../fixtures/generated/book-frontmatter-page-labels.pdf");
+        let metadata =
+            DocumentMetadataBackend::inspect(&NativeBackend::new(), PdfSource::from_bytes(bytes))
+                .expect("book frontmatter fixture should inspect");
+
+        assert_eq!(metadata.page_count(), 5);
+        assert!(metadata.outlines.has_outlines);
+        assert_eq!(metadata.outlines.item_count, 3);
+        assert_eq!(metadata.page_labels.labels.len(), 5);
+        assert_eq!(metadata.page_labels.labels[0].label, "i");
+        assert_eq!(metadata.page_labels.labels[1].label, "ii");
+        assert_eq!(metadata.page_labels.labels[2].label, "Ch-1");
+        assert_eq!(metadata.page_labels.labels[4].label, "Ch-3");
+    }
+
+    #[test]
+    fn native_parallel_renderer_should_sample_generated_longform_pages() {
+        let book = include_bytes!("../../../fixtures/generated/book-frontmatter-page-labels.pdf");
+        let repeated =
+            include_bytes!("../../../fixtures/generated/longform-repeated-resources.pdf");
+        let options = ThumbnailOptions {
+            max_edge: 320,
+            ..ThumbnailOptions::default()
+        };
+
+        let book_result = render_pages_parallel(
+            PdfSource::from_bytes(book),
+            &[0, 2, 4],
+            &options,
+            ParallelRenderOptions {
+                max_workers: 2,
+                max_in_flight_pixels: 320 * 320 * 2,
+            },
+        )
+        .expect("book frontmatter, chapter, and appendix pages should render");
+        assert_eq!(book_result.workers, 2);
+        assert_eq!(book_result.pages.len(), 3);
+
+        let repeated_result = render_pages_parallel(
+            PdfSource::from_bytes(repeated),
+            &[0, 2],
+            &options,
+            ParallelRenderOptions {
+                max_workers: 2,
+                max_in_flight_pixels: 320 * 320 * 2,
+            },
+        )
+        .expect("longform repeated resource sample pages should render");
+        assert_eq!(repeated_result.workers, 2);
+        assert_eq!(repeated_result.pages.len(), 2);
+        for page in repeated_result.pages {
+            assert_eq!(page.width, 240);
+            assert_eq!(page.height, 320);
+        }
+    }
+
+    #[test]
+    fn native_memory_diagnostics_should_bound_longform_caches() {
+        let diagnostics = NativeBackend::new().memory_diagnostics();
+
+        assert!(diagnostics.max_font_fallback_cache_entries > 0);
+        assert!(diagnostics.max_image_bytes > 0);
+        assert!(diagnostics.max_total_image_bytes >= diagnostics.max_image_bytes);
+        assert!(diagnostics.max_display_items > 0);
+    }
+
+    #[test]
     fn native_backend_should_render_generated_multi_page_report_first_page() {
         let bytes = include_bytes!("../../../fixtures/generated/multi-page-report.pdf");
         let thumbnail = ThumbnailBackend::render(

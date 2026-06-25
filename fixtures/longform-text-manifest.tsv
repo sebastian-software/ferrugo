@@ -1,0 +1,9 @@
+path	family	source	license	page_count	features	notes
+fixtures/generated/book-frontmatter-page-labels.pdf	book	scripts/generate_fixtures.py	MIT OR Apache-2.0	5	book,longform,page-labels,outlines,frontmatter,multipage,expected:native	Generated book-like longform fixture with front matter, chapter labels, and outline entries.
+fixtures/generated/metadata-outline-page-labels.pdf	book	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	metadata,outline,page-labels,named-destinations,tagged-pdf,expected:native	Existing outline and page-label metadata baseline.
+fixtures/generated/manual-illustrated-chapter.pdf	manual	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	manual,longform,illustration,table,text,expected:native	Generated illustrated manual chapter page fixture with figure panel, procedure text, and table.
+fixtures/generated/mixed-text-image.pdf	manual	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,image,vector,z-order,manual,expected:native	Existing mixed text/image page used as a manual illustration proxy.
+fixtures/generated/ebook-narrow-longform.pdf	ebook	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	ebook,longform,narrow-page,text,expected:native	Generated narrow ebook-style longform page fixture.
+fixtures/generated/text-page.pdf	ebook	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,type1,ebook,expected:native	Existing simple text page baseline.
+fixtures/generated/longform-repeated-resources.pdf	repeated-resources	scripts/generate_fixtures.py	MIT OR Apache-2.0	3	longform,multipage,repeated-font,repeated-image,shared-resource,expected:native	Generated longform fixture reusing one font and one Image XObject across pages.
+fixtures/generated/long-report-sampling.pdf	repeated-resources	scripts/generate_fixtures.py	MIT OR Apache-2.0	3	long-report,multipage,table,text,sampling,expected:native	Existing three-page long report sampling fixture.
