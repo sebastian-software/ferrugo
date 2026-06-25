@@ -1,6 +1,6 @@
 # 0132: WASM Renderer Packaging And Size Gate
 
-Status: todo
+Status: done
 Phase: 24
 Size: medium
 Depends on: 0131
@@ -46,4 +46,15 @@ requiring PDFium or native dynamic libraries.
 
 ## Completion Notes
 
-Empty until done.
+- Added `pdfrust-wasm-smoke`, a publish-disabled smoke crate that packages the
+  Rust-native low-memory thumbnail renderer as a `cdylib` for
+  `wasm32-unknown-unknown` without PDFium.
+- Added `scripts/check_wasm_smoke.sh` and `scripts/wasm_smoke.mjs` to run the
+  WASM target check, release build, size gate, module compile/instantiate
+  measurement, and exported smoke-render call.
+- Current release artifact:
+  `target/wasm32-unknown-unknown/release/pdfrust_wasm_smoke.wasm`.
+- Current measured artifact size is 716082 bytes, below the 4194304 byte gate.
+- Current Node WebAssembly timings: compile 0.967 ms, instantiate 0.072 ms,
+  smoke render 5.502 ms.
+- Report: `docs/reports/wasm-renderer-packaging-2026-06-25.md`.
