@@ -6890,8 +6890,13 @@ fn fill_path(
     let samples = u32::from(context.options.supersample);
     let sample_count = samples * samples;
     let dimensions = device.dimensions();
-    for y in 0..dimensions.height {
-        for x in 0..dimensions.width {
+    let Some(bounds) =
+        flattened_bounds(path).and_then(|bounds| device_pixel_bounds(bounds, dimensions, 0.0))
+    else {
+        return Ok(());
+    };
+    for y in bounds.min_y..bounds.max_y {
+        for x in bounds.min_x..bounds.max_x {
             let mut covered = 0;
             for sample_y in 0..samples {
                 for sample_x in 0..samples {
@@ -6946,8 +6951,13 @@ fn fill_path_with_tiling_pattern(
     let samples = u32::from(context.options.supersample);
     let sample_count = samples * samples;
     let dimensions = device.dimensions();
-    for y in 0..dimensions.height {
-        for x in 0..dimensions.width {
+    let Some(bounds) =
+        flattened_bounds(path).and_then(|bounds| device_pixel_bounds(bounds, dimensions, 0.0))
+    else {
+        return Ok(());
+    };
+    for y in bounds.min_y..bounds.max_y {
+        for x in bounds.min_x..bounds.max_x {
             let mut covered = 0;
             for sample_y in 0..samples {
                 for sample_x in 0..samples {
@@ -7021,6 +7031,56 @@ fn flattened_bounds(path: &FlattenedPath) -> Option<PathBounds> {
     Some(bounds)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PixelBounds {
+    min_x: u32,
+    min_y: u32,
+    max_x: u32,
+    max_y: u32,
+}
+
+fn device_pixel_bounds(
+    bounds: PathBounds,
+    dimensions: RasterDimensions,
+    padding: f64,
+) -> Option<PixelBounds> {
+    let min_x = (bounds.min_x - padding)
+        .floor()
+        .clamp(0.0, f64::from(dimensions.width)) as u32;
+    let min_y = (bounds.min_y - padding)
+        .floor()
+        .clamp(0.0, f64::from(dimensions.height)) as u32;
+    let max_x = (bounds.max_x + padding)
+        .ceil()
+        .min(f64::from(dimensions.width)) as u32;
+    let max_y = (bounds.max_y + padding)
+        .ceil()
+        .min(f64::from(dimensions.height)) as u32;
+    (min_x < max_x && min_y < max_y).then_some(PixelBounds {
+        min_x,
+        min_y,
+        max_x,
+        max_y,
+    })
+}
+
+fn stroke_pixel_bounds(
+    lines: &[LineSegment],
+    joins: &[StrokeJoin],
+    radius: f64,
+    dimensions: RasterDimensions,
+) -> Option<PixelBounds> {
+    let mut bounds = None;
+    for line in lines {
+        bounds = Some(include_point(bounds, line.from));
+        bounds = Some(include_point(bounds, line.to));
+    }
+    for join in joins {
+        bounds = Some(include_point(bounds, join.point));
+    }
+    bounds.and_then(|bounds| device_pixel_bounds(bounds, dimensions, radius.ceil() + 1.0))
+}
+
 fn pattern_samples(
     pattern: &TilingPattern,
     options: PathRasterOptions,
@@ -7088,8 +7148,11 @@ fn stroke_path(
     let samples = u32::from(context.options.supersample);
     let sample_count = samples * samples;
     let dimensions = device.dimensions();
-    for y in 0..dimensions.height {
-        for x in 0..dimensions.width {
+    let Some(bounds) = stroke_pixel_bounds(stroke_lines, joins, radius, dimensions) else {
+        return Ok(());
+    };
+    for y in bounds.min_y..bounds.max_y {
+        for x in bounds.min_x..bounds.max_x {
             let mut covered = 0;
             for sample_y in 0..samples {
                 for sample_x in 0..samples {
@@ -10174,6 +10237,76 @@ mod tests {
         assert_eq!(
             error.kind(),
             &RasterErrorKind::PathComplexityOverflow { limit: 12 }
+        );
+    }
+
+    #[test]
+    fn device_pixel_bounds_should_clip_to_raster_dimensions() {
+        let dimensions = RasterDimensions::new(20, 10).expect("valid dimensions");
+        let bounds = device_pixel_bounds(
+            PathBounds {
+                min_x: -3.2,
+                min_y: 1.25,
+                max_x: 22.8,
+                max_y: 4.75,
+            },
+            dimensions,
+            0.5,
+        )
+        .expect("bounds should overlap raster");
+
+        assert_eq!(
+            bounds,
+            PixelBounds {
+                min_x: 0,
+                min_y: 0,
+                max_x: 20,
+                max_y: 6,
+            }
+        );
+    }
+
+    #[test]
+    fn stroke_pixel_bounds_should_include_radius_padding() {
+        let dimensions = RasterDimensions::new(30, 20).expect("valid dimensions");
+        let bounds = stroke_pixel_bounds(
+            &[LineSegment {
+                from: Point { x: 10.5, y: 8.0 },
+                to: Point { x: 15.0, y: 12.25 },
+            }],
+            &[],
+            2.25,
+            dimensions,
+        )
+        .expect("stroke bounds should overlap raster");
+
+        assert_eq!(
+            bounds,
+            PixelBounds {
+                min_x: 6,
+                min_y: 4,
+                max_x: 19,
+                max_y: 17,
+            }
+        );
+    }
+
+    #[test]
+    fn device_pixel_bounds_should_skip_paths_outside_raster() {
+        let dimensions = RasterDimensions::new(20, 10).expect("valid dimensions");
+
+        assert_eq!(
+            device_pixel_bounds(
+                PathBounds {
+                    min_x: 25.0,
+                    min_y: 0.0,
+                    max_x: 30.0,
+                    max_y: 5.0,
+                },
+                dimensions,
+                0.0,
+            ),
+            None
         );
     }
 
