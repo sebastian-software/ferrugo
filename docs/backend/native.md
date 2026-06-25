@@ -109,8 +109,9 @@ and DeviceCMYK alternate spaces into RGB thumbnail output. Captured colors use
 color from direct device RGB/Gray input.
 
 This is not a press-proofing implementation. Native output is an RGB thumbnail
-approximation and does not expose separations, unbounded function sampling, or
-overprint simulation. See
+approximation and does not expose separations or unbounded function sampling.
+Overprint graphics-state flags are accepted as a separate thumbnail
+approximation path described below. See
 `docs/reports/spot-color-approximation-2026-06-25.md`.
 
 ## ICCBased Image Color Spaces
@@ -191,6 +192,20 @@ PDFium oracle renders the fixture overlap as normal semi-transparent group
 composition, so the native renderer follows that comparison behavior for now
 instead of introducing a divergent hard-knockout interpretation. See
 `docs/reports/transparency-group-alpha-2026-06-25.md`.
+
+## Overprint Approximation
+
+ExtGState `/OP`, `/op`, and `/OPM` entries are parsed and validated by the
+native renderer. Enabled stroking and nonstroking overprint no longer force a
+PDFium fallback for thumbnail output. Instead, the flags are preserved on the
+graphics state attached to display-list items, and the current RGB/spot-color
+approximation is painted normally.
+
+This is intentionally an RGB thumbnail approximation, not a press-proof
+overprint simulator. The current path keeps common print-oriented documents
+visible and diagnosable while leaving device-separation compositing, full CMYK
+knockout behavior, and prepress conformance for later print-production
+milestones. See `docs/reports/overprint-simulation-2026-06-25.md`.
 
 ## Fallback Policy
 

@@ -1,6 +1,6 @@
 # 0110: Overprint Simulation For Print-Oriented PDFs
 
-Status: in-progress
+Status: done
 Phase: 19
 Size: medium
 Depends on: 0109
@@ -46,4 +46,20 @@ whose thumbnails should remain visually useful.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-25.
+
+- Commit `f16569b` accepts `/OP`, `/op`, and `/OPM` in ExtGState resources as a
+  bounded RGB-thumbnail approximation instead of treating enabled overprint as
+  a hard native fallback.
+- Graphics-state overprint flags are preserved on display-list path items so
+  diagnostics and future renderer policy can distinguish approximated overprint
+  content from direct RGB/spot-color content.
+- Added `fixtures/generated/overprint-spot-approximation.pdf`, generated from
+  `scripts/generate_fixtures.py` and registered in `fixtures/corpus-manifest.tsv`.
+- The fixture uses a `/Separation` spot color with a DeviceRGB alternate. This
+  keeps the milestone focused on overprint-state acceptance and avoids
+  duplicating the existing CMYK spot-color visual-parity gap from 0105.
+- Corpus benchmark artifact: `target/overprint-0110-benchmark.json`.
+- Supported-family gate artifact: `target/overprint-0110-supported-gate.json`.
+- PDFium visual-diff artifact: `target/overprint-0110-visual-diff.json`.
+- Report: `docs/reports/overprint-simulation-2026-06-25.md`.

@@ -96,12 +96,12 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
-| 0110 | [Overprint Simulation For Print-Oriented PDFs](0110-overprint-simulation-for-print-oriented-pdfs.md) | 19 | medium | 0109 |
 
 ## Done
 
 | ID | Milestone | Phase | Size | Completed |
 | --- | --- | --- | --- | --- |
+| 0110 | [Overprint Simulation For Print-Oriented PDFs](0110-overprint-simulation-for-print-oriented-pdfs.md) | 19 | medium | 2026-06-25 |
 | 0109 | [Transparency Isolation Knockout And Luminosity Masks](0109-transparency-isolation-knockout-and-luminosity-masks.md) | 19 | medium | 2026-06-25 |
 | 0108 | [Advanced Shading Mesh Tessellation](0108-advanced-shading-mesh-tessellation.md) | 19 | medium | 2026-06-25 |
 | 0107 | [Tiling Patterns And Pattern Color Spaces](0107-tiling-patterns-and-pattern-color-spaces.md) | 19 | medium | 2026-06-25 |
