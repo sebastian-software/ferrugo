@@ -32,6 +32,8 @@ const LOW_AMPLITUDE_VISUAL_DRIFT_MAX_DELTA: u8 = 8;
 #[cfg(not(feature = "pdfium"))]
 const PDFIUM_FEATURE_MESSAGE: &str =
     "PDFium support is disabled; rebuild pdfrust-cli with --features pdfium";
+const PDFIUM_RUNTIME_FALLBACK_REMOVED_MESSAGE: &str =
+    "PDFium runtime fallback has been removed from render/render-auto; use render-pdfium or maintainer comparison commands with --features pdfium";
 
 fn main() -> ExitCode {
     match run(env::args_os().skip(1).collect()) {
@@ -136,37 +138,14 @@ fn render_auto_thumbnail(config: &RenderConfig) -> Result<AutoRenderOutcome, Cli
         }),
         Err(err) if err.class() == pdfrust_thumbnail::ThumbnailErrorClass::Unsupported => {
             let reason = FallbackReason::from_native_error(&err);
-            if !config.fallback_policy.allows(reason) {
-                return Err(CliError::Render {
-                    class: err.class().as_str(),
-                    message: format!(
-                        "PDFium fallback not enabled for {}; pass --allow-pdfium-fallback to opt in",
-                        reason.as_str()
-                    ),
-                });
-            }
-            #[cfg(not(feature = "pdfium"))]
-            {
-                Err(CliError::Render {
-                    class: err.class().as_str(),
-                    message: format!("{} for {}", PDFIUM_FEATURE_MESSAGE, reason.as_str()),
-                })
-            }
-            #[cfg(feature = "pdfium")]
-            {
-                let pdfium =
-                    PdfiumBackend::from_env().map_err(|err| CliError::Backend(err.to_string()))?;
-                let thumbnail = pdfium
-                    .render(PdfSource::from_path(&config.input), &options)
-                    .map_err(|err| CliError::Render {
-                        class: err.class().as_str(),
-                        message: err.to_string(),
-                    })?;
-                Ok(AutoRenderOutcome {
-                    thumbnail,
-                    backend: AutoRenderBackend::PdfiumFallback { reason },
-                })
-            }
+            Err(CliError::Render {
+                class: err.class().as_str(),
+                message: format!(
+                    "{} for {}; {PDFIUM_RUNTIME_FALLBACK_REMOVED_MESSAGE}",
+                    err,
+                    reason.as_str()
+                ),
+            })
         }
         Err(err) => Err(CliError::Render {
             class: err.class().as_str(),
@@ -178,24 +157,12 @@ fn render_auto_thumbnail(config: &RenderConfig) -> Result<AutoRenderOutcome, Cli
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum AutoRenderBackend {
     Native,
-    #[cfg_attr(not(feature = "pdfium"), allow(dead_code))]
-    PdfiumFallback {
-        reason: FallbackReason,
-    },
 }
 
 impl fmt::Display for AutoRenderBackend {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Native => f.write_str("native"),
-            Self::PdfiumFallback { reason } => {
-                write!(
-                    f,
-                    "pdfium fallback_reason={} fallback_category={}",
-                    reason.as_str(),
-                    reason.category()
-                )
-            }
         }
     }
 }
@@ -223,32 +190,6 @@ impl FallbackReason {
 
     const fn category(self) -> &'static str {
         self.as_str()
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct FallbackPolicy {
-    allow_pdfium: bool,
-    denied_reasons: Vec<String>,
-}
-
-impl FallbackPolicy {
-    fn allows(&self, reason: FallbackReason) -> bool {
-        self.allow_pdfium
-            && !self
-                .denied_reasons
-                .iter()
-                .any(|denied| denied == reason.as_str())
-    }
-}
-
-impl Default for FallbackPolicy {
-    fn default() -> Self {
-        Self {
-            allow_pdfium: env_flag("PDFRUST_ALLOW_PDFIUM_FALLBACK")
-                && !env_flag("PDFRUST_NATIVE_ONLY"),
-            denied_reasons: env_list("PDFRUST_DENY_FALLBACK_REASONS"),
-        }
     }
 }
 
@@ -823,7 +764,6 @@ struct RenderConfig {
     max_edge: u32,
     background: Rgba,
     timeout: Duration,
-    fallback_policy: FallbackPolicy,
 }
 
 impl RenderConfig {
@@ -834,7 +774,6 @@ impl RenderConfig {
         let mut max_edge = DEFAULT_MAX_EDGE;
         let mut background = Rgba::WHITE;
         let mut timeout = DEFAULT_TIMEOUT;
-        let mut fallback_policy = FallbackPolicy::default();
 
         let mut index = 0;
         while index < args.len() {
@@ -864,16 +803,16 @@ impl RenderConfig {
                     timeout = Duration::from_secs(seconds);
                 }
                 "--allow-pdfium-fallback" => {
-                    fallback_policy.allow_pdfium = true;
+                    return Err(CliError::Usage(
+                        PDFIUM_RUNTIME_FALLBACK_REMOVED_MESSAGE.to_string(),
+                    ));
                 }
                 "--native-only" | "--no-pdfium-fallback" => {
-                    fallback_policy.allow_pdfium = false;
+                    // Accepted for compatibility; render and render-auto are always native-only.
                 }
                 "--deny-fallback-reason" => {
                     index += 1;
-                    fallback_policy
-                        .denied_reasons
-                        .push(required_str(args, index, "--deny-fallback-reason")?.to_string());
+                    let _ = required_str(args, index, "--deny-fallback-reason")?;
                 }
                 value if value.starts_with('-') => {
                     return Err(CliError::Usage(format!("unknown option `{value}`")));
@@ -902,7 +841,6 @@ impl RenderConfig {
             max_edge,
             background,
             timeout,
-            fallback_policy,
         })
     }
 }
@@ -4018,26 +3956,6 @@ fn parse_usize(args: &[OsString], index: usize, option: &str) -> Result<usize, C
         .map_err(|_| CliError::Usage(format!("{option} must be an unsigned integer")))
 }
 
-fn env_flag(name: &str) -> bool {
-    env::var_os(name)
-        .and_then(|value| value.into_string().ok())
-        .is_some_and(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
-}
-
-fn env_list(name: &str) -> Vec<String> {
-    env::var(name)
-        .map(|value| {
-            value
-                .split(',')
-                .filter_map(|item| {
-                    let item = item.trim();
-                    (!item.is_empty()).then(|| item.to_string())
-                })
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
 fn parse_background(value: &str) -> Result<Rgba, CliError> {
     let hex = value.strip_prefix('#').unwrap_or(value);
     let parse_channel = |range: std::ops::Range<usize>| {
@@ -5362,7 +5280,7 @@ fn print_usage() {
         "Usage: pdfrust-cli <render|render-auto|render-native|render-pdfium|render-isolated|compare-metadata|summarize-fallbacks|extract-corpus-metadata|validate-local-corpus|benchmark-native|benchmark-batch-native|benchmark-repeat-native|benchmark-pdfium|visual-diff> <input.pdf> \
          [--output PATH] [--page-index N] [--max-edge N] [--background #RRGGBB] \
          [--timeout SECONDS] [--iterations N] [--repetitions N] [--max-workers N] [--max-in-flight-pixels N] [--max-ms N] [--max-p95-ms N] [--max-first-ms N] [--max-repeat-mean-ms N] [--max-output-bytes N] \
-         [--allow-pdfium-fallback] [--native-only] [--deny-fallback-reason BUCKET] [--manifest PATH] [--include-family FAMILY] \
+         [--native-only] [--manifest PATH] [--include-family FAMILY] \
          [--diagnostics-dir PATH] [--allow-missing] [--max-mae N] [--max-p95 N] [--max-changed-ratio N]"
     );
 }
@@ -5493,7 +5411,6 @@ mod tests {
             max_edge: 220,
             background: Rgba::WHITE,
             timeout: Duration::from_secs(5),
-            fallback_policy: FallbackPolicy::default(),
         };
 
         let outcome = render_auto_thumbnail(&config).expect("supported fixture should render");
@@ -5502,7 +5419,7 @@ mod tests {
     }
 
     #[test]
-    fn render_auto_thumbnail_should_require_explicit_fallback() {
+    fn render_auto_thumbnail_should_return_native_unsupported_without_pdfium_fallback() {
         env::remove_var("PDFRUST_PDFIUM_LIBRARY");
         let input = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../fixtures/generated/optional-content-ocmd.pdf");
@@ -5514,33 +5431,33 @@ mod tests {
             max_edge: 220,
             background: Rgba::WHITE,
             timeout: Duration::from_secs(5),
-            fallback_policy: FallbackPolicy::default(),
         };
 
         let error = render_auto_thumbnail(&config)
-            .expect_err("default auto mode should require explicit PDFium fallback");
+            .expect_err("auto mode should not retry unsupported documents through PDFium");
 
         assert_eq!(
             error.to_string(),
-            "render error [unsupported]: PDFium fallback not enabled for graphics.optional-content; pass --allow-pdfium-fallback to opt in"
+            format!(
+                "render error [unsupported]: PDF feature is unsupported (graphics.optional-content) for graphics.optional-content; {PDFIUM_RUNTIME_FALLBACK_REMOVED_MESSAGE}"
+            )
         );
     }
 
     #[test]
-    fn render_config_should_accept_explicit_pdfium_fallback_flag() {
-        let config = RenderConfig::parse(&[
+    fn render_config_should_reject_explicit_pdfium_fallback_flag() {
+        let error = RenderConfig::parse(&[
             OsString::from("fixtures/generated/optional-content-ocmd.pdf"),
             OsString::from("--output"),
             OsString::from("target/ocmd.png"),
             OsString::from("--allow-pdfium-fallback"),
         ])
-        .expect("valid config");
+        .expect_err("runtime PDFium fallback flag should be rejected");
 
-        assert!(config
-            .fallback_policy
-            .allows(FallbackReason::NativeUnsupportedFeature(
-                "graphics.optional-content"
-            )));
+        assert_eq!(
+            error.to_string(),
+            format!("usage error: {PDFIUM_RUNTIME_FALLBACK_REMOVED_MESSAGE}")
+        );
     }
 
     #[test]
