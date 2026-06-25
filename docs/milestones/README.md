@@ -21,7 +21,6 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
-| 0101 | [Common Font Fallback And System Font Policy](0101-common-font-fallback-and-system-font-policy.md) | 18 | medium | 0100 |
 | 0102 | [CFF Type1 Charstring Interpreter Hardening](0102-cff-type1-charstring-interpreter-hardening.md) | 18 | medium | 0101 |
 | 0103 | [OpenType Layout Feature Coverage For PDFs](0103-opentype-layout-feature-coverage-for-pdfs.md) | 18 | medium | 0102 |
 | 0104 | [Advanced CMap Encodings And Identity Mapping](0104-advanced-cmap-encodings-and-identity-mapping.md) | 18 | medium | 0103 |
@@ -71,6 +70,7 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Completed |
 | --- | --- | --- | --- | --- |
+| 0101 | [Common Font Fallback And System Font Policy](0101-common-font-fallback-and-system-font-policy.md) | 18 | medium | 2026-06-25 |
 | 0100 | [Native Renderer General Availability Gate](0100-native-renderer-general-availability-gate.md) | 17 | medium | 2026-06-25 |
 | 0099 | [PDFium Fallback Removal Drill](0099-pdfium-fallback-removal-drill.md) | 17 | medium | 2026-06-25 |
 | 0098 | [Native-Only Packaging And Consumer Migration](0098-native-only-packaging-and-consumer-migration.md) | 17 | medium | 2026-06-25 |

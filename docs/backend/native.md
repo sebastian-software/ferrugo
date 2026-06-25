@@ -37,6 +37,21 @@ baseline still reports fidelity blockers in form synthesis, text/font rendering,
 and page geometry. See
 `docs/reports/native-renderer-ga-gate-2026-06-25.md` for the measured decision.
 
+## Font Fallback Policy
+
+Missing and substituted fonts use a deterministic built-in fallback policy
+rather than host operating-system font lookup. The current policy classifies
+font names after subset-prefix stripping and maps them to `Sans`, `Serif`,
+`Monospace`, or `Symbol` fallback faces. Type 3 fonts remain routed through
+their CharProc paths instead of the built-in text fallback.
+
+Fallback resolutions are cached with a bounded default limit of 128 entries and
+the cache key stores only classified fallback metadata, not document-specific
+font names. The limit is exposed as `max_font_fallback_cache_entries` through
+native memory diagnostics. See
+`docs/reports/font-fallback-policy-2026-06-25.md` for the current evidence and
+PDFium comparison results.
+
 ## Fallback Policy
 
 PDFium remains the oracle and explicit fallback until the visual GA gate says
