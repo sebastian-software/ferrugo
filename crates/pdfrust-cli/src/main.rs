@@ -5,7 +5,6 @@ use std::env;
 use std::ffi::OsString;
 use std::fmt;
 use std::fs;
-#[cfg(feature = "pdfium")]
 use std::io::Read;
 use std::path::{Path, PathBuf};
 #[cfg(feature = "pdfium")]
@@ -14,9 +13,9 @@ use std::process::{Command, ExitCode};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use pdfrust_native::NativeBackend;
 #[cfg(any(feature = "pdfium", test))]
 use pdfrust_native::NativeMemoryDiagnostics;
+use pdfrust_native::{NativeBackend, NativePageCacheKey, NativePageCachePolicy};
 #[cfg(feature = "pdfium")]
 use pdfrust_pdfium::PdfiumBackend;
 #[cfg(any(feature = "pdfium", test))]
@@ -57,6 +56,7 @@ fn run(args: Vec<OsString>) -> Result<(), CliError> {
         Some("validate-local-corpus") => validate_local_corpus_command(&args[1..]),
         Some("benchmark-native") => benchmark_native_command(&args[1..]),
         Some("benchmark-batch-native") => benchmark_batch_native_command(&args[1..]),
+        Some("benchmark-repeat-native") => benchmark_repeat_native_command(&args[1..]),
         Some("benchmark-pdfium") => benchmark_pdfium_command(&args[1..]),
         Some("visual-diff") => visual_diff_command(&args[1..]),
         Some("--version" | "-V") => {
@@ -485,6 +485,44 @@ fn benchmark_batch_native_command(args: &[OsString]) -> Result<(), CliError> {
     if config.fail_on_budget && report.budget_failures > 0 {
         Err(CliError::Benchmark(format!(
             "{} batch benchmark budget failure(s)",
+            report.budget_failures
+        )))
+    } else {
+        Ok(())
+    }
+}
+
+fn benchmark_repeat_native_command(args: &[OsString]) -> Result<(), CliError> {
+    let config = RepeatBenchmarkConfig::parse(args)?;
+    let options = ThumbnailOptions {
+        page_index: config.page_index,
+        max_edge: config.max_edge,
+        background: config.background,
+        output_format: pdfrust_thumbnail::OutputFormat::Rgba,
+        timeout: config.timeout,
+    };
+    let fixtures = pdf_inputs(&config.input)?;
+    let manifest = match &config.manifest {
+        Some(path) => Some(read_corpus_manifest(path)?),
+        None => None,
+    };
+    let fixtures =
+        filter_fixtures_by_family(&fixtures, manifest.as_ref(), &config.include_families)?;
+    let report = benchmark_native_repeat(&fixtures, &options, manifest.as_ref(), &config)?;
+    let json = repeat_benchmark_report_json(&report);
+
+    if let Some(output) = config.output {
+        fs::write(&output, &json).map_err(|source| CliError::Io {
+            path: output,
+            source,
+        })?;
+    } else {
+        println!("{json}");
+    }
+
+    if config.fail_on_budget && report.budget_failures > 0 {
+        Err(CliError::Benchmark(format!(
+            "{} repeated-render benchmark budget failure(s)",
             report.budget_failures
         )))
     } else {
@@ -985,6 +1023,13 @@ impl NativeProfile {
             Self::LowMemory => NativeBackend::low_memory(),
         }
     }
+
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Default => "default",
+            Self::LowMemory => "low-memory",
+        }
+    }
 }
 
 fn parse_native_profile(value: &str) -> Result<NativeProfile, CliError> {
@@ -1119,6 +1164,24 @@ struct BatchBenchmarkConfig {
     max_workers: usize,
     max_in_flight_pixels: usize,
     max_p95_ms: u64,
+    max_errors: usize,
+    fail_on_budget: bool,
+    native_profile: NativeProfile,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RepeatBenchmarkConfig {
+    input: PathBuf,
+    manifest: Option<PathBuf>,
+    include_families: Vec<String>,
+    output: Option<PathBuf>,
+    page_index: u32,
+    max_edge: u32,
+    background: Rgba,
+    timeout: Duration,
+    repetitions: usize,
+    max_first_ms: u64,
+    max_repeat_mean_ms: u64,
     max_errors: usize,
     fail_on_budget: bool,
     native_profile: NativeProfile,
@@ -1402,6 +1465,127 @@ impl BatchBenchmarkConfig {
             max_workers,
             max_in_flight_pixels,
             max_p95_ms,
+            max_errors,
+            fail_on_budget,
+            native_profile,
+        })
+    }
+}
+
+impl RepeatBenchmarkConfig {
+    fn parse(args: &[OsString]) -> Result<Self, CliError> {
+        let mut input = None;
+        let mut manifest = None;
+        let mut include_families = Vec::new();
+        let mut output = None;
+        let mut page_index = DEFAULT_PAGE_INDEX;
+        let mut max_edge = 160;
+        let mut background = Rgba::WHITE;
+        let mut timeout = DEFAULT_TIMEOUT;
+        let mut repetitions = 3;
+        let mut max_first_ms = 1000;
+        let mut max_repeat_mean_ms = 1000;
+        let mut max_errors = 0;
+        let mut fail_on_budget = false;
+        let mut native_profile = NativeProfile::Default;
+
+        let mut index = 0;
+        while index < args.len() {
+            let arg = args[index]
+                .to_str()
+                .ok_or_else(|| CliError::Usage("arguments must be valid UTF-8".to_string()))?;
+            match arg {
+                "--output" | "-o" => {
+                    index += 1;
+                    output = Some(required_path(args, index, "--output")?);
+                }
+                "--manifest" => {
+                    index += 1;
+                    manifest = Some(required_path(args, index, "--manifest")?);
+                }
+                "--include-family" => {
+                    index += 1;
+                    include_families
+                        .push(required_str(args, index, "--include-family")?.to_string());
+                }
+                "--page-index" => {
+                    index += 1;
+                    page_index = parse_u32(args, index, "--page-index")?;
+                }
+                "--max-edge" => {
+                    index += 1;
+                    max_edge = parse_u32(args, index, "--max-edge")?;
+                }
+                "--background" => {
+                    index += 1;
+                    background = parse_background(required_str(args, index, "--background")?)?;
+                }
+                "--timeout" => {
+                    index += 1;
+                    let seconds = parse_u64(args, index, "--timeout")?;
+                    timeout = Duration::from_secs(seconds);
+                }
+                "--repetitions" => {
+                    index += 1;
+                    repetitions = parse_usize(args, index, "--repetitions")?;
+                }
+                "--max-first-ms" => {
+                    index += 1;
+                    max_first_ms = parse_u64(args, index, "--max-first-ms")?;
+                }
+                "--max-repeat-mean-ms" => {
+                    index += 1;
+                    max_repeat_mean_ms = parse_u64(args, index, "--max-repeat-mean-ms")?;
+                }
+                "--max-errors" => {
+                    index += 1;
+                    max_errors = parse_usize(args, index, "--max-errors")?;
+                }
+                "--fail-on-budget" => {
+                    fail_on_budget = true;
+                }
+                "--native-profile" => {
+                    index += 1;
+                    native_profile =
+                        parse_native_profile(required_str(args, index, "--native-profile")?)?;
+                }
+                value if value.starts_with('-') => {
+                    return Err(CliError::Usage(format!("unknown option `{value}`")));
+                }
+                value => {
+                    if input.replace(PathBuf::from(value)).is_some() {
+                        return Err(CliError::Usage(
+                            "only one input path is supported".to_string(),
+                        ));
+                    }
+                }
+            }
+            index += 1;
+        }
+
+        if max_edge == 0 {
+            return Err(CliError::Usage(
+                "--max-edge must be greater than zero".to_string(),
+            ));
+        }
+        if repetitions < 2 {
+            return Err(CliError::Usage(
+                "--repetitions must be at least 2 for repeated-render benchmarks".to_string(),
+            ));
+        }
+
+        Ok(Self {
+            input: input.ok_or_else(|| CliError::Usage("missing input path".to_string()))?,
+            manifest,
+            include_families,
+            output,
+            page_index,
+            max_edge,
+            background,
+            timeout,
+            repetitions,
+            max_first_ms,
+            max_repeat_mean_ms,
             max_errors,
             fail_on_budget,
             native_profile,
@@ -1732,6 +1916,23 @@ struct BatchBenchmarkReport {
     records: Vec<BatchBenchmarkRecord>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+struct RepeatBenchmarkReport {
+    platform: PlatformMetadata,
+    cache_policy: NativePageCachePolicy,
+    total: usize,
+    native_rendered: usize,
+    fallback_required: usize,
+    errors: usize,
+    budget_failures: usize,
+    repetitions: usize,
+    max_first_ms: u64,
+    max_repeat_mean_ms: u64,
+    max_errors: usize,
+    families: BTreeMap<String, RepeatFamilySummary>,
+    records: Vec<RepeatBenchmarkRecord>,
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 struct BatchMemorySummary {
     rss_start_kib: Option<u64>,
@@ -1788,12 +1989,83 @@ struct BatchBenchmarkRecord {
     outcome: BatchBenchmarkOutcome,
 }
 
+#[derive(Debug, Clone, Default, PartialEq)]
+struct RepeatFamilySummary {
+    total: usize,
+    native_rendered: usize,
+    fallback_required: usize,
+    errors: usize,
+    budget_failures: usize,
+    first_mean_ms: f64,
+    repeat_mean_ms: f64,
+}
+
+impl RepeatFamilySummary {
+    fn record(&mut self, record: &RepeatBenchmarkRecord) {
+        self.total += 1;
+        self.budget_failures += usize::from(!record.budget_violations.is_empty());
+        match &record.outcome {
+            RepeatBenchmarkOutcome::NativeRendered {
+                first_ms,
+                repeat_mean_ms,
+                ..
+            } => {
+                self.native_rendered += 1;
+                self.first_mean_ms += first_ms;
+                self.repeat_mean_ms += repeat_mean_ms;
+            }
+            RepeatBenchmarkOutcome::FallbackRequired { .. } => self.fallback_required += 1,
+            RepeatBenchmarkOutcome::Error { .. } => self.errors += 1,
+        }
+    }
+
+    fn finish(&mut self) {
+        if self.native_rendered > 0 {
+            self.first_mean_ms /= self.native_rendered as f64;
+            self.repeat_mean_ms /= self.native_rendered as f64;
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct RepeatBenchmarkRecord {
+    path: String,
+    family: String,
+    page_index: u32,
+    cache_key: NativePageCacheKey,
+    timings_ms: Vec<f64>,
+    budget_violations: Vec<&'static str>,
+    outcome: RepeatBenchmarkOutcome,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 enum BatchBenchmarkOutcome {
     NativeRendered {
         width: u32,
         height: u32,
         output_bytes: usize,
+    },
+    FallbackRequired {
+        reason: FallbackReason,
+        message: String,
+    },
+    Error {
+        class: &'static str,
+        message: String,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum RepeatBenchmarkOutcome {
+    NativeRendered {
+        width: u32,
+        height: u32,
+        output_bytes: usize,
+        first_ms: f64,
+        repeat_mean_ms: f64,
+        repeat_min_ms: f64,
+        repeat_max_ms: f64,
+        repeat_to_first_ratio: f64,
     },
     FallbackRequired {
         reason: FallbackReason,
@@ -2391,6 +2663,199 @@ fn batch_report_from_records(
         families,
         records,
     }
+}
+
+fn benchmark_native_repeat(
+    paths: &[PathBuf],
+    options: &ThumbnailOptions,
+    manifest: Option<&CorpusManifest>,
+    config: &RepeatBenchmarkConfig,
+) -> Result<RepeatBenchmarkReport, CliError> {
+    let native = config.native_profile.backend();
+    let mut records = Vec::with_capacity(paths.len());
+    for path in paths {
+        let document_identity = document_identity_hash(path)?;
+        let cache_key = NativePageCacheKey::from_options(
+            document_identity,
+            options,
+            config.native_profile.as_str(),
+        );
+        let path_key = normalize_manifest_path(path);
+        let family = manifest
+            .and_then(|manifest| manifest.family_for_path(path))
+            .unwrap_or("unclassified")
+            .to_string();
+        records.push(benchmark_repeat_fixture(
+            &native, path, options, config, path_key, family, cache_key,
+        ));
+    }
+
+    Ok(repeat_report_from_records(config, records))
+}
+
+fn benchmark_repeat_fixture(
+    native: &NativeBackend,
+    path: &Path,
+    options: &ThumbnailOptions,
+    config: &RepeatBenchmarkConfig,
+    path_key: String,
+    family: String,
+    cache_key: NativePageCacheKey,
+) -> RepeatBenchmarkRecord {
+    let mut timings_ms = Vec::with_capacity(config.repetitions);
+    let mut last_success = None;
+    for _ in 0..config.repetitions {
+        let started = Instant::now();
+        match native.render(PdfSource::from_path(path), options) {
+            Ok(thumbnail) => {
+                timings_ms.push(elapsed_ms(started.elapsed()));
+                last_success = Some(thumbnail);
+            }
+            Err(error) => {
+                let outcome =
+                    if error.class() == pdfrust_thumbnail::ThumbnailErrorClass::Unsupported {
+                        RepeatBenchmarkOutcome::FallbackRequired {
+                            reason: FallbackReason::from_native_error(&error),
+                            message: error.to_string(),
+                        }
+                    } else {
+                        RepeatBenchmarkOutcome::Error {
+                            class: error.class().as_str(),
+                            message: error.to_string(),
+                        }
+                    };
+                let budget_violations = match &outcome {
+                    RepeatBenchmarkOutcome::FallbackRequired { .. } => vec!["native_fallback"],
+                    RepeatBenchmarkOutcome::Error { .. } => vec!["render_error"],
+                    RepeatBenchmarkOutcome::NativeRendered { .. } => Vec::new(),
+                };
+                return RepeatBenchmarkRecord {
+                    path: path_key,
+                    family,
+                    page_index: options.page_index,
+                    cache_key,
+                    timings_ms,
+                    budget_violations,
+                    outcome,
+                };
+            }
+        }
+    }
+
+    let thumbnail = last_success.expect("repetitions is validated as at least two");
+    let first_ms = timings_ms[0];
+    let repeat_values = &timings_ms[1..];
+    let repeat_mean_ms = repeat_values.iter().sum::<f64>() / repeat_values.len() as f64;
+    let repeat_min_ms = repeat_values
+        .iter()
+        .copied()
+        .min_by(f64::total_cmp)
+        .expect("repeat values are non-empty");
+    let repeat_max_ms = repeat_values
+        .iter()
+        .copied()
+        .max_by(f64::total_cmp)
+        .expect("repeat values are non-empty");
+    let repeat_to_first_ratio = repeat_mean_ms / first_ms.max(f64::EPSILON);
+    let mut budget_violations = Vec::new();
+    if first_ms > config.max_first_ms as f64 {
+        budget_violations.push("first_render_time");
+    }
+    if repeat_mean_ms > config.max_repeat_mean_ms as f64 {
+        budget_violations.push("repeat_mean_time");
+    }
+
+    RepeatBenchmarkRecord {
+        path: path_key,
+        family,
+        page_index: options.page_index,
+        cache_key,
+        timings_ms,
+        budget_violations,
+        outcome: RepeatBenchmarkOutcome::NativeRendered {
+            width: thumbnail.width,
+            height: thumbnail.height,
+            output_bytes: thumbnail.bytes.len(),
+            first_ms,
+            repeat_mean_ms,
+            repeat_min_ms,
+            repeat_max_ms,
+            repeat_to_first_ratio,
+        },
+    }
+}
+
+fn repeat_report_from_records(
+    config: &RepeatBenchmarkConfig,
+    records: Vec<RepeatBenchmarkRecord>,
+) -> RepeatBenchmarkReport {
+    let mut native_rendered = 0;
+    let mut fallback_required = 0;
+    let mut errors = 0;
+    let mut budget_failures = 0;
+    let mut families = BTreeMap::new();
+    for record in &records {
+        match &record.outcome {
+            RepeatBenchmarkOutcome::NativeRendered { .. } => native_rendered += 1,
+            RepeatBenchmarkOutcome::FallbackRequired { .. } => fallback_required += 1,
+            RepeatBenchmarkOutcome::Error { .. } => errors += 1,
+        }
+        budget_failures += usize::from(!record.budget_violations.is_empty());
+        families
+            .entry(record.family.clone())
+            .or_insert_with(RepeatFamilySummary::default)
+            .record(record);
+    }
+    if errors + fallback_required > config.max_errors {
+        budget_failures += 1;
+    }
+    for summary in families.values_mut() {
+        summary.finish();
+    }
+
+    RepeatBenchmarkReport {
+        platform: PlatformMetadata::current(),
+        cache_policy: NativePageCachePolicy::IsolatedRender,
+        total: records.len(),
+        native_rendered,
+        fallback_required,
+        errors,
+        budget_failures,
+        repetitions: config.repetitions,
+        max_first_ms: config.max_first_ms,
+        max_repeat_mean_ms: config.max_repeat_mean_ms,
+        max_errors: config.max_errors,
+        families,
+        records,
+    }
+}
+
+fn document_identity_hash(path: &Path) -> Result<u64, CliError> {
+    const FNV_OFFSET: u64 = 0xcbf29ce484222325;
+    const FNV_PRIME: u64 = 0x100000001b3;
+
+    let mut file = fs::File::open(path).map_err(|source| CliError::ReadFile {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    let mut hash = FNV_OFFSET;
+    let mut buffer = [0_u8; 8192];
+    loop {
+        let read = file
+            .read(&mut buffer)
+            .map_err(|source| CliError::ReadFile {
+                path: path.to_path_buf(),
+                source,
+            })?;
+        if read == 0 {
+            break;
+        }
+        for byte in &buffer[..read] {
+            hash ^= u64::from(*byte);
+            hash = hash.wrapping_mul(FNV_PRIME);
+        }
+    }
+    Ok(hash)
 }
 
 fn batch_latency_summary(records: &[BatchBenchmarkRecord]) -> BatchLatencySummary {
@@ -3889,6 +4354,205 @@ fn batch_benchmark_outcome_json(outcome: &BatchBenchmarkOutcome) -> String {
     }
 }
 
+fn repeat_benchmark_report_json(report: &RepeatBenchmarkReport) -> String {
+    let records = report
+        .records
+        .iter()
+        .map(repeat_benchmark_record_json)
+        .collect::<Vec<_>>()
+        .join(",");
+    format!(
+        concat!(
+            "{{\n",
+            "  \"schema_version\": 1,\n",
+            "  \"backend\": \"rust-native\",\n",
+            "  \"platform\": {},\n",
+            "  \"cache_policy\": {},\n",
+            "  \"config\": {{\"repetitions\":{},\"max_first_ms\":{},\"max_repeat_mean_ms\":{},\"max_errors\":{}}},\n",
+            "  \"summary\": {{\"total\":{},\"native_rendered\":{},\"fallback_required\":{},\"errors\":{},\"budget_failures\":{}}},\n",
+            "  \"families\": {},\n",
+            "  \"records\": [{}]\n",
+            "}}\n"
+        ),
+        platform_metadata_json(&report.platform),
+        native_page_cache_policy_json(report.cache_policy),
+        report.repetitions,
+        report.max_first_ms,
+        report.max_repeat_mean_ms,
+        report.max_errors,
+        report.total,
+        report.native_rendered,
+        report.fallback_required,
+        report.errors,
+        report.budget_failures,
+        repeat_family_map_json(&report.families),
+        records
+    )
+}
+
+fn native_page_cache_policy_json(policy: NativePageCachePolicy) -> String {
+    format!(
+        "{{\"name\":{},\"permits_disk_persistence\":{}}}",
+        json_string(policy.as_str()),
+        policy.permits_disk_persistence()
+    )
+}
+
+fn repeat_family_map_json(families: &BTreeMap<String, RepeatFamilySummary>) -> String {
+    let values = families
+        .iter()
+        .map(|(family, summary)| {
+            format!(
+                "{}:{}",
+                json_string(family),
+                repeat_family_summary_json(summary)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    format!("{{{values}}}")
+}
+
+fn repeat_family_summary_json(summary: &RepeatFamilySummary) -> String {
+    format!(
+        concat!(
+            "{{",
+            "\"total\":{},",
+            "\"native_rendered\":{},",
+            "\"fallback_required\":{},",
+            "\"errors\":{},",
+            "\"budget_failures\":{},",
+            "\"first_mean_ms\":{:.3},",
+            "\"repeat_mean_ms\":{:.3}",
+            "}}"
+        ),
+        summary.total,
+        summary.native_rendered,
+        summary.fallback_required,
+        summary.errors,
+        summary.budget_failures,
+        summary.first_mean_ms,
+        summary.repeat_mean_ms
+    )
+}
+
+fn repeat_benchmark_record_json(record: &RepeatBenchmarkRecord) -> String {
+    format!(
+        concat!(
+            "{{",
+            "\"path\":{},",
+            "\"family\":{},",
+            "\"page_index\":{},",
+            "\"cache_key\":{},",
+            "\"timings_ms\":{},",
+            "\"budget_violations\":{},",
+            "\"outcome\":{}",
+            "}}"
+        ),
+        json_string(&record.path),
+        json_string(&record.family),
+        record.page_index,
+        native_page_cache_key_json(&record.cache_key),
+        float_array_json(&record.timings_ms),
+        json_str_array(record.budget_violations.as_slice()),
+        repeat_benchmark_outcome_json(&record.outcome)
+    )
+}
+
+fn native_page_cache_key_json(cache_key: &NativePageCacheKey) -> String {
+    format!(
+        concat!(
+            "{{",
+            "\"document_identity\":\"{:016x}\",",
+            "\"page_index\":{},",
+            "\"max_edge\":{},",
+            "\"background\":[{},{},{},{}],",
+            "\"renderer_version\":{},",
+            "\"native_profile\":{}",
+            "}}"
+        ),
+        cache_key.document_identity,
+        cache_key.page_index,
+        cache_key.max_edge,
+        cache_key.background[0],
+        cache_key.background[1],
+        cache_key.background[2],
+        cache_key.background[3],
+        json_string(cache_key.renderer_version),
+        json_string(cache_key.native_profile)
+    )
+}
+
+fn float_array_json(values: &[f64]) -> String {
+    let values = values
+        .iter()
+        .map(|value| format!("{value:.3}"))
+        .collect::<Vec<_>>()
+        .join(",");
+    format!("[{values}]")
+}
+
+fn repeat_benchmark_outcome_json(outcome: &RepeatBenchmarkOutcome) -> String {
+    match outcome {
+        RepeatBenchmarkOutcome::NativeRendered {
+            width,
+            height,
+            output_bytes,
+            first_ms,
+            repeat_mean_ms,
+            repeat_min_ms,
+            repeat_max_ms,
+            repeat_to_first_ratio,
+        } => format!(
+            concat!(
+                "{{",
+                "\"status\":\"native_rendered\",",
+                "\"width\":{},",
+                "\"height\":{},",
+                "\"output_bytes\":{},",
+                "\"first_ms\":{:.3},",
+                "\"repeat_mean_ms\":{:.3},",
+                "\"repeat_min_ms\":{:.3},",
+                "\"repeat_max_ms\":{:.3},",
+                "\"repeat_to_first_ratio\":{:.3}",
+                "}}"
+            ),
+            width,
+            height,
+            output_bytes,
+            first_ms,
+            repeat_mean_ms,
+            repeat_min_ms,
+            repeat_max_ms,
+            repeat_to_first_ratio
+        ),
+        RepeatBenchmarkOutcome::FallbackRequired { reason, message } => format!(
+            concat!(
+                "{{",
+                "\"status\":\"fallback_required\",",
+                "\"reason\":{},",
+                "\"category\":{},",
+                "\"message\":{}",
+                "}}"
+            ),
+            json_string(reason.as_str()),
+            json_string(reason.category()),
+            json_string(message)
+        ),
+        RepeatBenchmarkOutcome::Error { class, message } => format!(
+            concat!(
+                "{{",
+                "\"status\":\"error\",",
+                "\"class\":{},",
+                "\"message\":{}",
+                "}}"
+            ),
+            json_string(class),
+            json_string(message)
+        ),
+    }
+}
+
 fn platform_metadata_json(platform: &PlatformMetadata) -> String {
     format!(
         concat!(
@@ -4464,9 +5128,9 @@ fn crc32(bytes: impl IntoIterator<Item = u8>) -> u32 {
 
 fn print_usage() {
     println!(
-        "Usage: pdfrust-cli <render|render-auto|render-native|render-pdfium|render-isolated|compare-metadata|summarize-fallbacks|extract-corpus-metadata|validate-local-corpus|benchmark-native|benchmark-batch-native|benchmark-pdfium|visual-diff> <input.pdf> \
+        "Usage: pdfrust-cli <render|render-auto|render-native|render-pdfium|render-isolated|compare-metadata|summarize-fallbacks|extract-corpus-metadata|validate-local-corpus|benchmark-native|benchmark-batch-native|benchmark-repeat-native|benchmark-pdfium|visual-diff> <input.pdf> \
          [--output PATH] [--page-index N] [--max-edge N] [--background #RRGGBB] \
-         [--timeout SECONDS] [--iterations N] [--repetitions N] [--max-workers N] [--max-in-flight-pixels N] [--max-ms N] [--max-p95-ms N] [--max-output-bytes N] \
+         [--timeout SECONDS] [--iterations N] [--repetitions N] [--max-workers N] [--max-in-flight-pixels N] [--max-ms N] [--max-p95-ms N] [--max-first-ms N] [--max-repeat-mean-ms N] [--max-output-bytes N] \
          [--allow-pdfium-fallback] [--native-only] [--deny-fallback-reason BUCKET] [--manifest PATH] [--include-family FAMILY] \
          [--allow-missing] [--max-mae N] [--max-p95 N] [--max-changed-ratio N]"
     );
@@ -5048,6 +5712,81 @@ status = "candidate"
         assert!(json.contains("\"page_index\":0"));
         assert!(json.contains("\"status\":\"fallback_required\""));
         assert!(json.contains("\"category\":\"graphics.optional-content\""));
+    }
+
+    #[test]
+    fn repeat_benchmark_config_should_apply_defaults_and_budgets() {
+        let config = RepeatBenchmarkConfig::parse(&[
+            OsString::from("fixtures/generated"),
+            OsString::from("--manifest"),
+            OsString::from("fixtures/corpus-manifest.tsv"),
+            OsString::from("--repetitions"),
+            OsString::from("4"),
+            OsString::from("--max-first-ms"),
+            OsString::from("900"),
+            OsString::from("--max-repeat-mean-ms"),
+            OsString::from("800"),
+            OsString::from("--native-profile"),
+            OsString::from("low-memory"),
+        ])
+        .expect("valid repeated benchmark config");
+
+        assert_eq!(config.input, PathBuf::from("fixtures/generated"));
+        assert_eq!(config.repetitions, 4);
+        assert_eq!(config.max_first_ms, 900);
+        assert_eq!(config.max_repeat_mean_ms, 800);
+        assert_eq!(config.native_profile, NativeProfile::LowMemory);
+    }
+
+    #[test]
+    fn repeat_benchmark_should_report_cache_policy_keys_and_repeated_timings() {
+        let fixture_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let manifest_path = fixture_root.join("fixtures/corpus-manifest.tsv");
+        let manifest = read_corpus_manifest(&manifest_path).expect("manifest should parse");
+        let paths = vec![
+            fixture_root.join("fixtures/generated/text-page.pdf"),
+            fixture_root.join("fixtures/generated/vector-paths.pdf"),
+        ];
+        let options = ThumbnailOptions {
+            page_index: 0,
+            max_edge: 120,
+            background: Rgba::WHITE,
+            output_format: pdfrust_thumbnail::OutputFormat::Rgba,
+            timeout: Duration::from_secs(5),
+        };
+        let config = RepeatBenchmarkConfig {
+            input: fixture_root.join("fixtures/generated"),
+            manifest: Some(manifest_path),
+            include_families: Vec::new(),
+            output: None,
+            page_index: 0,
+            max_edge: 120,
+            background: Rgba::WHITE,
+            timeout: Duration::from_secs(5),
+            repetitions: 3,
+            max_first_ms: 60_000,
+            max_repeat_mean_ms: 60_000,
+            max_errors: 0,
+            fail_on_budget: false,
+            native_profile: NativeProfile::Default,
+        };
+
+        let report = benchmark_native_repeat(&paths, &options, Some(&manifest), &config)
+            .expect("repeated benchmark should run");
+        let json = repeat_benchmark_report_json(&report);
+
+        assert_eq!(report.total, 2);
+        assert_eq!(report.native_rendered, 2);
+        assert_eq!(report.fallback_required, 0);
+        assert_eq!(report.errors, 0);
+        assert_eq!(report.records[0].timings_ms.len(), 3);
+        assert_ne!(
+            report.records[0].cache_key.document_identity,
+            report.records[1].cache_key.document_identity
+        );
+        assert!(json.contains("\"name\":\"isolated-render\""));
+        assert!(json.contains("\"cache_key\""));
+        assert!(json.contains("\"repeat_mean_ms\""));
     }
 
     #[test]

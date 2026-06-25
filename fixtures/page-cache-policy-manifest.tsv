@@ -1,0 +1,5 @@
+path	family	source	license	page_count	features	notes
+fixtures/generated/text-page.pdf	small	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,simple	Small text thumbnail for repeated-render baseline timing.
+fixtures/generated/business-invoice-dense.pdf	business	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	invoice,dense-text,table	Dense business page for repeated text/table render observation.
+fixtures/generated/longform-repeated-resources.pdf	repeated-resources	scripts/generate_fixtures.py	MIT OR Apache-2.0	3	text,repeated-resources,longform	Repeated resource document for page artifact reuse policy evidence.
+fixtures/generated/vector-stress.pdf	vector-stress	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	vector,path-stress	Vector-heavy page for repeated raster hot-path observation.

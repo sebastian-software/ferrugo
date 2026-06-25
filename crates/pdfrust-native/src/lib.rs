@@ -302,6 +302,79 @@ pub struct NativeMemoryDiagnostics {
     pub max_spool_bytes: usize,
 }
 
+/// Native page artifact cache policy.
+///
+/// The current renderer keeps reusable state scoped to a single render pass.
+/// Callers that need longer-lived page artifacts should key them with
+/// [`NativePageCacheKey`] and keep ownership outside the backend until the
+/// renderer grows a document-session cache with explicit lifetime boundaries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativePageCachePolicy {
+    /// Every render owns its decoded resources and pass-local caches.
+    IsolatedRender,
+}
+
+impl NativePageCachePolicy {
+    /// Returns the stable policy identifier used in benchmark reports.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::IsolatedRender => "isolated-render",
+        }
+    }
+
+    /// Returns whether the policy permits writing document-derived artifacts to
+    /// disk without an explicit caller-managed opt-in.
+    #[must_use]
+    pub const fn permits_disk_persistence(self) -> bool {
+        match self {
+            Self::IsolatedRender => false,
+        }
+    }
+}
+
+/// Versioned key shape for caller-owned reusable native page artifacts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct NativePageCacheKey {
+    /// Caller-provided document identity, usually a content hash or a
+    /// tenant-scoped document version id.
+    pub document_identity: u64,
+    /// Zero-based page index.
+    pub page_index: u32,
+    /// Maximum output edge in pixels.
+    pub max_edge: u32,
+    /// Background color encoded as RGBA bytes.
+    pub background: [u8; 4],
+    /// Native backend version that produced the artifact.
+    pub renderer_version: &'static str,
+    /// Native memory/profile identifier.
+    pub native_profile: &'static str,
+}
+
+impl NativePageCacheKey {
+    /// Builds a key from the render options that influence page raster output.
+    #[must_use]
+    pub fn from_options(
+        document_identity: u64,
+        options: &ThumbnailOptions,
+        native_profile: &'static str,
+    ) -> Self {
+        Self {
+            document_identity,
+            page_index: options.page_index,
+            max_edge: options.max_edge,
+            background: [
+                options.background.r,
+                options.background.g,
+                options.background.b,
+                options.background.a,
+            ],
+            renderer_version: env!("CARGO_PKG_VERSION"),
+            native_profile,
+        }
+    }
+}
+
 /// Bounded multi-page native render scheduler configuration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ParallelRenderOptions {
@@ -3234,6 +3307,41 @@ mod tests {
     #[test]
     fn native_backend_name_should_be_backend_neutral() {
         assert_eq!(NativeBackend::new().backend_name(), "rust-native");
+    }
+
+    #[test]
+    fn native_page_cache_policy_should_be_isolated_by_default() {
+        let policy = NativePageCachePolicy::IsolatedRender;
+
+        assert_eq!(policy.as_str(), "isolated-render");
+        assert!(!policy.permits_disk_persistence());
+    }
+
+    #[test]
+    fn native_page_cache_key_should_include_document_options_version_and_profile() {
+        let options = ThumbnailOptions {
+            page_index: 2,
+            max_edge: 160,
+            background: pdfrust_thumbnail::Rgba {
+                r: 12,
+                g: 34,
+                b: 56,
+                a: 255,
+            },
+            output_format: pdfrust_thumbnail::OutputFormat::Rgba,
+            timeout: pdfrust_thumbnail::DEFAULT_TIMEOUT,
+        };
+
+        let first = NativePageCacheKey::from_options(0x1111, &options, "default");
+        let second_document = NativePageCacheKey::from_options(0x2222, &options, "default");
+        let low_memory = NativePageCacheKey::from_options(0x1111, &options, "low-memory");
+
+        assert_ne!(first, second_document);
+        assert_ne!(first, low_memory);
+        assert_eq!(first.page_index, 2);
+        assert_eq!(first.max_edge, 160);
+        assert_eq!(first.background, [12, 34, 56, 255]);
+        assert_eq!(first.renderer_version, env!("CARGO_PKG_VERSION"));
     }
 
     #[test]
