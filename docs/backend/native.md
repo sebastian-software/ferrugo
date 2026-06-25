@@ -52,6 +52,20 @@ native memory diagnostics. See
 `docs/reports/font-fallback-policy-2026-06-25.md` for the current evidence and
 PDFium comparison results.
 
+## Font Program Safety
+
+Glyph outline extraction is bounded by path segment, cache, charstring stack,
+and charstring subroutine-depth limits. CFF programs use the bounded
+`ttf-parser` path. Type1 FontFile programs have a small native charstring subset
+interpreter for common move, line, curve, close, width, and divide operators.
+Malformed charstrings, unsupported operators, stack overflow, and subroutine
+attempts return typed glyph-outline errors mapped to `text.glyph-outline`.
+
+The current text rasterizer still uses built-in bitmap fallback for visible
+non-Type3 text, so CFF/Type1 native rendering is no-fallback but not yet visual
+parity with PDFium. See
+`docs/reports/cff-type1-charstring-hardening-2026-06-25.md`.
+
 ## Fallback Policy
 
 PDFium remains the oracle and explicit fallback until the visual GA gate says

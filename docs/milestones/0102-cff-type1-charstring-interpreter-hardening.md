@@ -1,6 +1,6 @@
 # 0102: CFF Type1 Charstring Interpreter Hardening
 
-Status: todo
+Status: done
 Phase: 18
 Size: medium
 Depends on: 0101
@@ -46,4 +46,17 @@ programs used in office and publishing PDFs.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-25.
+
+- Added bounded Type1 charstring subset interpretation for synthetic FontFile
+  programs.
+- Added charstring stack and subroutine-depth limits to glyph outline options.
+- Added typed glyph-outline errors for charstring stack overflow and
+  subroutine overflow.
+- Added CFF FontFile3 and Type1 FontFile generated fixtures plus native render
+  smokes.
+- Supported-family gate: 35 total, 35 native rendered, 0 fallback, 0 errors.
+- PDFium visual comparison marks the new CFF/Type1 fixtures as blockers due to
+  text rasterizer drift, not native fallback.
+- Report: `docs/reports/cff-type1-charstring-hardening-2026-06-25.md`.
+- Implementation commit: `97188f2 feat: harden type1 charstring outlines`.
