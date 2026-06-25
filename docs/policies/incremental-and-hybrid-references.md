@@ -14,6 +14,8 @@ or repair arbitrary damaged update chains.
 - Newest reachable xref entries winning over older entries for the same object
   identifier.
 - Older xref entries filling objects that are absent from newer revisions.
+- Newer free xref entries tombstoning older in-use entries for the same object
+  number, including common generation bumps on deleted objects.
 - Hybrid-reference files whose current classic trailer contains `/XRefStm`.
 - Direct in-use type-1 xref-stream entries from `/XRefStm` when they do not
   conflict with already selected classic entries.

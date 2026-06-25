@@ -1,6 +1,6 @@
 # 0093: Incremental Update Edge Case Hardening
 
-Status: todo
+Status: completed
 Phase: 16
 Size: medium
 Depends on: 0092
@@ -47,4 +47,14 @@ structures that remain common in edited PDFs.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-25.
+
+- Added classic xref tombstone handling so newer free entries prevent older
+  in-use entries for the same object number from being resurrected.
+- Added a generated `incremental-deleted-object.pdf` fixture and native
+  rendering coverage for the deleted-object update path.
+- Updated the incremental and hybrid reference policy for object-number
+  tombstones across revision chains.
+- Evidence report: `docs/reports/incremental-update-hardening-2026-06-25.md`.
+- Validation included workspace no-default-features check/test, full clippy,
+  incremental corpus fallback summary, native benchmark, and PDFium visual diff.
