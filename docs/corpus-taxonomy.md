@@ -208,6 +208,35 @@ cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks \
   --max-edge 160
 ```
 
+## Prepress Boundary Manifest
+
+`fixtures/prepress-boundary-manifest.tsv` is the focused gate for
+print-production boundary behavior. It covers thumbnail rendering for page
+boxes, trim/bleed marks, OutputIntent metadata, registration marks, process
+color bars, spot colors, and overprint approximation.
+
+The manifest uses subtype families `trim-bleed`, `output-intent`,
+`registration`, and `spot-overprint`. It is a renderer boundary gate, not a
+print-proofing conformance suite. CropBox remains the selected visible box for
+native thumbnails; BleedBox and TrimBox are fixture context until a later
+milestone adds explicit page-box selection. OutputIntents are accepted as
+document context but do not imply color-managed proofing.
+
+Use this manifest when a change may affect page-box transforms, print marks,
+process-color vector content, spot-color approximation, or overprint handling:
+
+```sh
+cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks \
+  fixtures/generated \
+  --manifest fixtures/prepress-boundary-manifest.tsv \
+  --include-family trim-bleed \
+  --include-family output-intent \
+  --include-family registration \
+  --include-family spot-overprint \
+  --fail-on-fallback \
+  --max-edge 160
+```
+
 ## Private Local Corpora
 
 Private or third-party PDFs stay outside Git under `fixtures/local-corpus/`.

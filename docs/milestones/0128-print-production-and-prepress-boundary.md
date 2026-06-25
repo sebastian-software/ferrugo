@@ -1,6 +1,6 @@
 # 0128: Print Production And Prepress Boundary
 
-Status: todo
+Status: done
 Phase: 23
 Size: medium
 Depends on: 0127
@@ -48,4 +48,26 @@ bleed boxes, output intents, spot colors, overprint, and trim marks.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-25.
+
+- Added four generated prepress boundary fixtures covering trim/bleed marks,
+  OutputIntent metadata with page boxes, registration color bars, and
+  spot-color overprint approximation.
+- Added `fixtures/prepress-boundary-manifest.tsv` with eight focused rows
+  across `trim-bleed`, `output-intent`, `registration`, and `spot-overprint`
+  families.
+- Added native regression coverage for prepress rendering and CropBox-derived
+  first-page metadata.
+- Documented the thumbnail renderer boundary in
+  `docs/policies/prepress-boundary.md`: CropBox is the visible thumbnail box,
+  BleedBox/TrimBox are context, OutputIntents are not proofing, and spot
+  colors/overprint are approximated.
+- Native fallback gate: 8/8 rendered natively, 0 fallbacks, 0 errors.
+- Native benchmark gate: 8/8 rendered natively, 0 budget failures at
+  `--max-edge 160`, two iterations, `--max-ms 1000`, and
+  `--max-output-bytes 1048576`.
+- PDFium visual oracle with prepress thumbnail thresholds
+  `--max-mae 6.5 --max-p95 42 --max-changed-ratio 0.13`: 2 exact matches,
+  6 accepted drift, 0 blockers, 0 native render errors, 0 PDFium render
+  errors.
+- Report: `docs/reports/prepress-boundary-fidelity-2026-06-25.md`.
