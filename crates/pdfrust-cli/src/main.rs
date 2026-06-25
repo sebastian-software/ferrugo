@@ -34,7 +34,7 @@ const PDFIUM_FEATURE_MESSAGE: &str =
     "PDFium support is disabled; rebuild pdfrust-cli with --features pdfium";
 const PDFIUM_RUNTIME_FALLBACK_REMOVED_MESSAGE: &str =
     "PDFium runtime fallback has been removed from render/render-auto; use render-pdfium or maintainer comparison commands with --features pdfium";
-#[cfg(any(feature = "pdfium", test))]
+#[cfg(feature = "pdfium")]
 const PDFIUM_RENDER_WORKER_ENV: &str = "PDFRUST_PDFIUM_RENDER_WORKER";
 
 fn main() -> ExitCode {
