@@ -3693,6 +3693,128 @@ def dashboard_heatmap_overlay_pdf() -> bytes:
     return pdf.render(catalog)
 
 
+def scientific_two_column_paper_pdf() -> bytes:
+    ops: list[str] = [
+        "q 1 1 1 rg 0 0 360 480 re f Q",
+        "q 0.10 0.12 0.16 RG 0.7 w 28 90 m 332 90 l 28 420 m 332 420 l S Q",
+        "BT /F1 15 Tf 52 444 Td (A Small Native Rendering Study) Tj ET",
+        "BT /F1 7 Tf 74 430 Td (A Example, B Reviewer) Tj ET",
+        "BT /F1 7 Tf 32 402 Td (Abstract) Tj ET",
+    ]
+    for row in range(16):
+        y = 386 - row * 12
+        width = 118 if row % 4 else 92
+        ops.append(f"q 0.18 0.18 0.18 rg 32 {y} {width} 2 re f Q")
+        ops.append(f"q 0.18 0.18 0.18 rg 190 {y} {width + 16} 2 re f Q")
+    ops.extend(
+        [
+            "q 0.90 0.94 0.98 rg 190 206 118 72 re f Q",
+            "q 0.12 0.24 0.40 RG 0.8 w 202 224 m 222 248 l 246 232 l 272 258 l 296 224 l S Q",
+            "BT /F1 7 Tf 200 286 Td (Figure 1. Pipeline) Tj ET",
+            "BT /F1 10 Tf 44 122 Td (E = mc2 + alpha) Tj ET",
+            "BT /F1 6 Tf 32 72 Td (1 Footnote text remains readable at thumbnail scale.) Tj ET",
+        ]
+    )
+    return page_pdf("[0 0 360 480]", " ".join(ops))
+
+
+def scientific_equation_figure_pdf() -> bytes:
+    ops: list[str] = [
+        "q 0.99 0.99 1 rg 0 0 320 240 re f Q",
+        "BT /F1 13 Tf 28 212 Td (Equation and Figure Page) Tj ET",
+        "q 0.12 0.12 0.16 RG 0.7 w 28 40 124 128 re S 178 40 114 128 re S Q",
+        "q 0.16 0.36 0.64 RG 1.1 w 44 68 m 76 136 l 112 84 l 140 150 l S Q",
+        "q 0.82 0.34 0.16 rg 200 72 16 16 re f 228 94 16 16 re f 256 126 16 16 re f Q",
+        "BT /F1 10 Tf 44 184 Td (sigma x_i / n = mu) Tj ET",
+        "BT /F1 8 Tf 48 154 Td (a2 + b2 = c2) Tj 0 -18 Td (integral f dx) Tj ET",
+        "BT /F1 7 Tf 184 174 Td (Observed groups) Tj 12 -120 Td (n=42) Tj ET",
+    ]
+    return page_pdf("[0 0 320 240]", " ".join(ops))
+
+
+def reference_footnote_layout_pdf() -> bytes:
+    ops: list[str] = [
+        "q 1 1 1 rg 0 0 320 260 re f Q",
+        "BT /F1 13 Tf 28 230 Td (References and Notes) Tj ET",
+        "q 0.18 0.18 0.18 RG 0.45 w 28 82 m 292 82 l S Q",
+    ]
+    for row in range(9):
+        y = 204 - row * 13
+        ops.append(f"q 0.15 0.15 0.15 rg 32 {y} {210 - (row % 3) * 24} 2 re f Q")
+    for row in range(5):
+        y = 64 - row * 10
+        ops.append(f"q 0.28 0.28 0.28 rg 34 {y} {238 - row * 18} 1.5 re f Q")
+    ops.extend(
+        [
+            "BT /F1 7 Tf 34 74 Td (1 Notes use smaller text below the rule.) Tj ET",
+            "BT /F1 6 Tf 34 20 Td ([1] Example reference title. Journal 2026.) Tj ET",
+        ]
+    )
+    return page_pdf("[0 0 320 260]", " ".join(ops))
+
+
+def long_report_sampling_pdf() -> bytes:
+    pdf = Pdf()
+
+    def page_content(title: str, accent: str) -> bytes:
+        ops: list[str] = [
+            "q 0.98 0.98 0.96 rg 0 0 300 220 re f Q",
+            f"q {accent} rg 24 184 252 18 re f Q",
+            "q 0.20 0.22 0.26 RG 0.5 w 24 44 252 124 re S 24 144 m 276 144 l S 24 112 m 276 112 l S 24 80 m 276 80 l S Q",
+            f"BT /F1 11 Tf 28 198 Td ({title}) Tj ET",
+        ]
+        for row in range(5):
+            y = 154 - row * 22
+            ops.append(
+                f"BT /F1 7 Tf 30 {y} Td (Section {row + 1}) Tj "
+                f"84 0 Td ({100 + row * 13}) Tj 66 0 Td ({200 + row * 17}) Tj ET"
+            )
+        ops.append("BT /F1 6 Tf 24 24 Td (Footer and page marker) Tj ET")
+        return " ".join(ops).encode("ascii")
+
+    content_1 = page_content("Long Report p1", "0.12 0.22 0.36")
+    content_2 = page_content("Long Report p2", "0.20 0.42 0.32")
+    content_3 = page_content("Long Report p3", "0.74 0.32 0.16")
+    contents_1 = pdf.add(
+        f"<< /Length {len(content_1)} >>\nstream\n".encode("ascii")
+        + content_1
+        + b"\nendstream"
+    )
+    contents_2 = pdf.add(
+        f"<< /Length {len(content_2)} >>\nstream\n".encode("ascii")
+        + content_2
+        + b"\nendstream"
+    )
+    contents_3 = pdf.add(
+        f"<< /Length {len(content_3)} >>\nstream\n".encode("ascii")
+        + content_3
+        + b"\nendstream"
+    )
+    page_1 = pdf.add(
+        "<< /Type /Page /Parent 7 0 R /MediaBox [0 0 300 220] "
+        "/Resources << /Font << /F1 8 0 R >> >> "
+        f"/Contents {contents_1} 0 R >>"
+    )
+    page_2 = pdf.add(
+        "<< /Type /Page /Parent 7 0 R /MediaBox [0 0 300 220] "
+        "/Resources << /Font << /F1 8 0 R >> >> "
+        f"/Contents {contents_2} 0 R >>"
+    )
+    page_3 = pdf.add(
+        "<< /Type /Page /Parent 7 0 R /MediaBox [0 0 300 220] "
+        "/Resources << /Font << /F1 8 0 R >> >> "
+        f"/Contents {contents_3} 0 R >>"
+    )
+    pages = pdf.add(
+        f"<< /Type /Pages /Kids [{page_1} 0 R {page_2} 0 R {page_3} 0 R] /Count 3 >>"
+    )
+    font = pdf.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert pages == 7
+    assert font == 8
+    return pdf.render(catalog)
+
+
 def page_targeted_stream_pdf() -> bytes:
     pdf = Pdf()
     content_1 = b"q 0.1 0.6 0.2 rg 20 20 80 40 re f Q"
@@ -3919,6 +4041,10 @@ def main() -> None:
     write("dashboard-kpi-panels.pdf", dashboard_kpi_panels_pdf())
     write("map-marker-clusters.pdf", map_marker_clusters_pdf())
     write("dashboard-heatmap-overlay.pdf", dashboard_heatmap_overlay_pdf())
+    write("scientific-two-column-paper.pdf", scientific_two_column_paper_pdf())
+    write("scientific-equation-figure.pdf", scientific_equation_figure_pdf())
+    write("reference-footnote-layout.pdf", reference_footnote_layout_pdf())
+    write("long-report-sampling.pdf", long_report_sampling_pdf())
     write("page-targeted-stream.pdf", page_targeted_stream_pdf())
 
 

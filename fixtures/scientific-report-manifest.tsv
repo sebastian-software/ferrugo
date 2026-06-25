@@ -1,0 +1,9 @@
+path	family	source	license	page_count	features	notes
+fixtures/generated/scientific-two-column-paper.pdf	paper	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	scientific,paper,two-column,figure,footnote,small-text,expected:native	Generated two-column scientific paper fixture with figure, equation label, and footnote.
+fixtures/generated/embedded-font.pdf	paper	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	font,truetype,scientific,expected:native	Existing embedded font baseline used as a paper subset-font proxy.
+fixtures/generated/scientific-equation-figure.pdf	equation-figure	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	scientific,equation,figure,vector,text,expected:native	Generated scientific page with equation-like text and figure panels.
+fixtures/generated/type3-symbol-font.pdf	equation-figure	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,type3,charproc,symbol,equation,expected:native	Existing Type3 symbol baseline used as an equation/symbol proxy.
+fixtures/generated/long-report-sampling.pdf	long-report	scripts/generate_fixtures.py	MIT OR Apache-2.0	3	long-report,multipage,table,text,sampling,expected:native	Generated three-page long report fixture for representative page sampling.
+fixtures/generated/multi-page-report.pdf	long-report	scripts/generate_fixtures.py	MIT OR Apache-2.0	2	text,table,vector,multipage,report,expected:native	Existing two-page report baseline.
+fixtures/generated/reference-footnote-layout.pdf	references-footnotes	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	scientific,references,footnotes,small-text,expected:native	Generated references and footnotes layout fixture with small text blocks.
+fixtures/generated/text-spacing.pdf	references-footnotes	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,spacing,invisible-text,scientific,expected:native	Existing text spacing baseline used for dense paragraph and note placement.

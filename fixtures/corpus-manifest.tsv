@@ -53,6 +53,7 @@ fixtures/generated/indexed-image.pdf	scan	scripts/generate_fixtures.py	MIT OR Ap
 fixtures/generated/inline-image.pdf	browser-print	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,inline-image	Generated unfiltered inline image fixture.
 fixtures/generated/line-caps.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	vector,stroke,line-cap	Generated line-cap stroke fixture.
 fixtures/generated/line-joins.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	vector,stroke,line-join	Generated line-join stroke fixture.
+fixtures/generated/long-report-sampling.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	3	long-report,multipage,table,text,sampling	Generated three-page long report fixture for representative page sampling.
 fixtures/generated/link-annotation-appearance.pdf	mixed-layout	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	annotation,link,appearance	Generated link annotation appearance fixture.
 fixtures/generated/link-annotation-without-appearance.pdf	mixed-layout	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	annotation,link,missing-appearance	Generated link annotation fixture without visual fallback.
 fixtures/generated/linearized-first-page.pdf	browser-print	scripts/generate_fixtures.py	MIT OR Apache-2.0	2	linearized,first-page,fast-load	Generated linearized-style two-page fixture with first-page objects before the /E boundary.
@@ -84,8 +85,11 @@ fixtures/generated/page-targeted-stream.pdf	report	scripts/generate_fixtures.py	
 fixtures/generated/portfolio-embedded-files.pdf	mixed-layout	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	portfolio,collection,embedded-file	Generated PDF portfolio fixture with Collection dictionary and embedded file name tree.
 fixtures/generated/predictor-image.pdf	scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,flate,predictor	Generated Flate image PNG predictor fixture.
 fixtures/generated/radial-gradient.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	shading,radial-gradient	Generated DeviceRGB radial shading fixture.
+fixtures/generated/reference-footnote-layout.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	scientific,references,footnotes,small-text	Generated references and footnotes layout fixture with small text blocks.
 fixtures/generated/rotated-office-export.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	geometry,rotate,office-export	Generated rotated office-export page geometry fixture.
 fixtures/generated/scanned-page.pdf	scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,page-sized,devicegray	Generated page-sized scan-like DeviceGray image fixture.
+fixtures/generated/scientific-equation-figure.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	scientific,equation,figure,vector,text	Generated scientific page with equation-like text and figure panels.
+fixtures/generated/scientific-two-column-paper.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	scientific,paper,two-column,figure,footnote,small-text	Generated two-column scientific paper fixture with figure, equation label, and footnote.
 fixtures/generated/ocr-invisible-text-layer.pdf	scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	ocr,invisible-text,text-rendering-mode,scan	Generated searchable scan-style fixture with invisible OCR text layer.
 fixtures/generated/separation-spot-color.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	color,spot,separation,tint-transform	Generated Separation spot-color vector fixture with DeviceCMYK alternate tint approximation.
 fixtures/generated/shaped-rtl-text.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,type0,cid,rtl,prepositioned	Generated pre-positioned RTL Type0 CID text fixture.

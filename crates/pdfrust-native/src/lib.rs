@@ -5414,6 +5414,113 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_render_generated_scientific_report_fixtures() {
+        type ScientificFixture = (&'static [u8], u32, u32, &'static str, usize);
+
+        let fixtures: &[ScientificFixture] = &[
+            (
+                include_bytes!("../../../fixtures/generated/scientific-two-column-paper.pdf")
+                    as &[u8],
+                360,
+                480,
+                "two-column scientific paper",
+                10_000,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/scientific-equation-figure.pdf")
+                    as &[u8],
+                320,
+                240,
+                "equation and figure page",
+                6_000,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/reference-footnote-layout.pdf")
+                    as &[u8],
+                320,
+                260,
+                "references and footnotes layout",
+                6_000,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/long-report-sampling.pdf") as &[u8],
+                300,
+                220,
+                "long report first page",
+                6_000,
+            ),
+        ];
+
+        for &(bytes, expected_width, expected_height, label, min_visible_pixels) in fixtures {
+            let thumbnail = ThumbnailBackend::render(
+                &NativeBackend::new(),
+                PdfSource::from_bytes(bytes),
+                &ThumbnailOptions {
+                    max_edge: expected_width.max(expected_height),
+                    ..ThumbnailOptions::default()
+                },
+            )
+            .unwrap_or_else(|error| panic!("{label} fixture should render: {error}"));
+
+            assert_eq!(
+                thumbnail.width, expected_width,
+                "{label} fixture width should match"
+            );
+            assert_eq!(
+                thumbnail.height, expected_height,
+                "{label} fixture height should match"
+            );
+            let visible_pixels = thumbnail
+                .bytes
+                .chunks_exact(4)
+                .filter(|pixel| *pixel != [255, 255, 255, 255])
+                .count();
+            assert!(
+                visible_pixels >= min_visible_pixels,
+                "{label} fixture should preserve paper/report layout structure"
+            );
+        }
+    }
+
+    #[test]
+    fn native_parallel_renderer_should_sample_generated_long_report_pages() {
+        let bytes = include_bytes!("../../../fixtures/generated/long-report-sampling.pdf");
+        let metadata =
+            DocumentMetadataBackend::inspect(&NativeBackend::new(), PdfSource::from_bytes(bytes))
+                .expect("long report sampling fixture should inspect");
+
+        assert_eq!(metadata.page_count(), 3);
+
+        let result = render_pages_parallel(
+            PdfSource::from_bytes(bytes),
+            &[0, 2],
+            &ThumbnailOptions {
+                max_edge: 300,
+                ..ThumbnailOptions::default()
+            },
+            ParallelRenderOptions {
+                max_workers: 2,
+                max_in_flight_pixels: 300 * 300 * 2,
+            },
+        )
+        .expect("long report sample pages should render through parallel scheduler");
+
+        assert_eq!(result.workers, 2);
+        assert_eq!(result.pages.len(), 2);
+        for page in &result.pages {
+            assert_eq!(page.width, 300);
+            assert_eq!(page.height, 220);
+            assert!(
+                page.bytes
+                    .chunks_exact(4)
+                    .filter(|pixel| *pixel != [255, 255, 255, 255])
+                    .count()
+                    >= 6_000
+            );
+        }
+    }
+
+    #[test]
     fn native_backend_should_render_generated_multi_page_report_first_page() {
         let bytes = include_bytes!("../../../fixtures/generated/multi-page-report.pdf");
         let thumbnail = ThumbnailBackend::render(
