@@ -22,6 +22,11 @@ family and records source, license, page-count, feature, and note metadata.
 See `docs/corpus-taxonomy.md` for family definitions and private sampling
 rules.
 
+Reduced adversarial inputs live under `fixtures/adversarial/`. They are used by
+fuzz-smoke targets and regression tests for panic prevention, bounded parsing,
+and stable malformed-error mapping. These files should stay small and
+minimized; see `docs/fuzzing.md`.
+
 The initial seed set covers:
 
 - page size

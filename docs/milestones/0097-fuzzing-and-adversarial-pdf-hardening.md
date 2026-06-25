@@ -1,6 +1,6 @@
 # 0097: Fuzzing And Adversarial PDF Hardening
 
-Status: todo
+Status: done
 Phase: 16
 Size: medium
 Depends on: 0096
@@ -47,4 +47,19 @@ or adversarial PDFs.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-25.
+
+- Added a standalone optional `fuzz/` Cargo package with smoke targets for
+  primitive parsing, xref/object loading, stream decoding, content tokenization,
+  and native render setup.
+- Added reduced adversarial corpus inputs under `fixtures/adversarial/`.
+- Added a primitive nesting budget
+  (`pdfrust_syntax::DEFAULT_MAX_PRIMITIVE_NESTING`) and a regression test for
+  excessive nested arrays.
+- Added content and native backend regressions for unterminated inline-image
+  tokenization and truncated malformed PDF setup.
+- Fuzz smoke completed without panics:
+  `primitive_parse` 165 cases, `content_tokenize` 165 cases, `stream_decode`
+  154 cases, `xref_load` 154 cases, and `render_setup` 165 cases.
+- See `docs/fuzzing.md` and
+  `docs/reports/fuzzing-adversarial-hardening-2026-06-25.md`.
