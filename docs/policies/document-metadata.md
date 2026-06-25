@@ -15,6 +15,9 @@ success as a rendering prerequisite.
   modification date.
 - Catalog XMP presence through `/Metadata`.
 - Tagged-PDF presence through `/MarkInfo` and `/StructTreeRoot`.
+- Bounded tagged-PDF accessibility signals: catalog `/Lang`,
+  `/MarkInfo /Marked`, RoleMap presence, structure role count, and
+  marked-content reference presence.
 - Named-destination presence through catalog `/Dests` or `/Names /Dests`.
 - Outline presence and bounded outline item counting.
 - Direct page-label number trees with decimal, roman, alphabetic, prefix, and
@@ -40,11 +43,12 @@ success as a rendering prerequisite.
 
 ## Bounds
 
-Outline traversal stops after `256` reached items. Page label expansion stops
-after `4096` pages and reports truncation. File-attachment annotation scanning
-stops after `4096` annotation entries and only promises a positive signal when
-an attachment is found inside that budget. Cycles in outline references are
-ignored after the first visit to keep inspection bounded.
+Outline traversal stops after `256` reached items. Tagged-PDF structure
+traversal stops after `4096` reached values. Page label expansion stops after
+`4096` pages and reports truncation. File-attachment annotation scanning stops
+after `4096` annotation entries and only promises a positive signal when an
+attachment is found inside that budget. Cycles in outline and structure
+references are ignored after the first visit to keep inspection bounded.
 
 ## Error Behavior
 

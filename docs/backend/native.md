@@ -100,6 +100,20 @@ API or run OCR; it only preserves the visual boundary and avoids unnecessary
 raster work. See
 `docs/reports/ocr-invisible-text-layer-2026-06-25.md`.
 
+## Tagged PDF Accessibility Metadata
+
+Native metadata inspection now exposes a bounded accessibility metadata block
+separate from visual rendering. The current signals include catalog `/Lang`,
+`/MarkInfo /Marked`, RoleMap presence, counted structure element roles, and
+marked-content references reached through the structure tree.
+
+Structure traversal is capped at 4096 reached values and tracks visited
+indirect objects to avoid cycles. Malformed optional structure-tree content
+returns the stable `malformed` metadata error class instead of affecting page
+rasterization. Tagged and malformed structure fixtures both continue to render
+through the native backend without requiring accessibility metadata success.
+See `docs/reports/tagged-pdf-accessibility-metadata-2026-06-25.md`.
+
 ## CMap And Identity Text Decoding
 
 ToUnicode CMaps support explicit `begincodespacerange`, `beginbfchar`, and
