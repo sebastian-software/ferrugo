@@ -21,7 +21,6 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
-| 0117 | [Tagged PDF Metadata And Accessibility Signals](0117-tagged-pdf-metadata-and-accessibility-signals.md) | 21 | medium | 0116 |
 | 0118 | [Real Corpus Acquisition And Privacy Review Loop](0118-real-corpus-acquisition-and-privacy-review-loop.md) | 21 | medium | 0117 |
 | 0119 | [Cross-Platform Rendering Determinism Gate](0119-cross-platform-rendering-determinism-gate.md) | 21 | medium | 0118 |
 | 0120 | [PDFium-Free Maintenance Gate And Deletion Backlog](0120-pdfium-free-maintenance-gate-and-deletion-backlog.md) | 21 | medium | 0119 |
@@ -110,6 +109,7 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
+| 0117 | [Tagged PDF Metadata And Accessibility Signals](0117-tagged-pdf-metadata-and-accessibility-signals.md) | 21 | medium | 0116 |
 
 ## Done
 
