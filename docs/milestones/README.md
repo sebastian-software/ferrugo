@@ -75,6 +75,26 @@ Allowed statuses:
 | 0158 | [Memory Arena And Scratch Buffer Audit](0158-memory-arena-and-scratch-buffer-audit.md) | 29 | medium | 0157 |
 | 0159 | [SIMD Raster Hot Path Evaluation](0159-simd-raster-hot-path-evaluation.md) | 29 | medium | 0158 |
 | 0160 | [PDFium-Free 1.0 Readiness Gate](0160-pdfium-free-1-0-readiness-gate.md) | 29 | medium | 0159 |
+| 0161 | [Post-1.0 Unsupported Feature Triage Loop](0161-post-1-0-unsupported-feature-triage-loop.md) | 30 | medium | 0160 |
+| 0162 | [PDF 2.0 Compatibility Boundary Gate](0162-pdf-2-0-compatibility-boundary-gate.md) | 30 | medium | 0161 |
+| 0163 | [Producer Compatibility Matrix Expansion](0163-producer-compatibility-matrix-expansion.md) | 30 | medium | 0162 |
+| 0164 | [Independent Reference Oracle Strategy](0164-independent-reference-oracle-strategy.md) | 30 | medium | 0163 |
+| 0165 | [Native-Only CI And Release Artifact Hardening](0165-native-only-ci-and-release-artifact-hardening.md) | 30 | medium | 0164 |
+| 0166 | [Office Vector Effects And Clip Mask Fidelity](0166-office-vector-effects-and-clip-mask-fidelity.md) | 31 | medium | 0165 |
+| 0167 | [Browser Print CSS Edge Case Coverage](0167-browser-print-css-edge-case-coverage.md) | 31 | medium | 0166 |
+| 0168 | [Email Client And Web Archive PDF Coverage](0168-email-client-and-web-archive-pdf-coverage.md) | 31 | medium | 0167 |
+| 0169 | [Font Fallback Script Mixing And Emoji Coverage](0169-font-fallback-script-mixing-and-emoji-coverage.md) | 31 | medium | 0168 |
+| 0170 | [Raster Image Heavy Document Memory Gate](0170-raster-image-heavy-document-memory-gate.md) | 31 | medium | 0169 |
+| 0171 | [Long Document Navigation And Page Cache Gate](0171-long-document-navigation-and-page-cache-gate.md) | 32 | medium | 0170 |
+| 0172 | [High-DPI Thumbnail And Preview Fidelity](0172-high-dpi-thumbnail-and-preview-fidelity.md) | 32 | medium | 0171 |
+| 0173 | [Corrupt-But-Common PDF Recovery Corpus](0173-corrupt-but-common-pdf-recovery-corpus.md) | 32 | medium | 0172 |
+| 0174 | [Typed Unsupported Boundary API Freeze](0174-typed-unsupported-boundary-api-freeze.md) | 32 | small | 0173 |
+| 0175 | [Native Render Trace And Operator Replay Tool](0175-native-render-trace-and-operator-replay-tool.md) | 32 | medium | 0174 |
+| 0176 | [WASM Viewer Integration Performance Gate](0176-wasm-viewer-integration-performance-gate.md) | 33 | medium | 0175 |
+| 0177 | [Server-Side Batch Rendering Isolation Gate](0177-server-side-batch-rendering-isolation-gate.md) | 33 | medium | 0176 |
+| 0178 | [Security Fuzz Nightly And Crash Triage Loop](0178-security-fuzz-nightly-and-crash-triage-loop.md) | 33 | medium | 0177 |
+| 0179 | [Corpus Governance And Regression Dashboard](0179-corpus-governance-and-regression-dashboard.md) | 33 | medium | 0178 |
+| 0180 | [PDFium-Free 1.1 Coverage Gate](0180-pdfium-free-1-1-coverage-gate.md) | 33 | medium | 0179 |
 
 ## In Progress
 
