@@ -1,6 +1,6 @@
 # 0143: Native Renderer Conformance Triage Loop
 
-Status: todo
+Status: done
 Phase: 26
 Size: medium
 Depends on: 0142
@@ -44,4 +44,14 @@ that produces small actionable Rust-native follow-up milestones.
 
 ## Completion Notes
 
-Empty until done.
+- Ran the full generated-corpus PDFium visual oracle and native-only supported
+  family gate.
+- Added a stable conformance triage report contract in
+  `docs/policies/native-conformance-triage.md`.
+- Added `docs/reports/native-renderer-conformance-triage-2026-06-26.md` with
+  family, subsystem, blocker-cluster, accepted-drift, and typed-unsupported
+  triage.
+- Added `docs/backlogs/native-renderer-conformance-backlog.md` with
+  owner-ready follow-up slices.
+- Updated the native support matrix with current subsystem tags and blocker
+  counts.

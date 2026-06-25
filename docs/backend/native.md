@@ -56,6 +56,15 @@ stay available as explicit maintainer comparison tooling. See
 `docs/reports/native-renderer-ga2-coverage-2026-06-26.md` for the measured
 decision.
 
+The 0143 conformance triage loop keeps the same runtime decision and routes the
+visual blockers into subsystem-owned follow-up slices. The current full-corpus
+visual oracle reports 91 blockers, 23 accepted drift rows, 8 native unsupported
+rows, and 1 encrypted both-error row. The highest-priority owner areas are
+`text-fonts`, `rendering-core`, `annotations-forms`, `images-color`, and
+`page-geometry`. See
+`docs/reports/native-renderer-conformance-triage-2026-06-26.md` and
+`docs/backlogs/native-renderer-conformance-backlog.md`.
+
 ## Page Artifact Cache Policy
 
 The native renderer default policy is `isolated-render`: each thumbnail render

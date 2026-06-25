@@ -111,3 +111,36 @@ The generated corpus now includes `unsupported-ccitt-image.pdf`,
 `unsupported-jbig2-image.pdf`, and `unsupported-jpx-image.pdf` as deterministic
 codec-policy blockers. They are expected native fallbacks, not malformed-input
 errors.
+
+## 0143 Conformance Triage Update
+
+Milestone 0143 supersedes the broad RC-era visual-risk language with measured
+subsystem tags from `target/conformance-0143-visual-diff.json`.
+
+Core supported runtime families remain native-only:
+
+| Family | Total | Native rendered | Fallback required | Errors |
+| --- | ---: | ---: | ---: | ---: |
+| browser-print | 8 | 8 | 0 | 0 |
+| form | 15 | 15 | 0 | 0 |
+| office-export | 44 | 44 | 0 | 0 |
+
+Visual conformance still has 91 blockers and 8 native unsupported rows across
+the full generated corpus:
+
+| Subsystem tag | Blockers | Native errors | Primary owner |
+| --- | ---: | ---: | --- |
+| `rendering-core` | 34 | 1 | Dense tables, reports, dashboards, and XFA policy boundaries. |
+| `text-fonts` | 24 | 0 | Font metrics, spacing, fallback glyphs, and subset width parity. |
+| `annotations-forms` | 13 | 0 | Form widget and annotation appearance parity. |
+| `page-geometry` | 9 | 0 | Rotation, crop, user-unit, and first-page transform parity. |
+| `images-color` | 6 | 3 | Image resampling, CMYK/ICC drift, and unsupported codec policy. |
+| `vector-graphics` | 3 | 1 | High-delta vector/shading blockers distinct from accepted gradient drift. |
+| `transparency` | 1 | 2 | Alpha drift plus soft-mask/blend unsupported boundaries. |
+| `document-structure` | 1 | 0 | Hybrid reference visual parity. |
+| `optional-content` | 0 | 1 | OCMD membership and layer flattening policy. |
+| `document-security` | 0 | 0 | Encrypted inputs remain policy boundaries, not visual blockers. |
+
+Follow-up routing is tracked in
+`docs/backlogs/native-renderer-conformance-backlog.md`. The stable report
+contract is documented in `docs/policies/native-conformance-triage.md`.
