@@ -135,6 +135,25 @@ match PDFium exactly, while CMYK ICCBased images render natively through the
 DeviceCMYK thumbnail approximation and remain a known visual-parity gap. See
 `docs/reports/icc-cache-transform-2026-06-25.md`.
 
+## Tiling Pattern Color Spaces
+
+The native vector renderer supports common colored and uncolored tiling
+patterns. Colored patterns use paint from the pattern stream. Uncolored
+patterns selected through `[/Pattern <base-space>]` use caller-supplied
+DeviceGray, DeviceRGB, or DeviceCMYK operands from the `scn` fill-color
+operator.
+
+Pattern cell samples are cached within one rasterization pass. Cache keys
+include the pattern resource name, paint mode, caller color for uncolored
+patterns, and quantized transform scale. The default
+`PathRasterOptions::max_pattern_cell_cache_entries` is 32 entries; setting it to
+0 disables retained pattern cache entries. Pattern tile expansion remains
+bounded by `PathRasterOptions::max_pattern_tiles`.
+
+The generated colored and uncolored tiling pattern fixtures render natively and
+match PDFium exactly in the 0107 comparison run. See
+`docs/reports/tiling-pattern-color-spaces-2026-06-25.md`.
+
 ## Fallback Policy
 
 PDFium remains the oracle and explicit fallback until the visual GA gate says

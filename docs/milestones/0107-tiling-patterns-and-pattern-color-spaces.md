@@ -1,6 +1,6 @@
 # 0107: Tiling Patterns And Pattern Color Spaces
 
-Status: todo
+Status: done
 Phase: 19
 Size: medium
 Depends on: 0106
@@ -46,4 +46,23 @@ presentations, and browser-generated PDFs.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-25.
+
+- Feature commit: `72cccf8`.
+- Added native uncolored tiling pattern execution through PDF
+  `[/Pattern <base-space>]` fill color spaces.
+- Added a bounded rasterization-pass pattern cell cache with a default limit of
+  32 entries and a tested zero-entry mode.
+- Added generated fixture
+  `fixtures/generated/uncolored-tiling-pattern.pdf`.
+- Supported-family native-only gate:
+  `target/pattern-0107-supported-gate.json`, 41/41 native rendered, 0 fallback
+  required.
+- Pattern benchmark rows:
+  - `tiling-pattern.pdf`: native_rendered, 31.006 ms mean, no budget
+    violations.
+  - `uncolored-tiling-pattern.pdf`: native_rendered, 24.965 ms mean, no budget
+    violations.
+- PDFium visual comparison:
+  `target/pattern-0107-visual-diff.json`, both pattern fixtures exact matches.
+- Report: `docs/reports/tiling-pattern-color-spaces-2026-06-25.md`.
