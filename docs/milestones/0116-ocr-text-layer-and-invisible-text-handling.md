@@ -1,6 +1,6 @@
 # 0116: OCR Text Layer And Invisible Text Handling
 
-Status: todo
+Status: in-progress
 Phase: 21
 Size: medium
 Depends on: 0115

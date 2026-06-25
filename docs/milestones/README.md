@@ -21,7 +21,6 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
-| 0116 | [OCR Text Layer And Invisible Text Handling](0116-ocr-text-layer-and-invisible-text-handling.md) | 21 | medium | 0115 |
 | 0117 | [Tagged PDF Metadata And Accessibility Signals](0117-tagged-pdf-metadata-and-accessibility-signals.md) | 21 | medium | 0116 |
 | 0118 | [Real Corpus Acquisition And Privacy Review Loop](0118-real-corpus-acquisition-and-privacy-review-loop.md) | 21 | medium | 0117 |
 | 0119 | [Cross-Platform Rendering Determinism Gate](0119-cross-platform-rendering-determinism-gate.md) | 21 | medium | 0118 |
@@ -91,6 +90,7 @@ Allowed statuses:
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
+| 0116 | [OCR Text Layer And Invisible Text Handling](0116-ocr-text-layer-and-invisible-text-handling.md) | 21 | medium | 0115 |
 
 ## Done
 
