@@ -3992,6 +3992,144 @@ def longform_repeated_resources_pdf() -> bytes:
     return pdf.render(catalog)
 
 
+def prepress_trim_bleed_marks_pdf() -> bytes:
+    pdf = Pdf()
+    ops: list[str] = [
+        "q 0.98 0.98 0.96 rg 0 0 340 260 re f Q",
+        "q 0.10 0.12 0.16 RG 0.6 w 30 30 280 200 re S Q",
+        "q 0.86 0.18 0.12 RG 0.8 w 20 20 300 220 re S Q",
+        "q 0.05 0.05 0.05 RG 0.5 w",
+    ]
+    for x, y, dx, dy in [
+        (12, 30, 26, 0),
+        (302, 30, 26, 0),
+        (12, 230, 26, 0),
+        (302, 230, 26, 0),
+        (30, 12, 0, 26),
+        (310, 12, 0, 26),
+        (30, 222, 0, 26),
+        (310, 222, 0, 26),
+    ]:
+        ops.append(f"{x} {y} m {x + dx} {y + dy} l S")
+    ops.extend(
+        [
+            "Q",
+            "q 0.16 0.32 0.52 rg 54 70 232 118 re f Q",
+            "BT /F1 11 Tf 76 132 Td (Trim/Bleed Thumbnail) Tj ET",
+        ]
+    )
+    content = " ".join(ops).encode("ascii")
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 340 260] "
+        "/CropBox [20 20 320 240] /BleedBox [10 10 330 250] /TrimBox [30 30 310 230] "
+        f"/Resources << /Font << /F1 4 0 R >> >> /Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    font = pdf.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert font == 4
+    return pdf.render(catalog)
+
+
+def prepress_output_intent_page_boxes_pdf() -> bytes:
+    pdf = Pdf()
+    content = (
+        b"q 0.97 0.97 0.97 rg 0 0 360 260 re f Q "
+        b"q 0.16 0.18 0.22 RG 0.8 w 40 40 280 180 re S Q "
+        b"q 0.08 0.38 0.58 rg 62 72 88 108 re f "
+        b"0.86 0.34 0.12 rg 166 72 88 108 re f Q "
+        b"BT /F1 10 Tf 74 198 Td (OutputIntent + CropBox) Tj ET"
+    )
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    profile = b"tiny-rgb-profile"
+    profile_object = pdf.add(
+        b"<< /N 3 /Length "
+        + str(len(profile)).encode("ascii")
+        + b" >>\nstream\n"
+        + profile
+        + b"\nendstream"
+    )
+    output_intent = pdf.add(
+        f"<< /Type /OutputIntent /S /GTS_PDFA1 /OutputConditionIdentifier (sRGB thumbnail) /DestOutputProfile {profile_object} 0 R >>"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 5 0 R /MediaBox [0 0 360 260] "
+        "/CropBox [30 20 330 240] /BleedBox [20 10 340 250] /TrimBox [40 40 320 220] "
+        f"/Resources << /Font << /F1 6 0 R >> >> /Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    font = pdf.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    catalog = pdf.add(
+        f"<< /Type /Catalog /Pages {pages} 0 R /OutputIntents [{output_intent} 0 R] >>"
+    )
+    assert pages == 5
+    assert font == 6
+    return pdf.render(catalog)
+
+
+def prepress_registration_color_bars_pdf() -> bytes:
+    ops: list[str] = [
+        "q 1 1 1 rg 0 0 360 180 re f Q",
+        "q 0 1 1 rg 32 126 46 18 re f Q",
+        "q 1 0 1 rg 84 126 46 18 re f Q",
+        "q 1 1 0 rg 136 126 46 18 re f Q",
+        "q 0 0 0 rg 188 126 46 18 re f Q",
+        "q 0.5 0.5 0.5 rg 240 126 46 18 re f Q",
+        "q 0.02 0.02 0.02 RG 0.8 w",
+    ]
+    for cx, cy in [(44, 42), (316, 42), (44, 154), (316, 154)]:
+        ops.append(f"{cx - 12} {cy} m {cx + 12} {cy} l S {cx} {cy - 12} m {cx} {cy + 12} l S")
+        ops.append(f"{cx - 7} {cy - 7} 14 14 re S")
+    ops.extend(
+        [
+            "Q",
+            "q 0.12 0.20 0.32 RG 0.6 w 32 34 296 112 re S Q",
+            "BT /F1 8 Tf 36 106 Td (Registration and process color bars) Tj ET",
+        ]
+    )
+    return page_pdf("[0 0 360 180]", " ".join(ops))
+
+
+def prepress_spot_overprint_boundary_pdf() -> bytes:
+    pdf = Pdf()
+    content = (
+        b"q 0.96 0.96 0.94 rg 0 0 240 180 re f Q "
+        b"q /GSOP gs /CS1 cs 0.92 scn 34 42 120 80 re f "
+        b"0.12 0.18 0.28 rg 78 72 120 72 re f Q "
+        b"BT /F1 9 Tf 34 144 Td (Spot/Overprint Approximation) Tj ET"
+    )
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 240 180] "
+        "/Resources << "
+        "/Font << /F1 4 0 R >> "
+        "/ExtGState << /GSOP << /OP true /op true /OPM 1 >> >> "
+        "/ColorSpace << /CS1 "
+        "[/Separation /BoundaryOrange /DeviceRGB "
+        "<< /FunctionType 2 /Domain [0 1] /C0 [1 1 1] /C1 [1 0.42 0.10] /N 1 >>] "
+        ">> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    font = pdf.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert font == 4
+    return pdf.render(catalog)
+
+
 def page_targeted_stream_pdf() -> bytes:
     pdf = Pdf()
     content_1 = b"q 0.1 0.6 0.2 rg 20 20 80 40 re f Q"
@@ -4226,6 +4364,10 @@ def main() -> None:
     write("manual-illustrated-chapter.pdf", manual_illustrated_chapter_pdf())
     write("ebook-narrow-longform.pdf", ebook_narrow_longform_pdf())
     write("longform-repeated-resources.pdf", longform_repeated_resources_pdf())
+    write("prepress-trim-bleed-marks.pdf", prepress_trim_bleed_marks_pdf())
+    write("prepress-output-intent-page-boxes.pdf", prepress_output_intent_page_boxes_pdf())
+    write("prepress-registration-color-bars.pdf", prepress_registration_color_bars_pdf())
+    write("prepress-spot-overprint-boundary.pdf", prepress_spot_overprint_boundary_pdf())
     write("page-targeted-stream.pdf", page_targeted_stream_pdf())
 
 

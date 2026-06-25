@@ -1,0 +1,9 @@
+path	family	source	license	page_count	features	notes
+fixtures/generated/prepress-trim-bleed-marks.pdf	trim-bleed	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	prepress,trim,bleed,cropbox,trimbox,registration,expected:native	Generated prepress fixture with trim, bleed, CropBox, TrimBox, and visible printer marks.
+fixtures/generated/cropped-scan-page.pdf	trim-bleed	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	cropbox,page-box,expected:native	Existing CropBox fixture used as a visible-page-box baseline.
+fixtures/generated/prepress-output-intent-page-boxes.pdf	output-intent	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	prepress,output-intent,cropbox,trimbox,bleedbox,color,expected:native	Generated prepress fixture with OutputIntent metadata and explicit page boxes.
+fixtures/generated/output-intent-rgb.pdf	output-intent	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	color,output-intent,devicergb,expected:native	Existing OutputIntent fixture used as a catalog metadata baseline.
+fixtures/generated/prepress-registration-color-bars.pdf	registration	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	prepress,registration,color-bars,trim-marks,expected:native	Generated prepress fixture with registration targets and process color bars.
+fixtures/generated/line-caps.pdf	registration	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	vector,stroke,line-cap,expected:native	Existing stroke fixture used as a mark-rendering baseline.
+fixtures/generated/prepress-spot-overprint-boundary.pdf	spot-overprint	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	prepress,spot-color,overprint,separation,approximation,expected:native	Generated prepress boundary fixture for spot-color and overprint thumbnail approximation.
+fixtures/generated/overprint-spot-approximation.pdf	spot-overprint	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	overprint,spot-color,separation,expected:native	Existing spot-color overprint approximation fixture.

@@ -5658,6 +5658,100 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_render_generated_prepress_boundary_fixtures() {
+        type PrepressFixture = (&'static [u8], u32, u32, u32, &'static str, usize);
+
+        let fixtures: &[PrepressFixture] = &[
+            (
+                include_bytes!("../../../fixtures/generated/prepress-trim-bleed-marks.pdf")
+                    as &[u8],
+                300,
+                220,
+                300,
+                "prepress trim and bleed marks",
+                5_000,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/prepress-output-intent-page-boxes.pdf")
+                    as &[u8],
+                300,
+                220,
+                300,
+                "prepress output intent page boxes",
+                10_000,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/prepress-registration-color-bars.pdf")
+                    as &[u8],
+                360,
+                180,
+                360,
+                "prepress registration color bars",
+                2_000,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/prepress-spot-overprint-boundary.pdf")
+                    as &[u8],
+                240,
+                180,
+                240,
+                "prepress spot overprint boundary",
+                10_000,
+            ),
+        ];
+
+        for &(bytes, expected_width, expected_height, max_edge, label, min_visible_pixels) in
+            fixtures
+        {
+            let thumbnail = ThumbnailBackend::render(
+                &NativeBackend::new(),
+                PdfSource::from_bytes(bytes),
+                &ThumbnailOptions {
+                    max_edge,
+                    ..ThumbnailOptions::default()
+                },
+            )
+            .unwrap_or_else(|error| panic!("{label} fixture should render: {error}"));
+
+            assert_eq!(
+                thumbnail.width, expected_width,
+                "{label} fixture width should match the selected visible box"
+            );
+            assert_eq!(
+                thumbnail.height, expected_height,
+                "{label} fixture height should match the selected visible box"
+            );
+            let visible_pixels = thumbnail
+                .bytes
+                .chunks_exact(4)
+                .filter(|pixel| *pixel != [255, 255, 255, 255])
+                .count();
+            assert!(
+                visible_pixels >= min_visible_pixels,
+                "{label} fixture should preserve print-oriented visual markers"
+            );
+        }
+    }
+
+    #[test]
+    fn native_backend_should_inspect_generated_prepress_page_box_metadata() {
+        let bytes =
+            include_bytes!("../../../fixtures/generated/prepress-output-intent-page-boxes.pdf");
+        let metadata =
+            DocumentMetadataBackend::inspect(&NativeBackend::new(), PdfSource::from_bytes(bytes))
+                .expect("prepress output-intent fixture should inspect");
+
+        assert_eq!(metadata.page_count(), 1);
+        assert_eq!(
+            metadata.first_page_size(),
+            Some(PageSize {
+                width: 300.0,
+                height: 220.0,
+            })
+        );
+    }
+
+    #[test]
     fn native_backend_should_render_generated_multi_page_report_first_page() {
         let bytes = include_bytes!("../../../fixtures/generated/multi-page-report.pdf");
         let thumbnail = ThumbnailBackend::render(
