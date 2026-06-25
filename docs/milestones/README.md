@@ -86,6 +86,26 @@ Allowed statuses:
 | 0198 | [Native Renderer Telemetry Privacy And Diagnostics Policy](0198-native-renderer-telemetry-privacy-and-diagnostics-policy.md) | 37 | small | 0197 |
 | 0199 | [Unsupported Feature Burn-Down Release Candidate Gate](0199-unsupported-feature-burn-down-release-candidate-gate.md) | 37 | medium | 0198 |
 | 0200 | [PDFium-Free 1.2 Readiness Gate](0200-pdfium-free-1-2-readiness-gate.md) | 37 | medium | 0199 |
+| 0201 | [Native Renderer 1.3 Coverage Scorecard Baseline](0201-native-renderer-1-3-coverage-scorecard-baseline.md) | 38 | medium | 0200 |
+| 0202 | [Text Selection Geometry And Search Highlight Parity](0202-text-selection-geometry-and-search-highlight-parity.md) | 38 | medium | 0201 |
+| 0203 | [Dense Office Table And Spreadsheet Refinement](0203-dense-office-table-and-spreadsheet-refinement.md) | 38 | medium | 0202 |
+| 0204 | [Office Chart SmartArt And Vector Effect Fidelity](0204-office-chart-smartart-and-vector-effect-fidelity.md) | 38 | medium | 0203 |
+| 0205 | [PDFium-Free 1.3 Typical Document Gate](0205-pdfium-free-1-3-typical-document-gate.md) | 38 | medium | 0204 |
+| 0206 | [Form Filling Appearance Update And Flattening Coverage](0206-form-filling-appearance-update-and-flattening-coverage.md) | 39 | medium | 0205 |
+| 0207 | [Annotation Popup Stamp And FreeText Fidelity](0207-annotation-popup-stamp-and-freetext-fidelity.md) | 39 | medium | 0206 |
+| 0208 | [Color Managed Print Preview Extended Gate](0208-color-managed-print-preview-extended-gate.md) | 39 | medium | 0207 |
+| 0209 | [Rust-Native Image Codec Deployment Policy](0209-rust-native-image-codec-deployment-policy.md) | 39 | medium | 0208 |
+| 0210 | [Native Renderer 1.3 Hardening Gate](0210-native-renderer-1-3-hardening-gate.md) | 39 | medium | 0209 |
+| 0211 | [PDF Operator Semantic Snapshot Suite](0211-pdf-operator-semantic-snapshot-suite.md) | 40 | medium | 0210 |
+| 0212 | [Rust-Native Font Cache Compaction](0212-rust-native-font-cache-compaction.md) | 40 | medium | 0211 |
+| 0213 | [Transparency Stack Memory Optimization](0213-transparency-stack-memory-optimization.md) | 40 | medium | 0212 |
+| 0214 | [Incremental Parser And Object Cache Fusion](0214-incremental-parser-and-object-cache-fusion.md) | 40 | medium | 0213 |
+| 0215 | [PDFium Comparison Tool Removal Decision Gate](0215-pdfium-comparison-tool-removal-decision-gate.md) | 40 | medium | 0214 |
+| 0216 | [Cross-Producer Typical Document Fusion Corpus](0216-cross-producer-typical-document-fusion-corpus.md) | 41 | medium | 0215 |
+| 0217 | [Low-End Device Reliability Sweep](0217-low-end-device-reliability-sweep.md) | 41 | medium | 0216 |
+| 0218 | [Server And WASM Scheduler Tuning Gate](0218-server-and-wasm-scheduler-tuning-gate.md) | 41 | medium | 0217 |
+| 0219 | [Unsupported Feature SLA And Consumer Migration Guide](0219-unsupported-feature-sla-and-consumer-migration-guide.md) | 41 | small | 0218 |
+| 0220 | [PDFium-Free 1.4 Readiness Gate](0220-pdfium-free-1-4-readiness-gate.md) | 41 | medium | 0219 |
 
 ## In Progress
 
