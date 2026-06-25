@@ -542,10 +542,8 @@ def indexed_image_pdf() -> bytes:
     return pdf.render(catalog)
 
 
-def dct_image_pdf() -> bytes:
-    pdf = Pdf()
-    content = b"q 80 0 0 80 20 20 cm /Im1 Do Q"
-    image = bytes.fromhex(
+def tiny_jpeg_fixture_bytes() -> bytes:
+    return bytes.fromhex(
         "ffd8ffe000104a46494600010100000100010000"
         "ffdb0043000302020302020303030304030304050805050404050a070706080c0a0c0c0b0a0b0b0d0e12100d0e110e0b0b1016101113141515150c0f171816141812141514"
         "ffdb00430103040405040509050509140d0b0d1414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414"
@@ -556,6 +554,12 @@ def dct_image_pdf() -> bytes:
         "ffc400b51100020102040403040705040400010277000102031104052131061241510761711322328108144291a1b1c109233352f0156272d10a162434e125f11718191a262728292a35363738393a434445464748494a535455565758595a636465666768696a737475767778797a82838485868788898a92939495969798999aa2a3a4a5a6a7a8a9aab2b3b4b5b6b7b8b9bac2c3c4c5c6c7c8c9cad2d3d4d5d6d7d8d9dae2e3e4e5e6e7e8e9eaf2f3f4f5f6f7f8f9fa"
         "ffda000c03010002110311003f00f9d2bf0c3fd533ffd9"
     )
+
+
+def dct_image_pdf() -> bytes:
+    pdf = Pdf()
+    content = b"q 80 0 0 80 20 20 cm /Im1 Do Q"
+    image = tiny_jpeg_fixture_bytes()
     contents = pdf.add(
         f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
         + content
@@ -882,6 +886,165 @@ def scanned_page_pdf() -> bytes:
     )
     catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
     assert image_object == 4
+    return pdf.render(catalog)
+
+
+def mobile_rotated_camera_scan_pdf() -> bytes:
+    pdf = Pdf()
+    width = 160
+    height = 240
+    image = bytes(212 + ((x * 5 + y * 3) % 36) for y in range(height) for x in range(width))
+    compressed = zlib.compress(image)
+    content = (
+        b"q 240 0 0 320 0 0 cm /Im1 Do Q "
+        b"q 0.05 0.05 0.05 RG 1 w 26 34 m 214 34 l S 26 286 m 214 286 l S Q"
+    )
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 240 320] /Rotate 90 "
+        "/Resources << /XObject << /Im1 4 0 R >> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    image_object = pdf.add(
+        (
+            f"<< /Type /XObject /Subtype /Image /Width {width} /Height {height} "
+            f"/ColorSpace /DeviceGray /BitsPerComponent 8 /Filter /FlateDecode "
+            f"/Length {len(compressed)} >>\nstream\n"
+        ).encode("ascii")
+        + compressed
+        + b"\nendstream"
+    )
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert image_object == 4
+    return pdf.render(catalog)
+
+
+def mobile_cropped_photo_scan_pdf() -> bytes:
+    pdf = Pdf()
+    width = 260
+    height = 340
+    image = bytes(
+        238 - min(50, abs(x - width // 2) // 3 + abs(y - height // 2) // 5)
+        for y in range(height)
+        for x in range(width)
+    )
+    compressed = zlib.compress(image)
+    content = (
+        b"q 260 0 0 340 0 0 cm /Im1 Do Q "
+        b"q 0.12 0.12 0.12 RG 0.8 w 30 42 180 232 re S Q"
+    )
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 260 340] "
+        "/CropBox [20 30 220 290] "
+        "/Resources << /XObject << /Im1 4 0 R >> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    image_object = pdf.add(
+        (
+            f"<< /Type /XObject /Subtype /Image /Width {width} /Height {height} "
+            f"/ColorSpace /DeviceGray /BitsPerComponent 8 /Filter /FlateDecode "
+            f"/Length {len(compressed)} >>\nstream\n"
+        ).encode("ascii")
+        + compressed
+        + b"\nendstream"
+    )
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert image_object == 4
+    return pdf.render(catalog)
+
+
+def mobile_ocr_overlay_scan_pdf() -> bytes:
+    pdf = Pdf()
+    width = 110
+    height = 150
+    image = bytes([230] * width * height)
+    compressed = zlib.compress(image)
+    content = (
+        b"q 220 0 0 300 0 0 cm /Im1 Do Q "
+        b"BT /F1 12 Tf 3 Tr 32 214 Td (Invisible mobile OCR line one) Tj "
+        b"0 -28 Td (Invisible mobile OCR line two) Tj ET"
+    )
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 220 300] "
+        "/Resources << /Font << /F1 5 0 R >> /XObject << /Im1 4 0 R >> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    image_object = pdf.add(
+        (
+            f"<< /Type /XObject /Subtype /Image /Width {width} /Height {height} "
+            f"/ColorSpace /DeviceGray /BitsPerComponent 8 /Filter /FlateDecode "
+            f"/Length {len(compressed)} >>\nstream\n"
+        ).encode("ascii")
+        + compressed
+        + b"\nendstream"
+    )
+    font = pdf.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert image_object == 4
+    assert font == 5
+    return pdf.render(catalog)
+
+
+def mobile_mixed_compression_scan_pdf() -> bytes:
+    pdf = Pdf()
+    gray_width = 320
+    gray_height = 220
+    gray = bytes(226 + ((x + y) % 24) for y in range(gray_height) for x in range(gray_width))
+    gray_compressed = zlib.compress(gray)
+    jpeg = tiny_jpeg_fixture_bytes()
+    content = (
+        b"q 260 0 0 180 0 0 cm /Gray Do Q "
+        b"q 54 0 0 54 188 96 cm /Jpeg Do Q "
+        b"q 0.10 0.10 0.10 RG 0.8 w 24 24 212 132 re S Q"
+    )
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 260 180] "
+        "/Resources << /XObject << /Gray 4 0 R /Jpeg 5 0 R >> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    gray_object = pdf.add(
+        (
+            f"<< /Type /XObject /Subtype /Image /Width {gray_width} /Height {gray_height} "
+            f"/ColorSpace /DeviceGray /BitsPerComponent 8 /Filter /FlateDecode "
+            f"/Length {len(gray_compressed)} >>\nstream\n"
+        ).encode("ascii")
+        + gray_compressed
+        + b"\nendstream"
+    )
+    jpeg_object = pdf.add(
+        b"<< /Type /XObject /Subtype /Image /Width 4 /Height 4 "
+        b"/ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length "
+        + str(len(jpeg)).encode("ascii")
+        + b" >>\nstream\n"
+        + jpeg
+        + b"\nendstream"
+    )
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert gray_object == 4
+    assert jpeg_object == 5
     return pdf.render(catalog)
 
 
@@ -4226,6 +4389,10 @@ def main() -> None:
     write("unsupported-jbig2-image.pdf", unsupported_image_codec_pdf("JBIG2Decode"))
     write("unsupported-jpx-image.pdf", unsupported_image_codec_pdf("JPXDecode"))
     write("scanned-page.pdf", scanned_page_pdf())
+    write("mobile-rotated-camera-scan.pdf", mobile_rotated_camera_scan_pdf())
+    write("mobile-cropped-photo-scan.pdf", mobile_cropped_photo_scan_pdf())
+    write("mobile-ocr-overlay-scan.pdf", mobile_ocr_overlay_scan_pdf())
+    write("mobile-mixed-compression-scan.pdf", mobile_mixed_compression_scan_pdf())
     write("ocr-invisible-text-layer.pdf", ocr_invisible_text_layer_pdf())
     write("mixed-text-image.pdf", mixed_text_image_pdf())
     write("transparency-group.pdf", transparency_group_pdf())

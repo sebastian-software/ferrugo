@@ -1,0 +1,13 @@
+path	family	source	license	page_count	features	notes
+fixtures/generated/mobile-rotated-camera-scan.pdf	rotation	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	mobile-scan,camera,rotate,image,flate,expected:native	Generated mobile camera scan fixture with page rotation metadata and Flate-compressed image data.
+fixtures/generated/rotated-office-export.pdf	rotation	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	geometry,rotate,office-export,expected:native	Existing rotation fixture used as a page-orientation baseline.
+fixtures/generated/mobile-cropped-photo-scan.pdf	crop	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	mobile-scan,camera,cropbox,image,flate,expected:native	Generated mobile photo scan fixture with CropBox selection and compressed image data.
+fixtures/generated/cropped-scan-page.pdf	crop	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	geometry,cropbox,scan,expected:native	Existing cropped scan-like page using CropBox selection.
+fixtures/generated/mobile-ocr-overlay-scan.pdf	ocr-layer	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	mobile-scan,ocr,invisible-text,image,flate,expected:native	Generated mobile scan fixture with invisible OCR overlay text above an image page.
+fixtures/generated/ocr-invisible-text-layer.pdf	ocr-layer	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	ocr,invisible-text,text-rendering-mode,scan,expected:native	Existing invisible OCR text layer baseline.
+fixtures/generated/mobile-mixed-compression-scan.pdf	compression	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	mobile-scan,image,flate,dct,jpeg,mixed-compression,expected:native	Generated mobile scan fixture combining Flate and DCT image XObjects.
+fixtures/generated/dct-image.pdf	compression	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,dct,jpeg,expected:native	Existing DCTDecode Image XObject fixture.
+fixtures/generated/predictor-image.pdf	compression	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,flate,predictor,expected:native	Existing Flate PNG predictor image fixture.
+fixtures/generated/unsupported-ccitt-image.pdf	unsupported-filter	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,codec,ccitt,unsupported,expected:pdfium-fallback	Generated CCITTFaxDecode unsupported-codec fixture.
+fixtures/generated/unsupported-jbig2-image.pdf	unsupported-filter	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,codec,jbig2,unsupported,expected:pdfium-fallback	Generated JBIG2Decode unsupported-codec fixture.
+fixtures/generated/unsupported-jpx-image.pdf	unsupported-filter	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,codec,jpx,unsupported,expected:pdfium-fallback	Generated JPXDecode unsupported-codec fixture.

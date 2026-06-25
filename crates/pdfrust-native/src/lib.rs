@@ -3509,6 +3509,129 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_render_generated_mobile_scan_fixtures() {
+        type MobileScanFixture = (&'static [u8], u32, u32, u32, &'static str, usize);
+
+        let fixtures: &[MobileScanFixture] = &[
+            (
+                include_bytes!("../../../fixtures/generated/mobile-rotated-camera-scan.pdf")
+                    as &[u8],
+                320,
+                240,
+                320,
+                "mobile rotated camera scan",
+                70_000,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/mobile-cropped-photo-scan.pdf")
+                    as &[u8],
+                200,
+                260,
+                260,
+                "mobile cropped photo scan",
+                50_000,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/mobile-ocr-overlay-scan.pdf")
+                    as &[u8],
+                220,
+                300,
+                300,
+                "mobile OCR overlay scan",
+                60_000,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/mobile-mixed-compression-scan.pdf")
+                    as &[u8],
+                260,
+                180,
+                260,
+                "mobile mixed compression scan",
+                45_000,
+            ),
+        ];
+
+        for &(bytes, expected_width, expected_height, max_edge, label, min_visible_pixels) in
+            fixtures
+        {
+            let thumbnail = ThumbnailBackend::render(
+                &NativeBackend::new(),
+                PdfSource::from_bytes(bytes),
+                &ThumbnailOptions {
+                    max_edge,
+                    ..ThumbnailOptions::default()
+                },
+            )
+            .unwrap_or_else(|error| panic!("{label} fixture should render: {error}"));
+
+            assert_eq!(
+                thumbnail.width, expected_width,
+                "{label} fixture width should match"
+            );
+            assert_eq!(
+                thumbnail.height, expected_height,
+                "{label} fixture height should match"
+            );
+            let visible_pixels = thumbnail
+                .bytes
+                .chunks_exact(4)
+                .filter(|pixel| *pixel != [255, 255, 255, 255])
+                .count();
+            assert!(
+                visible_pixels >= min_visible_pixels,
+                "{label} fixture should preserve image-dominant scan content"
+            );
+        }
+    }
+
+    #[test]
+    fn native_backend_should_keep_generated_mobile_ocr_layer_invisible() {
+        let bytes = include_bytes!("../../../fixtures/generated/mobile-ocr-overlay-scan.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 300,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated mobile OCR overlay fixture should render");
+
+        assert_eq!(thumbnail.width, 220);
+        assert_eq!(thumbnail.height, 300);
+        assert_eq!(rgba_at(&thumbnail, 42, 86), [230, 230, 230, 255]);
+        assert_eq!(rgba_at(&thumbnail, 42, 114), [230, 230, 230, 255]);
+    }
+
+    #[test]
+    fn native_backend_should_inspect_generated_mobile_scan_geometry() {
+        let rotated = include_bytes!("../../../fixtures/generated/mobile-rotated-camera-scan.pdf");
+        let cropped = include_bytes!("../../../fixtures/generated/mobile-cropped-photo-scan.pdf");
+
+        let rotated_metadata =
+            DocumentMetadataBackend::inspect(&NativeBackend::new(), PdfSource::from_bytes(rotated))
+                .expect("rotated mobile scan fixture should inspect");
+        let cropped_metadata =
+            DocumentMetadataBackend::inspect(&NativeBackend::new(), PdfSource::from_bytes(cropped))
+                .expect("cropped mobile scan fixture should inspect");
+
+        assert_eq!(
+            rotated_metadata.first_page_size(),
+            Some(PageSize {
+                width: 320.0,
+                height: 240.0,
+            })
+        );
+        assert_eq!(
+            cropped_metadata.first_page_size(),
+            Some(PageSize {
+                width: 200.0,
+                height: 260.0,
+            })
+        );
+    }
+
+    #[test]
     fn native_backend_should_render_generated_rotated_office_export_fixture() {
         let bytes = include_bytes!("../../../fixtures/generated/rotated-office-export.pdf");
         let thumbnail = ThumbnailBackend::render(
