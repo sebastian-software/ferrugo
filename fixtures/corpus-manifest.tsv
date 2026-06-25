@@ -17,6 +17,7 @@ fixtures/generated/axial-gradient.pdf	report	scripts/generate_fixtures.py	MIT OR
 fixtures/generated/blend-modes.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	blend-mode,transparency	Generated Multiply and Screen blend-mode fixture.
 fixtures/generated/cid-font-text.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,type0,cid,tounicode	Generated Type0 CID font ToUnicode fixture.
 fixtures/generated/cff-fontfile3-text.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,font,cff,fontfile3	Generated Type1 font resource with embedded CFF FontFile3 fixture.
+fixtures/generated/chart-combo-legend.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	chart,dashboard,legend,bar,line,small-text	Generated combo chart fixture with bars, trend line, legend, axis, and labels.
 fixtures/generated/clipped-paths.pdf	browser-print	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	vector,clipping	Generated even-odd clipping path fixture.
 fixtures/generated/cmap-codespace-range-text.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,type0,cid,cmap,codespace,tounicode	Generated Type0 CID text fixture with an explicit ToUnicode code-space range.
 fixtures/generated/cmyk-image.pdf	scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,cmyk	Generated CMYK image color-space fixture.
@@ -26,6 +27,8 @@ fixtures/generated/dashed-stroke.pdf	report	scripts/generate_fixtures.py	MIT OR 
 fixtures/generated/devicen-spot-color.pdf	presentation	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	color,spot,devicen,tint-transform	Generated DeviceN spot-color vector fixture with Type 2 tint approximation.
 fixtures/generated/digital-signature-appearance.pdf	form	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	acroform,signature,appearance,byterange	Generated visible digital signature appearance fixture with ByteRange metadata.
 fixtures/generated/dct-image.pdf	scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,dct,jpeg	Generated DCTDecode Image XObject fixture.
+fixtures/generated/dashboard-kpi-panels.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	dashboard,kpi,transparency,sparkline,small-text	Generated dashboard fixture with KPI panels, translucent colored overlays, sparkline, and table lines.
+fixtures/generated/dashboard-heatmap-overlay.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	dashboard,heatmap,transparency,grid,small-text	Generated heatmap dashboard fixture with repeated tiles, translucent overlay, grid, and labels.
 fixtures/generated/embedded-font.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	font,truetype	Generated embedded TrueType font fixture.
 fixtures/generated/encoding-differences.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,encoding	Generated Encoding Differences text fixture.
 fixtures/generated/embedded-source-file.pdf	mixed-layout	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	embedded-file,filespec,source-attachment	Generated embedded source file fixture with catalog EmbeddedFiles name tree.
@@ -56,6 +59,7 @@ fixtures/generated/linearized-first-page.pdf	browser-print	scripts/generate_fixt
 fixtures/generated/linearized-malformed-hints.pdf	browser-print	scripts/generate_fixtures.py	MIT OR Apache-2.0	2	linearized,malformed-hints,fallback	Generated linearized-style fixture with invalid /E hint to prove safe fallback.
 fixtures/generated/malformed-xref-offset-drift.pdf	mixed-layout	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	xref,recovery	Generated malformed xref offset-drift fixture.
 fixtures/generated/malformed-tagged-structure.pdf	adversarial	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	malformed,tagged-pdf,structure-tree	Generated malformed tagged PDF structure tree fixture for metadata error classification.
+fixtures/generated/map-marker-clusters.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	map,markers,clusters,dash,small-text	Generated map-style fixture with regions, dashed routes, clustered markers, and labels.
 fixtures/generated/markup-annotations-without-appearance.pdf	mixed-layout	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	annotation,underline,square,circle,missing-appearance	Generated markup annotation fallback fixture without appearance streams.
 fixtures/generated/metadata-outline-page-labels.pdf	mixed-layout	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	metadata,outline,page-labels,named-destinations,tagged-pdf	Generated metadata fixture with info dictionary, outlines, page labels, named destinations, and tagged-PDF presence.
 fixtures/generated/mesh-shading-unsupported.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	shading,mesh,unsupported	Generated unsupported mesh shading fixture.

@@ -3563,6 +3563,136 @@ def technical_repeated_symbols_pdf() -> bytes:
     return page_pdf("[0 0 320 220]", " ".join(ops))
 
 
+def chart_combo_legend_pdf() -> bytes:
+    ops: list[str] = [
+        "q 0.99 0.99 0.98 rg 0 0 360 240 re f Q",
+        "q 0.16 0.18 0.22 RG 0.7 w 44 44 m 44 194 l 320 44 l S Q",
+        "q 0.18 0.42 0.72 rg 68 44 28 74 re f 118 44 28 110 re f 168 44 28 86 re f 218 44 28 132 re f Q",
+        "q 0.88 0.42 0.12 RG 2 w 68 94 m 118 126 l 168 112 l 218 156 l 268 140 l S Q",
+        "q 0.12 0.12 0.12 rg 278 150 10 10 re f 278 128 10 10 re f Q",
+        "q 0.18 0.42 0.72 rg 280 152 6 6 re f Q",
+        "q 0.88 0.42 0.12 RG 1.5 w 279 131 m 287 135 l S Q",
+        "BT /F1 12 Tf 48 210 Td (Revenue dashboard) Tj ET",
+        "BT /F1 7 Tf 294 151 Td (Bars) Tj 294 -22 Td (Trend) Tj ET",
+        "BT /F1 6 Tf 62 32 Td (Q1) Tj 50 0 Td (Q2) Tj 50 0 Td (Q3) Tj 50 0 Td (Q4) Tj ET",
+    ]
+    return page_pdf("[0 0 360 240]", " ".join(ops))
+
+
+def dashboard_kpi_panels_pdf() -> bytes:
+    pdf = Pdf()
+    content = (
+        b"q 0.95 0.97 0.98 rg 0 0 360 220 re f Q "
+        b"q 0.12 0.16 0.24 rg 0 184 360 36 re f Q "
+        b"q 1 1 1 rg 24 110 92 54 re f 134 110 92 54 re f 244 110 92 54 re f "
+        b"24 28 146 60 re f 190 28 146 60 re f Q "
+        b"q /Overlay gs 0.12 0.46 0.74 rg 24 110 92 18 re f "
+        b"0.86 0.38 0.12 rg 134 110 92 18 re f "
+        b"0.18 0.56 0.34 rg 244 110 92 18 re f Q "
+        b"q 0.18 0.20 0.24 RG 0.6 w 24 28 146 60 re S 190 28 146 60 re S "
+        b"34 52 m 58 62 l 82 48 l 106 70 l 136 58 l S "
+        b"202 42 m 322 42 l 202 56 m 322 56 l 202 70 m 322 70 l S Q "
+        b"BT /F1 13 Tf 24 198 Td (Operations dashboard) Tj "
+        b"/F1 8 Tf 34 146 Td (Revenue) Tj 110 0 Td (Margin) Tj 110 0 Td (Orders) Tj "
+        b"/F1 16 Tf -220 -24 Td (128k) Tj 110 0 Td (34%) Tj 110 0 Td (912) Tj "
+        b"/F1 8 Tf -220 -62 Td (Sparkline) Tj 166 0 Td (Heat table) Tj ET"
+    )
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 360 220] "
+        "/Resources << /Font << /F1 4 0 R >> "
+        "/ExtGState << /Overlay << /ca 0.74 /CA 0.74 >> >> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    font = pdf.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert font == 4
+    return pdf.render(catalog)
+
+
+def map_marker_clusters_pdf() -> bytes:
+    ops: list[str] = [
+        "q 0.92 0.96 0.91 rg 0 0 360 240 re f Q",
+        "q 0.78 0.88 0.96 rg 0 92 360 38 re f Q",
+        "q 0.76 0.84 0.70 rg 30 34 94 62 re f 220 138 94 54 re f Q",
+        "q 0.62 0.70 0.60 RG 0.7 w [5 3] 0 d 30 32 m 328 206 l S 52 198 m 310 42 l S Q",
+        "q 0.82 0.24 0.14 rg",
+    ]
+    for cluster_x, cluster_y in [(88, 78), (174, 128), (268, 164)]:
+        for dx, dy in [(-14, -8), (0, 0), (16, 7), (-6, 13), (12, -14)]:
+            x = cluster_x + dx
+            y = cluster_y + dy
+            ops.append(f"{x} {y} 7 7 re f")
+    ops.extend(
+        [
+            "Q",
+            "q 0.10 0.20 0.32 RG 1.0 w 40 28 m 322 28 l 322 212 l 40 212 l h S Q",
+            "BT /F1 9 Tf 44 218 Td (Depot coverage map) Tj ET",
+            "BT /F1 6 Tf 76 94 Td (North) Tj 162 144 Td (Central) Tj 254 180 Td (East) Tj ET",
+        ]
+    )
+    return page_pdf("[0 0 360 240]", " ".join(ops))
+
+
+def dashboard_heatmap_overlay_pdf() -> bytes:
+    pdf = Pdf()
+    ops: list[str] = [
+        "q 0.98 0.98 0.96 rg 0 0 340 220 re f Q",
+        "q 0.16 0.18 0.23 rg 0 184 340 36 re f Q",
+    ]
+    palette = [
+        "0.86 0.94 0.78",
+        "0.58 0.78 0.54",
+        "0.96 0.74 0.32",
+        "0.86 0.32 0.22",
+    ]
+    for row in range(6):
+        for col in range(10):
+            color = palette[(row * 3 + col * 2) % len(palette)]
+            x = 28 + col * 28
+            y = 54 + row * 18
+            ops.append(f"q {color} rg {x} {y} 24 14 re f Q")
+    ops.extend(
+        [
+            "q /Overlay gs 0.10 0.28 0.50 rg 28 54 276 108 re f Q",
+            "q 0.12 0.14 0.18 RG 0.45 w",
+        ]
+    )
+    for x in range(28, 305, 28):
+        ops.append(f"{x} 54 m {x} 162 l S")
+    for y in range(54, 163, 18):
+        ops.append(f"28 {y} m 304 {y} l S")
+    ops.extend(
+        [
+            "Q",
+            "BT /F1 12 Tf 24 198 Td (SLA heatmap) Tj ET",
+            "BT /F1 6 Tf 28 36 Td (Mon) Tj 56 0 Td (Tue) Tj 56 0 Td (Wed) Tj 56 0 Td (Thu) Tj 56 0 Td (Fri) Tj ET",
+        ]
+    )
+    content = " ".join(ops).encode("ascii")
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 340 220] "
+        "/Resources << /Font << /F1 4 0 R >> "
+        "/ExtGState << /Overlay << /ca 0.30 /CA 0.30 >> >> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    font = pdf.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert font == 4
+    return pdf.render(catalog)
+
+
 def page_targeted_stream_pdf() -> bytes:
     pdf = Pdf()
     content_1 = b"q 0.1 0.6 0.2 rg 20 20 80 40 re f Q"
@@ -3785,6 +3915,10 @@ def main() -> None:
     write("technical-hatch-clipping.pdf", technical_hatch_clipping_pdf())
     write("technical-large-coordinate-plan.pdf", technical_large_coordinate_plan_pdf())
     write("technical-repeated-symbols.pdf", technical_repeated_symbols_pdf())
+    write("chart-combo-legend.pdf", chart_combo_legend_pdf())
+    write("dashboard-kpi-panels.pdf", dashboard_kpi_panels_pdf())
+    write("map-marker-clusters.pdf", map_marker_clusters_pdf())
+    write("dashboard-heatmap-overlay.pdf", dashboard_heatmap_overlay_pdf())
     write("page-targeted-stream.pdf", page_targeted_stream_pdf())
 
 

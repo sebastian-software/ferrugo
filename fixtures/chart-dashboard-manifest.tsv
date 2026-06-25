@@ -1,0 +1,9 @@
+path	family	source	license	page_count	features	notes
+fixtures/generated/chart-combo-legend.pdf	chart	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	chart,dashboard,legend,bar,line,small-text,expected:native	Generated combo chart fixture with bars, trend line, legend, axis, and labels.
+fixtures/generated/slide-rotated-callout.pdf	chart	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	presentation,slide,chart,rotated-text,transparency,expected:native	Existing chart-style slide with translucent callout panel and rotated label text.
+fixtures/generated/dashboard-kpi-panels.pdf	dashboard	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	dashboard,kpi,transparency,sparkline,small-text,expected:native	Generated dashboard fixture with KPI panels, translucent colored overlays, sparkline, and table lines.
+fixtures/generated/dashboard-heatmap-overlay.pdf	dashboard	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	dashboard,heatmap,transparency,grid,small-text,expected:native	Generated heatmap dashboard fixture with repeated tiles, translucent overlay, grid, and labels.
+fixtures/generated/map-marker-clusters.pdf	map	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	map,markers,clusters,dash,small-text,expected:native	Generated map-style fixture with regions, dashed routes, clustered markers, and labels.
+fixtures/generated/clipped-paths.pdf	map	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	map,clipping,vector,expected:native	Existing clipping-path baseline used as a map-shaped clipping proxy.
+fixtures/generated/vector-stress.pdf	marker-heavy	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	vector,stress,clipping,curve,chart,expected:native	Existing vector-heavy chart stress fixture for many small path workloads.
+fixtures/generated/tiling-pattern.pdf	marker-heavy	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	pattern,tiling,dashboard,expected:native	Existing tiling pattern baseline for repeated fill workloads.

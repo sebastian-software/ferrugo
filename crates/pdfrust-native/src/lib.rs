@@ -5347,6 +5347,73 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_render_generated_chart_dashboard_fixtures() {
+        type DashboardFixture = (&'static [u8], u32, u32, &'static str, usize);
+
+        let fixtures: &[DashboardFixture] = &[
+            (
+                include_bytes!("../../../fixtures/generated/chart-combo-legend.pdf") as &[u8],
+                360,
+                240,
+                "combo chart with legend",
+                5_000,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/dashboard-kpi-panels.pdf") as &[u8],
+                360,
+                220,
+                "kpi dashboard panels",
+                8_000,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/map-marker-clusters.pdf") as &[u8],
+                360,
+                240,
+                "map marker clusters",
+                7_000,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/dashboard-heatmap-overlay.pdf")
+                    as &[u8],
+                340,
+                220,
+                "dashboard heatmap overlay",
+                20_000,
+            ),
+        ];
+
+        for &(bytes, expected_width, expected_height, label, min_visible_pixels) in fixtures {
+            let thumbnail = ThumbnailBackend::render(
+                &NativeBackend::new(),
+                PdfSource::from_bytes(bytes),
+                &ThumbnailOptions {
+                    max_edge: expected_width.max(expected_height),
+                    ..ThumbnailOptions::default()
+                },
+            )
+            .unwrap_or_else(|error| panic!("{label} fixture should render: {error}"));
+
+            assert_eq!(
+                thumbnail.width, expected_width,
+                "{label} fixture width should match"
+            );
+            assert_eq!(
+                thumbnail.height, expected_height,
+                "{label} fixture height should match"
+            );
+            let visible_pixels = thumbnail
+                .bytes
+                .chunks_exact(4)
+                .filter(|pixel| *pixel != [255, 255, 255, 255])
+                .count();
+            assert!(
+                visible_pixels >= min_visible_pixels,
+                "{label} fixture should preserve markers, labels, and panels"
+            );
+        }
+    }
+
+    #[test]
     fn native_backend_should_render_generated_multi_page_report_first_page() {
         let bytes = include_bytes!("../../../fixtures/generated/multi-page-report.pdf");
         let thumbnail = ThumbnailBackend::render(
