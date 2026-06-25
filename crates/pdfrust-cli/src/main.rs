@@ -8,10 +8,9 @@ use std::fs;
 #[cfg(feature = "pdfium")]
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::ExitCode;
 #[cfg(feature = "pdfium")]
-use std::process::{Child, Command, Stdio};
-#[cfg(feature = "pdfium")]
+use std::process::{Child, Stdio};
+use std::process::{Command, ExitCode};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -57,6 +56,7 @@ fn run(args: Vec<OsString>) -> Result<(), CliError> {
         Some("extract-corpus-metadata") => extract_corpus_metadata_command(&args[1..]),
         Some("validate-local-corpus") => validate_local_corpus_command(&args[1..]),
         Some("benchmark-native") => benchmark_native_command(&args[1..]),
+        Some("benchmark-batch-native") => benchmark_batch_native_command(&args[1..]),
         Some("benchmark-pdfium") => benchmark_pdfium_command(&args[1..]),
         Some("visual-diff") => visual_diff_command(&args[1..]),
         Some("--version" | "-V") => {
@@ -452,6 +452,44 @@ fn benchmark_native_command(args: &[OsString]) -> Result<(), CliError> {
         true,
     );
     write_benchmark_report(config, report)
+}
+
+fn benchmark_batch_native_command(args: &[OsString]) -> Result<(), CliError> {
+    let config = BatchBenchmarkConfig::parse(args)?;
+    let options = ThumbnailOptions {
+        page_index: config.page_index,
+        max_edge: config.max_edge,
+        background: config.background,
+        output_format: pdfrust_thumbnail::OutputFormat::Rgba,
+        timeout: config.timeout,
+    };
+    let fixtures = pdf_inputs(&config.input)?;
+    let manifest = match &config.manifest {
+        Some(path) => Some(read_corpus_manifest(path)?),
+        None => None,
+    };
+    let fixtures =
+        filter_fixtures_by_family(&fixtures, manifest.as_ref(), &config.include_families)?;
+    let report = benchmark_native_batch(&fixtures, &options, manifest.as_ref(), &config)?;
+    let json = batch_benchmark_report_json(&report);
+
+    if let Some(output) = config.output {
+        fs::write(&output, &json).map_err(|source| CliError::Io {
+            path: output,
+            source,
+        })?;
+    } else {
+        println!("{json}");
+    }
+
+    if config.fail_on_budget && report.budget_failures > 0 {
+        Err(CliError::Benchmark(format!(
+            "{} batch benchmark budget failure(s)",
+            report.budget_failures
+        )))
+    } else {
+        Ok(())
+    }
 }
 
 fn benchmark_pdfium_command(args: &[OsString]) -> Result<(), CliError> {
@@ -1067,6 +1105,25 @@ struct BenchmarkConfig {
     native_profile: NativeProfile,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct BatchBenchmarkConfig {
+    input: PathBuf,
+    manifest: Option<PathBuf>,
+    include_families: Vec<String>,
+    output: Option<PathBuf>,
+    page_index: u32,
+    max_edge: u32,
+    background: Rgba,
+    timeout: Duration,
+    repetitions: usize,
+    max_workers: usize,
+    max_in_flight_pixels: usize,
+    max_p95_ms: u64,
+    max_errors: usize,
+    fail_on_budget: bool,
+    native_profile: NativeProfile,
+}
+
 #[cfg(feature = "pdfium")]
 #[derive(Debug, Clone, PartialEq)]
 struct VisualDiffConfig {
@@ -1209,6 +1266,143 @@ impl BenchmarkConfig {
             iterations,
             max_ms,
             max_output_bytes,
+            fail_on_budget,
+            native_profile,
+        })
+    }
+}
+
+impl BatchBenchmarkConfig {
+    fn parse(args: &[OsString]) -> Result<Self, CliError> {
+        let mut input = None;
+        let mut manifest = None;
+        let mut include_families = Vec::new();
+        let mut output = None;
+        let mut page_index = DEFAULT_PAGE_INDEX;
+        let mut max_edge = 160;
+        let mut background = Rgba::WHITE;
+        let mut timeout = DEFAULT_TIMEOUT;
+        let mut repetitions = 2;
+        let mut max_workers = 2;
+        let mut max_in_flight_pixels = 2 * 160 * 160;
+        let mut max_p95_ms = 1000;
+        let mut max_errors = 0;
+        let mut fail_on_budget = false;
+        let mut native_profile = NativeProfile::Default;
+
+        let mut index = 0;
+        while index < args.len() {
+            let arg = args[index]
+                .to_str()
+                .ok_or_else(|| CliError::Usage("arguments must be valid UTF-8".to_string()))?;
+            match arg {
+                "--output" | "-o" => {
+                    index += 1;
+                    output = Some(required_path(args, index, "--output")?);
+                }
+                "--manifest" => {
+                    index += 1;
+                    manifest = Some(required_path(args, index, "--manifest")?);
+                }
+                "--include-family" => {
+                    index += 1;
+                    include_families
+                        .push(required_str(args, index, "--include-family")?.to_string());
+                }
+                "--page-index" => {
+                    index += 1;
+                    page_index = parse_u32(args, index, "--page-index")?;
+                }
+                "--max-edge" => {
+                    index += 1;
+                    max_edge = parse_u32(args, index, "--max-edge")?;
+                }
+                "--background" => {
+                    index += 1;
+                    background = parse_background(required_str(args, index, "--background")?)?;
+                }
+                "--timeout" => {
+                    index += 1;
+                    let seconds = parse_u64(args, index, "--timeout")?;
+                    timeout = Duration::from_secs(seconds);
+                }
+                "--repetitions" => {
+                    index += 1;
+                    repetitions = parse_usize(args, index, "--repetitions")?;
+                }
+                "--max-workers" => {
+                    index += 1;
+                    max_workers = parse_usize(args, index, "--max-workers")?;
+                }
+                "--max-in-flight-pixels" => {
+                    index += 1;
+                    max_in_flight_pixels = parse_usize(args, index, "--max-in-flight-pixels")?;
+                }
+                "--max-p95-ms" => {
+                    index += 1;
+                    max_p95_ms = parse_u64(args, index, "--max-p95-ms")?;
+                }
+                "--max-errors" => {
+                    index += 1;
+                    max_errors = parse_usize(args, index, "--max-errors")?;
+                }
+                "--fail-on-budget" => {
+                    fail_on_budget = true;
+                }
+                "--native-profile" => {
+                    index += 1;
+                    native_profile =
+                        parse_native_profile(required_str(args, index, "--native-profile")?)?;
+                }
+                value if value.starts_with('-') => {
+                    return Err(CliError::Usage(format!("unknown option `{value}`")));
+                }
+                value => {
+                    if input.replace(PathBuf::from(value)).is_some() {
+                        return Err(CliError::Usage(
+                            "only one input path is supported".to_string(),
+                        ));
+                    }
+                }
+            }
+            index += 1;
+        }
+
+        if max_edge == 0 {
+            return Err(CliError::Usage(
+                "--max-edge must be greater than zero".to_string(),
+            ));
+        }
+        if repetitions == 0 {
+            return Err(CliError::Usage(
+                "--repetitions must be greater than zero".to_string(),
+            ));
+        }
+        if max_workers == 0 {
+            return Err(CliError::Usage(
+                "--max-workers must be greater than zero".to_string(),
+            ));
+        }
+        if max_in_flight_pixels == 0 {
+            return Err(CliError::Usage(
+                "--max-in-flight-pixels must be greater than zero".to_string(),
+            ));
+        }
+
+        Ok(Self {
+            input: input.ok_or_else(|| CliError::Usage("missing input path".to_string()))?,
+            manifest,
+            include_families,
+            output,
+            page_index,
+            max_edge,
+            background,
+            timeout,
+            repetitions,
+            max_workers,
+            max_in_flight_pixels,
+            max_p95_ms,
+            max_errors,
             fail_on_budget,
             native_profile,
         })
@@ -1515,6 +1709,100 @@ struct BenchmarkReport {
     max_output_bytes: usize,
     families: BTreeMap<String, FamilyBenchmarkSummary>,
     fixtures: Vec<BenchmarkRecord>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct BatchBenchmarkReport {
+    platform: PlatformMetadata,
+    total_inputs: usize,
+    total_jobs: usize,
+    native_rendered: usize,
+    fallback_required: usize,
+    errors: usize,
+    budget_failures: usize,
+    workers: usize,
+    repetitions: usize,
+    elapsed_ms: f64,
+    throughput_per_sec: f64,
+    max_p95_ms: u64,
+    max_errors: usize,
+    memory: BatchMemorySummary,
+    latency: BatchLatencySummary,
+    families: BTreeMap<String, BatchFamilySummary>,
+    records: Vec<BatchBenchmarkRecord>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+struct BatchMemorySummary {
+    rss_start_kib: Option<u64>,
+    rss_high_water_kib: Option<u64>,
+    rss_end_kib: Option<u64>,
+    max_in_flight_pixels: usize,
+    max_output_bytes: usize,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+struct BatchLatencySummary {
+    mean_ms: f64,
+    p50_ms: f64,
+    p95_ms: f64,
+    max_ms: f64,
+}
+
+#[derive(Debug, Clone, Default, PartialEq)]
+struct BatchFamilySummary {
+    total: usize,
+    native_rendered: usize,
+    fallback_required: usize,
+    errors: usize,
+    mean_ms: f64,
+    max_ms: f64,
+}
+
+impl BatchFamilySummary {
+    fn record(&mut self, record: &BatchBenchmarkRecord) {
+        self.total += 1;
+        self.mean_ms += record.elapsed_ms;
+        self.max_ms = self.max_ms.max(record.elapsed_ms);
+        match &record.outcome {
+            BatchBenchmarkOutcome::NativeRendered { .. } => self.native_rendered += 1,
+            BatchBenchmarkOutcome::FallbackRequired { .. } => self.fallback_required += 1,
+            BatchBenchmarkOutcome::Error { .. } => self.errors += 1,
+        }
+    }
+
+    fn finish(&mut self) {
+        if self.total > 0 {
+            self.mean_ms /= self.total as f64;
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct BatchBenchmarkRecord {
+    path: String,
+    family: String,
+    repetition: usize,
+    page_index: u32,
+    elapsed_ms: f64,
+    outcome: BatchBenchmarkOutcome,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum BatchBenchmarkOutcome {
+    NativeRendered {
+        width: u32,
+        height: u32,
+        output_bytes: usize,
+    },
+    FallbackRequired {
+        reason: FallbackReason,
+        message: String,
+    },
+    Error {
+        class: &'static str,
+        message: String,
+    },
 }
 
 #[cfg(feature = "pdfium")]
@@ -1894,6 +2182,264 @@ fn extract_native_corpus_metadata(
             }
         })
         .collect()
+}
+
+#[derive(Debug, Clone)]
+struct BatchJob {
+    path: PathBuf,
+    path_key: String,
+    family: String,
+    repetition: usize,
+}
+
+fn benchmark_native_batch(
+    paths: &[PathBuf],
+    options: &ThumbnailOptions,
+    manifest: Option<&CorpusManifest>,
+    config: &BatchBenchmarkConfig,
+) -> Result<BatchBenchmarkReport, CliError> {
+    let workers = effective_batch_workers(config, options)?;
+    let jobs = batch_jobs(paths, manifest, config.repetitions);
+    let mut records = Vec::with_capacity(jobs.len());
+    let mut memory = BatchMemorySummary {
+        rss_start_kib: current_rss_kib(),
+        rss_high_water_kib: None,
+        rss_end_kib: None,
+        max_in_flight_pixels: config.max_in_flight_pixels,
+        max_output_bytes: 0,
+    };
+    memory.rss_high_water_kib = memory.rss_start_kib;
+    let started = Instant::now();
+
+    for chunk in jobs.chunks(workers) {
+        let batch = thread::scope(|scope| {
+            chunk
+                .iter()
+                .map(|job| {
+                    scope.spawn(move || {
+                        benchmark_batch_job(
+                            config.native_profile.backend(),
+                            job,
+                            options,
+                            config.page_index,
+                        )
+                    })
+                })
+                .collect::<Vec<_>>()
+                .into_iter()
+                .map(|handle| {
+                    handle
+                        .join()
+                        .map_err(|_| CliError::Benchmark("batch worker panicked".to_string()))
+                })
+                .collect::<Result<Vec<_>, CliError>>()
+        })?;
+        for record in batch {
+            if let BatchBenchmarkOutcome::NativeRendered { output_bytes, .. } = &record.outcome {
+                memory.max_output_bytes = memory.max_output_bytes.max(*output_bytes);
+            }
+            records.push(record);
+        }
+        memory.rss_high_water_kib = max_optional_u64(memory.rss_high_water_kib, current_rss_kib());
+    }
+
+    memory.rss_end_kib = current_rss_kib();
+    memory.rss_high_water_kib = max_optional_u64(memory.rss_high_water_kib, memory.rss_end_kib);
+    Ok(batch_report_from_records(
+        paths.len(),
+        workers,
+        config,
+        records,
+        memory,
+        elapsed_ms(started.elapsed()),
+    ))
+}
+
+fn effective_batch_workers(
+    config: &BatchBenchmarkConfig,
+    options: &ThumbnailOptions,
+) -> Result<usize, CliError> {
+    let pixels_per_job = (options.max_edge as usize)
+        .checked_mul(options.max_edge as usize)
+        .ok_or_else(|| CliError::Benchmark("batch max-edge pixel budget overflow".to_string()))?;
+    if pixels_per_job == 0 {
+        return Err(CliError::Benchmark(
+            "batch max-edge pixel budget must be non-zero".to_string(),
+        ));
+    }
+    let memory_limited_workers = config.max_in_flight_pixels / pixels_per_job;
+    if memory_limited_workers == 0 {
+        return Err(CliError::Benchmark(
+            "batch memory budget cannot schedule one render job".to_string(),
+        ));
+    }
+    Ok(config.max_workers.min(memory_limited_workers).max(1))
+}
+
+fn batch_jobs(
+    paths: &[PathBuf],
+    manifest: Option<&CorpusManifest>,
+    repetitions: usize,
+) -> Vec<BatchJob> {
+    let mut jobs = Vec::with_capacity(paths.len() * repetitions);
+    for repetition in 0..repetitions {
+        for path in paths {
+            let path_key = normalize_manifest_path(path);
+            let family = manifest
+                .and_then(|manifest| manifest.family_for_path(path))
+                .unwrap_or("unclassified")
+                .to_string();
+            jobs.push(BatchJob {
+                path: path.clone(),
+                path_key,
+                family,
+                repetition,
+            });
+        }
+    }
+    jobs
+}
+
+fn benchmark_batch_job(
+    native: NativeBackend,
+    job: &BatchJob,
+    options: &ThumbnailOptions,
+    page_index: u32,
+) -> BatchBenchmarkRecord {
+    let started = Instant::now();
+    let outcome = match native.render(PdfSource::from_path(&job.path), options) {
+        Ok(thumbnail) => BatchBenchmarkOutcome::NativeRendered {
+            width: thumbnail.width,
+            height: thumbnail.height,
+            output_bytes: thumbnail.bytes.len(),
+        },
+        Err(error) if error.class() == pdfrust_thumbnail::ThumbnailErrorClass::Unsupported => {
+            BatchBenchmarkOutcome::FallbackRequired {
+                reason: FallbackReason::from_native_error(&error),
+                message: error.to_string(),
+            }
+        }
+        Err(error) => BatchBenchmarkOutcome::Error {
+            class: error.class().as_str(),
+            message: error.to_string(),
+        },
+    };
+
+    BatchBenchmarkRecord {
+        path: job.path_key.clone(),
+        family: job.family.clone(),
+        repetition: job.repetition,
+        page_index,
+        elapsed_ms: elapsed_ms(started.elapsed()),
+        outcome,
+    }
+}
+
+fn batch_report_from_records(
+    total_inputs: usize,
+    workers: usize,
+    config: &BatchBenchmarkConfig,
+    records: Vec<BatchBenchmarkRecord>,
+    memory: BatchMemorySummary,
+    elapsed_ms: f64,
+) -> BatchBenchmarkReport {
+    let mut native_rendered = 0;
+    let mut fallback_required = 0;
+    let mut errors = 0;
+    let mut families = BTreeMap::new();
+    for record in &records {
+        match &record.outcome {
+            BatchBenchmarkOutcome::NativeRendered { .. } => native_rendered += 1,
+            BatchBenchmarkOutcome::FallbackRequired { .. } => fallback_required += 1,
+            BatchBenchmarkOutcome::Error { .. } => errors += 1,
+        }
+        families
+            .entry(record.family.clone())
+            .or_insert_with(BatchFamilySummary::default)
+            .record(record);
+    }
+    for summary in families.values_mut() {
+        summary.finish();
+    }
+    let latency = batch_latency_summary(&records);
+    let mut budget_failures = 0;
+    if latency.p95_ms > config.max_p95_ms as f64 {
+        budget_failures += 1;
+    }
+    if errors + fallback_required > config.max_errors {
+        budget_failures += 1;
+    }
+    let elapsed_secs = (elapsed_ms / 1000.0).max(f64::EPSILON);
+    let total_jobs = records.len();
+
+    BatchBenchmarkReport {
+        platform: PlatformMetadata::current(),
+        total_inputs,
+        total_jobs,
+        native_rendered,
+        fallback_required,
+        errors,
+        budget_failures,
+        workers,
+        repetitions: config.repetitions,
+        elapsed_ms,
+        throughput_per_sec: total_jobs as f64 / elapsed_secs,
+        max_p95_ms: config.max_p95_ms,
+        max_errors: config.max_errors,
+        memory,
+        latency,
+        families,
+        records,
+    }
+}
+
+fn batch_latency_summary(records: &[BatchBenchmarkRecord]) -> BatchLatencySummary {
+    if records.is_empty() {
+        return BatchLatencySummary::default();
+    }
+    let mut values = records
+        .iter()
+        .map(|record| record.elapsed_ms)
+        .collect::<Vec<_>>();
+    values.sort_by(f64::total_cmp);
+    let total = values.iter().sum::<f64>();
+    BatchLatencySummary {
+        mean_ms: total / values.len() as f64,
+        p50_ms: percentile(&values, 0.50),
+        p95_ms: percentile(&values, 0.95),
+        max_ms: *values.last().expect("values is non-empty"),
+    }
+}
+
+fn percentile(sorted_values: &[f64], percentile: f64) -> f64 {
+    let index = ((sorted_values.len() as f64 * percentile).ceil() as usize)
+        .saturating_sub(1)
+        .min(sorted_values.len() - 1);
+    sorted_values[index]
+}
+
+fn current_rss_kib() -> Option<u64> {
+    let pid = std::process::id().to_string();
+    let output = Command::new("ps")
+        .args(["-o", "rss=", "-p", pid.as_str()])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    String::from_utf8_lossy(&output.stdout)
+        .trim()
+        .parse::<u64>()
+        .ok()
+}
+
+const fn max_optional_u64(left: Option<u64>, right: Option<u64>) -> Option<u64> {
+    match (left, right) {
+        (Some(left), Some(right)) => Some(if left > right { left } else { right }),
+        (Some(left), None) => Some(left),
+        (None, Some(right)) => Some(right),
+        (None, None) => None,
+    }
 }
 
 fn benchmark_backend<B: ThumbnailBackend>(
@@ -2336,6 +2882,10 @@ fn percentile_delta(histogram: &[usize; 256], total: usize, percentile: f64) -> 
 
 fn elapsed_mean_ms(duration: Duration, iterations: usize) -> f64 {
     duration.as_secs_f64() * 1000.0 / iterations as f64
+}
+
+fn elapsed_ms(duration: Duration) -> f64 {
+    duration.as_secs_f64() * 1000.0
 }
 
 impl CorpusManifest {
@@ -3163,6 +3713,182 @@ fn benchmark_report_json(report: &BenchmarkReport) -> String {
     )
 }
 
+fn batch_benchmark_report_json(report: &BatchBenchmarkReport) -> String {
+    let records = report
+        .records
+        .iter()
+        .map(batch_benchmark_record_json)
+        .collect::<Vec<_>>()
+        .join(",");
+    format!(
+        concat!(
+            "{{\n",
+            "  \"schema_version\": 1,\n",
+            "  \"backend\": \"rust-native\",\n",
+            "  \"platform\": {},\n",
+            "  \"config\": {{\"repetitions\":{},\"workers\":{},\"max_p95_ms\":{},\"max_errors\":{},\"max_in_flight_pixels\":{}}},\n",
+            "  \"summary\": {{\"total_inputs\":{},\"total_jobs\":{},\"native_rendered\":{},\"fallback_required\":{},\"errors\":{},\"budget_failures\":{},\"elapsed_ms\":{:.3},\"throughput_per_sec\":{:.3}}},\n",
+            "  \"latency\": {},\n",
+            "  \"memory\": {},\n",
+            "  \"families\": {},\n",
+            "  \"records\": [{}]\n",
+            "}}\n"
+        ),
+        platform_metadata_json(&report.platform),
+        report.repetitions,
+        report.workers,
+        report.max_p95_ms,
+        report.max_errors,
+        report.memory.max_in_flight_pixels,
+        report.total_inputs,
+        report.total_jobs,
+        report.native_rendered,
+        report.fallback_required,
+        report.errors,
+        report.budget_failures,
+        report.elapsed_ms,
+        report.throughput_per_sec,
+        batch_latency_summary_json(&report.latency),
+        batch_memory_summary_json(&report.memory),
+        batch_family_map_json(&report.families),
+        records
+    )
+}
+
+fn batch_latency_summary_json(summary: &BatchLatencySummary) -> String {
+    format!(
+        concat!(
+            "{{",
+            "\"mean_ms\":{:.3},",
+            "\"p50_ms\":{:.3},",
+            "\"p95_ms\":{:.3},",
+            "\"max_ms\":{:.3}",
+            "}}"
+        ),
+        summary.mean_ms, summary.p50_ms, summary.p95_ms, summary.max_ms
+    )
+}
+
+fn batch_memory_summary_json(summary: &BatchMemorySummary) -> String {
+    format!(
+        concat!(
+            "{{",
+            "\"rss_start_kib\":{},",
+            "\"rss_high_water_kib\":{},",
+            "\"rss_end_kib\":{},",
+            "\"max_in_flight_pixels\":{},",
+            "\"max_output_bytes\":{}",
+            "}}"
+        ),
+        optional_json_u64(summary.rss_start_kib),
+        optional_json_u64(summary.rss_high_water_kib),
+        optional_json_u64(summary.rss_end_kib),
+        summary.max_in_flight_pixels,
+        summary.max_output_bytes
+    )
+}
+
+fn batch_family_map_json(families: &BTreeMap<String, BatchFamilySummary>) -> String {
+    let values = families
+        .iter()
+        .map(|(family, summary)| {
+            format!(
+                "{}:{}",
+                json_string(family),
+                batch_family_summary_json(summary)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    format!("{{{values}}}")
+}
+
+fn batch_family_summary_json(summary: &BatchFamilySummary) -> String {
+    format!(
+        concat!(
+            "{{",
+            "\"total\":{},",
+            "\"native_rendered\":{},",
+            "\"fallback_required\":{},",
+            "\"errors\":{},",
+            "\"mean_ms\":{:.3},",
+            "\"max_ms\":{:.3}",
+            "}}"
+        ),
+        summary.total,
+        summary.native_rendered,
+        summary.fallback_required,
+        summary.errors,
+        summary.mean_ms,
+        summary.max_ms
+    )
+}
+
+fn batch_benchmark_record_json(record: &BatchBenchmarkRecord) -> String {
+    format!(
+        concat!(
+            "{{",
+            "\"path\":{},",
+            "\"family\":{},",
+            "\"repetition\":{},",
+            "\"page_index\":{},",
+            "\"elapsed_ms\":{:.3},",
+            "\"outcome\":{}",
+            "}}"
+        ),
+        json_string(&record.path),
+        json_string(&record.family),
+        record.repetition,
+        record.page_index,
+        record.elapsed_ms,
+        batch_benchmark_outcome_json(&record.outcome)
+    )
+}
+
+fn batch_benchmark_outcome_json(outcome: &BatchBenchmarkOutcome) -> String {
+    match outcome {
+        BatchBenchmarkOutcome::NativeRendered {
+            width,
+            height,
+            output_bytes,
+        } => format!(
+            concat!(
+                "{{",
+                "\"status\":\"native_rendered\",",
+                "\"width\":{},",
+                "\"height\":{},",
+                "\"output_bytes\":{}",
+                "}}"
+            ),
+            width, height, output_bytes
+        ),
+        BatchBenchmarkOutcome::FallbackRequired { reason, message } => format!(
+            concat!(
+                "{{",
+                "\"status\":\"fallback_required\",",
+                "\"reason\":{},",
+                "\"category\":{},",
+                "\"message\":{}",
+                "}}"
+            ),
+            json_string(reason.as_str()),
+            json_string(reason.category()),
+            json_string(message)
+        ),
+        BatchBenchmarkOutcome::Error { class, message } => format!(
+            concat!(
+                "{{",
+                "\"status\":\"error\",",
+                "\"class\":{},",
+                "\"message\":{}",
+                "}}"
+            ),
+            json_string(class),
+            json_string(message)
+        ),
+    }
+}
+
 fn platform_metadata_json(platform: &PlatformMetadata) -> String {
     format!(
         concat!(
@@ -3609,6 +4335,10 @@ fn optional_json_bool(value: Option<bool>) -> &'static str {
     }
 }
 
+fn optional_json_u64(value: Option<u64>) -> String {
+    value.map_or_else(|| "null".to_string(), |value| value.to_string())
+}
+
 fn json_string_array(values: &[String]) -> String {
     let values = values
         .iter()
@@ -3734,9 +4464,9 @@ fn crc32(bytes: impl IntoIterator<Item = u8>) -> u32 {
 
 fn print_usage() {
     println!(
-        "Usage: pdfrust-cli <render|render-auto|render-native|render-pdfium|render-isolated|compare-metadata|summarize-fallbacks|extract-corpus-metadata|validate-local-corpus|benchmark-native|benchmark-pdfium|visual-diff> <input.pdf> \
+        "Usage: pdfrust-cli <render|render-auto|render-native|render-pdfium|render-isolated|compare-metadata|summarize-fallbacks|extract-corpus-metadata|validate-local-corpus|benchmark-native|benchmark-batch-native|benchmark-pdfium|visual-diff> <input.pdf> \
          [--output PATH] [--page-index N] [--max-edge N] [--background #RRGGBB] \
-         [--timeout SECONDS] [--iterations N] [--max-ms N] [--max-output-bytes N] \
+         [--timeout SECONDS] [--iterations N] [--repetitions N] [--max-workers N] [--max-in-flight-pixels N] [--max-ms N] [--max-p95-ms N] [--max-output-bytes N] \
          [--allow-pdfium-fallback] [--native-only] [--deny-fallback-reason BUCKET] [--manifest PATH] [--include-family FAMILY] \
          [--allow-missing] [--max-mae N] [--max-p95 N] [--max-changed-ratio N]"
     );
@@ -4231,6 +4961,93 @@ status = "candidate"
         .expect("valid benchmark config");
 
         assert_eq!(config.native_profile, NativeProfile::LowMemory);
+    }
+
+    #[test]
+    fn batch_benchmark_config_should_apply_defaults_and_worker_budget() {
+        let config = BatchBenchmarkConfig::parse(&[
+            OsString::from("fixtures/generated"),
+            OsString::from("--manifest"),
+            OsString::from("fixtures/corpus-manifest.tsv"),
+            OsString::from("--repetitions"),
+            OsString::from("3"),
+            OsString::from("--max-workers"),
+            OsString::from("4"),
+            OsString::from("--max-in-flight-pixels"),
+            OsString::from("25600"),
+        ])
+        .expect("valid batch benchmark config");
+        let options = ThumbnailOptions {
+            page_index: 0,
+            max_edge: 160,
+            background: Rgba::WHITE,
+            output_format: pdfrust_thumbnail::OutputFormat::Rgba,
+            timeout: Duration::from_secs(5),
+        };
+
+        assert_eq!(config.repetitions, 3);
+        assert_eq!(config.max_workers, 4);
+        assert_eq!(
+            effective_batch_workers(&config, &options).expect("workers"),
+            1
+        );
+        assert_eq!(config.native_profile, NativeProfile::Default);
+    }
+
+    #[test]
+    fn batch_benchmark_should_report_throughput_latency_memory_and_typed_errors() {
+        let fixture_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let manifest_path = fixture_root.join("fixtures/corpus-manifest.tsv");
+        let manifest = read_corpus_manifest(&manifest_path).expect("manifest should parse");
+        let paths = vec![
+            fixture_root.join("fixtures/generated/text-page.pdf"),
+            fixture_root.join("fixtures/generated/optional-content-ocmd.pdf"),
+        ];
+        let options = ThumbnailOptions {
+            page_index: 0,
+            max_edge: 120,
+            background: Rgba::WHITE,
+            output_format: pdfrust_thumbnail::OutputFormat::Rgba,
+            timeout: Duration::from_secs(5),
+        };
+        let config = BatchBenchmarkConfig {
+            input: fixture_root.join("fixtures/generated"),
+            manifest: Some(manifest_path),
+            include_families: Vec::new(),
+            output: None,
+            page_index: 0,
+            max_edge: 120,
+            background: Rgba::WHITE,
+            timeout: Duration::from_secs(5),
+            repetitions: 2,
+            max_workers: 2,
+            max_in_flight_pixels: 120 * 120 * 2,
+            max_p95_ms: 60_000,
+            max_errors: 2,
+            fail_on_budget: false,
+            native_profile: NativeProfile::Default,
+        };
+
+        let report = benchmark_native_batch(&paths, &options, Some(&manifest), &config)
+            .expect("batch benchmark should run");
+        let json = batch_benchmark_report_json(&report);
+
+        assert_eq!(report.total_inputs, 2);
+        assert_eq!(report.total_jobs, 4);
+        assert_eq!(report.native_rendered, 2);
+        assert_eq!(report.fallback_required, 2);
+        assert_eq!(report.errors, 0);
+        assert_eq!(report.budget_failures, 0);
+        assert_eq!(report.workers, 2);
+        assert!(report.throughput_per_sec > 0.0);
+        assert!(report.latency.p95_ms >= report.latency.p50_ms);
+        assert!(report.memory.max_output_bytes > 0);
+        assert!(json.contains("\"throughput_per_sec\""));
+        assert!(json.contains("\"latency\""));
+        assert!(json.contains("\"memory\""));
+        assert!(json.contains("\"page_index\":0"));
+        assert!(json.contains("\"status\":\"fallback_required\""));
+        assert!(json.contains("\"category\":\"graphics.optional-content\""));
     }
 
     #[test]

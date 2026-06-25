@@ -1,0 +1,9 @@
+path	family	source	license	page_count	features	notes
+fixtures/generated/text-page.pdf	small	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,simple	Small text document for high-count server batch baselines.
+fixtures/generated/office-table.pdf	small	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	office,table,text	Office-style table document for small mixed batch baselines.
+fixtures/generated/business-invoice-dense.pdf	mixed-size	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	invoice,dense-text,table	Dense invoice for business-document batch throughput.
+fixtures/generated/scientific-two-column-paper.pdf	mixed-size	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	scientific,two-column,text,figure	Scientific paper layout for mixed-size batch throughput.
+fixtures/generated/mobile-cropped-photo-scan.pdf	image-heavy	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	scan,cropbox,image	Image-dominant mobile scan for decoded-image batch cost.
+fixtures/generated/chart-combo-legend.pdf	mixed-size	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	chart,dashboard,legend	Chart/dashboard export for mixed vector/text batch work.
+fixtures/generated/longform-repeated-resources.pdf	repeated-resources	scripts/generate_fixtures.py	MIT OR Apache-2.0	3	text,repeated-resources,longform	Repeated resource document for cache and isolation observation.
+fixtures/generated/vector-stress.pdf	vector-stress	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	vector,path-stress	Vector stress document for latency tail observation.
