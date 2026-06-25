@@ -3379,6 +3379,98 @@ def slide_speaker_notes_page_pdf() -> bytes:
     )
 
 
+def spreadsheet_frozen_header_pdf() -> bytes:
+    lines: list[str] = [
+        "q 0.99 0.99 0.97 rg 0 0 320 200 re f Q",
+        "q 0.18 0.28 0.42 rg 24 152 272 24 re f Q",
+        "q 0.86 0.92 0.98 rg 24 32 46 120 re f Q",
+        "q 0.08 0.12 0.18 RG 0.5 w",
+    ]
+    for x in range(24, 297, 34):
+        lines.append(f"{x} 32 m {x} 176 l S")
+    for y in range(32, 177, 12):
+        lines.append(f"24 {y} m 296 {y} l S")
+    lines.append("0.95 0.42 0.12 RG 1.5 w 70 32 m 70 176 l S 24 152 m 296 152 l S Q")
+    lines.append("BT /F1 7 Tf 30 162 Td (Region) Tj 48 0 Td (Q1) Tj 34 0 Td (Q2) Tj 34 0 Td (Q3) Tj 34 0 Td (Q4) Tj ET")
+    for row in range(8):
+        y = 140 - row * 12
+        lines.append(
+            f"BT /F1 6 Tf 30 {y} Td (R{row + 1}) Tj 48 0 Td ({120 + row}) Tj "
+            f"34 0 Td ({132 + row}) Tj 34 0 Td ({141 + row}) Tj 34 0 Td ({155 + row}) Tj ET"
+        )
+    return page_pdf("[0 0 320 200]", " ".join(lines))
+
+
+def spreadsheet_dense_numeric_grid_pdf() -> bytes:
+    lines: list[str] = [
+        "q 1 1 1 rg 0 0 320 220 re f Q",
+        "q 0.92 0.95 0.98 rg 18 184 284 18 re f Q",
+        "q 0.34 0.34 0.34 RG 0.35 w",
+    ]
+    for x in range(18, 303, 28):
+        lines.append(f"{x} 26 m {x} 202 l S")
+    for y in range(26, 203, 10):
+        lines.append(f"18 {y} m 302 {y} l S")
+    lines.append("Q")
+    lines.append("BT /F1 5 Tf 22 191 Td (Dense spreadsheet export) Tj ET")
+    for row in range(14):
+        y = 174 - row * 10
+        cells = [
+            f"BT /F1 4 Tf 22 {y} Td ({row + 1:02d}) Tj",
+            f"26 0 Td ({1000 + row * 7}) Tj",
+            f"28 0 Td ({2000 + row * 9}) Tj",
+            f"28 0 Td ({3000 + row * 11}) Tj",
+            f"28 0 Td ({4000 + row * 13}) Tj",
+            f"28 0 Td ({5000 + row * 17}) Tj",
+            "ET",
+        ]
+        lines.append(" ".join(cells))
+    return page_pdf("[0 0 320 220]", " ".join(lines))
+
+
+def spreadsheet_clipped_cells_pdf() -> bytes:
+    lines: list[str] = [
+        "q 0.97 0.98 1 rg 0 0 260 180 re f Q",
+        "q 0.16 0.20 0.30 rg 20 138 220 20 re f Q",
+        "q 0.18 0.20 0.24 RG 0.5 w",
+    ]
+    for x in range(20, 241, 44):
+        lines.append(f"{x} 38 m {x} 158 l S")
+    for y in range(38, 159, 20):
+        lines.append(f"20 {y} m 240 {y} l S")
+    lines.append("Q")
+    for row in range(5):
+        for col in range(5):
+            x = 24 + col * 44
+            y = 122 - row * 20
+            lines.append(
+                f"q {x} {y} 36 12 re W n BT /F1 6 Tf {x} {y + 3} Td "
+                f"(Cell {row + 1}-{col + 1} overflow text) Tj ET Q"
+            )
+    return page_pdf("[0 0 260 180]", " ".join(lines))
+
+
+def spreadsheet_vector_stress_grid_pdf() -> bytes:
+    lines: list[str] = [
+        "q 0.98 0.98 0.98 rg 0 0 360 240 re f Q",
+        "q 0.25 0.25 0.25 RG 0.35 w",
+    ]
+    for x in range(18, 343, 13):
+        lines.append(f"{x} 24 m {x} 218 l S")
+    for y in range(24, 219, 8):
+        lines.append(f"18 {y} m 342 {y} l S")
+    lines.append("Q")
+    lines.append("q 0.10 0.28 0.52 rg 18 202 324 16 re f Q")
+    for row in range(18):
+        y = 190 - row * 8
+        lines.append(
+            f"BT /F1 4 Tf 22 {y} Td ({row:02d}) Tj 39 0 Td ({row * 17 + 3}) Tj "
+            f"52 0 Td ({row * 19 + 5}) Tj 52 0 Td ({row * 23 + 7}) Tj "
+            f"52 0 Td ({row * 29 + 11}) Tj ET"
+        )
+    return page_pdf("[0 0 360 240]", " ".join(lines))
+
+
 def page_targeted_stream_pdf() -> bytes:
     pdf = Pdf()
     content_1 = b"q 0.1 0.6 0.2 rg 20 20 80 40 re f Q"
@@ -3593,6 +3685,10 @@ def main() -> None:
     write("slide-layered-image-shadow.pdf", slide_layered_image_shadow_pdf())
     write("slide-rotated-callout.pdf", slide_rotated_callout_pdf())
     write("slide-speaker-notes-page.pdf", slide_speaker_notes_page_pdf())
+    write("spreadsheet-frozen-header.pdf", spreadsheet_frozen_header_pdf())
+    write("spreadsheet-dense-numeric-grid.pdf", spreadsheet_dense_numeric_grid_pdf())
+    write("spreadsheet-clipped-cells.pdf", spreadsheet_clipped_cells_pdf())
+    write("spreadsheet-vector-stress-grid.pdf", spreadsheet_vector_stress_grid_pdf())
     write("page-targeted-stream.pdf", page_targeted_stream_pdf())
 
 

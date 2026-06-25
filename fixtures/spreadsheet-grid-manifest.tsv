@@ -1,0 +1,8 @@
+path	family	source	license	page_count	features	notes
+fixtures/generated/spreadsheet-frozen-header.pdf	frozen-header	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	spreadsheet,grid,frozen-header,thin-strokes,small-text,expected:native	Generated spreadsheet export with frozen row and column guide lines plus dense cells.
+fixtures/generated/spreadsheet-dense-numeric-grid.pdf	dense-grid	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	spreadsheet,dense-grid,numeric,thin-strokes,small-text,expected:native	Generated dense numeric spreadsheet grid with small repeated cell text.
+fixtures/generated/spreadsheet-clipped-cells.pdf	clipped-cells	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	spreadsheet,clipping,cells,overflow-text,expected:native	Generated spreadsheet grid with per-cell clipping and overflowing text labels.
+fixtures/generated/spreadsheet-vector-stress-grid.pdf	stress-grid	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	spreadsheet,grid,vector-stress,thin-strokes,small-text,expected:native	Generated high-line-count spreadsheet grid for repeated stroke benchmarking.
+fixtures/generated/office-table.pdf	frozen-header	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	spreadsheet,table,text,expected:native	Existing office table baseline with ruled cells.
+fixtures/generated/account-statement-ledger.pdf	dense-grid	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	spreadsheet,ledger,dense-table,expected:native	Existing ledger-style dense business table baseline.
+fixtures/generated/vector-stress.pdf	stress-grid	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	spreadsheet,vector-stress,chart,expected:native	Existing vector-heavy stress baseline for repeated path workloads.
