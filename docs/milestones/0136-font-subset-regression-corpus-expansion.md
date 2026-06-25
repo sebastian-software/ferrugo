@@ -1,6 +1,6 @@
 # 0136: Font Subset Regression Corpus Expansion
 
-Status: todo
+Status: done
 Phase: 25
 Size: medium
 Depends on: 0135
@@ -46,4 +46,17 @@ office, browser, report, and publishing exports.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-26.
+
+- Added five generated reduced fixtures for subset TrueType, CFF, Type0 CID,
+  Type3, and missing-font cases.
+- Added `fixtures/font-subset-manifest.tsv` and registered the same fixtures in
+  the main corpus manifest under `office-export`.
+- Added native backend regression coverage proving the fixtures render visibly
+  without fallback.
+- Documented the font subset support matrix and measured benchmark results in
+  `docs/reports/font-subset-regression-2026-06-26.md`.
+- Validation passed: `cargo fmt --check`, focused native test, font subset
+  fallback summary, font subset benchmark, `cargo check --workspace`,
+  `cargo clippy --workspace --all-targets --all-features -- -D warnings`,
+  `cargo test --workspace`, and `cargo test --workspace --no-default-features`.

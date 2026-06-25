@@ -34,7 +34,6 @@ when the server renderer is already correct and bounded.
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
-| 0136 | [Font Subset Regression Corpus Expansion](0136-font-subset-regression-corpus-expansion.md) | 25 | medium | 0135 |
 | 0137 | [Image Downsampling And Color Conversion Optimization](0137-image-downsampling-and-color-conversion-optimization.md) | 25 | medium | 0136 |
 | 0138 | [Transparency And Blend Conformance Corpus](0138-transparency-and-blend-conformance-corpus.md) | 25 | medium | 0137 |
 | 0139 | [Native Renderer Security And Fuzz Refresh](0139-native-renderer-security-and-fuzz-refresh.md) | 25 | medium | 0138 |
@@ -129,6 +128,7 @@ when the server renderer is already correct and bounded.
 
 | ID | Milestone | Phase | Size | Completed |
 | --- | --- | --- | --- | --- |
+| 0136 | [Font Subset Regression Corpus Expansion](0136-font-subset-regression-corpus-expansion.md) | 25 | medium | 2026-06-26 |
 | 0135 | [Renderer Diagnostics And Debug Artifact Bundle](0135-renderer-diagnostics-and-debug-artifact-bundle.md) | 24 | medium | 2026-06-25 |
 | 0134 | [Persistent Page Cache And Reuse Policy](0134-persistent-page-cache-and-reuse-policy.md) | 24 | medium | 2026-06-25 |
 | 0133 | [Server-Side Batch Rendering Throughput Gate](0133-server-side-batch-rendering-throughput-gate.md) | 24 | medium | 2026-06-25 |

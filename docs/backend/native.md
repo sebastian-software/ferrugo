@@ -89,6 +89,26 @@ non-Type3 text, so CFF/Type1 native rendering is no-fallback but not yet visual
 parity with PDFium. See
 `docs/reports/cff-type1-charstring-hardening-2026-06-25.md`.
 
+## Font Subset Regression Coverage
+
+The font-subset regression corpus covers reduced TrueType, CFF, Type0 CID,
+Type3, and missing-font subset cases from common office and report producer
+patterns. The fixtures live in `fixtures/font-subset-manifest.tsv` and are also
+listed in the main corpus manifest under `office-export`.
+
+| Family | Fixture | Coverage focus |
+| --- | --- | --- |
+| `truetype-subset` | `subset-truetype-widths.pdf` | Subset-prefixed TrueType with explicit `/Widths` and `FontFile2`. |
+| `cff-subset` | `subset-cff-tounicode.pdf` | Subset-prefixed CFF `FontFile3` with explicit ToUnicode mapping. |
+| `cid-subset` | `subset-cid-widths.pdf` | Type0 CID font with descendant width overrides and ToUnicode. |
+| `type3-subset` | `subset-type3-repeated-charprocs.pdf` | Repeated Type3 CharProc reuse and Type3 width advancement. |
+| `missing-font-subset` | `subset-missing-font.pdf` | Subset-prefixed missing font routed through deterministic fallback. |
+
+The 0136 gate renders all five fixtures through the Rust-native backend with
+zero fallbacks, zero errors, and zero benchmark budget failures. The current
+run keeps mean render time below 1.2 ms per family at `max_edge = 160`. See
+`docs/reports/font-subset-regression-2026-06-26.md`.
+
 ## Text Layout Fallback Policy
 
 Decoded PDF glyph metadata now records a native `TextLayoutStatus`. The native
