@@ -7,9 +7,10 @@ Depends on: 0216
 
 ## Goal
 
-Validate Rust-native rendering reliability on low-end desktop, mobile browser,
-embedded, and constrained server profiles using realistic typical-document
-workflows.
+Validate low-end Rust-native rendering reliability as a secondary profile sweep
+using realistic typical-document workflows. Constrained server behavior remains
+important; mobile browser and embedded findings are compatibility signals unless
+they reveal shared renderer defects.
 
 ## Scope
 
@@ -20,12 +21,15 @@ workflows.
 - Measure peak memory, scratch allocation reuse, cache eviction, timeout, and
   recovery behavior.
 - Document profile-specific unsupported or degraded modes.
+- Promote shared renderer correctness, safety, and unbounded resource issues to
+  the main server-side backlog.
 
 ## Non-Goals
 
 - Optimize for devices below documented minimum requirements.
 - Treat low-end profiles as a reason to reduce desktop fidelity.
 - Hide profile failures behind PDFium fallback.
+- Block server-side release gates solely on mobile or embedded profile limits.
 
 ## Deliverables
 
@@ -38,6 +42,8 @@ workflows.
 - Supported low-end profiles complete typical workflows without panics.
 - Memory and timeout budgets are enforced and documented.
 - Degraded behavior is typed and visible to consumers.
+- Server-constrained failures are classified separately from browser or embedded
+  profile limitations.
 
 ## Validation
 

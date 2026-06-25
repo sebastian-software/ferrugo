@@ -43,7 +43,10 @@ native renderer scorecard, and memory/performance evidence from phase 38.
 - Run native-only `cargo test`.
 - Run full 1.3 supported corpus gate.
 - Run visual validation with the PDFium-free oracle strategy.
-- Run benchmark, memory, WASM, and package profile checks.
+- Run benchmark, memory, server, and package profile checks.
+- Run WASM and low-memory profile checks as non-blocking compatibility signals
+  unless they expose shared renderer correctness, safety, or unbounded resource
+  defects.
 - Run security and fuzz smoke suite.
 - Run `cargo clippy --all-targets --all-features -- -D warnings`.
 

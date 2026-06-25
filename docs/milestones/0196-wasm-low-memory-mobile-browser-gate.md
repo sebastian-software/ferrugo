@@ -7,8 +7,9 @@ Depends on: 0195
 
 ## Goal
 
-Validate the native renderer in a low-memory WASM browser profile suitable for
-mobile preview and client-side thumbnail workflows.
+Validate the native renderer in a low-memory WASM browser profile as a
+secondary compatibility signal for mobile preview and client-side thumbnail
+workflows.
 
 ## Scope
 
@@ -16,12 +17,16 @@ mobile preview and client-side thumbnail workflows.
 - Run representative corpus slices in a browser automation harness.
 - Audit allocations that are expensive under WASM.
 - Document unsupported browser-only constraints.
+- Promote only shared renderer correctness, safety, or unbounded allocation
+  defects into the server-side release backlog.
 
 ## Non-Goals
 
 - Build a complete PDF viewer UI.
 - Require all server-side features in WASM.
 - Ship PDFium or native dynamic libraries to the browser.
+- Block server-side PDFium-free releases solely on mobile browser profile
+  limitations.
 
 ## Deliverables
 

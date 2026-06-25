@@ -3,12 +3,13 @@
 Status: todo
 Phase: 41
 Size: medium
-Depends on: 0217
+Depends on: 0216
 
 ## Goal
 
-Tune the Rust-native rendering scheduler for server batch workloads and WASM
-viewer workloads without sacrificing deterministic output or memory budgets.
+Tune the Rust-native rendering scheduler for server batch workloads first, with
+WASM viewer behavior treated as a secondary profile check unless it exposes a
+shared scheduling correctness, cancellation, or memory defect.
 
 ## Scope
 
@@ -17,12 +18,15 @@ viewer workloads without sacrificing deterministic output or memory budgets.
 - Tune batch thumbnail, first-page, navigation, and repeated-render workflows.
 - Validate scheduler behavior under constrained memory and parallel workloads.
 - Document profile-specific defaults and override boundaries.
+- Keep server-side batch throughput and isolation as the primary release gate.
 
 ## Non-Goals
 
 - Introduce nondeterministic rendering to improve throughput.
 - Require threads where a WASM target cannot use them.
 - Optimize one profile by regressing another supported profile.
+- Let WASM responsiveness block server-side PDFium replacement unless the same
+  issue affects shared scheduler correctness or bounded resources.
 
 ## Deliverables
 
@@ -32,7 +36,9 @@ viewer workloads without sacrificing deterministic output or memory budgets.
 
 ## Acceptance Criteria
 
-- Server and WASM workflows meet throughput and responsiveness budgets.
+- Server workflows meet throughput, isolation, and responsiveness budgets.
+- WASM scheduler behavior is measured and classified as secondary unless it
+  reveals shared scheduler defects.
 - Cancellation and backpressure do not leak memory or leave invalid cache state.
 - Scheduler defaults are documented per profile.
 
@@ -40,7 +46,7 @@ viewer workloads without sacrificing deterministic output or memory budgets.
 
 - Run native-only `cargo test`.
 - Run server batch rendering benchmark.
-- Run WASM viewer performance gate.
+- Run WASM viewer performance gate as a secondary profile check.
 - Run cancellation and page-cache reuse tests.
 - Run low-memory scheduler profile.
 - Run `cargo clippy --all-targets --all-features -- -D warnings`.

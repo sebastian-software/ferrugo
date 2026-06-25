@@ -17,6 +17,19 @@ Allowed statuses:
 - `done`
 - `blocked`
 
+## Execution Focus
+
+The primary product path is server-side, PDFium-free rendering with a
+Rust-native renderer. Work should prioritize features that improve typical
+office, browser-print, scan, report, contract, form, and batch-thumbnail
+documents in server deployments.
+
+WASM, embedded, mobile, and low-memory profiles remain useful compatibility
+signals, but they are secondary unless a milestone explicitly says otherwise.
+They should not block server-side PDFium replacement gates on their own. Treat
+them as profile checks, packaging constraints, or follow-up optimization work
+when the server renderer is already correct and bounded.
+
 ## Todo
 
 | ID | Milestone | Phase | Size | Depends On |
@@ -62,7 +75,7 @@ Allowed statuses:
 | 0174 | [Typed Unsupported Boundary API Freeze](0174-typed-unsupported-boundary-api-freeze.md) | 32 | small | 0173 |
 | 0175 | [Native Render Trace And Operator Replay Tool](0175-native-render-trace-and-operator-replay-tool.md) | 32 | medium | 0174 |
 | 0176 | [WASM Viewer Integration Performance Gate](0176-wasm-viewer-integration-performance-gate.md) | 33 | medium | 0175 |
-| 0177 | [Server-Side Batch Rendering Isolation Gate](0177-server-side-batch-rendering-isolation-gate.md) | 33 | medium | 0176 |
+| 0177 | [Server-Side Batch Rendering Isolation Gate](0177-server-side-batch-rendering-isolation-gate.md) | 33 | medium | 0175 |
 | 0178 | [Security Fuzz Nightly And Crash Triage Loop](0178-security-fuzz-nightly-and-crash-triage-loop.md) | 33 | medium | 0177 |
 | 0179 | [Corpus Governance And Regression Dashboard](0179-corpus-governance-and-regression-dashboard.md) | 33 | medium | 0178 |
 | 0180 | [PDFium-Free 1.1 Coverage Gate](0180-pdfium-free-1-1-coverage-gate.md) | 33 | medium | 0179 |
@@ -82,7 +95,7 @@ Allowed statuses:
 | 0194 | [Forms Appearance State Mutation Boundary](0194-forms-appearance-state-mutation-boundary.md) | 36 | medium | 0193 |
 | 0195 | [High Page Count Batch Thumbnail Gate](0195-high-page-count-batch-thumbnail-gate.md) | 36 | medium | 0194 |
 | 0196 | [WASM Low Memory Mobile Browser Gate](0196-wasm-low-memory-mobile-browser-gate.md) | 37 | medium | 0195 |
-| 0197 | [Serverless Cold Start And Binary Size Budget](0197-serverless-cold-start-and-binary-size-budget.md) | 37 | medium | 0196 |
+| 0197 | [Serverless Cold Start And Binary Size Budget](0197-serverless-cold-start-and-binary-size-budget.md) | 37 | medium | 0195 |
 | 0198 | [Native Renderer Telemetry Privacy And Diagnostics Policy](0198-native-renderer-telemetry-privacy-and-diagnostics-policy.md) | 37 | small | 0197 |
 | 0199 | [Unsupported Feature Burn-Down Release Candidate Gate](0199-unsupported-feature-burn-down-release-candidate-gate.md) | 37 | medium | 0198 |
 | 0200 | [PDFium-Free 1.2 Readiness Gate](0200-pdfium-free-1-2-readiness-gate.md) | 37 | medium | 0199 |
@@ -103,7 +116,7 @@ Allowed statuses:
 | 0215 | [PDFium Comparison Tool Removal Decision Gate](0215-pdfium-comparison-tool-removal-decision-gate.md) | 40 | medium | 0214 |
 | 0216 | [Cross-Producer Typical Document Fusion Corpus](0216-cross-producer-typical-document-fusion-corpus.md) | 41 | medium | 0215 |
 | 0217 | [Low-End Device Reliability Sweep](0217-low-end-device-reliability-sweep.md) | 41 | medium | 0216 |
-| 0218 | [Server And WASM Scheduler Tuning Gate](0218-server-and-wasm-scheduler-tuning-gate.md) | 41 | medium | 0217 |
+| 0218 | [Server And WASM Scheduler Tuning Gate](0218-server-and-wasm-scheduler-tuning-gate.md) | 41 | medium | 0216 |
 | 0219 | [Unsupported Feature SLA And Consumer Migration Guide](0219-unsupported-feature-sla-and-consumer-migration-guide.md) | 41 | small | 0218 |
 | 0220 | [PDFium-Free 1.4 Readiness Gate](0220-pdfium-free-1-4-readiness-gate.md) | 41 | medium | 0219 |
 

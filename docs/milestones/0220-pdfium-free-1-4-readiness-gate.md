@@ -8,13 +8,14 @@ Depends on: 0219
 ## Goal
 
 Make the PDFium-free 1.4 release decision using cross-producer typical-document
-coverage, low-end reliability evidence, server and WASM scheduler tuning, and a
-clear unsupported-feature SLA.
+coverage, server scheduler tuning, constrained server evidence, and a clear
+unsupported-feature SLA. WASM and mobile low-memory results inform compatibility
+backlog decisions but are not primary release blockers by themselves.
 
 ## Scope
 
 - Run the complete native-only 1.4 validation matrix across supported document
-  families and deployment profiles.
+  families and primary server deployment profiles.
 - Compare 1.4 coverage, fidelity, memory, throughput, unsupported categories,
   and consumer-facing diagnostics against the 1.3 baseline.
 - Verify PDFium is absent from supported runtime, package, CI, and deployment
@@ -36,7 +37,10 @@ clear unsupported-feature SLA.
 ## Acceptance Criteria
 
 - Cross-producer typical-document families pass native-only release gates.
-- Supported desktop, server, WASM, and low-end profiles meet documented budgets.
+- Supported desktop and server profiles meet documented release budgets.
+- WASM, mobile, embedded, and low-memory profile failures are classified as
+  compatibility backlog unless they expose shared renderer correctness, safety,
+  or unbounded resource defects.
 - Consumer-facing unsupported behavior is stable and documented.
 - No supported path requires PDFium.
 
@@ -46,7 +50,8 @@ clear unsupported-feature SLA.
 - Run native-only `cargo test`.
 - Run full 1.4 supported corpus gate.
 - Run independent visual oracle validation.
-- Run benchmark, memory, low-end, server, WASM, and package profile checks.
+- Run benchmark, memory, server, and package profile checks.
+- Run low-end and WASM profile checks as secondary compatibility signals.
 - Run security and fuzz smoke suite.
 - Run repository scan for unsupported PDFium runtime references.
 - Run `cargo clippy --all-targets --all-features -- -D warnings`.

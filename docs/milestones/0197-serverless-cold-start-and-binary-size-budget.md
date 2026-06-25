@@ -3,12 +3,14 @@
 Status: todo
 Phase: 37
 Size: medium
-Depends on: 0196
+Depends on: 0195
 
 ## Goal
 
 Keep serverless and short-lived batch rendering practical by bounding binary
 size, startup time, and first-render latency without PDFium runtime baggage.
+This remains on the primary server-side rendering path and does not depend on
+WASM/mobile profile readiness.
 
 ## Scope
 

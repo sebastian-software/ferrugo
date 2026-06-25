@@ -3,12 +3,13 @@
 Status: todo
 Phase: 33
 Size: medium
-Depends on: 0176
+Depends on: 0175
 
 ## Goal
 
 Validate native renderer isolation for server-side batch thumbnail or preview
-generation where many documents are rendered concurrently.
+generation where many documents are rendered concurrently. This is a primary
+PDFium-replacement path and does not depend on WASM readiness.
 
 ## Scope
 
@@ -25,6 +26,8 @@ generation where many documents are rendered concurrently.
 - Add a hosted rendering service.
 - Use process-global mutable state without synchronization.
 - Optimize raw throughput ahead of isolation and bounded resource use.
+- Treat browser or WASM profile constraints as blockers for server-side batch
+  correctness.
 
 ## Deliverables
 

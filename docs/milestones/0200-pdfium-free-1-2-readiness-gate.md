@@ -42,7 +42,10 @@ boundaries.
 - Run native-only `cargo test`.
 - Run full supported corpus gate.
 - Run visual validation using the PDFium-free oracle strategy.
-- Run benchmark, memory, WASM, and package profile checks.
+- Run benchmark, memory, server, and package profile checks.
+- Run WASM and low-memory profile checks as non-blocking compatibility signals
+  unless they expose shared renderer correctness, safety, or unbounded resource
+  defects.
 - Run security and fuzz smoke suite.
 - Run `cargo clippy --all-targets --all-features -- -D warnings`.
 
