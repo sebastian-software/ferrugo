@@ -5271,6 +5271,82 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_render_generated_technical_drawing_fixtures() {
+        type TechnicalFixture = (&'static [u8], u32, u32, u32, &'static str, usize);
+
+        let fixtures: &[TechnicalFixture] = &[
+            (
+                include_bytes!("../../../fixtures/generated/technical-linework-dimensions.pdf")
+                    as &[u8],
+                360,
+                240,
+                360,
+                "linework dimensions drawing",
+                4_000,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/technical-hatch-clipping.pdf")
+                    as &[u8],
+                300,
+                220,
+                300,
+                "hatch clipping drawing",
+                6_000,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/technical-large-coordinate-plan.pdf")
+                    as &[u8],
+                400,
+                240,
+                400,
+                "large coordinate drawing",
+                2_000,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/technical-repeated-symbols.pdf")
+                    as &[u8],
+                320,
+                220,
+                320,
+                "repeated symbols drawing",
+                3_000,
+            ),
+        ];
+
+        for &(bytes, expected_width, expected_height, max_edge, label, min_visible_pixels) in
+            fixtures
+        {
+            let thumbnail = ThumbnailBackend::render(
+                &NativeBackend::new(),
+                PdfSource::from_bytes(bytes),
+                &ThumbnailOptions {
+                    max_edge,
+                    ..ThumbnailOptions::default()
+                },
+            )
+            .unwrap_or_else(|error| panic!("{label} fixture should render: {error}"));
+
+            assert_eq!(
+                thumbnail.width, expected_width,
+                "{label} fixture width should match"
+            );
+            assert_eq!(
+                thumbnail.height, expected_height,
+                "{label} fixture height should match"
+            );
+            let visible_pixels = thumbnail
+                .bytes
+                .chunks_exact(4)
+                .filter(|pixel| *pixel != [255, 255, 255, 255])
+                .count();
+            assert!(
+                visible_pixels >= min_visible_pixels,
+                "{label} fixture should preserve fine technical linework"
+            );
+        }
+    }
+
+    #[test]
     fn native_backend_should_render_generated_multi_page_report_first_page() {
         let bytes = include_bytes!("../../../fixtures/generated/multi-page-report.pdf");
         let thumbnail = ThumbnailBackend::render(

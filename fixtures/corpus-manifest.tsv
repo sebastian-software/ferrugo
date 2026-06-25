@@ -98,6 +98,10 @@ fixtures/generated/tagged-accessibility-metadata.pdf	office-export	scripts/gener
 fixtures/generated/text-page.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,type1	Generated simple text page fixture.
 fixtures/generated/text-note-annotation-without-appearance.pdf	mixed-layout	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	annotation,text-note,missing-appearance	Generated text note annotation fallback fixture without appearance stream.
 fixtures/generated/text-spacing.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,spacing,invisible-text	Generated text spacing and invisible render-mode fixture.
+fixtures/generated/technical-linework-dimensions.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	technical-drawing,linework,dimensions,dash,thin-strokes,small-text	Generated technical drawing with fine outlines, dashed construction grid, dimension lines, and labels.
+fixtures/generated/technical-hatch-clipping.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	technical-drawing,hatch,clipping,dash,section	Generated section drawing with clipped hatch lines, dashed center line, and label.
+fixtures/generated/technical-large-coordinate-plan.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	technical-drawing,large-coordinate,page-box,dash,small-text	Generated large-coordinate site plan with downscaled linework and dimension label.
+fixtures/generated/technical-repeated-symbols.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	technical-drawing,repeated-symbols,line-join,thin-strokes	Generated repeated technical symbol layout with many small path symbols.
 fixtures/generated/tiling-pattern.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	pattern,tiling	Generated colored tiling pattern fixture.
 fixtures/generated/tounicode-text.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,tounicode	Generated ToUnicode character-code mapping fixture.
 fixtures/generated/transparency-alpha.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	transparency,alpha,extgstate	Generated ExtGState fill and stroke alpha fixture.

@@ -3471,6 +3471,98 @@ def spreadsheet_vector_stress_grid_pdf() -> bytes:
     return page_pdf("[0 0 360 240]", " ".join(lines))
 
 
+def technical_linework_dimensions_pdf() -> bytes:
+    ops: list[str] = [
+        "q 0.99 0.99 0.97 rg 0 0 360 240 re f Q",
+        "q 0.05 0.08 0.12 RG 0.45 w",
+        "40 40 m 320 40 l 320 190 l 40 190 l h S",
+        "70 70 m 150 70 l 150 130 l 70 130 l h S",
+        "210 70 m 290 70 l 290 130 l 210 130 l h S",
+        "40 205 m 320 205 l S 40 198 m 40 212 l S 320 198 m 320 212 l S",
+        "330 40 m 330 190 l S 323 40 m 337 40 l S 323 190 m 337 190 l S",
+        "Q",
+        "q 0.72 0.72 0.72 RG 0.35 w [4 3] 0 d",
+    ]
+    for x in range(60, 321, 20):
+        ops.append(f"{x} 36 m {x} 194 l S")
+    for y in range(60, 191, 20):
+        ops.append(f"36 {y} m 324 {y} l S")
+    ops.extend(
+        [
+            "Q",
+            "BT /F1 7 Tf 154 210 Td (2800 mm) Tj 334 112 Td (1500 mm) Tj ET",
+            "BT /F1 6 Tf 72 134 Td (ROOM A) Tj 214 134 Td (ROOM B) Tj ET",
+        ]
+    )
+    return page_pdf("[0 0 360 240]", " ".join(ops))
+
+
+def technical_hatch_clipping_pdf() -> bytes:
+    ops: list[str] = [
+        "q 0.98 0.99 1 rg 0 0 300 220 re f Q",
+        "q 0.05 0.08 0.12 RG 0.6 w 42 42 m 258 42 l 258 178 l 42 178 l h S Q",
+        "q 42 42 m 258 42 l 232 178 l 68 178 l h W n",
+        "0.28 0.28 0.28 RG 0.35 w",
+    ]
+    for offset in range(-120, 310, 10):
+        ops.append(f"{offset} 28 m {offset + 220} 202 l S")
+    ops.extend(
+        [
+            "Q",
+            "q 0.06 0.20 0.36 RG 0.8 w 90 76 m 210 76 l 210 146 l 90 146 l h S Q",
+            "q 0.85 0.30 0.12 RG 1.0 w [8 4] 0 d 118 104 m 184 104 l S Q",
+            "BT /F1 7 Tf 94 154 Td (SECTION A-A) Tj ET",
+        ]
+    )
+    return page_pdf("[0 0 300 220]", " ".join(ops))
+
+
+def technical_large_coordinate_plan_pdf() -> bytes:
+    ops: list[str] = [
+        "q 0.99 0.99 0.99 rg 0 0 2000 1200 re f Q",
+        "q 0.04 0.07 0.10 RG 3 w",
+        "160 160 m 1840 160 l 1840 980 l 160 980 l h S",
+        "320 300 m 760 300 l 760 780 l 320 780 l h S",
+        "1040 300 m 1680 300 l 1680 780 l 1040 780 l h S",
+        "Q",
+        "q 0.70 0.70 0.70 RG 1.2 w [20 12] 0 d",
+    ]
+    for x in range(240, 1841, 160):
+        ops.append(f"{x} 140 m {x} 1000 l S")
+    for y in range(240, 981, 120):
+        ops.append(f"140 {y} m 1860 {y} l S")
+    ops.extend(
+        [
+            "Q",
+            "q 0.80 0.22 0.10 RG 4 w 160 1040 m 1840 1040 l S 160 1020 m 160 1060 l S 1840 1020 m 1840 1060 l S Q",
+            "BT /F1 48 Tf 820 1080 Td (SITE PLAN 1:200) Tj 820 -80 Td (168m) Tj ET",
+        ]
+    )
+    return page_pdf("[0 0 2000 1200]", " ".join(ops))
+
+
+def technical_repeated_symbols_pdf() -> bytes:
+    ops: list[str] = [
+        "q 0.97 0.97 0.95 rg 0 0 320 220 re f Q",
+        "q 0.18 0.18 0.18 RG 0.45 w",
+    ]
+    for x in range(28, 293, 44):
+        for y in range(42, 183, 35):
+            ops.append(
+                f"{x} {y} m {x + 16} {y + 24} l {x + 32} {y} l h S "
+                f"{x + 16} {y + 6} m {x + 16} {y + 20} l S "
+                f"{x + 8} {y + 6} m {x + 24} {y + 6} l S"
+            )
+    ops.extend(
+        [
+            "Q",
+            "q 0.04 0.18 0.34 RG 0.8 w 20 30 m 300 30 l 300 196 l 20 196 l h S Q",
+            "BT /F1 7 Tf 24 202 Td (SYMBOL LAYOUT) Tj 224 0 Td (REV B) Tj ET",
+        ]
+    )
+    return page_pdf("[0 0 320 220]", " ".join(ops))
+
+
 def page_targeted_stream_pdf() -> bytes:
     pdf = Pdf()
     content_1 = b"q 0.1 0.6 0.2 rg 20 20 80 40 re f Q"
@@ -3689,6 +3781,10 @@ def main() -> None:
     write("spreadsheet-dense-numeric-grid.pdf", spreadsheet_dense_numeric_grid_pdf())
     write("spreadsheet-clipped-cells.pdf", spreadsheet_clipped_cells_pdf())
     write("spreadsheet-vector-stress-grid.pdf", spreadsheet_vector_stress_grid_pdf())
+    write("technical-linework-dimensions.pdf", technical_linework_dimensions_pdf())
+    write("technical-hatch-clipping.pdf", technical_hatch_clipping_pdf())
+    write("technical-large-coordinate-plan.pdf", technical_large_coordinate_plan_pdf())
+    write("technical-repeated-symbols.pdf", technical_repeated_symbols_pdf())
     write("page-targeted-stream.pdf", page_targeted_stream_pdf())
 
 

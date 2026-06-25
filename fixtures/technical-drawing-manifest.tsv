@@ -1,0 +1,9 @@
+path	family	source	license	page_count	features	notes
+fixtures/generated/technical-linework-dimensions.pdf	linework	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	technical-drawing,linework,dimensions,dash,thin-strokes,small-text,expected:native	Generated technical drawing with fine outlines, dashed construction grid, dimension lines, and labels.
+fixtures/generated/technical-hatch-clipping.pdf	hatch-clipping	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	technical-drawing,hatch,clipping,dash,section,expected:native	Generated section drawing with clipped hatch lines, dashed center line, and label.
+fixtures/generated/technical-large-coordinate-plan.pdf	large-coordinate	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	technical-drawing,large-coordinate,page-box,dash,small-text,expected:native	Generated large-coordinate site plan with downscaled linework and dimension label.
+fixtures/generated/technical-repeated-symbols.pdf	repeated-symbols	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	technical-drawing,repeated-symbols,line-join,thin-strokes,expected:native	Generated repeated technical symbol layout with many small path symbols.
+fixtures/generated/dashed-stroke.pdf	linework	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	technical-drawing,dash,stroke,expected:native	Existing dashed-stroke baseline.
+fixtures/generated/clipped-paths.pdf	hatch-clipping	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	technical-drawing,clipping,vector,expected:native	Existing clipping-path baseline.
+fixtures/generated/vector-stress.pdf	repeated-symbols	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	technical-drawing,vector-stress,chart,expected:native	Existing vector-heavy stress baseline.
+fixtures/generated/user-unit-page.pdf	large-coordinate	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	technical-drawing,userunit,geometry,expected:native	Existing non-default UserUnit geometry baseline.
