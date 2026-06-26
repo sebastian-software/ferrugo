@@ -1,6 +1,6 @@
 # 0158: Memory Arena And Scratch Buffer Audit
 
-Status: todo
+Status: done
 Phase: 29
 Size: medium
 Depends on: 0157
@@ -45,4 +45,15 @@ buffers where they materially reduce churn without unsafe complexity.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-26.
+
+- Audited parser/object, display-list, text, image, path, pattern, and
+  transparency allocation hotspots against existing memory reports.
+- Kept custom allocators and unsafe arenas out of scope; existing deterministic
+  budgets cover the current hot paths.
+- Added bounded reset semantics to `TextRasterScratch` so an oversized fallback
+  text run does not retain large scratch capacity before later small runs.
+- Updated `docs/policies/renderer-memory-budgets.md` with the text scratch
+  retained-atom limit and reset behavior.
+- Added `docs/reports/memory-arena-scratch-buffer-audit-2026-06-26.md` with
+  benchmark, low-memory gate, and visual-subset evidence.

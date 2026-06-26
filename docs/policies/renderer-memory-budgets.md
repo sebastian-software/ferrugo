@@ -24,6 +24,7 @@ memory accounting.
 | Flattened segments | 65,536 | One rasterization pass |
 | Transparency group pixels | 16,777,216 | One intermediate transparency raster |
 | Glyph outline cache entries | 4,096 | One glyph outline cache |
+| Text raster scratch retained atoms | 4,096 | One rasterization pass, retained only between bounded text runs |
 | Temporary spooling bytes | 0 | Spooling is disabled by default |
 
 ## Cache Behavior
@@ -38,6 +39,11 @@ memory accounting.
 - Glyph outlines use a bounded cache. When `max_cache_entries` is reached, the
   oldest entry is evicted before storing a new outline. A value of `0` disables
   outline caching without disabling outline extraction.
+- Text fallback rasterization reuses a pass-local scratch vector for expanded
+  glyph and combining-mark atoms. If one unusually large text run grows the
+  scratch capacity beyond the retained-atom limit, the next small text run
+  releases that oversized capacity instead of carrying it for the rest of the
+  page.
 - Temporary spooling is disabled by default. Future opt-in spooling must define
   storage location, byte ceiling, cleanup behavior, and privacy implications
   before writing document-derived intermediates.

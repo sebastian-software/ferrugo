@@ -59,6 +59,8 @@ pub const DEFAULT_CHARSTRING_SUBROUTINE_DEPTH_LIMIT: usize = 10;
 /// Default maximum cached fallback glyph bitmaps per rasterization pass.
 pub const DEFAULT_GLYPH_BITMAP_CACHE_LIMIT: usize = 256;
 
+const DEFAULT_TEXT_RASTER_SCRATCH_RETAINED_ATOMS: usize = 4_096;
+
 /// Default maximum cached deterministic font fallback resolutions.
 pub const DEFAULT_FONT_FALLBACK_CACHE_LIMIT: usize = 128;
 
@@ -2392,14 +2394,22 @@ impl Default for GlyphBitmapCache {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct TextRasterScratch {
     atoms: Vec<TextRasterAtom>,
+    max_retained_atoms: usize,
 }
 
 impl TextRasterScratch {
+    fn new(max_retained_atoms: usize) -> Self {
+        Self {
+            atoms: Vec::new(),
+            max_retained_atoms,
+        }
+    }
+
     fn prepare(&mut self, text: &TextDisplayItem, cell: f64) {
-        self.atoms.clear();
+        self.reset_for(text.glyphs.len());
         for (glyph, origin) in text.glyphs.iter().zip(text.glyph_origins.iter()) {
             let mut pen_x = origin.x;
             let mut last_base_x = origin.x;
@@ -2421,6 +2431,22 @@ impl TextRasterScratch {
                 pen_x += fallback_glyph_advance(cell);
             }
         }
+    }
+
+    fn reset_for(&mut self, expected_atoms: usize) {
+        if self.atoms.capacity() > self.max_retained_atoms
+            && expected_atoms <= self.max_retained_atoms
+        {
+            self.atoms = Vec::with_capacity(expected_atoms);
+            return;
+        }
+        self.atoms.clear();
+    }
+}
+
+impl Default for TextRasterScratch {
+    fn default() -> Self {
+        Self::new(DEFAULT_TEXT_RASTER_SCRATCH_RETAINED_ATOMS)
     }
 }
 
@@ -15412,6 +15438,43 @@ mod tests {
         scratch.prepare(&second, 2.0);
 
         assert_eq!(scratch.atoms.capacity(), capacity);
+    }
+
+    #[test]
+    fn text_raster_scratch_should_release_oversized_capacity_before_small_run() {
+        let mut scratch = TextRasterScratch::new(1);
+        let large = fallback_text_item(
+            vec![TextGlyph {
+                character_code: 1,
+                unicode: "wide".to_string(),
+                layout: TextLayoutStatus::LigatureExpanded,
+            }],
+            vec![Point { x: 10.0, y: 20.0 }],
+        );
+
+        scratch.prepare(&large, 2.0);
+        let large_capacity = scratch.atoms.capacity();
+        assert!(large_capacity > 1);
+
+        let small = fallback_text_item(
+            vec![TextGlyph {
+                character_code: 2,
+                unicode: "A".to_string(),
+                layout: TextLayoutStatus::Simple,
+            }],
+            vec![Point { x: 0.0, y: 0.0 }],
+        );
+        scratch.prepare(&small, 2.0);
+
+        assert!(scratch.atoms.capacity() < large_capacity);
+        assert_eq!(
+            scratch.atoms,
+            vec![TextRasterAtom {
+                kind: TextRasterAtomKind::Glyph('A'),
+                x: 0.0,
+                baseline_y: 0.0,
+            }]
+        );
     }
 
     #[test]
