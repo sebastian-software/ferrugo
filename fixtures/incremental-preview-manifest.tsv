@@ -1,0 +1,6 @@
+path	family	source	license	page_count	features	notes
+fixtures/generated/linearized-first-page.pdf	first-page-linearized	scripts/generate_fixtures.py	MIT OR Apache-2.0	2	linearized,first-page,fast-load,expected:native	Existing linearized-style fixture with first-page objects before the first-page boundary.
+fixtures/generated/linearized-malformed-hints.pdf	first-page-fallback	scripts/generate_fixtures.py	MIT OR Apache-2.0	2	linearized,malformed-hints,fallback,expected:native	Existing malformed linearization fixture that must fall back to full-document loading.
+fixtures/generated/page-targeted-stream.pdf	page-targeted	scripts/generate_fixtures.py	MIT OR Apache-2.0	2	streaming,page-targeted,malformed-secondary-page,expected:native	Existing page-targeted fixture proving page zero renders without decoding a malformed second page.
+fixtures/generated/multi-page-report.pdf	multipage-preview	scripts/generate_fixtures.py	MIT OR Apache-2.0	2	text,table,vector,multipage,preview,expected:native	Existing two-page report used by partial preview and cancellation tests.
+fixtures/generated/longform-repeated-resources.pdf	longform-preview	scripts/generate_fixtures.py	MIT OR Apache-2.0	3	longform,multipage,repeated-font,repeated-image,shared-resource,expected:native	Existing three-page longform fixture used for preview latency and memory profiling.

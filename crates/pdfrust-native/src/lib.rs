@@ -177,12 +177,92 @@ impl NativeBackend {
     pub const fn memory_diagnostics(&self) -> NativeMemoryDiagnostics {
         self.limits.memory_diagnostics()
     }
+
+    /// Renders page zero through the preview boundary and reports whether the
+    /// bounded linearized first-page loader was usable.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ThumbnailError`] when the source cannot be read or page zero
+    /// cannot be rendered.
+    pub fn render_first_page_preview(
+        &self,
+        source: PdfSource<'_>,
+        options: &ThumbnailOptions,
+    ) -> Result<FirstPagePreview, ThumbnailError> {
+        let bytes = load_source(source)?;
+        let mut preview_options = *options;
+        preview_options.page_index = 0;
+        let load_mode = first_page_preview_load_mode(bytes.as_ref());
+        let thumbnail = render_bytes(bytes.as_ref(), &preview_options, self.limits)?;
+        Ok(FirstPagePreview {
+            thumbnail,
+            load_mode,
+        })
+    }
+
+    /// Renders requested preview pages while preserving page-level outcomes.
+    ///
+    /// This is the backend-owned partial preview boundary for callers that need
+    /// cancellation and partial results without falling back to PDFium.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ThumbnailError`] when the source cannot be read, the scheduler
+    /// configuration is invalid, or the memory budget cannot schedule one page.
+    pub fn render_preview_pages_partial(
+        &self,
+        source: PdfSource<'_>,
+        page_indices: &[u32],
+        options: &ThumbnailOptions,
+        parallel_options: ParallelRenderOptions,
+        cancellation: &RenderCancellation,
+    ) -> Result<ParallelRenderPartialResult, ThumbnailError> {
+        render_pages_parallel_partial_with_limits(
+            source,
+            page_indices,
+            options,
+            parallel_options,
+            cancellation,
+            self.limits,
+        )
+    }
 }
 
 impl Default for NativeBackend {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Loader path used for a first-page preview render.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FirstPagePreviewLoadMode {
+    /// The document's linearization metadata was sufficient for bounded
+    /// first-page loading.
+    LinearizedFirstPage,
+    /// Preview rendering used the normal full-document loader.
+    FullDocument,
+}
+
+impl FirstPagePreviewLoadMode {
+    /// Stable report string for the load mode.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::LinearizedFirstPage => "linearized-first-page",
+            Self::FullDocument => "full-document",
+        }
+    }
+}
+
+/// Result from the explicit first-page preview boundary.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FirstPagePreview {
+    /// Rendered page-zero thumbnail.
+    pub thumbnail: Thumbnail,
+    /// Loader mode selected for the preview.
+    pub load_mode: FirstPagePreviewLoadMode,
 }
 
 /// Rust-native renderer memory and cache budget profile.
@@ -585,6 +665,24 @@ pub fn render_pages_parallel_partial(
     parallel_options: ParallelRenderOptions,
     cancellation: &RenderCancellation,
 ) -> Result<ParallelRenderPartialResult, ThumbnailError> {
+    render_pages_parallel_partial_with_limits(
+        source,
+        page_indices,
+        options,
+        parallel_options,
+        cancellation,
+        NativeRenderLimits::default(),
+    )
+}
+
+fn render_pages_parallel_partial_with_limits(
+    source: PdfSource<'_>,
+    page_indices: &[u32],
+    options: &ThumbnailOptions,
+    parallel_options: ParallelRenderOptions,
+    cancellation: &RenderCancellation,
+    limits: NativeRenderLimits,
+) -> Result<ParallelRenderPartialResult, ThumbnailError> {
     let worker_count = effective_worker_count(options, parallel_options)?;
     if cancellation.is_cancelled() {
         return Ok(ParallelRenderPartialResult {
@@ -611,7 +709,7 @@ pub fn render_pages_parallel_partial(
                     scope.spawn(move || {
                         let mut page_options = *options;
                         page_options.page_index = page_index;
-                        render_bytes(bytes, &page_options, NativeRenderLimits::default())
+                        render_bytes(bytes, &page_options, limits)
                     })
                 })
                 .collect::<Vec<_>>();
@@ -1020,6 +1118,18 @@ fn load_render_document(
     let document = load_classic_document(input).map_err(map_object_error)?;
     let page_tree = document.page_tree().map_err(map_object_error)?;
     Ok((document, page_tree))
+}
+
+fn first_page_preview_load_mode(bytes: &[u8]) -> FirstPagePreviewLoadMode {
+    let input = PdfBytes::new(bytes);
+    if load_linearized_first_page_document(input)
+        .and_then(|document| document.linearized_first_page_tree())
+        .is_ok_and(|page_tree| page_tree.is_some())
+    {
+        FirstPagePreviewLoadMode::LinearizedFirstPage
+    } else {
+        FirstPagePreviewLoadMode::FullDocument
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -5294,6 +5404,50 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_first_page_preview_should_report_linearized_loader() {
+        let bytes = include_bytes!("../../../fixtures/generated/linearized-first-page.pdf");
+        let preview = NativeBackend::new()
+            .render_first_page_preview(
+                PdfSource::from_bytes(bytes),
+                &ThumbnailOptions {
+                    max_edge: 160,
+                    ..ThumbnailOptions::default()
+                },
+            )
+            .expect("linearized fixture should render through first-page preview");
+
+        assert_eq!(
+            preview.load_mode,
+            FirstPagePreviewLoadMode::LinearizedFirstPage
+        );
+        assert_eq!(preview.load_mode.as_str(), "linearized-first-page");
+        assert_eq!(preview.thumbnail.width, 160);
+        assert_eq!(preview.thumbnail.height, 90);
+        assert_eq!(rgba_at(&preview.thumbnail, 24, 44), [26, 64, 115, 255]);
+    }
+
+    #[test]
+    fn native_backend_first_page_preview_should_report_full_document_fallback() {
+        let bytes = include_bytes!("../../../fixtures/generated/linearized-malformed-hints.pdf");
+        let preview = NativeBackend::new()
+            .render_first_page_preview(
+                PdfSource::from_bytes(bytes),
+                &ThumbnailOptions {
+                    page_index: 1,
+                    max_edge: 160,
+                    ..ThumbnailOptions::default()
+                },
+            )
+            .expect("malformed linearization should render through first-page preview fallback");
+
+        assert_eq!(preview.load_mode, FirstPagePreviewLoadMode::FullDocument);
+        assert_eq!(preview.load_mode.as_str(), "full-document");
+        assert_eq!(preview.thumbnail.width, 160);
+        assert_eq!(preview.thumbnail.height, 90);
+        assert_eq!(rgba_at(&preview.thumbnail, 24, 44), [26, 64, 115, 255]);
+    }
+
+    #[test]
     fn native_backend_should_render_generated_optional_content_layer_on_fixture() {
         let bytes = include_bytes!("../../../fixtures/generated/optional-content-layer-on.pdf");
         let thumbnail = ThumbnailBackend::render(
@@ -7203,6 +7357,62 @@ mod tests {
             &cancellation,
         )
         .expect("pre-cancelled scheduler should return a partial result");
+
+        assert!(result.cancelled);
+        assert!(result.pages.is_empty());
+        assert_eq!(result.workers, 2);
+    }
+
+    #[test]
+    fn native_backend_preview_partial_should_preserve_page_results() {
+        let bytes = include_bytes!("../../../fixtures/generated/page-targeted-stream.pdf");
+        let cancellation = RenderCancellation::new();
+        let result = NativeBackend::new()
+            .render_preview_pages_partial(
+                PdfSource::from_bytes(bytes),
+                &[0, 1],
+                &ThumbnailOptions {
+                    max_edge: 120,
+                    ..ThumbnailOptions::default()
+                },
+                ParallelRenderOptions {
+                    max_workers: 1,
+                    ..ParallelRenderOptions::default()
+                },
+                &cancellation,
+            )
+            .expect("preview partial scheduler should preserve page results");
+
+        assert!(!result.cancelled);
+        assert_eq!(result.workers, 1);
+        assert_eq!(result.pages.len(), 2);
+        assert_eq!(result.pages[0].page_index, 0);
+        assert!(result.pages[0].result.is_ok());
+        assert_eq!(result.pages[1].page_index, 1);
+        assert_eq!(result.pages[1].result, Err(ThumbnailError::Malformed));
+    }
+
+    #[test]
+    fn native_backend_preview_partial_should_stop_before_cancelled_work() {
+        let bytes = include_bytes!("../../../fixtures/generated/multi-page-report.pdf");
+        let cancellation = RenderCancellation::new();
+        cancellation.cancel();
+
+        let result = NativeBackend::new()
+            .render_preview_pages_partial(
+                PdfSource::from_bytes(bytes),
+                &[0, 1],
+                &ThumbnailOptions {
+                    max_edge: 120,
+                    ..ThumbnailOptions::default()
+                },
+                ParallelRenderOptions {
+                    max_workers: 2,
+                    ..ParallelRenderOptions::default()
+                },
+                &cancellation,
+            )
+            .expect("pre-cancelled preview scheduler should return a partial result");
 
         assert!(result.cancelled);
         assert!(result.pages.is_empty());
