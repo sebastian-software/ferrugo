@@ -35,7 +35,6 @@ when the server renderer is already correct and bounded.
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
 | 0176 | [WASM Viewer Integration Performance Gate](0176-wasm-viewer-integration-performance-gate.md) | 33 | medium | 0175 |
-| 0178 | [Security Fuzz Nightly And Crash Triage Loop](0178-security-fuzz-nightly-and-crash-triage-loop.md) | 33 | medium | 0177 |
 | 0179 | [Corpus Governance And Regression Dashboard](0179-corpus-governance-and-regression-dashboard.md) | 33 | medium | 0178 |
 | 0180 | [PDFium-Free 1.1 Coverage Gate](0180-pdfium-free-1-1-coverage-gate.md) | 33 | medium | 0179 |
 | 0181 | [PDF 2.0 Feature Usage Corpus Gate](0181-pdf-2-0-feature-usage-corpus-gate.md) | 34 | medium | 0180 |
@@ -88,6 +87,7 @@ when the server renderer is already correct and bounded.
 
 | ID | Milestone | Phase | Size | Completed |
 | --- | --- | --- | --- | --- |
+| 0178 | [Security Fuzz Nightly And Crash Triage Loop](0178-security-fuzz-nightly-and-crash-triage-loop.md) | 33 | medium | 2026-06-26 |
 | 0177 | [Server-Side Batch Rendering Isolation Gate](0177-server-side-batch-rendering-isolation-gate.md) | 33 | medium | 2026-06-26 |
 | 0175 | [Native Render Trace And Operator Replay Tool](0175-native-render-trace-and-operator-replay-tool.md) | 32 | medium | 2026-06-26 |
 | 0174 | [Typed Unsupported Boundary API Freeze](0174-typed-unsupported-boundary-api-freeze.md) | 32 | small | 2026-06-26 |

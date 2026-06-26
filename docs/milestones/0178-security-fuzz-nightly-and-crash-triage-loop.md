@@ -1,6 +1,6 @@
 # 0178: Security Fuzz Nightly And Crash Triage Loop
 
-Status: todo
+Status: done
 Phase: 33
 Size: medium
 Depends on: 0177
@@ -46,4 +46,23 @@ triage rules for crashes, panics, timeouts, and excessive allocation.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-26.
+
+Added a repeatable local/nightly fuzz-smoke loop:
+
+- `scripts/check_fuzz_smoke.sh` runs the current fuzz target matrix.
+- `docs/policies/security-fuzz-triage.md` defines target coverage, finding
+  classes, crash artifact workflow, minimization rules, and regression
+  expectations.
+- `docs/fuzzing.md` now points to the script and includes the security focus for
+  each target.
+- `docs/reports/security-fuzz-nightly-loop-2026-06-26.md` records the smoke
+  counts and validation evidence.
+
+Validation completed:
+
+- `bash scripts/check_fuzz_smoke.sh`
+- targeted adversarial and memory-budget regression tests
+- `cargo test --workspace --no-default-features`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo fmt --check`

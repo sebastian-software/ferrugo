@@ -8,11 +8,7 @@ external fuzzing tools.
 Run all current smoke targets:
 
 ```sh
-cargo run --manifest-path fuzz/Cargo.toml --bin primitive_parse -- --smoke
-cargo run --manifest-path fuzz/Cargo.toml --bin xref_load -- --smoke
-cargo run --manifest-path fuzz/Cargo.toml --bin stream_decode -- --smoke
-cargo run --manifest-path fuzz/Cargo.toml --bin content_tokenize -- --smoke
-cargo run --manifest-path fuzz/Cargo.toml --bin render_setup -- --smoke
+bash scripts/check_fuzz_smoke.sh
 ```
 
 Run one target against saved inputs:
@@ -28,13 +24,13 @@ fuzz run finds a panic, excessive-work case, or unstable error mapping.
 
 Current targets:
 
-| Target | Covered path |
-| --- | --- |
-| `primitive_parse` | PDF primitive parsing and prefix parsing |
-| `xref_load` | indirect object parsing, classic xref loading, modern xref loading |
-| `stream_decode` | stream object parsing and bounded filter decoding |
-| `content_tokenize` | decoded content stream tokenization and inline-image parsing |
-| `render_setup` | native metadata inspection and first-page render setup |
+| Target | Covered path | Security focus |
+| --- | --- | --- |
+| `primitive_parse` | PDF primitive parsing and prefix parsing | nesting, malformed scalars, offset accounting |
+| `xref_load` | indirect object parsing, classic xref loading, modern xref loading | object graph corruption, offset drift, expansion limits |
+| `stream_decode` | stream object parsing and bounded filter decoding | decode expansion and malformed filter data |
+| `content_tokenize` | decoded content stream tokenization and inline-image parsing | unterminated data and operand/operator ambiguity |
+| `render_setup` | native metadata inspection and first-page render setup | page setup, declared image dimensions, renderer budgets |
 
 Current minimized adversarial inputs:
 
@@ -48,3 +44,6 @@ Current minimized adversarial inputs:
 Panics are not caught by the harness. A panic or abort fails the smoke command
 and should be minimized into `fixtures/adversarial/` before the code path is
 hardened.
+
+See `docs/policies/security-fuzz-triage.md` for finding classification,
+private crash artifact handling, minimization rules, and nightly gate guidance.
