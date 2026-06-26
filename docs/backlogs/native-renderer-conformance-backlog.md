@@ -109,6 +109,26 @@ The focused government visual oracle reports 6 blockers across
 `government-tax-notice-barcode.pdf` as reductions for widget appearance,
 signature/seal composition, line/table geometry, and barcode/stamp parity.
 
+## Financial Report And Statement Delta
+
+Milestone 0149 added a focused financial-document manifest with three new
+synthetic fixtures for annual-report, cashflow-statement, and KPI chart-summary
+pages. The supported gate is green at 8/8 rendered, 0 fallbacks, and 0 errors;
+the dense-page benchmark reports 0 budget failures.
+
+The focused financial visual oracle reports 8 blockers:
+
+| Subsystem | Total | Blockers | Native errors |
+| --- | ---: | ---: | ---: |
+| `page-geometry` | 2 | 2 | 0 |
+| `rendering-core` | 5 | 5 | 0 |
+| `text-fonts` | 1 | 1 | 0 |
+
+Use `financial-annual-report-page.pdf`,
+`financial-cashflow-statement.pdf`, and `financial-chart-summary.pdf` as
+reductions for decimal text alignment, dense table-rule fidelity, chart vector
+geometry, and report page-geometry parity.
+
 ## Typed Unsupported Boundaries
 
 | Feature bucket | Fixtures | Current decision |

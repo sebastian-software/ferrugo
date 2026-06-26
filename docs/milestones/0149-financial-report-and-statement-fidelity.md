@@ -1,6 +1,6 @@
 # 0149: Financial Report And Statement Fidelity
 
-Status: todo
+Status: done
 Phase: 27
 Size: medium
 Depends on: 0148
@@ -45,4 +45,20 @@ dense business documents with strict table and number alignment.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-26.
+
+- Added three synthetic financial-document fixtures:
+  `financial-annual-report-page.pdf`,
+  `financial-cashflow-statement.pdf`, and
+  `financial-chart-summary.pdf`.
+- Added `fixtures/financial-document-manifest.tsv` for invoice, statement,
+  annual-report, cashflow, chart-summary, and report-statement slices.
+- Extended the native business-document smoke test to compile and render the
+  new financial fixtures.
+- Native supported gate is green at 8/8 rendered, 0 fallbacks, and 0 errors.
+- Dense-page benchmark reports 0 budget failures.
+- Visual oracle reports 8 fidelity blockers and 0 native/PDFium errors; those
+  deltas are routed to table-rule, decimal-alignment, chart-geometry, and
+  text-spacing follow-ups.
+- Report:
+  `docs/reports/financial-report-statement-fidelity-2026-06-26.md`.
