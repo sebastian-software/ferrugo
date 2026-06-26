@@ -122,7 +122,7 @@ Core supported runtime families remain native-only:
 | Family | Total | Native rendered | Fallback required | Errors |
 | --- | ---: | ---: | ---: | ---: |
 | browser-print | 11 | 11 | 0 | 0 |
-| form | 15 | 15 | 0 | 0 |
+| form | 18 | 18 | 0 | 0 |
 | office-export | 47 | 47 | 0 | 0 |
 
 Visual conformance still has 91 blockers and 8 native unsupported rows in the
@@ -132,6 +132,8 @@ The 0146 browser-print refresh adds three browser rendering-core blockers while
 keeping the browser native-supported and repeat-render gates green.
 The 0147 scanner/OCR refresh adds skew, large-image, and OCR form-overlay
 reductions while keeping the supported scanner workflow gate green.
+The 0148 government/form refresh adds permit, certificate, and tax-notice
+reductions while keeping the supported form-family gate green.
 
 | Subsystem tag | Blockers | Native errors | Primary owner |
 | --- | ---: | ---: | --- |

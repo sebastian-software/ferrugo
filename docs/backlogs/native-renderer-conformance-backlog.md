@@ -90,6 +90,25 @@ page geometry/skew parity, and overlay composition. Use
 `scanner-skewed-mailroom-page.pdf`, `scanner-large-image-budget.pdf`, and
 `scanner-ocr-form-overlay.pdf` as reductions for those follow-up slices.
 
+## Government Form And Certificate Delta
+
+Milestone 0148 added a focused government/form manifest with three new
+synthetic fixtures for permit forms, certificate pages, and tax notices. The
+supported gate is green at 8/8 rendered, 0 fallbacks, and 0 errors.
+
+The unsupported dynamic-form boundary remains explicit:
+
+| Family | Total | Fallback required | Bucket |
+| --- | ---: | ---: | --- |
+| `dynamic-xfa-unsupported` | 1 | 1 | `form.xfa-dynamic` |
+
+The focused government visual oracle reports 6 blockers across
+`annotations-forms` and `rendering-core`. Use
+`government-permit-checkbox-form.pdf`,
+`government-certificate-seal-signature.pdf`, and
+`government-tax-notice-barcode.pdf` as reductions for widget appearance,
+signature/seal composition, line/table geometry, and barcode/stamp parity.
+
 ## Typed Unsupported Boundaries
 
 | Feature bucket | Fixtures | Current decision |

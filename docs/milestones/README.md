@@ -34,7 +34,6 @@ when the server renderer is already correct and bounded.
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
-| 0148 | [Government Form And Certificate Coverage](0148-government-form-and-certificate-coverage.md) | 27 | medium | 0147 |
 | 0149 | [Financial Report And Statement Fidelity](0149-financial-report-and-statement-fidelity.md) | 27 | medium | 0148 |
 | 0150 | [Academic Publisher Corpus Gate](0150-academic-publisher-corpus-gate.md) | 27 | medium | 0149 |
 | 0151 | [Engineering Drawing Precision Gate](0151-engineering-drawing-precision-gate.md) | 28 | medium | 0150 |
@@ -117,6 +116,7 @@ when the server renderer is already correct and bounded.
 
 | ID | Milestone | Phase | Size | Completed |
 | --- | --- | --- | --- | --- |
+| 0148 | [Government Form And Certificate Coverage](0148-government-form-and-certificate-coverage.md) | 27 | medium | 2026-06-26 |
 | 0147 | [Scanner And OCR Workflow Corpus](0147-scanner-and-ocr-workflow-corpus.md) | 27 | medium | 2026-06-26 |
 | 0146 | [Browser Print Corpus Refresh](0146-browser-print-corpus-refresh.md) | 27 | medium | 2026-06-26 |
 | 0145 | [Office Suite Regression Corpus Refresh](0145-office-suite-regression-corpus-refresh.md) | 26 | medium | 2026-06-26 |

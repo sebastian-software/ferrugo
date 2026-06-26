@@ -1,6 +1,6 @@
 # 0148: Government Form And Certificate Coverage
 
-Status: todo
+Status: done
 Phase: 27
 Size: medium
 Depends on: 0147
@@ -44,4 +44,18 @@ combine forms, stamps, barcodes, signatures, and strict page geometry.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-26.
+
+- Added three synthetic government-style fixtures:
+  `government-permit-checkbox-form.pdf`,
+  `government-certificate-seal-signature.pdf`, and
+  `government-tax-notice-barcode.pdf`.
+- Added `fixtures/government-form-manifest.tsv` to separate supported static
+  form/certificate coverage from the dynamic-XFA unsupported boundary.
+- Native supported gate is green at 8/8 rendered, 0 fallbacks, and 0 errors.
+- Dynamic XFA remains explicitly typed as `form.xfa-dynamic`.
+- Visual oracle reports 6 fidelity blockers and 0 native/PDFium errors; those
+  deltas are routed to form appearance, line/table geometry, and stamp/barcode
+  composition follow-ups.
+- Report:
+  `docs/reports/government-form-certificate-coverage-2026-06-26.md`.
