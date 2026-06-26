@@ -218,6 +218,210 @@ def tagged_accessibility_metadata_pdf() -> bytes:
     return pdf.render(catalog, trailer_entries=f"/Info {info} 0 R ")
 
 
+def tagged_report_visual_integrity_pdf() -> bytes:
+    pdf = Pdf()
+    content = (
+        b"/H1 << /MCID 0 >> BDC "
+        b"q 0.12 0.18 0.28 rg 0 224 360 36 re f Q "
+        b"BT /F1 12 Tf 24 238 Td (Tagged Quarterly Report) Tj ET EMC "
+        b"/Table << /MCID 1 >> BDC "
+        b"q 0.97 0.98 0.99 rg 0 0 360 224 re f Q "
+        b"q 0.18 0.22 0.30 RG 0.7 w 24 54 312 132 re S "
+        b"24 154 m 336 154 l S 24 122 m 336 122 l S 24 90 m 336 90 l S "
+        b"132 54 m 132 186 l S 236 54 m 236 186 l S Q "
+        b"q 0.18 0.48 0.72 rg 260 74 18 64 re f 290 74 18 84 re f Q "
+        b"BT /F1 8 Tf 32 168 Td (Metric) Tj 108 0 Td (Value) Tj 104 0 Td (Status) Tj "
+        b"-212 -32 Td (Revenue) Tj 108 0 Td (128) Tj 104 0 Td (Green) Tj "
+        b"-212 -32 Td (Orders) Tj 108 0 Td (912) Tj 104 0 Td (Blue) Tj "
+        b"-212 -32 Td (Queue) Tj 108 0 Td (17) Tj 104 0 Td (Amber) Tj ET EMC"
+    )
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 360 260] "
+        "/Resources << /Font << /F1 4 0 R >> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    font = pdf.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    struct_tree = pdf.add(
+        f"<< /Type /StructTreeRoot /K [<< /S /Document /Pg {page} 0 R /K ["
+        f"<< /S /H1 /Pg {page} 0 R /K << /Type /MCR /Pg {page} 0 R /MCID 0 >> >> "
+        f"<< /S /Table /Pg {page} 0 R /K << /Type /MCR /Pg {page} 0 R /MCID 1 >> >>"
+        "] >>] /RoleMap << /H1 /H /Table /Table /Document /Document >> >>"
+    )
+    info = pdf.add("<< /Title (Tagged Report Visual Integrity) /Author (pdfrust) >>")
+    catalog = pdf.add(
+        f"<< /Type /Catalog /Pages {pages} 0 R /Lang (en-US) "
+        "/MarkInfo << /Marked true >> "
+        f"/StructTreeRoot {struct_tree} 0 R >>"
+    )
+    assert font == 4
+    return pdf.render(catalog, trailer_entries=f"/Info {info} 0 R ")
+
+
+def tagged_form_visual_integrity_pdf() -> bytes:
+    pdf = Pdf()
+    content = (
+        b"/Form << /MCID 0 >> BDC "
+        b"q 1 1 1 rg 0 0 300 200 re f Q "
+        b"q 0.92 0.96 1 rg 0 164 300 36 re f Q "
+        b"q 0.18 0.22 0.30 RG 0.7 w 24 44 252 108 re S "
+        b"24 124 m 276 124 l S 24 96 m 276 96 l S 24 68 m 276 68 l S "
+        b"120 44 m 120 152 l S Q "
+        b"BT /F1 11 Tf 24 178 Td (Tagged Intake Form) Tj "
+        b"/F1 8 Tf 32 136 Td (Field) Tj 96 0 Td (Value) Tj "
+        b"-96 -28 Td (Name) Tj 96 0 Td (Example User) Tj "
+        b"-96 -28 Td (Consent) Tj 96 0 Td (Accepted) Tj "
+        b"-96 -28 Td (Date) Tj 96 0 Td (2026-06-26) Tj ET EMC"
+    )
+    checked_appearance = (
+        b"1 1 1 rg 0 0 16 16 re f "
+        b"0 0 0 RG 0.8 w 0.5 0.5 15 15 re S "
+        b"0 0 0 RG 1.2 w 4 8 m 7 4 l S 7 4 m 13 13 l S"
+    )
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 300 200] "
+        "/Resources << /Font << /F1 4 0 R >> >> "
+        f"/Contents {contents} 0 R /Annots [6 0 R] >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    font = pdf.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    appearance = pdf.add(
+        b"<< /Type /XObject /Subtype /Form /BBox [0 0 16 16] /Length "
+        + str(len(checked_appearance)).encode("ascii")
+        + b" >>\nstream\n"
+        + checked_appearance
+        + b"\nendstream"
+    )
+    field = pdf.add(
+        "<< /Type /Annot /Subtype /Widget /FT /Btn /T (TaggedConsent) /V /Yes /AS /Yes "
+        "/Rect [32 74 48 90] "
+        f"/AP << /N << /Yes {appearance} 0 R >> >> >>"
+    )
+    struct_tree = pdf.add(
+        f"<< /Type /StructTreeRoot /K [<< /S /Document /Pg {page} 0 R /K ["
+        f"<< /S /Form /Pg {page} 0 R /K << /Type /MCR /Pg {page} 0 R /MCID 0 >> >>"
+        "] >>] /RoleMap << /Form /P /Document /Document >> >>"
+    )
+    info = pdf.add("<< /Title (Tagged Form Visual Integrity) /Author (pdfrust) >>")
+    catalog = pdf.add(
+        f"<< /Type /Catalog /Pages {pages} 0 R /Lang (en-US) "
+        f"/AcroForm << /Fields [{field} 0 R] >> "
+        "/MarkInfo << /Marked true >> "
+        f"/StructTreeRoot {struct_tree} 0 R >>"
+    )
+    assert font == 4
+    assert appearance == 5
+    assert field == 6
+    return pdf.render(catalog, trailer_entries=f"/Info {info} 0 R ")
+
+
+def tagged_office_alt_text_pdf() -> bytes:
+    pdf = Pdf()
+    content = (
+        b"q 1 1 1 rg 0 0 420 280 re f Q "
+        b"/Figure << /MCID 0 >> BDC "
+        b"q 0.93 0.96 0.99 rg 28 74 176 138 re f Q "
+        b"q 0.18 0.22 0.30 RG 0.7 w 28 74 176 138 re S "
+        b"28 108 m 204 108 l S 28 142 m 204 142 l S 28 176 m 204 176 l S Q "
+        b"q 0.18 0.48 0.72 rg 54 74 22 72 re f 94 74 22 96 re f 134 74 22 54 re f Q "
+        b"q 0.85 0.36 0.14 RG 1.4 w 54 146 m 94 170 l 134 128 l 174 188 l S Q EMC "
+        b"/P << /MCID 1 >> BDC "
+        b"q 0.18 0.22 0.30 RG 0.7 w 236 76 150 136 re S "
+        b"236 180 m 386 180 l S 236 148 m 386 148 l S 236 116 m 386 116 l S "
+        b"306 76 m 306 212 l S Q "
+        b"BT /F1 12 Tf 28 244 Td (Tagged Office Export) Tj "
+        b"/F1 8 Tf 46 224 Td (Figure has alt text in structure metadata.) Tj "
+        b"198 -28 Td (Item) Tj 70 0 Td (Status) Tj "
+        b"-70 -32 Td (Plan) Tj 70 0 Td (Green) Tj "
+        b"-70 -32 Td (Risk) Tj 70 0 Td (Amber) Tj "
+        b"-70 -32 Td (Launch) Tj 70 0 Td (Blue) Tj ET EMC"
+    )
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 420 280] "
+        "/Resources << /Font << /F1 4 0 R >> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    font = pdf.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    struct_tree = pdf.add(
+        f"<< /Type /StructTreeRoot /K [<< /S /Document /Pg {page} 0 R /K ["
+        f"<< /S /Figure /Alt (Quarterly chart panel) /Pg {page} 0 R "
+        f"/K << /Type /MCR /Pg {page} 0 R /MCID 0 >> >> "
+        f"<< /S /P /Pg {page} 0 R /K << /Type /MCR /Pg {page} 0 R /MCID 1 >> >>"
+        "] >>] /RoleMap << /Document /Document /Figure /Figure /P /P >> >>"
+    )
+    info = pdf.add("<< /Title (Tagged Office Alt Text Fixture) /Author (pdfrust) >>")
+    catalog = pdf.add(
+        f"<< /Type /Catalog /Pages {pages} 0 R /Lang (en-US) "
+        "/MarkInfo << /Marked true >> "
+        f"/StructTreeRoot {struct_tree} 0 R >>"
+    )
+    assert font == 4
+    return pdf.render(catalog, trailer_entries=f"/Info {info} 0 R ")
+
+
+def tagged_structure_heavy_report_pdf() -> bytes:
+    pdf = Pdf()
+    ops: list[str] = [
+        "q 0.98 0.99 1 rg 0 0 360 300 re f Q",
+        "q 0.12 0.18 0.28 rg 0 262 360 38 re f Q",
+        "BT /F1 12 Tf 24 276 Td (Structure Heavy Tagged Report) Tj ET",
+    ]
+    kids: list[str] = []
+    for idx in range(64):
+        x = 24 + (idx % 8) * 38
+        y = 230 - (idx // 8) * 24
+        ops.append(
+            f"/P << /MCID {idx} >> BDC "
+            f"q 0.18 0.22 0.30 RG 0.4 w {x} {y} 28 12 re S Q "
+            f"BT /F1 5 Tf {x + 3} {y + 4} Td ({idx:02d}) Tj ET EMC"
+        )
+        kids.append(
+            f"<< /S /P /Pg 2 0 R /K << /Type /MCR /Pg 2 0 R /MCID {idx} >> >>"
+        )
+    content = " ".join(ops).encode("ascii")
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 360 300] "
+        "/Resources << /Font << /F1 4 0 R >> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    font = pdf.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    struct_tree = pdf.add(
+        f"<< /Type /StructTreeRoot /K [<< /S /Document /Pg {page} 0 R /K ["
+        + " ".join(kids)
+        + "] >>] /RoleMap << /Document /Document /P /P >> >>"
+    )
+    info = pdf.add("<< /Title (Tagged Structure Heavy Report) /Author (pdfrust) >>")
+    catalog = pdf.add(
+        f"<< /Type /Catalog /Pages {pages} 0 R /Lang (en-US) "
+        "/MarkInfo << /Marked true >> "
+        f"/StructTreeRoot {struct_tree} 0 R >>"
+    )
+    assert font == 4
+    return pdf.render(catalog, trailer_entries=f"/Info {info} 0 R ")
+
+
 def malformed_tagged_structure_pdf() -> bytes:
     pdf = Pdf()
     content = b"0.2 0.2 0.2 rg 20 20 80 40 re f"
@@ -5838,6 +6042,10 @@ def main() -> None:
     write("user-unit-page.pdf", user_unit_page_pdf())
     write("metadata-outline-page-labels.pdf", metadata_outline_page_labels_pdf())
     write("tagged-accessibility-metadata.pdf", tagged_accessibility_metadata_pdf())
+    write("tagged-report-visual-integrity.pdf", tagged_report_visual_integrity_pdf())
+    write("tagged-form-visual-integrity.pdf", tagged_form_visual_integrity_pdf())
+    write("tagged-office-alt-text.pdf", tagged_office_alt_text_pdf())
+    write("tagged-structure-heavy-report.pdf", tagged_structure_heavy_report_pdf())
     write("malformed-tagged-structure.pdf", malformed_tagged_structure_pdf())
     write(
         "text-page.pdf",
