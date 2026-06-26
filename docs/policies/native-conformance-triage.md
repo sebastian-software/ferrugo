@@ -70,3 +70,26 @@ Use the CLI subsystem tags as the stable first-level owner routing:
   plus the native-only supported-family gate.
 - Do not reintroduce runtime PDFium fallback as a next action. PDFium remains
   maintainer oracle tooling only.
+
+## Unsupported Feature Report Format
+
+Every newly observed unsupported feature should be triaged with the same
+evidence discipline as visual blockers. Use this lightweight format before
+adding implementation work:
+
+| Field | Meaning |
+| --- | --- |
+| `artifact` | CLI JSON, corpus manifest, or issue evidence that introduced the case. |
+| `fixture_or_source` | Committed fixture path or privacy-safe producer/source label. |
+| `bucket` | Stable typed unsupported bucket, for example `image.filter`. |
+| `family` | Document family affected by the case. |
+| `frequency` | Count and denominator in the measured corpus or producer subset. |
+| `render_impact` | User-visible impact such as missing image, missing layer, blank page, degraded visual, or policy-only. |
+| `implementation_risk` | Security, memory, dependency, correctness, or API risk. |
+| `owner_route` | Next milestone, backlog slice, or policy owner. |
+| `runtime_pdfium` | Must stay `not required`; PDFium can only be archived oracle context. |
+| `validation_gate` | Small command set that proves the case stays typed or becomes supported. |
+
+Triage should rank unsupported features by real document impact and measured
+frequency before specification breadth. A valid outcome can be "keep typed
+unsupported" when implementation risk is too high for the current release.

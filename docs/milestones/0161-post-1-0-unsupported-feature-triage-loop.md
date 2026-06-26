@@ -1,6 +1,6 @@
 # 0161: Post-1.0 Unsupported Feature Triage Loop
 
-Status: todo
+Status: done
 Phase: 30
 Size: medium
 Depends on: 0160
@@ -47,4 +47,17 @@ prioritizes real-world document impact over theoretical specification coverage.
 
 ## Completion Notes
 
-Empty until done.
+- Added `docs/reports/post-1-0-unsupported-feature-triage-2026-06-26.md`.
+- Updated `docs/reports/native-renderer-support-matrix-2026-06-24.md` with
+  frequency, impact, implementation risk, owner route, and representative
+  fixtures for the 5 remaining typed unsupported buckets.
+- Extended `docs/policies/native-conformance-triage.md` with a lightweight
+  unsupported-feature report format for newly observed cases.
+- Supported runtime families remain green at 87/87 native renders with 0
+  fallbacks and 0 errors.
+- Full corpus classification reports 8 typed unsupported rows:
+  `image.filter` (3), `graphics.transparency` (2),
+  `graphics.optional-content` (1), `graphics.pattern-shading` (1), and
+  `form.xfa-dynamic` (1), plus 1 encrypted policy error.
+- Native-only workspace tests and 0161 supported/unsupported fallback summaries
+  passed.

@@ -178,3 +178,35 @@ Operator follow-up priority:
 4. `graphics.pattern-shading`: shading and pattern coverage for `sh`.
 
 Report: `docs/reports/renderer-operator-coverage-audit-2026-06-26.md`.
+
+## 0161 Unsupported Feature Triage Update
+
+Milestone 0161 turns the PDFium-free 1.0 unsupported backlog into an
+impact-ranked loop. The supported runtime families remain green at 87/87 native
+renders with 0 fallbacks and 0 errors. The full generated corpus has 8 typed
+unsupported rows across 5 buckets, plus 1 encrypted policy error.
+
+Artifact: `target/triage-0161-unsupported-classification.json`.
+Report: `docs/reports/post-1-0-unsupported-feature-triage-2026-06-26.md`.
+
+| Bucket | Frequency | Families | Render impact | Implementation risk | Owner route |
+| --- | ---: | --- | --- | --- | --- |
+| `image.filter` | 3/186 | `scan` | High for scanner, fax, archive, and compliance workflows. | High: JPX/JBIG2/CCITT need decoder, isolation, fuzz, and memory decisions. | 0209 codec policy; 0170 image memory. |
+| `graphics.transparency` | 2/186 | `report` | Medium to high for reports, dashboards, presentations, and design exports. | High: blend and soft-mask semantics affect fidelity and intermediate memory. | 0183 transparency reductions; 0213 memory optimization. |
+| `graphics.optional-content` | 1/186 | `presentation` | Medium for layered presentation, map, and CAD-style exports. | Medium: OCMD policy and layer flattening must be explicit. | 0192 optional-content policy. |
+| `graphics.pattern-shading` | 1/186 | `report` | Low to medium now; higher for print/design/vector-heavy exports. | Medium to high: mesh/pattern fidelity needs reductions. | 0166 office vector effects; 0204 chart/vector effects. |
+| `form.xfa-dynamic` | 1/186 | `mixed-layout` | Medium for legacy enterprise/government forms. | High: dynamic XFA implies runtime behavior outside current renderer scope. | 0206 form appearance/flattening policy. |
+
+Representative unsupported fixtures:
+
+- `image.filter`: `unsupported-ccitt-image.pdf`,
+  `unsupported-jbig2-image.pdf`, `unsupported-jpx-image.pdf`.
+- `graphics.transparency`: `extgstate-luminosity-soft-mask.pdf`,
+  `unsupported-blend-mode.pdf`.
+- `graphics.optional-content`: `optional-content-ocmd.pdf`.
+- `graphics.pattern-shading`: `mesh-shading-unsupported.pdf`.
+- `form.xfa-dynamic`: `xfa-dynamic-no-static-appearance.pdf`.
+
+New unsupported cases should use the report format in
+`docs/policies/native-conformance-triage.md` and must not route consumers back
+to runtime PDFium fallback.
