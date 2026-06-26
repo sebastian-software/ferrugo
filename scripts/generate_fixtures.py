@@ -4741,6 +4741,83 @@ def technical_repeated_symbols_pdf() -> bytes:
     return page_pdf("[0 0 320 220]", " ".join(ops))
 
 
+def engineering_floorplan_precision_pdf() -> bytes:
+    ops: list[str] = [
+        "q 0.99 0.99 0.98 rg 0 0 420 300 re f Q",
+        "q 0.78 0.78 0.78 RG 0.35 w [5 3] 0 d",
+    ]
+    for x in range(40, 381, 20):
+        ops.append(f"{x} 38 m {x} 262 l S")
+    for y in range(40, 261, 20):
+        ops.append(f"38 {y} m 382 {y} l S")
+    ops.extend(
+        [
+            "Q",
+            "q 0.04 0.07 0.10 RG 0.55 w",
+            "60 60 m 360 60 l 360 240 l 60 240 l h S",
+            "60 150 m 182 150 l 238 150 m 360 150 l S",
+            "210 60 m 210 118 l 210 182 m 210 240 l S",
+            "90 90 m 160 90 l 160 126 l 90 126 l h S",
+            "254 90 m 330 90 l 330 126 l 254 126 l h S",
+            "Q",
+            "q 0.75 0.18 0.10 RG 0.8 w [10 5] 0 d 60 260 m 360 260 l S Q",
+            "BT /F1 7 Tf 166 266 Td (30.00 m) Tj 368 148 Td (18.00 m) Tj ET",
+            "BT /F1 6 Tf 92 132 Td (LAB A) Tj 256 132 Td (LAB B) Tj 214 152 Td (DOOR) Tj ET",
+        ]
+    )
+    return page_pdf("[0 0 420 300]", " ".join(ops))
+
+
+def engineering_schematic_symbols_pdf() -> bytes:
+    ops: list[str] = [
+        "q 0.99 1 0.99 rg 0 0 360 240 re f Q",
+        "q 0.05 0.07 0.10 RG 0.6 w",
+        "34 120 m 86 120 l S 114 120 m 166 120 l S 194 120 m 246 120 l S 274 120 m 326 120 l S",
+        "86 104 m 86 136 l 114 136 l 114 104 l h S",
+        "166 104 m 194 136 l 194 104 l h S",
+        "246 104 m 274 104 l 274 136 l 246 136 l h S",
+        "54 76 m 54 52 l 306 52 l 306 76 l S",
+        "Q",
+        "q 0.05 0.07 0.10 RG 0.4 w",
+    ]
+    for x in range(44, 321, 28):
+        ops.append(f"{x} 176 m {x + 10} 194 l {x + 20} 176 l h S")
+    ops.extend(
+        [
+            "Q",
+            "q 0.10 0.28 0.48 RG 0.7 w [6 4] 0 d 34 176 m 326 176 l S Q",
+            "BT /F1 8 Tf 28 212 Td (Schematic Symbol Sheet) Tj 236 0 Td (REV C) Tj ET",
+            "BT /F1 6 Tf 82 142 Td (R1) Tj 168 142 Td (D1) Tj 246 142 Td (U2) Tj 44 42 Td (RETURN BUS) Tj ET",
+        ]
+    )
+    return page_pdf("[0 0 360 240]", " ".join(ops))
+
+
+def engineering_large_transform_detail_pdf() -> bytes:
+    ops: list[str] = [
+        "q 1 1 1 rg 0 0 2400 1600 re f Q",
+        "q 0.05 0.08 0.11 RG 2.4 w",
+        "180 180 m 2220 180 l 2220 1360 l 180 1360 l h S",
+        "420 360 m 1060 360 l 1060 930 l 420 930 l h S",
+        "1320 360 m 1980 360 l 1980 930 l 1320 930 l h S",
+        "Q",
+        "q 0.70 0.70 0.70 RG 0.9 w [24 18] 0 d",
+    ]
+    for x in range(300, 2221, 160):
+        ops.append(f"{x} 160 m {x} 1380 l S")
+    for y in range(280, 1361, 140):
+        ops.append(f"160 {y} m 2240 {y} l S")
+    ops.extend(
+        [
+            "Q",
+            "q 0.80 0.20 0.10 RG 4 w 180 1440 m 2220 1440 l S 180 1418 m 180 1462 l S 2220 1418 m 2220 1462 l S Q",
+            "q 0.04 0.24 0.34 RG 2 w 1180 520 m 1220 620 l 1260 520 l h S 1180 760 m 1260 760 l S Q",
+            "BT /F1 44 Tf 880 1488 Td (LARGE COORDINATE DETAIL) Tj 980 -92 Td (204m) Tj ET",
+        ]
+    )
+    return page_pdf("[0 0 2400 1600]", " ".join(ops))
+
+
 def chart_combo_legend_pdf() -> bytes:
     ops: list[str] = [
         "q 0.99 0.99 0.98 rg 0 0 360 240 re f Q",
@@ -5630,6 +5707,9 @@ def main() -> None:
     write("technical-hatch-clipping.pdf", technical_hatch_clipping_pdf())
     write("technical-large-coordinate-plan.pdf", technical_large_coordinate_plan_pdf())
     write("technical-repeated-symbols.pdf", technical_repeated_symbols_pdf())
+    write("engineering-floorplan-precision.pdf", engineering_floorplan_precision_pdf())
+    write("engineering-schematic-symbols.pdf", engineering_schematic_symbols_pdf())
+    write("engineering-large-transform-detail.pdf", engineering_large_transform_detail_pdf())
     write("chart-combo-legend.pdf", chart_combo_legend_pdf())
     write("dashboard-kpi-panels.pdf", dashboard_kpi_panels_pdf())
     write("map-marker-clusters.pdf", map_marker_clusters_pdf())

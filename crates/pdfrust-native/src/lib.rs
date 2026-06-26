@@ -6259,6 +6259,33 @@ mod tests {
                 "repeated symbols drawing",
                 3_000,
             ),
+            (
+                include_bytes!("../../../fixtures/generated/engineering-floorplan-precision.pdf")
+                    as &[u8],
+                420,
+                300,
+                420,
+                "engineering floorplan precision",
+                5_000,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/engineering-schematic-symbols.pdf")
+                    as &[u8],
+                360,
+                240,
+                360,
+                "engineering schematic symbols",
+                3_500,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/engineering-large-transform-detail.pdf")
+                    as &[u8],
+                400,
+                267,
+                400,
+                "engineering large transform detail",
+                2_500,
+            ),
         ];
 
         for &(bytes, expected_width, expected_height, max_edge, label, min_visible_pixels) in
