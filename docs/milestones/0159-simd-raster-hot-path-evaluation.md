@@ -1,6 +1,6 @@
 # 0159: SIMD Raster Hot Path Evaluation
 
-Status: todo
+Status: done
 Phase: 29
 Size: medium
 Depends on: 0158
@@ -45,4 +45,13 @@ while preserving deterministic, portable Rust-native behavior.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-26.
+
+- Evaluated scalar blend, source-over, image sample conversion, transparency,
+  vector-stress, scan, and repeated-resource hot paths.
+- Rejected a retained SIMD/platform-accelerated path for this milestone because
+  normal builds must honor the Rust 1.81 MSRV and the measured evidence does
+  not justify dual scalar/accelerated maintenance yet.
+- Kept scalar rendering as the only production path.
+- Added `docs/reports/simd-raster-hot-path-evaluation-2026-06-26.md` with
+  benchmark, visual-subset, and rejection evidence.
