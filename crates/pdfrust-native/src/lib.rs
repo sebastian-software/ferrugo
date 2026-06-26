@@ -5909,6 +5909,27 @@ mod tests {
                 "account statement",
             ),
             (
+                include_bytes!("../../../fixtures/generated/financial-annual-report-page.pdf")
+                    as &[u8],
+                420,
+                300,
+                "financial annual report",
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/financial-cashflow-statement.pdf")
+                    as &[u8],
+                340,
+                260,
+                "financial cashflow statement",
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/financial-chart-summary.pdf")
+                    as &[u8],
+                380,
+                240,
+                "financial chart summary",
+            ),
+            (
                 include_bytes!("../../../fixtures/generated/thermal-receipt.pdf") as &[u8],
                 160,
                 260,

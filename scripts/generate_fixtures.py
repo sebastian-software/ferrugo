@@ -3693,6 +3693,84 @@ def account_statement_ledger_pdf() -> bytes:
     )
 
 
+def financial_annual_report_page_pdf() -> bytes:
+    return page_pdf(
+        "[0 0 420 300]",
+        (
+            "q 0.98 0.99 1 rg 0 0 420 300 re f Q "
+            "q 0.07 0.17 0.31 rg 24 246 372 30 re f Q "
+            "q 0.15 0.22 0.36 RG 0.7 w "
+            "24 64 m 260 64 l 260 218 l 24 218 l h S "
+            "24 194 m 260 194 l S 24 170 m 260 170 l S 24 146 m 260 146 l S "
+            "24 122 m 260 122 l S 24 98 m 260 98 l S "
+            "104 64 m 104 218 l S 156 64 m 156 218 l S 208 64 m 208 218 l S "
+            "288 82 m 288 214 l 382 82 l S Q "
+            "q 0.10 0.45 0.60 rg 300 82 12 52 re f 326 82 12 78 re f 352 82 12 98 re f Q "
+            "q 0.72 0.16 0.12 rg 314 82 12 34 re f 340 82 12 48 re f 366 82 12 62 re f Q "
+            "BT /F1 12 Tf 32 256 Td (Annual Report Snapshot) Tj 252 0 Td (FY 2026) Tj "
+            "/F1 8 Tf -248 -54 Td (Metric) Tj 80 0 Td (2024) Tj 52 0 Td (2025) Tj 52 0 Td (2026) Tj "
+            "-184 -24 Td (Revenue) Tj 80 0 Td (940.25) Tj 52 0 Td (981.40) Tj 52 0 Td (1032.10) Tj "
+            "-184 -24 Td (Gross Margin) Tj 80 0 Td (41.8%) Tj 52 0 Td (42.6%) Tj 52 0 Td (43.1%) Tj "
+            "-184 -24 Td (Operating Cash) Tj 80 0 Td (120.00) Tj 52 0 Td (138.60) Tj 52 0 Td (151.25) Tj "
+            "-184 -24 Td (Net Income) Tj 80 0 Td (88.10) Tj 52 0 Td (92.75) Tj 52 0 Td (101.80) Tj "
+            "-184 -24 Td (EPS Diluted) Tj 80 0 Td (1.42) Tj 52 0 Td (1.51) Tj 52 0 Td (1.67) Tj "
+            "188 126 Td (Revenue) Tj 0 -12 Td (Income) Tj "
+            "-264 -162 Td (Synthetic financial fixture; values are examples only.) Tj ET"
+        ),
+    )
+
+
+def financial_cashflow_statement_pdf() -> bytes:
+    return page_pdf(
+        "[0 0 340 260]",
+        (
+            "q 1 1 1 rg 0 0 340 260 re f Q "
+            "q 0.91 0.95 0.98 rg 18 210 304 28 re f Q "
+            "q 0.13 0.20 0.28 RG 0.7 w "
+            "18 54 m 322 54 l 322 202 l 18 202 l h S "
+            "18 178 m 322 178 l S 18 154 m 322 154 l S 18 130 m 322 130 l S "
+            "18 106 m 322 106 l S 18 82 m 322 82 l S "
+            "178 54 m 178 202 l S 238 54 m 238 202 l S 286 54 m 286 202 l S Q "
+            "q 0 0 0 rg 260 28 1 16 re f 265 28 3 16 re f 272 28 1 16 re f "
+            "278 28 4 16 re f 286 28 1 16 re f 292 28 2 16 re f Q "
+            "BT /F1 10 Tf 24 222 Td (Condensed Cash Flow Statement) Tj 210 0 Td (USD m) Tj "
+            "/F1 8 Tf -210 -36 Td (Line item) Tj 160 0 Td (Q1) Tj 60 0 Td (Q2) Tj 48 0 Td (YTD) Tj "
+            "-268 -24 Td (Cash from operations) Tj 160 0 Td (41.20) Tj 60 0 Td (44.75) Tj 48 0 Td (85.95) Tj "
+            "-268 -24 Td (Capital expenditure) Tj 160 0 Td ((12.05)) Tj 60 0 Td ((13.10)) Tj 48 0 Td ((25.15)) Tj "
+            "-268 -24 Td (Free cash flow) Tj 160 0 Td (29.15) Tj 60 0 Td (31.65) Tj 48 0 Td (60.80) Tj "
+            "-268 -24 Td (Debt service) Tj 160 0 Td ((8.00)) Tj 60 0 Td ((8.00)) Tj 48 0 Td ((16.00)) Tj "
+            "-268 -24 Td (Ending cash) Tj 160 0 Td (76.40) Tj 60 0 Td (100.05) Tj 48 0 Td (100.05) Tj "
+            "-268 -46 Td (Decimal columns exercise text alignment and table-rule fidelity.) Tj ET"
+        ),
+    )
+
+
+def financial_chart_summary_pdf() -> bytes:
+    return page_pdf(
+        "[0 0 380 240]",
+        (
+            "q 0.99 0.99 0.97 rg 0 0 380 240 re f Q "
+            "q 0.12 0.28 0.42 rg 0 202 380 38 re f Q "
+            "q 0.18 0.24 0.30 RG 0.8 w 32 54 m 32 174 l 222 54 l S "
+            "32 84 m 222 84 l 32 114 m 222 114 l 32 144 m 222 144 l S Q "
+            "q 0.14 0.48 0.66 rg 54 54 18 54 re f 94 54 18 74 re f 134 54 18 94 re f 174 54 18 70 re f Q "
+            "q 0.78 0.28 0.12 rg 74 54 18 38 re f 114 54 18 44 re f 154 54 18 58 re f 194 54 18 64 re f Q "
+            "q 0.10 0.10 0.10 RG 1.2 w 56 110 m 96 122 l 136 150 l 176 132 l 216 166 l S Q "
+            "q 0.12 0.18 0.25 RG 0.7 w "
+            "246 72 m 352 72 l 352 164 l 246 164 l h S "
+            "246 141 m 352 141 l S 246 118 m 352 118 l S 246 95 m 352 95 l S "
+            "304 72 m 304 164 l S Q "
+            "BT /F1 11 Tf 26 216 Td (Financial KPI Summary) Tj 240 0 Td (Q2) Tj "
+            "/F1 8 Tf -238 -34 Td (Revenue) Tj 40 0 Td (Cost) Tj 40 0 Td (Margin trend) Tj "
+            "116 -18 Td (KPI) Tj 58 0 Td (Value) Tj "
+            "-58 -23 Td (ARR) Tj 58 0 Td (12.4) Tj "
+            "-58 -23 Td (NRR) Tj 58 0 Td (108%) Tj "
+            "-58 -23 Td (OpEx) Tj 58 0 Td (4.8) Tj "
+            "-218 -126 Td (Synthetic chart summary; no customer financial data.) Tj ET"
+        ),
+    )
+
+
 def thermal_receipt_pdf() -> bytes:
     return page_pdf(
         "[0 0 160 260]",
@@ -5454,6 +5532,9 @@ def main() -> None:
     write("multi-page-report.pdf", multi_page_report_pdf())
     write("business-invoice-dense.pdf", business_invoice_dense_pdf())
     write("account-statement-ledger.pdf", account_statement_ledger_pdf())
+    write("financial-annual-report-page.pdf", financial_annual_report_page_pdf())
+    write("financial-cashflow-statement.pdf", financial_cashflow_statement_pdf())
+    write("financial-chart-summary.pdf", financial_chart_summary_pdf())
     write("thermal-receipt.pdf", thermal_receipt_pdf())
     write("business-form-stamp-signature.pdf", business_form_stamp_signature_pdf())
     write("government-permit-checkbox-form.pdf", government_permit_checkbox_form_pdf())
