@@ -1,6 +1,6 @@
 # 0171: Long Document Navigation And Page Cache Gate
 
-Status: todo
+Status: done
 Phase: 32
 Size: medium
 Depends on: 0170
@@ -46,4 +46,35 @@ without retaining unbounded page state.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-26.
+
+Report:
+
+- `docs/reports/long-document-navigation-page-cache-gate-2026-06-26.md`
+
+Implemented:
+
+- Added `fixtures/long-document-navigation-manifest.tsv` for long-document
+  navigation, repeated resource, book, report, and statement samples.
+- Added `long-document-navigation-deck.pdf`, a 12-page generated fixture with
+  repeated font/image resources and first/next/random-page sampling coverage.
+- Added native tests for bounded scheduler navigation sampling and
+  caller-owned cache-key isolation across page/background variants.
+
+Validation:
+
+- `cargo test -p pdfrust-native long_document_navigation -- --nocapture`
+- `cargo test -p pdfrust-native native_page_cache -- --nocapture`
+- Long-document supported gate: 5 total, 5 native rendered, 0 fallbacks, 0
+  errors.
+- Long-document benchmark: 5 total, 5 native rendered, 0 fallbacks, 0 errors, 0
+  budget failures.
+- Repeat benchmark: 5 total, 5 native rendered, 0 fallbacks, 0 errors, 0 budget
+  failures under `isolated-render`.
+- Batch memory profile: 10 jobs, 10 native rendered, 0 fallbacks, 0 errors, 0
+  budget failures with `max_in_flight_pixels = 51200`.
+- Maintainer visual comparison: 5 total, 0 exact, 0 accepted drift, 5 fidelity
+  blockers, 0 native errors, 0 PDFium errors.
+- `cargo test --workspace --no-default-features`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo fmt --check`

@@ -3688,6 +3688,41 @@ mod tests {
     }
 
     #[test]
+    fn native_page_cache_key_should_isolate_long_document_navigation_pages() {
+        let options = ThumbnailOptions {
+            max_edge: 210,
+            ..ThumbnailOptions::default()
+        };
+        let first_page = NativePageCacheKey::from_options(0x7171, &options, "default");
+        let random_page = NativePageCacheKey::from_options(
+            0x7171,
+            &ThumbnailOptions {
+                page_index: 11,
+                ..options
+            },
+            "default",
+        );
+        let different_background = NativePageCacheKey::from_options(
+            0x7171,
+            &ThumbnailOptions {
+                background: pdfrust_thumbnail::Rgba {
+                    r: 245,
+                    g: 246,
+                    b: 250,
+                    a: 255,
+                },
+                ..options
+            },
+            "default",
+        );
+
+        assert_ne!(first_page, random_page);
+        assert_ne!(first_page, different_background);
+        assert_eq!(random_page.page_index, 11);
+        assert!(!NativePageCachePolicy::IsolatedRender.permits_disk_persistence());
+    }
+
+    #[test]
     fn native_backend_should_expose_memory_diagnostics() {
         let diagnostics = NativeBackend::new().memory_diagnostics();
 
@@ -7241,6 +7276,44 @@ mod tests {
                     .filter(|pixel| *pixel != [255, 255, 255, 255])
                     .count()
                     >= 6_000
+            );
+        }
+    }
+
+    #[test]
+    fn native_parallel_renderer_should_sample_generated_long_document_navigation_pages() {
+        let bytes = include_bytes!("../../../fixtures/generated/long-document-navigation-deck.pdf");
+        let metadata =
+            DocumentMetadataBackend::inspect(&NativeBackend::new(), PdfSource::from_bytes(bytes))
+                .expect("long document navigation fixture should inspect");
+
+        assert_eq!(metadata.page_count(), 12);
+
+        let result = render_pages_parallel(
+            PdfSource::from_bytes(bytes),
+            &[0, 1, 11, 5],
+            &ThumbnailOptions {
+                max_edge: 210,
+                ..ThumbnailOptions::default()
+            },
+            ParallelRenderOptions {
+                max_workers: 3,
+                max_in_flight_pixels: 210 * 210 * 2,
+            },
+        )
+        .expect("first, next, and random long-document pages should render");
+
+        assert_eq!(result.workers, 2);
+        assert_eq!(result.pages.len(), 4);
+        for page in &result.pages {
+            assert_eq!(page.width, 150);
+            assert_eq!(page.height, 210);
+            assert!(
+                page.bytes
+                    .chunks_exact(4)
+                    .filter(|pixel| *pixel != [255, 255, 255, 255])
+                    .count()
+                    >= 12_000
             );
         }
     }

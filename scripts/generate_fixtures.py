@@ -6505,6 +6505,75 @@ def longform_repeated_resources_pdf() -> bytes:
     return pdf.render(catalog)
 
 
+def long_document_navigation_deck_pdf() -> bytes:
+    pdf = Pdf()
+    image = bytes(
+        channel
+        for y in range(8)
+        for x in range(8)
+        for channel in (
+            172 + ((x * 9 + y * 3) % 72),
+            196 + ((x * 4 + y * 7) % 48),
+            224 - ((x * 5 + y * 5) % 64),
+        )
+    )
+    image_object = pdf.add(
+        b"<< /Type /XObject /Subtype /Image /Width 8 /Height 8 "
+        b"/ColorSpace /DeviceRGB /BitsPerComponent 8 /Length "
+        + str(len(image)).encode("ascii")
+        + b" >>\nstream\n"
+        + image
+        + b"\nendstream"
+    )
+
+    def page_content(page_number: int) -> bytes:
+        accent = 0.18 + (page_number % 4) * 0.08
+        ops: list[str] = [
+            "q 0.98 0.985 0.99 rg 0 0 300 420 re f Q",
+            f"q {accent:.2f} 0.28 0.46 rg 0 384 300 36 re f Q",
+            f"BT /F1 12 Tf 28 398 Td (Navigation page {page_number:02d}) Tj ET",
+            "q 90 0 0 72 28 286 cm /SharedImg Do Q",
+        ]
+        for row in range(12):
+            y = 250 - row * 16
+            width = 206 - ((row + page_number) % 5) * 20
+            ops.append(f"q 0.18 0.18 0.18 rg 32 {y} {width} 2 re f Q")
+        for col in range(4):
+            x = 32 + col * 58
+            height = 26 + ((page_number + col) % 5) * 10
+            ops.append(f"q 0.24 0.42 0.62 rg {x} 42 34 {height} re f Q")
+        ops.append(f"BT /F1 7 Tf 128 18 Td (page {page_number} of 12) Tj ET")
+        return " ".join(ops).encode("ascii")
+
+    content_objects = [
+        pdf.add(
+            f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+            + content
+            + b"\nendstream"
+        )
+        for content in [page_content(index) for index in range(1, 13)]
+    ]
+    page_objects = [
+        pdf.add(
+            "<< /Type /Page /Parent 26 0 R /MediaBox [0 0 300 420] "
+            f"/Resources << /Font << /F1 27 0 R >> /XObject << /SharedImg {image_object} 0 R >> >> "
+            f"/Contents {content} 0 R >>"
+        )
+        for content in content_objects
+    ]
+    pages = pdf.add(
+        "<< /Type /Pages /Kids ["
+        + " ".join(f"{page} 0 R" for page in page_objects)
+        + "] /Count 12 >>"
+    )
+    font = pdf.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert image_object == 1
+    assert pages == 26
+    assert font == 27
+    return pdf.render(catalog)
+
+
 def prepress_trim_bleed_marks_pdf() -> bytes:
     pdf = Pdf()
     ops: list[str] = [
@@ -6943,6 +7012,7 @@ def main() -> None:
     write("academic-references-appendix.pdf", academic_references_appendix_pdf())
     write("long-report-sampling.pdf", long_report_sampling_pdf())
     write("book-frontmatter-page-labels.pdf", book_frontmatter_page_labels_pdf())
+    write("long-document-navigation-deck.pdf", long_document_navigation_deck_pdf())
     write("manual-illustrated-chapter.pdf", manual_illustrated_chapter_pdf())
     write("ebook-narrow-longform.pdf", ebook_narrow_longform_pdf())
     write("longform-repeated-resources.pdf", longform_repeated_resources_pdf())

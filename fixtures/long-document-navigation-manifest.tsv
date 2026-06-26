@@ -1,0 +1,6 @@
+path	family	source	license	page_count	features	notes
+fixtures/generated/long-document-navigation-deck.pdf	navigation-longdoc	scripts/generate_fixtures.py	MIT OR Apache-2.0	12	long-document,navigation,repeated-image,repeated-font,expected:native	Generated twelve-page long document fixture for first, next, and random-page navigation sampling.
+fixtures/generated/book-frontmatter-page-labels.pdf	book-navigation	scripts/generate_fixtures.py	MIT OR Apache-2.0	5	book,longform,page-labels,outlines,frontmatter,multipage,expected:native	Existing book-like longform fixture with front matter, chapter labels, and outline entries.
+fixtures/generated/longform-repeated-resources.pdf	repeated-resources	scripts/generate_fixtures.py	MIT OR Apache-2.0	3	longform,multipage,repeated-font,repeated-image,shared-resource,expected:native	Existing longform fixture reusing one font and one Image XObject across pages.
+fixtures/generated/long-report-sampling.pdf	report-sampling	scripts/generate_fixtures.py	MIT OR Apache-2.0	3	long-report,multipage,table,text,sampling,expected:native	Existing three-page long report fixture for representative page sampling.
+fixtures/generated/multi-page-report.pdf	statement-navigation	scripts/generate_fixtures.py	MIT OR Apache-2.0	2	text,table,vector,multipage,report,expected:native	Existing two-page report with repeated headers, table lines, and text.

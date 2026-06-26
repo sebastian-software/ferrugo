@@ -34,7 +34,6 @@ when the server renderer is already correct and bounded.
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
-| 0171 | [Long Document Navigation And Page Cache Gate](0171-long-document-navigation-and-page-cache-gate.md) | 32 | medium | 0170 |
 | 0172 | [High-DPI Thumbnail And Preview Fidelity](0172-high-dpi-thumbnail-and-preview-fidelity.md) | 32 | medium | 0171 |
 | 0173 | [Corrupt-But-Common PDF Recovery Corpus](0173-corrupt-but-common-pdf-recovery-corpus.md) | 32 | medium | 0172 |
 | 0174 | [Typed Unsupported Boundary API Freeze](0174-typed-unsupported-boundary-api-freeze.md) | 32 | small | 0173 |
@@ -94,6 +93,7 @@ when the server renderer is already correct and bounded.
 
 | ID | Milestone | Phase | Size | Completed |
 | --- | --- | --- | --- | --- |
+| 0171 | [Long Document Navigation And Page Cache Gate](0171-long-document-navigation-and-page-cache-gate.md) | 32 | medium | 2026-06-26 |
 | 0170 | [Raster Image Heavy Document Memory Gate](0170-raster-image-heavy-document-memory-gate.md) | 31 | medium | 2026-06-26 |
 | 0169 | [Font Fallback Script Mixing And Emoji Coverage](0169-font-fallback-script-mixing-and-emoji-coverage.md) | 31 | medium | 2026-06-26 |
 | 0168 | [Email Client And Web Archive PDF Coverage](0168-email-client-and-web-archive-pdf-coverage.md) | 31 | medium | 2026-06-26 |
