@@ -1,0 +1,72 @@
+%PDF-1.4
+%‚„œ”
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 180] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+5 0 obj
+<< /Length 197 >>
+stream
+q 1 1 1 rg 0 0 300 180 re f Q q 0.18 0.22 0.30 RG 0.8 w 24 42 252 94 re S Q BT /F1 11 Tf 32 144 Td (Draft Agreement) Tj /F1 8 Tf 32 116 Td (Status: pending signature) Tj 0 -28 Td (Revision 0) Tj ET
+endstream
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000015 00000 n 
+0000000064 00000 n 
+0000000121 00000 n 
+0000000247 00000 n 
+0000000317 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+565
+%%EOF
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 180] /Resources << /Font << /F1 4 0 R >> >> /Contents 8 0 R /Annots [9 0 R] >>
+endobj
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [9 0 R] >> >>
+endobj
+6 0 obj
+<< /Type /Sig /Filter /Adobe.PPKLite /SubFilter /adbe.pkcs7.detached /ByteRange [0 0 0 0] /Contents <00> /M (D:20260626100600Z) >>
+endobj
+7 0 obj
+<< /Type /XObject /Subtype /Form /BBox [0 0 82 24] /Length 129 >>
+stream
+0.94 0.94 0.94 rg 0 0 82 24 re f 0 0 0 RG 0.8 w 0.5 0.5 81 23 re S 0.10 0.10 0.10 RG 1.6 w 8 8 m 22 16 l 38 6 l 56 18 l 74 11 l S
+endstream
+endobj
+8 0 obj
+<< /Length 335 >>
+stream
+q 1 1 1 rg 0 0 300 180 re f Q q 0.18 0.22 0.30 RG 0.8 w 24 42 252 94 re S 24 106 m 276 106 l S Q q 0.78 0.04 0.04 RG 1.2 w 214 118 44 18 re S Q BT /F1 11 Tf 32 144 Td (Signed Agreement) Tj /F1 8 Tf 32 118 Td (Status: completed by incremental update) Tj 0 -28 Td (Revision 1 signed at 10:06 UTC) Tj 0 -48 Td (Signature appearance) Tj ET
+endstream
+endobj
+9 0 obj
+<< /Type /Annot /Subtype /Widget /FT /Sig /T (IncrementalSignature) /V 6 0 R /Rect [190 44 272 68] /AP << /N 7 0 R >> >>
+endobj
+xref
+1 1
+0000000890 00000 n 
+3 1
+0000000748 00000 n 
+6 4
+0000000971 00000 n 
+0000001117 00000 n 
+0000001345 00000 n 
+0000001731 00000 n 
+trailer
+<< /Size 10 /Root 1 0 R /Prev 565 >>
+startxref
+1867
+%%EOF

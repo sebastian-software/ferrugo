@@ -5111,6 +5111,66 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_render_generated_e_signature_workflow_fixtures() {
+        let fixtures: &[(&[u8], u32, u32, &str, usize)] = &[
+            (
+                include_bytes!("../../../fixtures/generated/e-signature-contract-workflow.pdf")
+                    as &[u8],
+                360,
+                260,
+                "e-signature contract workflow",
+                16_000,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/e-signature-audit-certificate.pdf")
+                    as &[u8],
+                420,
+                300,
+                "e-signature audit certificate",
+                18_000,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/e-signature-incremental-revision.pdf")
+                    as &[u8],
+                300,
+                180,
+                "e-signature incremental revision",
+                4_500,
+            ),
+        ];
+
+        for &(bytes, expected_width, expected_height, label, min_visible_pixels) in fixtures {
+            let thumbnail = ThumbnailBackend::render(
+                &NativeBackend::new(),
+                PdfSource::from_bytes(bytes),
+                &ThumbnailOptions {
+                    max_edge: expected_width.max(expected_height),
+                    ..ThumbnailOptions::default()
+                },
+            )
+            .unwrap_or_else(|error| panic!("{label} fixture should render: {error}"));
+
+            assert_eq!(
+                thumbnail.width, expected_width,
+                "{label} fixture width should match"
+            );
+            assert_eq!(
+                thumbnail.height, expected_height,
+                "{label} fixture height should match"
+            );
+            let visible_pixels = thumbnail
+                .bytes
+                .chunks_exact(4)
+                .filter(|pixel| *pixel != [255, 255, 255, 255])
+                .count();
+            assert!(
+                visible_pixels >= min_visible_pixels,
+                "{label} fixture should preserve visible workflow content"
+            );
+        }
+    }
+
+    #[test]
     fn native_backend_should_render_generated_file_attachment_annotation_fixture() {
         let bytes = include_bytes!("../../../fixtures/generated/file-attachment-annotation.pdf");
         let thumbnail = ThumbnailBackend::render(
@@ -7241,13 +7301,40 @@ mod tests {
 
     #[test]
     fn native_backend_should_report_signature_presence_without_validation() {
-        let bytes = include_bytes!("../../../fixtures/generated/digital-signature-appearance.pdf");
-        let metadata =
-            DocumentMetadataBackend::inspect(&NativeBackend::new(), PdfSource::from_bytes(bytes))
-                .expect("generated digital signature fixture should inspect");
+        let fixtures: &[(&[u8], &str)] = &[
+            (
+                include_bytes!("../../../fixtures/generated/digital-signature-appearance.pdf")
+                    as &[u8],
+                "digital signature appearance",
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/e-signature-contract-workflow.pdf")
+                    as &[u8],
+                "e-signature contract workflow",
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/e-signature-incremental-revision.pdf")
+                    as &[u8],
+                "e-signature incremental revision",
+            ),
+        ];
 
-        assert!(metadata.structure.has_signature_fields);
-        assert!(metadata.structure.has_signature_byte_range);
+        for &(bytes, label) in fixtures {
+            let metadata = DocumentMetadataBackend::inspect(
+                &NativeBackend::new(),
+                PdfSource::from_bytes(bytes),
+            )
+            .unwrap_or_else(|error| panic!("{label} fixture should inspect: {error}"));
+
+            assert!(
+                metadata.structure.has_signature_fields,
+                "{label} should report signature-field presence"
+            );
+            assert!(
+                metadata.structure.has_signature_byte_range,
+                "{label} should report ByteRange presence without validation"
+            );
+        }
     }
 
     #[test]

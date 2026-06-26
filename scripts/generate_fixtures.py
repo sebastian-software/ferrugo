@@ -2446,6 +2446,216 @@ def digital_signature_appearance_pdf() -> bytes:
     return pdf.render(catalog)
 
 
+def e_signature_contract_workflow_pdf() -> bytes:
+    pdf = Pdf()
+    content = (
+        b"q 1 1 1 rg 0 0 360 260 re f Q "
+        b"q 0.11 0.18 0.28 rg 0 224 360 36 re f Q "
+        b"q 0.18 0.22 0.30 RG 0.7 w 24 46 312 150 re S "
+        b"24 166 m 336 166 l S 24 136 m 336 136 l S 24 106 m 336 106 l S "
+        b"24 76 m 336 76 l S 126 46 m 126 196 l S 232 46 m 232 196 l S Q "
+        b"q 0 0 0 RG 0.8 w 42 52 m 116 52 l 146 52 m 216 52 l 252 52 m 318 52 l S Q "
+        b"BT /F1 12 Tf 24 238 Td (Synthetic Services Agreement) Tj "
+        b"/F1 8 Tf 30 180 Td (Signer) Tj 104 0 Td (Initials) Tj 106 0 Td (Date) Tj "
+        b"-210 -30 Td (Example Signer) Tj 104 0 Td (ES) Tj 106 0 Td (2026-06-26) Tj "
+        b"-210 -30 Td (Workflow ID) Tj 104 0 Td (ESIGN-0153) Tj 106 0 Td (Complete) Tj "
+        b"-210 -30 Td (Consent) Tj 104 0 Td (Accepted) Tj 106 0 Td (Audit attached) Tj "
+        b"-210 -82 Td (Signer initials) Tj 104 0 Td (Date field) Tj 106 0 Td (Signature field) Tj ET"
+    )
+    signature_appearance = (
+        b"0.94 0.94 0.94 rg 0 0 82 24 re f "
+        b"0 0 0 RG 0.8 w 0.5 0.5 81 23 re S "
+        b"0.10 0.10 0.10 RG 1.6 w 8 8 m 22 16 l 38 6 l 56 18 l 74 11 l S"
+    )
+    stamp_appearance = (
+        b"0.78 0.04 0.04 RG 1.2 w 0.5 0.5 58 20 re S "
+        b"0.78 0.04 0.04 RG 0.8 w 6 10 m 52 10 l S"
+    )
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 360 260] "
+        "/Resources << /Font << /F1 4 0 R >> >> "
+        f"/Contents {contents} 0 R /Annots [7 0 R 9 0 R] >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    font = pdf.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    signature = pdf.add(
+        "<< /Type /Sig /Filter /Adobe.PPKLite /SubFilter /adbe.pkcs7.detached "
+        "/ByteRange [0 0 0 0] /Contents <00> /M (D:20260626100000Z) >>"
+    )
+    signature_appearance_object = pdf.add(
+        b"<< /Type /XObject /Subtype /Form /BBox [0 0 82 24] /Length "
+        + str(len(signature_appearance)).encode("ascii")
+        + b" >>\nstream\n"
+        + signature_appearance
+        + b"\nendstream"
+    )
+    signature_field = pdf.add(
+        "<< /Type /Annot /Subtype /Widget /FT /Sig /T (SignerSignature) "
+        f"/V {signature} 0 R /Rect [252 40 334 64] "
+        f"/AP << /N {signature_appearance_object} 0 R >> >>"
+    )
+    stamp_appearance_object = pdf.add(
+        b"<< /Type /XObject /Subtype /Form /BBox [0 0 58 20] /Length "
+        + str(len(stamp_appearance)).encode("ascii")
+        + b" >>\nstream\n"
+        + stamp_appearance
+        + b"\nendstream"
+    )
+    stamp = pdf.add(
+        "<< /Type /Annot /Subtype /Stamp /Name /Approved /Rect [268 174 326 194] "
+        f"/AP << /N {stamp_appearance_object} 0 R >> >>"
+    )
+    catalog = pdf.add(
+        f"<< /Type /Catalog /Pages {pages} 0 R /AcroForm << /Fields [{signature_field} 0 R] >> >>"
+    )
+    assert font == 4
+    assert signature == 5
+    assert signature_field == 7
+    assert stamp == 9
+    return pdf.render(catalog)
+
+
+def e_signature_audit_certificate_pdf() -> bytes:
+    return page_pdf(
+        "[0 0 420 300]",
+        (
+            "q 0.98 0.99 1 rg 0 0 420 300 re f Q "
+            "q 0.10 0.16 0.25 rg 0 258 420 42 re f Q "
+            "q 0.18 0.22 0.28 RG 0.7 w 26 44 232 174 re S "
+            "26 190 m 258 190 l S 26 162 m 258 162 l S 26 134 m 258 134 l S "
+            "26 106 m 258 106 l S 118 44 m 118 218 l S 190 44 m 190 218 l S Q "
+            "q 0.76 0.05 0.04 RG 1.6 w 286 176 84 42 re S 294 184 68 26 re S Q "
+            "q 0 0 0 rg 298 58 4 4 re f 310 58 4 4 re f 322 58 4 4 re f "
+            "298 70 4 4 re f 322 70 4 4 re f 334 70 4 4 re f "
+            "298 82 4 4 re f 310 82 4 4 re f 334 82 4 4 re f Q "
+            "BT /F1 13 Tf 24 274 Td (E-Signature Completion Certificate) Tj "
+            "/F1 8 Tf 34 202 Td (Event) Tj 92 0 Td (Actor) Tj 72 0 Td (Time UTC) Tj "
+            "-164 -28 Td (Viewed) Tj 92 0 Td (Signer) Tj 72 0 Td (10:01) Tj "
+            "-164 -28 Td (Consented) Tj 92 0 Td (Signer) Tj 72 0 Td (10:02) Tj "
+            "-164 -28 Td (Signed) Tj 92 0 Td (Signer) Tj 72 0 Td (10:04) Tj "
+            "-164 -28 Td (Completed) Tj 92 0 Td (System) Tj 72 0 Td (10:05) Tj "
+            "170 62 Td (COMPLETED) Tj "
+            "-2 -118 Td (QR-style audit marker) Tj "
+            "-262 -202 Td (Presence-only audit certificate fixture; no cryptographic validation.) Tj ET"
+        ),
+    )
+
+
+def e_signature_incremental_revision_pdf() -> bytes:
+    pdf = bytearray(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
+    offsets: dict[int, int] = {}
+
+    def add_object(number: int, body: bytes) -> int:
+        offset = len(pdf)
+        offsets[number] = offset
+        pdf.extend(f"{number} 0 obj\n".encode("ascii"))
+        pdf.extend(body)
+        pdf.extend(b"\nendobj\n")
+        return offset
+
+    base_content = (
+        b"q 1 1 1 rg 0 0 300 180 re f Q "
+        b"q 0.18 0.22 0.30 RG 0.8 w 24 42 252 94 re S Q "
+        b"BT /F1 11 Tf 32 144 Td (Draft Agreement) Tj "
+        b"/F1 8 Tf 32 116 Td (Status: pending signature) Tj "
+        b"0 -28 Td (Revision 0) Tj ET"
+    )
+    add_object(1, b"<< /Type /Catalog /Pages 2 0 R >>")
+    add_object(2, b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
+    add_object(
+        3,
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 180] "
+        b"/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+    )
+    add_object(4, b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    add_object(
+        5,
+        f"<< /Length {len(base_content)} >>\nstream\n".encode("ascii")
+        + base_content
+        + b"\nendstream",
+    )
+    first_xref = len(pdf)
+    pdf.extend(b"xref\n0 6\n0000000000 65535 f \n")
+    for number in range(1, 6):
+        pdf.extend(f"{offsets[number]:010d} 00000 n \n".encode("ascii"))
+    pdf.extend(
+        f"trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n{first_xref}\n%%EOF\n".encode(
+            "ascii"
+        )
+    )
+
+    updated_content = (
+        b"q 1 1 1 rg 0 0 300 180 re f Q "
+        b"q 0.18 0.22 0.30 RG 0.8 w 24 42 252 94 re S "
+        b"24 106 m 276 106 l S Q "
+        b"q 0.78 0.04 0.04 RG 1.2 w 214 118 44 18 re S Q "
+        b"BT /F1 11 Tf 32 144 Td (Signed Agreement) Tj "
+        b"/F1 8 Tf 32 118 Td (Status: completed by incremental update) Tj "
+        b"0 -28 Td (Revision 1 signed at 10:06 UTC) Tj "
+        b"0 -48 Td (Signature appearance) Tj ET"
+    )
+    signature_appearance = (
+        b"0.94 0.94 0.94 rg 0 0 82 24 re f "
+        b"0 0 0 RG 0.8 w 0.5 0.5 81 23 re S "
+        b"0.10 0.10 0.10 RG 1.6 w 8 8 m 22 16 l 38 6 l 56 18 l 74 11 l S"
+    )
+    updated_page = add_object(
+        3,
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 180] "
+        b"/Resources << /Font << /F1 4 0 R >> >> /Contents 8 0 R /Annots [9 0 R] >>",
+    )
+    updated_catalog = add_object(
+        1,
+        b"<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [9 0 R] >> >>",
+    )
+    signature = add_object(
+        6,
+        b"<< /Type /Sig /Filter /Adobe.PPKLite /SubFilter /adbe.pkcs7.detached "
+        b"/ByteRange [0 0 0 0] /Contents <00> /M (D:20260626100600Z) >>",
+    )
+    appearance = add_object(
+        7,
+        b"<< /Type /XObject /Subtype /Form /BBox [0 0 82 24] /Length "
+        + str(len(signature_appearance)).encode("ascii")
+        + b" >>\nstream\n"
+        + signature_appearance
+        + b"\nendstream",
+    )
+    stream = add_object(
+        8,
+        f"<< /Length {len(updated_content)} >>\nstream\n".encode("ascii")
+        + updated_content
+        + b"\nendstream",
+    )
+    field = add_object(
+        9,
+        b"<< /Type /Annot /Subtype /Widget /FT /Sig /T (IncrementalSignature) "
+        b"/V 6 0 R /Rect [190 44 272 68] /AP << /N 7 0 R >> >>",
+    )
+    second_xref = len(pdf)
+    pdf.extend(
+        (
+            "xref\n1 1\n"
+            f"{updated_catalog:010d} 00000 n \n"
+            "3 1\n"
+            f"{updated_page:010d} 00000 n \n"
+            "6 4\n"
+            f"{signature:010d} 00000 n \n"
+            f"{appearance:010d} 00000 n \n"
+            f"{stream:010d} 00000 n \n"
+            f"{field:010d} 00000 n \n"
+            f"trailer\n<< /Size 10 /Root 1 0 R /Prev {first_xref} >>\n"
+            f"startxref\n{second_xref}\n%%EOF\n"
+        ).encode("ascii")
+    )
+    return bytes(pdf)
+
+
 def embedded_source_file_pdf() -> bytes:
     pdf = Pdf()
     content = b"0.92 0.96 1 rg 12 28 136 24 re f 0 0 0 RG 1 w 12 28 136 24 re S"
@@ -5746,6 +5956,9 @@ def main() -> None:
     write("acroform-radio-off.pdf", acroform_radio_off_pdf())
     write("acroform-signature-placeholder.pdf", acroform_signature_placeholder_pdf())
     write("digital-signature-appearance.pdf", digital_signature_appearance_pdf())
+    write("e-signature-contract-workflow.pdf", e_signature_contract_workflow_pdf())
+    write("e-signature-audit-certificate.pdf", e_signature_audit_certificate_pdf())
+    write("e-signature-incremental-revision.pdf", e_signature_incremental_revision_pdf())
     write("embedded-source-file.pdf", embedded_source_file_pdf())
     write("portfolio-embedded-files.pdf", portfolio_embedded_files_pdf())
     write("file-attachment-annotation.pdf", file_attachment_annotation_pdf())
