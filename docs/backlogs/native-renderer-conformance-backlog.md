@@ -72,6 +72,24 @@ Use the new browser fixtures as reductions for CSS backgrounds, table/grid
 rules, clipped overflow, chart geometry, link appearances, and form-like print
 controls.
 
+## Scanner OCR Corpus Refresh Delta
+
+Milestone 0147 added a focused scanner/OCR workflow manifest with seven
+supported families and one unsupported codec-backlog family. The supported gate
+is green at 10/10 rendered, 0 fallbacks, 0 errors, and 0 benchmark budget
+failures.
+
+The unsupported codec backlog remains explicit:
+
+| Family | Total | Fallback required | Bucket |
+| --- | ---: | ---: | --- |
+| `unsupported-filter` | 3 | 3 | `image.filter` |
+
+The focused scanner visual oracle reports 6 blockers across scan resampling,
+page geometry/skew parity, and overlay composition. Use
+`scanner-skewed-mailroom-page.pdf`, `scanner-large-image-budget.pdf`, and
+`scanner-ocr-form-overlay.pdf` as reductions for those follow-up slices.
+
 ## Typed Unsupported Boundaries
 
 | Feature bucket | Fixtures | Current decision |

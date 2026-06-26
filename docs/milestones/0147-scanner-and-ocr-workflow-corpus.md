@@ -1,6 +1,6 @@
 # 0147: Scanner And OCR Workflow Corpus
 
-Status: todo
+Status: done
 Phase: 27
 Size: medium
 Depends on: 0146
@@ -45,4 +45,18 @@ mobile capture, and archival workflows.
 
 ## Completion Notes
 
-Empty until done.
+- Added generated scanner/OCR fixtures for skewed mailroom scans, large
+  compressed scan images, and scan-plus-form OCR overlays.
+- Added `fixtures/scanner-ocr-workflow-manifest.tsv` to separate supported
+  scanner/OCR workflow rows from the unsupported image-codec backlog.
+- Native supported gate passed: 10/10 supported scanner/OCR fixtures rendered
+  natively, with 0 fallbacks and 0 errors.
+- Unsupported filter backlog remains explicit: 3/3 rows require
+  `image.filter` fallback.
+- Native benchmark passed with 0 budget failures; the large-image fixture
+  rendered in 33.527 ms at `max-edge 160`.
+- Visual oracle classified 6/10 supported rows as fidelity blockers, routing to
+  scan resampling, page geometry/skew parity, and overlay composition.
+- Existing malformed/large image budget tests passed for adversarial huge image
+  dimensions and image resource byte budgets.
+- Report: `docs/reports/scanner-ocr-workflow-corpus-2026-06-26.md`.

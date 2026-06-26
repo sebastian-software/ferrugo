@@ -83,7 +83,7 @@ for committed generated fixtures.
 | office-export | 10/10 rendered | text/table visual fidelity still needs diff review | keep for quality-sensitive comparison |
 | presentation | 3/4 rendered | `optional-content-ocmd.pdf` needs `graphics.optional-content` fallback | required |
 | report | 12/12 rendered | `vector-stress.pdf` exceeds smoke render-time budget | keep as benchmark oracle |
-| scan | 7/7 rendered | real-world codec breadth still unknown | keep as oracle |
+| scan | focused scanner/OCR supported manifest 10/10 rendered | main scan family still contains 3 deferred codec-policy rows | keep as oracle |
 
 Release blockers from 0080:
 
@@ -130,6 +130,8 @@ Visual conformance still has 91 blockers and 8 native unsupported rows in the
 rendering-core blockers while keeping the office native-supported gate green.
 The 0146 browser-print refresh adds three browser rendering-core blockers while
 keeping the browser native-supported and repeat-render gates green.
+The 0147 scanner/OCR refresh adds skew, large-image, and OCR form-overlay
+reductions while keeping the supported scanner workflow gate green.
 
 | Subsystem tag | Blockers | Native errors | Primary owner |
 | --- | ---: | ---: | --- |
