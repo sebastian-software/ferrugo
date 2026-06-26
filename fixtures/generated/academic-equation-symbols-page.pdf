@@ -1,0 +1,33 @@
+%PDF-1.4
+%‚„œ”
+1 0 obj
+<< /Length 584 >>
+stream
+q 0.99 0.99 1 rg 0 0 340 260 re f Q q 0.12 0.16 0.24 RG 0.7 w 28 44 284 168 re S 28 156 m 312 156 l S 28 100 m 312 100 l S 168 44 m 168 212 l S Q q 0.14 0.32 0.56 RG 1.0 w 190 68 m 218 132 l 246 94 l 284 166 l S Q q 0.78 0.30 0.14 rg 204 76 14 14 re f 232 102 14 14 re f 268 146 14 14 re f Q BT /F1 13 Tf 28 230 Td (Equation Symbols And Figure) Tj /F1 9 Tf 42 184 Td (sum_i w_i x_i = theta) Tj 0 -22 Td (lim n->inf sample_n = mu) Tj 0 -22 Td (matrix A times vector b) Tj 142 66 Td (Vector figure) Tj -142 -122 Td (ASCII math proxies track symbol placement without custom fonts.) Tj ET
+endstream
+endobj
+2 0 obj
+<< /Type /Page /Parent 3 0 R /MediaBox [0 0 340 260] /Resources << /Font << /F1 4 0 R >> >> /Contents 1 0 R >>
+endobj
+3 0 obj
+<< /Type /Pages /Kids [2 0 R] /Count 1 >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+5 0 obj
+<< /Type /Catalog /Pages 3 0 R >>
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000015 00000 n 
+0000000650 00000 n 
+0000000776 00000 n 
+0000000833 00000 n 
+0000000903 00000 n 
+trailer
+<< /Size 6 /Root 5 0 R >>
+startxref
+952
+%%EOF

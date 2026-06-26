@@ -6375,6 +6375,14 @@ mod tests {
                 10_000,
             ),
             (
+                include_bytes!("../../../fixtures/generated/academic-publisher-first-page.pdf")
+                    as &[u8],
+                360,
+                480,
+                "academic publisher first page",
+                10_000,
+            ),
+            (
                 include_bytes!("../../../fixtures/generated/scientific-equation-figure.pdf")
                     as &[u8],
                 320,
@@ -6383,11 +6391,27 @@ mod tests {
                 6_000,
             ),
             (
+                include_bytes!("../../../fixtures/generated/academic-equation-symbols-page.pdf")
+                    as &[u8],
+                340,
+                260,
+                "academic equation symbols page",
+                6_000,
+            ),
+            (
                 include_bytes!("../../../fixtures/generated/reference-footnote-layout.pdf")
                     as &[u8],
                 320,
                 260,
                 "references and footnotes layout",
+                6_000,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/academic-references-appendix.pdf")
+                    as &[u8],
+                340,
+                300,
+                "academic references appendix",
                 6_000,
             ),
             (

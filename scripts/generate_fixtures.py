@@ -4931,6 +4931,74 @@ def reference_footnote_layout_pdf() -> bytes:
     return page_pdf("[0 0 320 260]", " ".join(ops))
 
 
+def academic_publisher_first_page_pdf() -> bytes:
+    ops: list[str] = [
+        "q 1 1 1 rg 0 0 360 480 re f Q",
+        "q 0.06 0.10 0.18 rg 0 438 360 42 re f Q",
+        "q 0.11 0.18 0.28 RG 0.6 w 30 92 m 330 92 l 30 384 m 330 384 l S Q",
+        "BT /F1 13 Tf 38 454 Td (Journal of Synthetic Documents) Tj ET",
+        "BT /F1 14 Tf 42 414 Td (Publisher-Style Two Column Article) Tj ET",
+        "BT /F1 7 Tf 42 400 Td (DOI 10.0000/pdfrust.0150) Tj 0 -12 Td (Received 2026-06-26) Tj ET",
+        "BT /F1 8 Tf 42 374 Td (Abstract) Tj ET",
+    ]
+    for row in range(17):
+        y = 356 - row * 13
+        left_width = 124 if row % 5 else 96
+        right_width = 118 if row % 4 else 88
+        ops.append(f"q 0.18 0.18 0.18 rg 42 {y} {left_width} 2 re f Q")
+        ops.append(f"q 0.18 0.18 0.18 rg 194 {y} {right_width} 2 re f Q")
+    ops.extend(
+        [
+            "q 0.91 0.94 0.98 rg 194 190 108 62 re f Q",
+            "q 0.10 0.28 0.46 RG 0.8 w 204 204 m 226 236 l 250 214 l 276 242 l 294 206 l S Q",
+            "BT /F1 7 Tf 204 260 Td (Figure 2. Publisher panel) Tj ET",
+            "BT /F1 6 Tf 42 70 Td (Synthetic publisher article fixture; no real manuscript source.) Tj ET",
+        ]
+    )
+    return page_pdf("[0 0 360 480]", " ".join(ops))
+
+
+def academic_equation_symbols_page_pdf() -> bytes:
+    return page_pdf(
+        "[0 0 340 260]",
+        (
+            "q 0.99 0.99 1 rg 0 0 340 260 re f Q "
+            "q 0.12 0.16 0.24 RG 0.7 w 28 44 284 168 re S 28 156 m 312 156 l S "
+            "28 100 m 312 100 l S 168 44 m 168 212 l S Q "
+            "q 0.14 0.32 0.56 RG 1.0 w 190 68 m 218 132 l 246 94 l 284 166 l S Q "
+            "q 0.78 0.30 0.14 rg 204 76 14 14 re f 232 102 14 14 re f 268 146 14 14 re f Q "
+            "BT /F1 13 Tf 28 230 Td (Equation Symbols And Figure) Tj "
+            "/F1 9 Tf 42 184 Td (sum_i w_i x_i = theta) Tj "
+            "0 -22 Td (lim n->inf sample_n = mu) Tj "
+            "0 -22 Td (matrix A times vector b) Tj "
+            "142 66 Td (Vector figure) Tj "
+            "-142 -122 Td (ASCII math proxies track symbol placement without custom fonts.) Tj ET"
+        ),
+    )
+
+
+def academic_references_appendix_pdf() -> bytes:
+    ops: list[str] = [
+        "q 1 1 1 rg 0 0 340 300 re f Q",
+        "BT /F1 13 Tf 28 268 Td (References, Appendix, And Footnotes) Tj ET",
+        "q 0.18 0.18 0.18 RG 0.5 w 28 92 m 312 92 l 28 238 m 312 238 l S Q",
+    ]
+    for row in range(10):
+        y = 224 - row * 13
+        ops.append(f"q 0.16 0.16 0.16 rg 34 {y} {230 - (row % 4) * 22} 2 re f Q")
+    for row in range(7):
+        y = 76 - row * 9
+        ops.append(f"q 0.28 0.28 0.28 rg 36 {y} {250 - row * 18} 1.4 re f Q")
+    ops.extend(
+        [
+            "BT /F1 7 Tf 34 246 Td (References) Tj ET",
+            "BT /F1 7 Tf 34 82 Td (Appendix note 1: synthetic citation row.) Tj ET",
+            "BT /F1 6 Tf 34 18 Td ([A1] Example appendix source. Synthetic Press, 2026.) Tj ET",
+        ]
+    )
+    return page_pdf("[0 0 340 300]", " ".join(ops))
+
+
 def long_report_sampling_pdf() -> bytes:
     pdf = Pdf()
 
@@ -5569,6 +5637,9 @@ def main() -> None:
     write("scientific-two-column-paper.pdf", scientific_two_column_paper_pdf())
     write("scientific-equation-figure.pdf", scientific_equation_figure_pdf())
     write("reference-footnote-layout.pdf", reference_footnote_layout_pdf())
+    write("academic-publisher-first-page.pdf", academic_publisher_first_page_pdf())
+    write("academic-equation-symbols-page.pdf", academic_equation_symbols_page_pdf())
+    write("academic-references-appendix.pdf", academic_references_appendix_pdf())
     write("long-report-sampling.pdf", long_report_sampling_pdf())
     write("book-frontmatter-page-labels.pdf", book_frontmatter_page_labels_pdf())
     write("manual-illustrated-chapter.pdf", manual_illustrated_chapter_pdf())
