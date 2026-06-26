@@ -1,6 +1,6 @@
 # 0157: Plugin-Free Distribution And Install Gate
 
-Status: todo
+Status: done
 Phase: 29
 Size: medium
 Depends on: 0156
@@ -44,4 +44,14 @@ external PDFium binaries, platform plugins, or hidden runtime downloads.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-26.
+
+- Added `scripts/check_plugin_free_distribution.sh` to guard the native-only
+  CLI dependency graph against PDFium, network/TLS download crates, hidden
+  fetch/plugin hooks, and checked-in native binary artifacts.
+- Updated `docs/packaging.md` with plugin-free install commands, system
+  requirements, and the full workspace package dry-run.
+- Added `docs/reports/plugin-free-distribution-install-gate-2026-06-26.md`
+  with dependency, package, install, and CLI smoke evidence.
+- Verified a clean native-only `cargo install` and render smoke without
+  `PDFRUST_PDFIUM_LIBRARY` or dynamic-library path configuration.

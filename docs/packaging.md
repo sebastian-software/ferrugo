@@ -52,6 +52,34 @@ bash scripts/check_pdfium_quarantine.sh
 This check fails if native-only `pdfrust-cli` regains a `pdfrust-pdfium`
 dependency edge or if runtime crates grow forbidden PDFium integration symbols.
 
+Run the plugin-free distribution check before release packaging or install
+workflow changes:
+
+```sh
+bash scripts/check_plugin_free_distribution.sh
+```
+
+This check confirms that the native-only CLI dependency graph contains neither
+`pdfrust-pdfium` nor network/TLS download crates, that runtime sources do not
+contain hidden fetch or plugin hooks, and that no native binary artifacts are
+checked in under `crates/`.
+
+## Plugin-Free Install
+
+The native CLI can be installed from the workspace without PDFium binaries,
+platform plugins, or runtime downloads:
+
+```sh
+cargo install --path crates/pdfrust-cli --no-default-features --locked
+pdfrust-cli render fixtures/generated/text-page.pdf \
+  --max-edge 96 \
+  --output target/plugin-free-smoke/text-page.png
+```
+
+No `PDFRUST_PDFIUM_LIBRARY`, `DYLD_LIBRARY_PATH`, or system PDF renderer is
+required for the native-only path. The Rust crates used by the default CLI are
+pure Rust except for the Rust standard library and normal Cargo build tooling.
+
 ## Consumer Migration Checklist
 
 - Remove `PDFRUST_PDFIUM_LIBRARY` and platform dynamic-library packaging from
@@ -149,4 +177,11 @@ Local package dry-runs can validate leaf crates before the full release train:
 ```sh
 cargo package -p pdfrust-syntax --allow-dirty --no-verify
 cargo package -p pdfrust-thumbnail --allow-dirty --no-verify
+```
+
+The workspace package dry-run validates the full local release train through
+Cargo's temporary registry:
+
+```sh
+cargo package --workspace --allow-dirty
 ```
