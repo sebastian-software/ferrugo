@@ -15170,6 +15170,35 @@ mod tests {
     }
 
     #[test]
+    fn text_display_list_should_classify_emoji_as_unsupported_layout_boundary() {
+        let document = load_tounicode_text_pdf(
+            b"BT /F1 12 Tf <01> Tj ET",
+            b"<< /Type /Font /Subtype /Type1 /BaseFont /ABCDEE+EmojiBoundary /ToUnicode 6 0 R >>",
+            b"/CIDInit /ProcSet findresource begin\n1 beginbfchar\n<01> <D83DDE00>\nendbfchar\nend",
+        );
+        let resources =
+            font_resources_from_document(&document, &[("F1", 4)]).expect("valid font resources");
+        let content = content_stream_from_document(&document);
+        let list = build_text_display_list(
+            tokenize_content(PdfBytes::new(&content)),
+            &resources,
+            DisplayListOptions::default(),
+        )
+        .expect("emoji text should decode before layout classification");
+
+        let DisplayItem::Text(text) = &list.items()[0] else {
+            panic!("expected text display item");
+        };
+        assert_eq!(text.text, "\u{1f600}");
+        assert_eq!(
+            text.glyphs[0].layout,
+            TextLayoutStatus::Unsupported {
+                reason: TextLayoutFallbackReason::ComplexScriptShaping
+            }
+        );
+    }
+
+    #[test]
     fn text_display_list_should_decode_type0_cid_font_with_descendant_metrics() {
         let document = load_tounicode_text_pdf(
             b"BT /F1 10 Tf <00010002> Tj ET",

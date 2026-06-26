@@ -5917,6 +5917,12 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_report_generated_chat_emoji_boundary_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/chat-emoji-fallback-boundary.pdf");
+        assert_unsupported_feature_fixture(bytes, "text.font-program");
+    }
+
+    #[test]
     fn native_backend_should_render_generated_arabic_shaped_text_fixture() {
         let bytes = include_bytes!("../../../fixtures/generated/arabic-shaped-text.pdf");
         let thumbnail = ThumbnailBackend::render(

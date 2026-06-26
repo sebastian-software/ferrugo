@@ -3640,6 +3640,31 @@ def combining_mark_text_pdf() -> bytes:
     )
 
 
+def chat_emoji_fallback_boundary_pdf() -> bytes:
+    cmap = (
+        b"/CIDInit /ProcSet findresource begin\n"
+        b"1 begincmap\n"
+        b"1 beginbfchar\n"
+        b"<01> <D83DDE00>\n"
+        b"endbfchar\n"
+        b"endcmap\n"
+        b"CMapName currentdict /CMap defineresource pop\n"
+        b"end"
+    )
+    return shaped_text_pdf(
+        (
+            b"q 0.98 0.99 1 rg 0 0 220 140 re f Q "
+            b"q 0.84 0.92 1 rg 18 58 150 42 re f Q "
+            b"BT /F1 12 Tf 28 84 Td (chat export emoji boundary) Tj ET "
+            b"BT /F1 24 Tf 176 68 Td <01> Tj ET"
+        ),
+        cmap,
+        "<< /Type /Font /Subtype /Type1 /BaseFont /ABCDEE+EmojiBoundary "
+        "/ToUnicode 6 0 R >>",
+        "[0 0 220 140]",
+    )
+
+
 def arabic_shaped_text_pdf() -> bytes:
     cmap = (
         b"/CIDInit /ProcSet findresource begin\n"
@@ -6697,6 +6722,7 @@ def main() -> None:
     write("shaped-rtl-text.pdf", shaped_rtl_text_pdf())
     write("opentype-ligature-text.pdf", opentype_ligature_text_pdf())
     write("combining-mark-text.pdf", combining_mark_text_pdf())
+    write("chat-emoji-fallback-boundary.pdf", chat_emoji_fallback_boundary_pdf())
     write("arabic-shaped-text.pdf", arabic_shaped_text_pdf())
     write("identity-h-cjk-text.pdf", identity_h_cjk_text_pdf())
     write("identity-v-cjk-text.pdf", identity_v_cjk_text_pdf())

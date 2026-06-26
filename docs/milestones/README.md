@@ -34,7 +34,6 @@ when the server renderer is already correct and bounded.
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
-| 0169 | [Font Fallback Script Mixing And Emoji Coverage](0169-font-fallback-script-mixing-and-emoji-coverage.md) | 31 | medium | 0168 |
 | 0170 | [Raster Image Heavy Document Memory Gate](0170-raster-image-heavy-document-memory-gate.md) | 31 | medium | 0169 |
 | 0171 | [Long Document Navigation And Page Cache Gate](0171-long-document-navigation-and-page-cache-gate.md) | 32 | medium | 0170 |
 | 0172 | [High-DPI Thumbnail And Preview Fidelity](0172-high-dpi-thumbnail-and-preview-fidelity.md) | 32 | medium | 0171 |
@@ -96,6 +95,7 @@ when the server renderer is already correct and bounded.
 
 | ID | Milestone | Phase | Size | Completed |
 | --- | --- | --- | --- | --- |
+| 0169 | [Font Fallback Script Mixing And Emoji Coverage](0169-font-fallback-script-mixing-and-emoji-coverage.md) | 31 | medium | 2026-06-26 |
 | 0168 | [Email Client And Web Archive PDF Coverage](0168-email-client-and-web-archive-pdf-coverage.md) | 31 | medium | 2026-06-26 |
 | 0167 | [Browser Print CSS Edge Case Coverage](0167-browser-print-css-edge-case-coverage.md) | 31 | medium | 2026-06-26 |
 | 0166 | [Office Vector Effects And Clip Mask Fidelity](0166-office-vector-effects-and-clip-mask-fidelity.md) | 31 | medium | 2026-06-26 |

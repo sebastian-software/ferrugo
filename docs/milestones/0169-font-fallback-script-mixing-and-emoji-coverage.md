@@ -1,6 +1,6 @@
 # 0169: Font Fallback Script Mixing And Emoji Coverage
 
-Status: todo
+Status: done
 Phase: 31
 Size: medium
 Depends on: 0168
@@ -46,4 +46,33 @@ symbols, math glyphs, and emoji fallback fonts.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-26.
+
+Report:
+
+- `docs/reports/font-fallback-script-mixing-coverage-2026-06-26.md`
+
+Implemented:
+
+- Added `fixtures/font-fallback-script-mixing-manifest.tsv` for CJK, RTL,
+  ligature/combining, missing-font, symbol, and emoji-boundary coverage.
+- Added `chat-emoji-fallback-boundary.pdf` as a typed unsupported boundary for
+  chat-export emoji/color-font behavior.
+- Added renderer and native tests for emoji layout classification and the
+  generated typed unsupported boundary.
+
+Validation:
+
+- `cargo test -p pdfrust-render emoji -- --nocapture`
+- `cargo test -p pdfrust-native emoji -- --nocapture`
+- `cargo test -p pdfrust-render glyph_bitmap_cache -- --nocapture`
+- `cargo test -p pdfrust-render font_resources_should_bound_fallback_resolution_cache -- --nocapture`
+- `cargo test -p pdfrust-render font_resources_should_resolve_missing_embedded_font_deterministically -- --nocapture`
+- Supported mixed-script native gate: 12 total, 12 native rendered, 0 fallbacks,
+  0 errors.
+- Full mixed-script boundary summary: emoji boundary returns 1
+  `text.font-program` fallback; all other families render natively.
+- Mixed-script benchmark: 12 total, 12 native rendered, 0 fallbacks, 0 errors,
+  0 budget failures.
+- Maintainer visual comparison: 12 total, 0 exact, 1 accepted drift, 11
+  blockers, 0 native errors, 0 PDFium errors.

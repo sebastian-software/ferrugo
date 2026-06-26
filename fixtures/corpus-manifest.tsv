@@ -41,6 +41,7 @@ fixtures/generated/clipped-paths.pdf	browser-print	scripts/generate_fixtures.py	
 fixtures/generated/cmap-codespace-range-text.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,type0,cid,cmap,codespace,tounicode	Generated Type0 CID text fixture with an explicit ToUnicode code-space range.
 fixtures/generated/cmyk-image.pdf	scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,cmyk	Generated CMYK image color-space fixture.
 fixtures/generated/combining-mark-text.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,tounicode,combining-mark,opentype	Generated ToUnicode text fixture with a combining mark sequence.
+fixtures/generated/chat-emoji-fallback-boundary.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	chat-export,emoji,tounicode,unsupported-layout-boundary,expected:typed-unsupported	Generated chat export fixture documenting emoji fallback boundary.
 fixtures/generated/cropped-scan-page.pdf	scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	geometry,cropbox,scan	Generated cropped scan-like page using CropBox selection.
 fixtures/generated/dashed-stroke.pdf	report	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	vector,stroke,dash	Generated dashed stroke fixture.
 fixtures/generated/devicen-spot-color.pdf	presentation	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	color,spot,devicen,tint-transform	Generated DeviceN spot-color vector fixture with Type 2 tint approximation.

@@ -1,0 +1,14 @@
+path	family	source	license	page_count	features	notes
+fixtures/generated/identity-h-cjk-text.pdf	cjk	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,type0,cid,cmap,identity-h,cjk,expected:native	Existing Identity-H CJK text fixture.
+fixtures/generated/vertical-cjk-text.pdf	cjk	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,type0,cid,cjk,vertical,expected:native	Existing vertical CJK Type0 fixture.
+fixtures/generated/identity-v-cjk-text.pdf	cjk	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,type0,cid,cmap,identity-v,cjk,vertical,expected:native	Existing Identity-V CJK text fixture.
+fixtures/generated/shaped-rtl-text.pdf	rtl	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,type0,cid,rtl,prepositioned,expected:native	Existing pre-positioned RTL text fixture.
+fixtures/generated/arabic-shaped-text.pdf	rtl	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,type0,cid,arabic,prepositioned,opentype,expected:native	Existing pre-positioned Arabic presentation-form fixture.
+fixtures/generated/opentype-ligature-text.pdf	ligature-combining	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,tounicode,ligature,opentype,expected:native	Existing ToUnicode ligature expansion fixture.
+fixtures/generated/combining-mark-text.pdf	ligature-combining	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,tounicode,combining-mark,opentype,expected:native	Existing ToUnicode combining mark fixture.
+fixtures/generated/subset-missing-font.pdf	missing-font	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,font,subset,missing-font,fallback,expected:native	Existing subset-prefixed missing-font fallback fixture.
+fixtures/generated/missing-font-office-export.pdf	missing-font	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,font,missing-font,office-export,expected:native	Existing office missing-font fallback fixture.
+fixtures/generated/missing-font-browser-print.pdf	missing-font	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,font,missing-font,browser-print,expected:native	Existing browser missing-font fallback fixture.
+fixtures/generated/academic-equation-symbols-page.pdf	symbols	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	academic,equation,symbols,figure,vector,text,expected:native	Existing academic equation and symbol placement fixture.
+fixtures/generated/type3-symbol-font.pdf	symbols	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,type3,charproc,symbol,expected:native	Existing Type3 symbol-like font fixture.
+fixtures/generated/chat-emoji-fallback-boundary.pdf	emoji-boundary	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	chat-export,emoji,tounicode,unsupported-layout-boundary,expected:typed-unsupported	Generated chat export fixture documenting emoji fallback boundary.
