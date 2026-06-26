@@ -1,0 +1,6 @@
+path	family	source	license	page_count	features	notes
+fixtures/generated/high-dpi-preview-fidelity.pdf	high-dpi-preview	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	high-dpi,preview,vector,text,image,transparency,expected:native	Generated high-DPI preview fixture with fine linework, small text, scaled image, and alpha overlay.
+fixtures/generated/text-page.pdf	text-baseline	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,high-dpi,expected:native	Existing text page baseline rendered at higher max_edge.
+fixtures/generated/vector-paths.pdf	vector-baseline	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	vector,high-dpi,expected:native	Existing vector path baseline rendered at higher max_edge.
+fixtures/generated/image-xobject.pdf	image-baseline	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,xobject,rgb,high-dpi,expected:native	Existing image XObject baseline rendered at higher max_edge.
+fixtures/generated/transparency-alpha.pdf	transparency-baseline	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	transparency,alpha,high-dpi,expected:native	Existing alpha transparency fixture rendered at higher max_edge.

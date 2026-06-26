@@ -3723,6 +3723,24 @@ mod tests {
     }
 
     #[test]
+    fn native_page_cache_key_should_isolate_high_dpi_scale() {
+        let standard = ThumbnailOptions {
+            max_edge: 160,
+            ..ThumbnailOptions::default()
+        };
+        let high_dpi = ThumbnailOptions {
+            max_edge: 480,
+            ..standard
+        };
+
+        let standard_key = NativePageCacheKey::from_options(0x172, &standard, "default");
+        let high_dpi_key = NativePageCacheKey::from_options(0x172, &high_dpi, "default");
+
+        assert_ne!(standard_key, high_dpi_key);
+        assert_eq!(high_dpi_key.max_edge, 480);
+    }
+
+    #[test]
     fn native_backend_should_expose_memory_diagnostics() {
         let diagnostics = NativeBackend::new().memory_diagnostics();
 
@@ -3860,6 +3878,114 @@ mod tests {
             .bytes
             .chunks_exact(4)
             .any(|pixel| pixel != [255, 255, 255, 255]));
+    }
+
+    #[test]
+    fn native_backend_should_render_generated_high_dpi_preview_fixtures() {
+        type HighDpiFixture = (&'static [u8], u32, u32, u32, &'static str, usize);
+
+        let fixtures: &[HighDpiFixture] = &[
+            (
+                include_bytes!("../../../fixtures/generated/high-dpi-preview-fidelity.pdf")
+                    as &[u8],
+                480,
+                360,
+                480,
+                "high-DPI preview fidelity",
+                20_000,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/text-page.pdf") as &[u8],
+                300,
+                160,
+                600,
+                "high-DPI text baseline",
+                1_000,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/vector-paths.pdf") as &[u8],
+                220,
+                180,
+                440,
+                "high-DPI vector baseline",
+                500,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/image-xobject.pdf") as &[u8],
+                120,
+                120,
+                360,
+                "high-DPI image baseline",
+                1_000,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/transparency-alpha.pdf") as &[u8],
+                120,
+                120,
+                360,
+                "high-DPI transparency baseline",
+                1_000,
+            ),
+        ];
+
+        for &(bytes, expected_width, expected_height, max_edge, label, min_visible_pixels) in
+            fixtures
+        {
+            let thumbnail = ThumbnailBackend::render(
+                &NativeBackend::new(),
+                PdfSource::from_bytes(bytes),
+                &ThumbnailOptions {
+                    max_edge,
+                    ..ThumbnailOptions::default()
+                },
+            )
+            .unwrap_or_else(|error| panic!("{label} fixture should render: {error}"));
+
+            assert_eq!(
+                thumbnail.width, expected_width,
+                "{label} fixture width should match"
+            );
+            assert_eq!(
+                thumbnail.height, expected_height,
+                "{label} fixture height should match"
+            );
+            let visible_pixels = thumbnail
+                .bytes
+                .chunks_exact(4)
+                .filter(|pixel| *pixel != [255, 255, 255, 255])
+                .count();
+            assert!(
+                visible_pixels >= min_visible_pixels,
+                "{label} fixture should preserve high-DPI visible content"
+            );
+        }
+    }
+
+    #[test]
+    fn native_backend_should_enforce_high_dpi_raster_budget() {
+        let bytes = include_bytes!("../../../fixtures/generated/high-dpi-preview-fidelity.pdf");
+        let limits = NativeRenderLimits {
+            max_page_pixels: 10_000,
+            ..NativeRenderLimits::default()
+        };
+        let error = NativeBackend::with_render_limits(limits)
+            .render(
+                PdfSource::from_bytes(bytes),
+                &ThumbnailOptions {
+                    max_edge: 480,
+                    ..ThumbnailOptions::default()
+                },
+            )
+            .expect_err("high-DPI output should exceed the configured page raster budget");
+
+        assert_eq!(
+            error.class(),
+            pdfrust_thumbnail::ThumbnailErrorClass::Unsupported
+        );
+        assert_eq!(
+            error.unsupported_feature_bucket(),
+            Some(BUCKET_RENDERER_MEMORY_BUDGET)
+        );
     }
 
     #[test]

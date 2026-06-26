@@ -1529,6 +1529,67 @@ def image_heavy_rotated_mask_sheet_pdf() -> bytes:
     return pdf.render(catalog)
 
 
+def high_dpi_preview_fidelity_pdf() -> bytes:
+    pdf = Pdf()
+    image = bytes(
+        channel
+        for y in range(8)
+        for x in range(8)
+        for channel in (
+            42 + x * 18,
+            96 + y * 12,
+            180 + ((x + y) % 4) * 12,
+        )
+    )
+    ops: list[str] = [
+        "q 2 0 0 2 0 0 cm",
+        "q 0.985 0.99 1 rg 0 0 240 180 re f Q",
+        "q 0.16 0.20 0.26 RG 0.35 w",
+    ]
+    for x in range(18, 224, 14):
+        ops.append(f"{x} 24 m {x} 156 l S")
+    for y in range(24, 160, 12):
+        ops.append(f"18 {y} m 222 {y} l S")
+    ops.extend(
+        [
+            "Q",
+            "q 80 0 0 80 136 60 cm /PreviewImg Do Q",
+            "q /GSAlpha gs 0.18 0.48 0.80 rg 128 54 96 88 re f Q",
+            "q 0.90 0.22 0.16 RG 1.0 w 28 34 84 84 re S 28 76 m 112 76 l S Q",
+            "BT /F1 9 Tf 28 146 Td (High DPI preview) Tj ET",
+            "BT /F1 5 Tf 30 128 Td (fine text and hairline grid sample) Tj ET",
+            "BT /F1 4 Tf 30 116 Td (scale aware cache key) Tj ET",
+            "Q",
+        ]
+    )
+    content = " ".join(ops).encode("ascii")
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 480 360] "
+        "/Resources << /Font << /F1 4 0 R >> /XObject << /PreviewImg 5 0 R >> "
+        "/ExtGState << /GSAlpha << /ca 0.45 /CA 0.45 >> >> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    font = pdf.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    image_object = pdf.add(
+        b"<< /Type /XObject /Subtype /Image /Width 8 /Height 8 "
+        b"/ColorSpace /DeviceRGB /BitsPerComponent 8 /Length "
+        + str(len(image)).encode("ascii")
+        + b" >>\nstream\n"
+        + image
+        + b"\nendstream"
+    )
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert font == 4
+    assert image_object == 5
+    return pdf.render(catalog)
+
+
 def scanner_ocr_form_overlay_pdf() -> bytes:
     pdf = Pdf()
     width = 150
@@ -6820,6 +6881,7 @@ def main() -> None:
     write("scanner-large-image-budget.pdf", scanner_large_image_budget_pdf())
     write("image-heavy-repeated-xobject-report.pdf", image_heavy_repeated_xobject_report_pdf())
     write("image-heavy-rotated-mask-sheet.pdf", image_heavy_rotated_mask_sheet_pdf())
+    write("high-dpi-preview-fidelity.pdf", high_dpi_preview_fidelity_pdf())
     write("scanner-ocr-form-overlay.pdf", scanner_ocr_form_overlay_pdf())
     write("ocr-invisible-text-layer.pdf", ocr_invisible_text_layer_pdf())
     write("mixed-text-image.pdf", mixed_text_image_pdf())

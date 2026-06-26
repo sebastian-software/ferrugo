@@ -1,6 +1,6 @@
 # 0172: High-DPI Thumbnail And Preview Fidelity
 
-Status: todo
+Status: done
 Phase: 32
 Size: medium
 Depends on: 0171
@@ -45,4 +45,25 @@ bounded memory use and deterministic native rendering.
 
 ## Completion Notes
 
-Empty until done.
+Completed 2026-06-26.
+
+- Added `fixtures/generated/high-dpi-preview-fidelity.pdf` plus
+  `fixtures/high-dpi-preview-manifest.tsv` covering high-DPI preview, text,
+  vector, image, and transparency baselines.
+- Added native regression coverage for scale-aware page cache keys, high-DPI
+  visible output, and typed high-DPI raster budget enforcement.
+- Documented the existing `max_edge` behavior: it is an output ceiling, not an
+  implicit upscale factor for smaller pages.
+- Recorded native support, benchmark, batch memory, and visual comparison
+  results in
+  `docs/reports/high-dpi-thumbnail-preview-fidelity-2026-06-26.md`.
+
+Validation:
+
+- `cargo test -p pdfrust-native high_dpi -- --nocapture`
+- `cargo test -p pdfrust-native native_page_cache_key_should_isolate_high_dpi_scale -- --nocapture`
+- High-DPI native supported gate, benchmark, batch memory profile, and visual
+  comparison subset.
+- `cargo test --workspace --no-default-features`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo fmt --check`
