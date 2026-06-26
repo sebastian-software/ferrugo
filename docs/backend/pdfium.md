@@ -13,6 +13,12 @@ commands such as PDFium renders, metadata comparisons, PDFium benchmarks, or
 visual diffs. Native-default `render` / `render-auto` commands do not retry
 through PDFium.
 
+Consumers migrating away from PDFium should depend on `pdfrust-thumbnail` plus
+`pdfrust-native`, branch on `ThumbnailError::class()`, and treat `unsupported`
+as the stable native outcome for documents outside the current renderer
+boundary. The full policy lives in
+`docs/policies/native-renderer-api-semver.md`.
+
 ## Runtime Configuration
 
 Set `PDFRUST_PDFIUM_LIBRARY` to a local dynamic library built from the pinned

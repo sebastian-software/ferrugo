@@ -7,7 +7,39 @@ use std::time::Duration;
 use pdfrust_native::NativeBackend;
 use pdfrust_thumbnail::{OutputFormat, PdfSource, Rgba, ThumbnailBackend, ThumbnailOptions};
 
-const SMOKE_PDF: &[u8] = include_bytes!("../../../fixtures/generated/text-page.pdf");
+const SMOKE_PDF: &[u8] = b"%PDF-1.4\n\
+%\xE2\xE3\xCF\xD3\n\
+1 0 obj\n\
+<< /Length 55 >>\n\
+stream\n\
+BT /F1 24 Tf 40 90 Td (pdfrust thumbnail fixture) Tj ET\n\
+endstream\n\
+endobj\n\
+2 0 obj\n\
+<< /Type /Page /Parent 3 0 R /MediaBox [0 0 300 160] /Resources << /Font << /F1 4 0 R >> >> /Contents 1 0 R >>\n\
+endobj\n\
+3 0 obj\n\
+<< /Type /Pages /Kids [2 0 R] /Count 1 >>\n\
+endobj\n\
+4 0 obj\n\
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\n\
+endobj\n\
+5 0 obj\n\
+<< /Type /Catalog /Pages 3 0 R >>\n\
+endobj\n\
+xref\n\
+0 6\n\
+0000000000 65535 f \n\
+0000000015 00000 n \n\
+0000000120 00000 n \n\
+0000000246 00000 n \n\
+0000000303 00000 n \n\
+0000000373 00000 n \n\
+trailer\n\
+<< /Size 6 /Root 5 0 R >>\n\
+startxref\n\
+422\n\
+%%EOF\n";
 const SMOKE_MAX_EDGE: u32 = 96;
 
 /// Stable crate role used by architecture smoke tests and documentation.

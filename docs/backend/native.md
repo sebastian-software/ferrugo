@@ -27,6 +27,18 @@ buffers through `Thumbnail::rgba`; CLI PNG encoding remains owned by
 - Unsupported native features and budget exhaustion return the public
   `unsupported` class.
 
+## API And Semver Policy
+
+The native consumer API is the `pdfrust-thumbnail` facade plus
+`pdfrust-native::NativeBackend`. PDFium types, handles, and fallback state are
+not part of this boundary. Public error classes, default thumbnail options, and
+native preview entry points are covered by the API policy in
+`docs/policies/native-renderer-api-semver.md`.
+
+Renderer internals and maintainer diagnostics can continue to evolve behind the
+stable facade. Planned public cleanup before 1.0 is tracked in
+`docs/backlogs/native-renderer-api-cleanup-backlog.md`.
+
 ## Untrusted Input And Fuzz Boundary
 
 The native backend treats PDF bytes as untrusted input. Parser, font, image, and
