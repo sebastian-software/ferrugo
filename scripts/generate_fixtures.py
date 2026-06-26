@@ -3619,6 +3619,211 @@ def business_form_stamp_signature_pdf() -> bytes:
     )
 
 
+def office_report_header_footer_link_pdf() -> bytes:
+    pdf = Pdf()
+    content = (
+        b"q 0.98 0.99 1 rg 0 0 480 300 re f Q "
+        b"q 0.10 0.24 0.38 rg 0 256 480 44 re f Q "
+        b"q 0.92 0.95 0.98 rg 24 54 432 170 re f Q "
+        b"q 0.15 0.20 0.28 RG 0.7 w "
+        b"24 54 m 456 54 l 456 224 l 24 224 l h S "
+        b"24 196 m 456 196 l S 24 168 m 456 168 l S 24 140 m 456 140 l S "
+        b"24 112 m 456 112 l S 24 84 m 456 84 l S "
+        b"150 54 m 150 224 l S 252 54 m 252 224 l S 354 54 m 354 224 l S Q "
+        b"q 30 0 0 20 34 242 cm /ImLogo Do Q "
+        b"q 0.05 0.28 0.65 RG 0.9 w 360 38 m 456 38 l S Q "
+        b"BT /F1 13 Tf 72 276 Td (Quarterly Business Review) Tj "
+        b"/F1 8 Tf 348 0 Td (Generated Office Export) Tj "
+        b"/F1 9 Tf -396 -36 Td (Section) Tj 126 0 Td (Owner) Tj 102 0 Td (Status) Tj 102 0 Td (Due) Tj "
+        b"-330 -28 Td (Revenue Plan) Tj 126 0 Td (M Lee) Tj 102 0 Td (Green) Tj 102 0 Td (Jun 30) Tj "
+        b"-330 -28 Td (Hiring) Tj 126 0 Td (A Diaz) Tj 102 0 Td (Amber) Tj 102 0 Td (Jul 12) Tj "
+        b"-330 -28 Td (Risk Review) Tj 126 0 Td (R Chen) Tj 102 0 Td (Green) Tj 102 0 Td (Jul 18) Tj "
+        b"-330 -28 Td (Launch) Tj 126 0 Td (P Khan) Tj 102 0 Td (Blue) Tj 102 0 Td (Aug 05) Tj "
+        b"/F1 8 Tf 24 -48 Td (Footer: synthetic fixture, no private data) Tj "
+        b"276 0 Td (https://example.invalid/report) Tj ET"
+    )
+    logo = bytes(
+        [
+            20,
+            64,
+            120,
+            20,
+            64,
+            120,
+            230,
+            238,
+            247,
+            230,
+            238,
+            247,
+            236,
+            120,
+            48,
+            236,
+            120,
+            48,
+        ]
+    )
+    appearance = b"0.05 0.28 0.65 RG 1 w 0 1 m 96 1 l S"
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 480 300] "
+        "/Resources << /Font << /F1 4 0 R >> /XObject << /ImLogo 5 0 R >> >> "
+        f"/Contents {contents} 0 R /Annots [7 0 R] >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    font = pdf.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    image = pdf.add(
+        b"<< /Type /XObject /Subtype /Image /Width 3 /Height 2 "
+        b"/ColorSpace /DeviceRGB /BitsPerComponent 8 /Length "
+        + str(len(logo)).encode("ascii")
+        + b" >>\nstream\n"
+        + logo
+        + b"\nendstream"
+    )
+    appearance_object = pdf.add(
+        b"<< /Type /XObject /Subtype /Form /BBox [0 0 96 12] /Length "
+        + str(len(appearance)).encode("ascii")
+        + b" >>\nstream\n"
+        + appearance
+        + b"\nendstream"
+    )
+    annotation = pdf.add(
+        "<< /Type /Annot /Subtype /Link /Rect [360 32 456 44] "
+        "/Border [0 0 0] /A << /S /URI /URI (https://example.invalid/report) >> "
+        f"/AP << /N {appearance_object} 0 R >> >>"
+    )
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert font == 4
+    assert image == 5
+    assert annotation == 7
+    return pdf.render(catalog)
+
+
+def office_spreadsheet_chart_comments_pdf() -> bytes:
+    ops: list[str] = [
+        "q 1 1 1 rg 0 0 420 260 re f Q",
+        "q 0.93 0.96 0.99 rg 20 210 380 26 re f Q",
+        "q 0.30 0.30 0.30 RG 0.4 w",
+    ]
+    for x in range(20, 221, 40):
+        ops.append(f"{x} 60 m {x} 236 l S")
+    for y in range(60, 237, 16):
+        ops.append(f"20 {y} m 220 {y} l S")
+    ops.extend(
+        [
+            "Q",
+            "q 0.95 0.72 0.18 rg 202 204 14 14 re f 202 156 14 14 re f Q",
+            "q 0.18 0.44 0.72 rg 268 74 24 84 re f 308 74 24 118 re f 348 74 24 96 re f Q",
+            "q 0.86 0.34 0.16 RG 1.8 w 268 134 m 308 172 l 348 150 l 388 196 l S Q",
+            "q 0.16 0.18 0.22 RG 0.6 w 246 74 m 246 206 l 398 74 l S Q",
+            "BT /F1 10 Tf 24 220 Td (Sales Plan) Tj 244 0 Td (Chart) Tj ET",
+            "BT /F1 6 Tf 28 198 Td (Region) Tj 40 0 Td (Q1) Tj 40 0 Td (Q2) Tj 40 0 Td (Q3) Tj 40 0 Td (Note) Tj ET",
+        ]
+    )
+    for row in range(8):
+        y = 182 - row * 16
+        ops.append(
+            f"BT /F1 5 Tf 28 {y} Td (R{row + 1}) Tj 40 0 Td ({100 + row * 9}) Tj "
+            f"40 0 Td ({120 + row * 7}) Tj 40 0 Td ({130 + row * 11}) Tj "
+            f"40 0 Td (ok) Tj ET"
+        )
+    ops.extend(
+        [
+            "BT /F1 6 Tf 270 62 Td (Jan) Tj 40 0 Td (Feb) Tj 40 0 Td (Mar) Tj ET",
+            "BT /F1 7 Tf 246 222 Td (Comment markers use yellow triangles) Tj ET",
+        ]
+    )
+    return page_pdf("[0 0 420 260]", " ".join(ops))
+
+
+def office_presentation_handout_pdf() -> bytes:
+    pdf = Pdf()
+    content = (
+        b"q 0.98 0.98 0.96 rg 0 0 360 300 re f Q "
+        b"q 0.12 0.18 0.30 rg 24 166 136 82 re f 200 166 136 82 re f Q "
+        b"q 0.94 0.47 0.16 rg 42 220 48 10 re f 218 214 78 12 re f Q "
+        b"q 56 0 0 34 76 178 cm /ImPhoto Do Q "
+        b"q 0.18 0.48 0.72 rg 226 178 20 42 re f 258 178 20 56 re f 290 178 20 32 re f Q "
+        b"q 0.68 0.68 0.68 RG 0.6 w 24 130 m 336 130 l "
+        b"24 106 m 336 106 l 24 82 m 336 82 l 24 58 m 336 58 l 24 34 m 336 34 l S Q "
+        b"BT /F1 11 Tf 24 268 Td (Presentation Handout) Tj "
+        b"/F1 8 Tf 42 232 Td (Product update) Tj 218 232 Td (Pipeline chart) Tj "
+        b"24 142 Td (Speaker notes) Tj "
+        b"0 -24 Td (1. Launch readiness) Tj "
+        b"0 -24 Td (2. Customer feedback) Tj "
+        b"0 -24 Td (3. Follow-up actions) Tj ET"
+    )
+    photo = bytes(
+        [
+            36,
+            80,
+            140,
+            48,
+            104,
+            166,
+            70,
+            128,
+            184,
+            98,
+            150,
+            190,
+            222,
+            226,
+            218,
+            198,
+            210,
+            214,
+            160,
+            190,
+            210,
+            120,
+            166,
+            198,
+            232,
+            150,
+            72,
+            224,
+            132,
+            56,
+            208,
+            110,
+            44,
+            180,
+            92,
+            38,
+        ]
+    )
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 360 300] "
+        "/Resources << /Font << /F1 4 0 R >> /XObject << /ImPhoto 5 0 R >> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    font = pdf.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    image = pdf.add(
+        b"<< /Type /XObject /Subtype /Image /Width 4 /Height 3 "
+        b"/ColorSpace /DeviceRGB /BitsPerComponent 8 /Length "
+        + str(len(photo)).encode("ascii")
+        + b" >>\nstream\n"
+        + photo
+        + b"\nendstream"
+    )
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert font == 4
+    assert image == 5
+    return pdf.render(catalog)
+
+
 def legal_contract_signature_blocks_pdf() -> bytes:
     return page_pdf(
         "[0 0 320 420]",
@@ -4873,6 +5078,9 @@ def main() -> None:
     write("account-statement-ledger.pdf", account_statement_ledger_pdf())
     write("thermal-receipt.pdf", thermal_receipt_pdf())
     write("business-form-stamp-signature.pdf", business_form_stamp_signature_pdf())
+    write("office-report-header-footer-link.pdf", office_report_header_footer_link_pdf())
+    write("office-spreadsheet-chart-comments.pdf", office_spreadsheet_chart_comments_pdf())
+    write("office-presentation-handout.pdf", office_presentation_handout_pdf())
     write("legal-contract-signature-blocks.pdf", legal_contract_signature_blocks_pdf())
     write("legal-visible-redactions.pdf", legal_visible_redactions_pdf())
     write("legal-filing-stamp-comments.pdf", legal_filing_stamp_comments_pdf())
