@@ -123,10 +123,11 @@ Core supported runtime families remain native-only:
 | --- | ---: | ---: | ---: | ---: |
 | browser-print | 8 | 8 | 0 | 0 |
 | form | 15 | 15 | 0 | 0 |
-| office-export | 44 | 44 | 0 | 0 |
+| office-export | 47 | 47 | 0 | 0 |
 
-Visual conformance still has 91 blockers and 8 native unsupported rows across
-the full generated corpus:
+Visual conformance still has 91 blockers and 8 native unsupported rows in the
+0143 full-corpus baseline. The 0145 office-only refresh adds three
+rendering-core blockers while keeping the office native-supported gate green.
 
 | Subsystem tag | Blockers | Native errors | Primary owner |
 | --- | ---: | ---: | --- |

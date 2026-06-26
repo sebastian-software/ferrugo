@@ -34,7 +34,6 @@ when the server renderer is already correct and bounded.
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
-| 0145 | [Office Suite Regression Corpus Refresh](0145-office-suite-regression-corpus-refresh.md) | 26 | medium | 0144 |
 | 0146 | [Browser Print Corpus Refresh](0146-browser-print-corpus-refresh.md) | 27 | medium | 0145 |
 | 0147 | [Scanner And OCR Workflow Corpus](0147-scanner-and-ocr-workflow-corpus.md) | 27 | medium | 0146 |
 | 0148 | [Government Form And Certificate Coverage](0148-government-form-and-certificate-coverage.md) | 27 | medium | 0147 |
@@ -120,6 +119,7 @@ when the server renderer is already correct and bounded.
 
 | ID | Milestone | Phase | Size | Completed |
 | --- | --- | --- | --- | --- |
+| 0145 | [Office Suite Regression Corpus Refresh](0145-office-suite-regression-corpus-refresh.md) | 26 | medium | 2026-06-26 |
 | 0144 | [Renderer Operator Coverage Audit](0144-renderer-operator-coverage-audit.md) | 26 | medium | 2026-06-26 |
 | 0143 | [Native Renderer Conformance Triage Loop](0143-native-renderer-conformance-triage-loop.md) | 26 | medium | 2026-06-26 |
 | 0142 | [PDFium Comparison Tooling Quarantine](0142-pdfium-comparison-tooling-quarantine.md) | 26 | medium | 2026-06-26 |

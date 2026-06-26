@@ -1,6 +1,6 @@
 # 0145: Office Suite Regression Corpus Refresh
 
-Status: todo
+Status: done
 Phase: 26
 Size: medium
 Depends on: 0144
@@ -45,4 +45,16 @@ browser-generated business documents remain first-class native renderer targets.
 
 ## Completion Notes
 
-Empty until done.
+- Added generated Office-suite fixtures for a header/footer/link report, a
+  spreadsheet with chart and comments, and a presentation handout.
+- Registered the new fixtures in `fixtures/corpus-manifest.tsv` under
+  `office-export`, bringing the family to 47 fixtures.
+- Native supported gate passed: 47/47 office-export fixtures rendered
+  natively, with 0 fallbacks and 0 errors.
+- PDFium visual oracle passed as a measurement run and classified 44/47
+  office-export fixtures as fidelity blockers, including all three new mixed
+  Office fixtures; this feeds the rendering-core and table/grid backlog rather
+  than blocking runtime support.
+- Fixture size review confirmed the three new PDFs add only 6,020 bytes and no
+  generated PDF exceeds the 512 KiB routine-validation threshold.
+- Report: `docs/reports/office-suite-regression-corpus-refresh-2026-06-26.md`.

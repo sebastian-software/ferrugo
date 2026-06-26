@@ -33,6 +33,25 @@ partial operator semantics instead of broad operator discovery:
 | `cs`, `CS`, `scn`, `SCN` | 18 | `image.color-space` | Color-space, spot-color, and pattern-color parity. |
 | `sh` | 5 | `graphics.pattern-shading` | Vector/shading follow-up work. |
 
+## Office Corpus Refresh Delta
+
+Milestone 0145 expanded `office-export` from 44 to 47 fixtures with mixed
+Word/LibreOffice, spreadsheet, and presentation-handout coverage. The native
+supported gate remains green at 47/47 rendered, 0 fallbacks, and 0 errors.
+
+The focused office visual oracle now reports:
+
+| Subsystem | Total | Accepted drift | Blockers | Native errors |
+| --- | ---: | ---: | ---: | ---: |
+| `text-fonts` | 23 | 2 | 21 | 0 |
+| `rendering-core` | 20 | 1 | 19 | 0 |
+| `page-geometry` | 3 | 0 | 3 | 0 |
+| `vector-graphics` | 1 | 0 | 1 | 0 |
+
+This reinforces the first two backlog slices. The three new fixtures should be
+used as representative reductions for header/footer/link composition,
+spreadsheet chart grids, and presentation handout layout.
+
 ## Typed Unsupported Boundaries
 
 | Feature bucket | Fixtures | Current decision |
