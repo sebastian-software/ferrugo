@@ -1,6 +1,6 @@
 # 0179: Corpus Governance And Regression Dashboard
 
-Status: todo
+Status: done
 Phase: 33
 Size: medium
 Depends on: 0178
@@ -46,4 +46,23 @@ status, performance, memory, and regression ownership in one maintainer flow.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-26.
+
+Added a native-only corpus dashboard maintainer flow:
+
+- `scripts/generate_corpus_dashboard.sh` generates metadata, local corpus
+  validation, support classification, operator coverage, performance, batch, and
+  compact dashboard JSON artifacts under `target/`.
+- `docs/policies/corpus-governance.md` defines required manifest metadata,
+  license/provenance handling, fixture review rules, regression visibility, and
+  privacy boundaries.
+- `docs/reports/corpus-governance-dashboard-2026-06-26.md` records the first
+  dashboard run and release-decision summary.
+
+Validation completed:
+
+- `bash scripts/generate_corpus_dashboard.sh target/corpus-dashboard-0179`
+- `cargo run -p pdfrust-cli --no-default-features -- validate-local-corpus fixtures/local-corpus.example.toml --allow-missing`
+- `cargo test --workspace --no-default-features`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo fmt --check`
