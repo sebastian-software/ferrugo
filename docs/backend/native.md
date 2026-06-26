@@ -65,6 +65,14 @@ rows, and 1 encrypted both-error row. The highest-priority owner areas are
 `docs/reports/native-renderer-conformance-triage-2026-06-26.md` and
 `docs/backlogs/native-renderer-conformance-backlog.md`.
 
+The 0144 operator audit adds a native content-stream operator coverage scan.
+The current generated corpus scan covers 154/155 fixtures, with the remaining
+row being the expected encrypted placeholder. It records 5,565 operators:
+5,472 implemented, 85 partial, 0 unsupported, and 8 intentionally ignored
+marked-content operators. Partial operator work is concentrated in `gs`, `W`,
+color-space operators, and `sh`. See
+`docs/reports/renderer-operator-coverage-audit-2026-06-26.md`.
+
 ## Page Artifact Cache Policy
 
 The native renderer default policy is `isolated-render`: each thumbnail render

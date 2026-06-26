@@ -20,6 +20,19 @@ follow-up slices. Counts come from
 | 7 | Remaining vector/transparency boundaries | 3 vector blockers, 1 transparency blocker, 3 native unsupported vector/transparency errors. | Keep gradients/shadings with accepted low-amplitude drift separate from high-delta vector and soft-mask/blend work. | Vector/transparency visual subset plus typed unsupported feature tests. |
 | 8 | Document structure and policy boundaries | 1 hybrid-reference blocker, 1 encrypted both-error, 1 dynamic XFA native error. | Keep encryption and dynamic XFA as policy boundaries; investigate hybrid visual parity separately. | Metadata/render policy tests plus focused hybrid-reference visual diff. |
 
+## Operator-Audit Routing
+
+Milestone 0144 found no fully unsupported content-stream operators in the
+scanned generated corpus. The next fidelity work should therefore focus on
+partial operator semantics instead of broad operator discovery:
+
+| Operator group | Count | Bucket | Backlog tie-in |
+| --- | ---: | --- | --- |
+| `gs` | 33 | `graphics.transparency` | Transparency and overprint visual parity. |
+| `W` / `W*` | 29 | `graphics.stroke-clip` | Dense tables, drawings, and page-geometry clipping drift. |
+| `cs`, `CS`, `scn`, `SCN` | 18 | `image.color-space` | Color-space, spot-color, and pattern-color parity. |
+| `sh` | 5 | `graphics.pattern-shading` | Vector/shading follow-up work. |
+
 ## Typed Unsupported Boundaries
 
 | Feature bucket | Fixtures | Current decision |

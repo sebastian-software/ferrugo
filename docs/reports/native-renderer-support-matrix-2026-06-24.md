@@ -144,3 +144,25 @@ the full generated corpus:
 Follow-up routing is tracked in
 `docs/backlogs/native-renderer-conformance-backlog.md`. The stable report
 contract is documented in `docs/policies/native-conformance-triage.md`.
+
+## 0144 Operator Coverage Update
+
+The 0144 operator audit adds measured content-stream operator usage for the
+generated corpus. The scanner reports 154 scanned fixtures, 1 encrypted policy
+error, and 5,565 total operators.
+
+| Status | Count | Owner implication |
+| --- | ---: | --- |
+| `implemented` | 5,472 | Common path, text, image, and graphics-state operators are recognized by native rendering. |
+| `partial` | 85 | Focus follow-up work on `gs`, `W` / `W*`, color-space operators, and `sh`. |
+| `unsupported` | 0 | The current generated corpus does not exercise fully unsupported content-stream operators. |
+| `ignored` | 8 | Marked-content operators are non-visual for thumbnail output. |
+
+Operator follow-up priority:
+
+1. `graphics.stroke-clip`: clipping parity for `W` / `W*`.
+2. `graphics.transparency`: external graphics-state subset validation for `gs`.
+3. `image.color-space`: `cs`, `CS`, `scn`, and `SCN` parity.
+4. `graphics.pattern-shading`: shading and pattern coverage for `sh`.
+
+Report: `docs/reports/renderer-operator-coverage-audit-2026-06-26.md`.
