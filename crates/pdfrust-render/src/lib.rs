@@ -4721,7 +4721,7 @@ pub fn rasterize_paths_into(
             }
             DisplayItem::Shading(shading) => rasterize_shading_item(shading, device, transform)?,
             DisplayItem::TransparencyGroup(group) => {
-                rasterize_transparency_group(group, device, transform, options)?;
+                rasterize_transparency_group(group, device, transform, options, &active_clips)?;
             }
             DisplayItem::Text(_) | DisplayItem::Image(_) => {}
         }
@@ -4776,7 +4776,7 @@ pub fn rasterize_display_list_into(
             }
             DisplayItem::Shading(shading) => rasterize_shading_item(shading, device, transform)?,
             DisplayItem::TransparencyGroup(group) => {
-                rasterize_transparency_group(group, device, transform, options)?;
+                rasterize_transparency_group(group, device, transform, options, &active_clips)?;
             }
             DisplayItem::Image(image) => draw_image(device, image, transform)?,
             DisplayItem::Text(text) => {
@@ -5127,6 +5127,7 @@ fn rasterize_transparency_group(
     device: &mut RasterDevice,
     transform: PageTransform,
     options: PathRasterOptions,
+    clips: &[ActiveClip],
 ) -> RasterResult<()> {
     let Some(bounds) = transparency_group_device_bounds(group.bounds, transform) else {
         return Ok(());
@@ -5169,13 +5170,19 @@ fn rasterize_transparency_group(
             if source.a == 0 {
                 continue;
             }
+            let device_x = bounds.min_x + x;
+            let device_y = bounds.min_y + y;
+            let clip_coverage = clip_coverage_for_pixel(device_x, device_y, clips, options);
+            if clip_coverage <= f64::EPSILON {
+                continue;
+            }
             blend_pixel(
                 device,
-                bounds.min_x + x,
-                bounds.min_y + y,
+                device_x,
+                device_y,
                 source,
                 group.state.blend_mode,
-                group.state.fill_alpha,
+                group.state.fill_alpha * clip_coverage,
             )?;
         }
     }
@@ -9572,6 +9579,29 @@ fn sample_point(x: u32, y: u32, sample_x: u32, sample_y: u32, samples: u32) -> P
         x: f64::from(x) + (f64::from(sample_x) + 0.5) / f64::from(samples),
         y: f64::from(y) + (f64::from(sample_y) + 0.5) / f64::from(samples),
     }
+}
+
+fn clip_coverage_for_pixel(
+    x: u32,
+    y: u32,
+    clips: &[ActiveClip],
+    options: PathRasterOptions,
+) -> f64 {
+    if clips.is_empty() {
+        return 1.0;
+    }
+    let samples = u32::from(options.supersample);
+    let sample_count = samples * samples;
+    let mut covered = 0;
+    for sample_y in 0..samples {
+        for sample_x in 0..samples {
+            let point = sample_point(x, y, sample_x, sample_y, samples);
+            if point_in_active_clips(point, clips) {
+                covered += 1;
+            }
+        }
+    }
+    f64::from(covered) / f64::from(sample_count)
 }
 
 fn point_in_active_clips(point: Point, clips: &[ActiveClip]) -> bool {

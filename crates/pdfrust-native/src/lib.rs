@@ -6227,6 +6227,90 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_render_generated_office_vector_effect_fixtures() {
+        let fixtures: &[(&[u8], u32, u32, &str)] = &[
+            (
+                include_bytes!("../../../fixtures/generated/office-vector-grouped-shapes.pdf")
+                    as &[u8],
+                320,
+                220,
+                "grouped office vector shapes",
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/office-vector-nested-clips.pdf")
+                    as &[u8],
+                300,
+                210,
+                "nested office vector clips",
+            ),
+            (
+                include_bytes!(
+                    "../../../fixtures/generated/office-vector-clipped-transparency-group.pdf"
+                ) as &[u8],
+                320,
+                220,
+                "clipped office transparency group",
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/office-vector-repeated-effects.pdf")
+                    as &[u8],
+                360,
+                240,
+                "repeated office vector effects",
+            ),
+        ];
+
+        for &(bytes, expected_width, expected_height, label) in fixtures {
+            let thumbnail = ThumbnailBackend::render(
+                &NativeBackend::new(),
+                PdfSource::from_bytes(bytes),
+                &ThumbnailOptions {
+                    max_edge: expected_width.max(expected_height),
+                    ..ThumbnailOptions::default()
+                },
+            )
+            .expect("generated office vector fixture should render through native backend");
+
+            assert_eq!(
+                thumbnail.width, expected_width,
+                "{label} width should match"
+            );
+            assert_eq!(
+                thumbnail.height, expected_height,
+                "{label} height should match"
+            );
+            assert!(
+                thumbnail
+                    .bytes
+                    .chunks_exact(4)
+                    .any(|pixel| pixel != [255, 255, 255, 255]),
+                "{label} fixture should render visible content"
+            );
+        }
+    }
+
+    #[test]
+    fn native_backend_should_clip_transparency_group_to_parent_clip() {
+        let bytes = include_bytes!(
+            "../../../fixtures/generated/office-vector-clipped-transparency-group.pdf"
+        );
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 160,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("clipped transparency group should render through native backend");
+
+        assert_eq!(thumbnail.width, 160);
+        assert_eq!(thumbnail.height, 110);
+        assert_eq!(rgba_at(&thumbnail, 25, 60), [250, 250, 247, 255]);
+        assert_ne!(rgba_at(&thumbnail, 60, 60), [250, 250, 247, 255]);
+    }
+
+    #[test]
     fn native_backend_should_render_generated_business_document_fixtures() {
         let fixtures: &[(&[u8], u32, u32, &str)] = &[
             (

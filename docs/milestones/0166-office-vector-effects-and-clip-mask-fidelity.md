@@ -1,6 +1,6 @@
 # 0166: Office Vector Effects And Clip Mask Fidelity
 
-Status: todo
+Status: done
 Phase: 31
 Size: medium
 Depends on: 0165
@@ -47,4 +47,15 @@ slides, reports, charts, and diagrams.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-26.
+
+- Added four generated office-vector fixtures for grouped shapes, nested
+  clipping, clipped transparency groups, and repeated decorative effects.
+- Added `fixtures/office-vector-effects-manifest.tsv` and included the new
+  fixtures in the main corpus manifest under `office-export`.
+- Fixed transparency-group compositing so parent clipping paths are applied with
+  bounded supersampled coverage and no separate mask allocation.
+- Added native regression tests for the office-vector fixture set and clipped
+  transparency-group behavior.
+- Added
+  `docs/reports/office-vector-effects-clip-mask-fidelity-2026-06-26.md`.

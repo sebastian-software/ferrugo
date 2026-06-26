@@ -4774,6 +4774,126 @@ def office_presentation_handout_pdf() -> bytes:
     return pdf.render(catalog)
 
 
+def office_vector_grouped_shapes_pdf() -> bytes:
+    ops: list[str] = [
+        "q 0.98 0.98 0.97 rg 0 0 320 220 re f Q",
+        "q 1 0 0 1 22 34 cm",
+        "0.12 0.28 0.52 rg 0 0 116 64 re f",
+        "0.94 0.55 0.18 rg 12 14 38 28 re f",
+        "0.18 0.58 0.42 rg 62 14 38 28 re f",
+        "0.06 0.12 0.22 RG 1.2 w 0 0 116 64 re S",
+        "Q",
+        "q 0.92 0.94 0.98 rg 164 34 128 64 re f Q",
+        "q 0.16 0.36 0.68 RG 2 w 176 52 m 206 82 l 236 48 l 276 86 l S Q",
+        "q 0.12 0.14 0.20 rg 176 110 30 30 re f 222 110 30 30 re f 268 110 30 30 re f Q",
+        "BT /F1 10 Tf 24 186 Td (Grouped vector shapes) Tj ET",
+    ]
+    return page_pdf("[0 0 320 220]", " ".join(ops))
+
+
+def office_vector_nested_clips_pdf() -> bytes:
+    ops: list[str] = [
+        "q 0.97 0.97 0.95 rg 0 0 300 210 re f Q",
+        "q 28 34 238 132 re W n",
+        "56 54 170 92 re W n",
+        "0.88 0.94 1 rg 0 0 300 210 re f",
+        "0.18 0.42 0.72 RG 1.2 w",
+    ]
+    for x in range(20, 286, 12):
+        ops.append(f"{x} 18 m {x - 66} 186 l S")
+    ops.extend(
+        [
+            "0.86 0.30 0.14 rg 42 52 208 90 re f",
+            "Q",
+            "0.08 0.10 0.14 RG 1.2 w 28 34 238 132 re S 56 54 170 92 re S",
+            "BT /F1 10 Tf 30 184 Td (Nested clip masks) Tj ET",
+        ]
+    )
+    return page_pdf("[0 0 300 210]", " ".join(ops))
+
+
+def office_vector_clipped_transparency_group_pdf() -> bytes:
+    pdf = Pdf()
+    content = (
+        b"q 0.98 0.98 0.97 rg 0 0 320 220 re f Q "
+        b"q 70 54 154 104 re W n 1 0 0 1 38 34 cm /Fm1 Do Q "
+        b"q 0.05 0.08 0.12 RG 1.2 w 70 54 154 104 re S Q "
+        b"BT /F1 10 Tf 24 190 Td (Clipped transparency group) Tj ET"
+    )
+    form = (
+        b"q /GSHalf gs 0.10 0.34 0.78 rg 0 0 226 150 re f Q "
+        b"q /GSHalf gs 0.94 0.28 0.10 rg 80 18 112 112 re f Q "
+        b"q 0.12 0.16 0.22 RG 2 w 8 12 m 210 132 l S Q"
+    )
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 320 220] "
+        "/Resources << /Font << /F1 5 0 R >> "
+        "/ExtGState << /GSHalf << /ca 0.62 /CA 0.62 >> >> "
+        "/XObject << /Fm1 4 0 R >> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    form_object = pdf.add(
+        b"<< /Type /XObject /Subtype /Form /BBox [0 0 226 150] "
+        b"/Group << /S /Transparency /I true /CS /DeviceRGB >> /Length "
+        + str(len(form)).encode("ascii")
+        + b" >>\nstream\n"
+        + form
+        + b"\nendstream"
+    )
+    font = pdf.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert form_object == 4
+    assert font == 5
+    return pdf.render(catalog)
+
+
+def office_vector_repeated_effects_pdf() -> bytes:
+    pdf = Pdf()
+    ops: list[str] = [
+        "q 0.98 0.98 0.96 rg 0 0 360 240 re f Q",
+        "q /GSLow gs",
+    ]
+    colors = [(0.12, 0.34, 0.78), (0.86, 0.32, 0.16), (0.18, 0.58, 0.40)]
+    for row in range(3):
+        for col in range(5):
+            x = 28 + col * 62
+            y = 44 + row * 48
+            r, g, b = colors[(row + col) % len(colors)]
+            ops.append(f"{r} {g} {b} rg {x} {y} 44 28 re f")
+            ops.append(f"0.08 0.10 0.14 RG 0.8 w {x} {y} 44 28 re S")
+    ops.extend(
+        [
+            "Q",
+            "q 0.10 0.12 0.16 RG 1.4 w [4 3] 0 d",
+            "24 192 m 336 192 l 24 28 m 336 28 l S Q",
+            "BT /F1 10 Tf 26 212 Td (Repeated decorative vector effects) Tj ET",
+        ]
+    )
+    content = " ".join(ops).encode("ascii")
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 360 240] "
+        "/Resources << /Font << /F1 4 0 R >> "
+        "/ExtGState << /GSLow << /ca 0.58 /CA 0.72 >> >> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    font = pdf.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert font == 4
+    return pdf.render(catalog)
+
+
 def legal_contract_signature_blocks_pdf() -> bytes:
     return page_pdf(
         "[0 0 320 420]",
@@ -6319,6 +6439,13 @@ def main() -> None:
     write("office-report-header-footer-link.pdf", office_report_header_footer_link_pdf())
     write("office-spreadsheet-chart-comments.pdf", office_spreadsheet_chart_comments_pdf())
     write("office-presentation-handout.pdf", office_presentation_handout_pdf())
+    write("office-vector-grouped-shapes.pdf", office_vector_grouped_shapes_pdf())
+    write("office-vector-nested-clips.pdf", office_vector_nested_clips_pdf())
+    write(
+        "office-vector-clipped-transparency-group.pdf",
+        office_vector_clipped_transparency_group_pdf(),
+    )
+    write("office-vector-repeated-effects.pdf", office_vector_repeated_effects_pdf())
     write("legal-contract-signature-blocks.pdf", legal_contract_signature_blocks_pdf())
     write("legal-visible-redactions.pdf", legal_visible_redactions_pdf())
     write("legal-filing-stamp-comments.pdf", legal_filing_stamp_comments_pdf())

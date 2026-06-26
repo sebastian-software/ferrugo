@@ -1,0 +1,7 @@
+path	family	source	license	page_count	features	notes
+fixtures/generated/office-vector-grouped-shapes.pdf	grouped-shapes	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	office-export,vector,grouped-shapes,expected:native	Generated office-style grouped vector shapes fixture.
+fixtures/generated/office-vector-nested-clips.pdf	nested-clips	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	office-export,vector,clipping,nested-clips,expected:native	Generated office-style nested clipping fixture.
+fixtures/generated/office-vector-clipped-transparency-group.pdf	clipped-transparency	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	office-export,vector,clipping,transparency-group,expected:native	Generated office-style clipped transparency group fixture.
+fixtures/generated/office-vector-repeated-effects.pdf	repeated-effects	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	office-export,vector,repeated-effects,transparency,expected:native	Generated repeated decorative office vector effects fixture.
+fixtures/generated/spreadsheet-clipped-cells.pdf	nested-clips	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	spreadsheet,clipping,cells,overflow-text,expected:native	Existing spreadsheet clipped-cell office baseline.
+fixtures/generated/vector-stress.pdf	repeated-effects	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	vector-stress,chart,expected:native	Existing vector-heavy stress baseline for repeated path workloads.
