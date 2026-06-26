@@ -1,6 +1,6 @@
 # 0163: Producer Compatibility Matrix Expansion
 
-Status: todo
+Status: done
 Phase: 30
 Size: medium
 Depends on: 0162
@@ -48,4 +48,19 @@ measured by the documents users actually encounter.
 
 ## Completion Notes
 
-Empty until done.
+- Added `fixtures/producer-compatibility-manifest.tsv` as the CLI-compatible
+  producer subset gate.
+- Added `fixtures/producer-compatibility-matrix.tsv` with producer,
+  producer-version style, document family, workflow, feature pressure, current
+  status, and owner route fields.
+- Added `docs/reports/producer-compatibility-matrix-2026-06-26.md`.
+- Supported producer subset covers office suites, browsers, scanners,
+  accounting/banking, government forms, and a PDF 2.0 producer baseline with
+  13/13 native renders, 0 fallbacks, and 0 errors.
+- Typed unsupported producer-style boundaries are tracked for layered
+  presentations (`graphics.optional-content`) and fax/scanner image codecs
+  (`image.filter`).
+- Email-client and design-tool producer reductions remain explicit follow-up
+  gaps for later corpus milestones.
+- Matrix column validation, supported fallback gate, unsupported classification,
+  PDFium visual subset, native benchmark, and formatting checks passed.
