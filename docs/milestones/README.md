@@ -34,15 +34,6 @@ when the server renderer is already correct and bounded.
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
-| 0156 | [Native Renderer API And Semver Policy](0156-native-renderer-api-and-semver-policy.md) | 29 | small | 0155 |
-| 0157 | [Plugin-Free Distribution And Install Gate](0157-plugin-free-distribution-and-install-gate.md) | 29 | medium | 0156 |
-| 0158 | [Memory Arena And Scratch Buffer Audit](0158-memory-arena-and-scratch-buffer-audit.md) | 29 | medium | 0157 |
-| 0159 | [SIMD Raster Hot Path Evaluation](0159-simd-raster-hot-path-evaluation.md) | 29 | medium | 0158 |
-| 0160 | [PDFium-Free 1.0 Readiness Gate](0160-pdfium-free-1-0-readiness-gate.md) | 29 | medium | 0159 |
-| 0161 | [Post-1.0 Unsupported Feature Triage Loop](0161-post-1-0-unsupported-feature-triage-loop.md) | 30 | medium | 0160 |
-| 0162 | [PDF 2.0 Compatibility Boundary Gate](0162-pdf-2-0-compatibility-boundary-gate.md) | 30 | medium | 0161 |
-| 0163 | [Producer Compatibility Matrix Expansion](0163-producer-compatibility-matrix-expansion.md) | 30 | medium | 0162 |
-| 0164 | [Independent Reference Oracle Strategy](0164-independent-reference-oracle-strategy.md) | 30 | medium | 0163 |
 | 0165 | [Native-Only CI And Release Artifact Hardening](0165-native-only-ci-and-release-artifact-hardening.md) | 30 | medium | 0164 |
 | 0166 | [Office Vector Effects And Clip Mask Fidelity](0166-office-vector-effects-and-clip-mask-fidelity.md) | 31 | medium | 0165 |
 | 0167 | [Browser Print CSS Edge Case Coverage](0167-browser-print-css-edge-case-coverage.md) | 31 | medium | 0166 |
@@ -109,6 +100,15 @@ when the server renderer is already correct and bounded.
 
 | ID | Milestone | Phase | Size | Completed |
 | --- | --- | --- | --- | --- |
+| 0164 | [Independent Reference Oracle Strategy](0164-independent-reference-oracle-strategy.md) | 30 | medium | 2026-06-26 |
+| 0163 | [Producer Compatibility Matrix Expansion](0163-producer-compatibility-matrix-expansion.md) | 30 | medium | 2026-06-26 |
+| 0162 | [PDF 2.0 Compatibility Boundary Gate](0162-pdf-2-0-compatibility-boundary-gate.md) | 30 | medium | 2026-06-26 |
+| 0161 | [Post-1.0 Unsupported Feature Triage Loop](0161-post-1-0-unsupported-feature-triage-loop.md) | 30 | medium | 2026-06-26 |
+| 0160 | [PDFium-Free 1.0 Readiness Gate](0160-pdfium-free-1-0-readiness-gate.md) | 29 | medium | 2026-06-26 |
+| 0159 | [SIMD Raster Hot Path Evaluation](0159-simd-raster-hot-path-evaluation.md) | 29 | medium | 2026-06-26 |
+| 0158 | [Memory Arena And Scratch Buffer Audit](0158-memory-arena-and-scratch-buffer-audit.md) | 29 | medium | 2026-06-26 |
+| 0157 | [Plugin-Free Distribution And Install Gate](0157-plugin-free-distribution-and-install-gate.md) | 29 | medium | 2026-06-26 |
+| 0156 | [Native Renderer API And Semver Policy](0156-native-renderer-api-and-semver-policy.md) | 29 | small | 2026-06-26 |
 | 0152 | [Geospatial Map PDF Rendering Coverage](0152-geospatial-map-pdf-rendering-coverage.md) | 28 | medium | 2026-06-26 |
 | 0153 | [E-Signature Workflow Document Coverage](0153-e-signature-workflow-document-coverage.md) | 28 | medium | 2026-06-26 |
 | 0154 | [Accessibility Tagged PDF Visual Integrity](0154-accessibility-tagged-pdf-visual-integrity.md) | 28 | medium | 2026-06-26 |
