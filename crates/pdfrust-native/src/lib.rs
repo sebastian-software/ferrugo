@@ -25,8 +25,8 @@ use pdfrust_render::{
 };
 use pdfrust_syntax::{PdfBytes, PdfName, PdfNumber, PdfPrimitive, PdfReference, PdfString};
 use pdfrust_thumbnail::{
-    AccessibilityMetadata, DocumentInfo, DocumentMetadata, DocumentMetadataBackend,
-    DocumentStructure, OutlineMetadata, PageLabel, PageLabelsMetadata,
+    unsupported_feature_buckets as buckets, AccessibilityMetadata, DocumentInfo, DocumentMetadata,
+    DocumentMetadataBackend, DocumentStructure, OutlineMetadata, PageLabel, PageLabelsMetadata,
     PageMetadata as ThumbnailPageMetadata, PageSize, PdfSource, Thumbnail, ThumbnailBackend,
     ThumbnailError, ThumbnailOptions,
 };
@@ -34,20 +34,20 @@ use pdfrust_thumbnail::{
 /// Stable crate role used by architecture smoke tests and documentation.
 pub const CRATE_ROLE: &str = "native-backend";
 
-const BUCKET_GRAPHICS_OPTIONAL_CONTENT: &str = "graphics.optional-content";
-const BUCKET_GRAPHICS_COLOR_MANAGEMENT: &str = "graphics.color-management";
-const BUCKET_GRAPHICS_PATTERN_SHADING: &str = "graphics.pattern-shading";
-const BUCKET_GRAPHICS_STROKE_CLIP: &str = "graphics.stroke-clip";
-const BUCKET_GRAPHICS_TRANSPARENCY: &str = "graphics.transparency";
-const BUCKET_IMAGE_COLOR_SPACE: &str = "image.color-space";
-const BUCKET_IMAGE_FILTER: &str = "image.filter";
-const BUCKET_FORM_XFA_DYNAMIC: &str = "form.xfa-dynamic";
-const BUCKET_RENDERER_FORM_XOBJECT: &str = "renderer.form-xobject-composition";
-const BUCKET_RENDERER_MEMORY_BUDGET: &str = "renderer.memory-budget";
-const BUCKET_RENDERER_UNSUPPORTED: &str = "native.unsupported";
-const BUCKET_TEXT_CMAP_TOUNICODE: &str = "text.cmap-tounicode";
-const BUCKET_TEXT_FONT_PROGRAM: &str = "text.font-program";
-const BUCKET_TEXT_GLYPH_OUTLINE: &str = "text.glyph-outline";
+const BUCKET_GRAPHICS_OPTIONAL_CONTENT: &str = buckets::GRAPHICS_OPTIONAL_CONTENT;
+const BUCKET_GRAPHICS_COLOR_MANAGEMENT: &str = buckets::GRAPHICS_COLOR_MANAGEMENT;
+const BUCKET_GRAPHICS_PATTERN_SHADING: &str = buckets::GRAPHICS_PATTERN_SHADING;
+const BUCKET_GRAPHICS_STROKE_CLIP: &str = buckets::GRAPHICS_STROKE_CLIP;
+const BUCKET_GRAPHICS_TRANSPARENCY: &str = buckets::GRAPHICS_TRANSPARENCY;
+const BUCKET_IMAGE_COLOR_SPACE: &str = buckets::IMAGE_COLOR_SPACE;
+const BUCKET_IMAGE_FILTER: &str = buckets::IMAGE_FILTER;
+const BUCKET_FORM_XFA_DYNAMIC: &str = buckets::FORM_XFA_DYNAMIC;
+const BUCKET_RENDERER_FORM_XOBJECT: &str = buckets::RENDERER_FORM_XOBJECT_COMPOSITION;
+const BUCKET_RENDERER_MEMORY_BUDGET: &str = buckets::RENDERER_MEMORY_BUDGET;
+const BUCKET_RENDERER_UNSUPPORTED: &str = buckets::NATIVE_UNSUPPORTED;
+const BUCKET_TEXT_CMAP_TOUNICODE: &str = buckets::TEXT_CMAP_TOUNICODE;
+const BUCKET_TEXT_FONT_PROGRAM: &str = buckets::TEXT_FONT_PROGRAM;
+const BUCKET_TEXT_GLYPH_OUTLINE: &str = buckets::TEXT_GLYPH_OUTLINE;
 const ANNOTATION_OPAQUE_GRAPHICS_STATE: &[u8] = b"AnnotOpaque";
 const ANNOTATION_UNDERLINE_GRAPHICS_STATE: &[u8] = b"AnnotUnderline";
 const MAX_ANNOTATION_FALLBACK_QUADS: usize = 32;
@@ -4301,6 +4301,66 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_freeze_typed_unsupported_boundary_buckets() {
+        let fixtures: &[(&[u8], &'static str, &str)] = &[
+            (
+                include_bytes!("../../../fixtures/generated/unsupported-ccitt-image.pdf")
+                    as &[u8],
+                buckets::IMAGE_FILTER,
+                "unsupported CCITT image filter",
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/optional-content-ocmd.pdf") as &[u8],
+                buckets::GRAPHICS_OPTIONAL_CONTENT,
+                "unsupported optional-content membership policy",
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/xfa-dynamic-no-static-appearance.pdf")
+                    as &[u8],
+                buckets::FORM_XFA_DYNAMIC,
+                "dynamic XFA without static appearance",
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/chat-emoji-fallback-boundary.pdf")
+                    as &[u8],
+                buckets::TEXT_FONT_PROGRAM,
+                "unsupported emoji text layout boundary",
+            ),
+        ];
+
+        for &(bytes, bucket, label) in fixtures {
+            let error = match ThumbnailBackend::render(
+                &NativeBackend::new(),
+                PdfSource::from_bytes(bytes),
+                &ThumbnailOptions::default(),
+            ) {
+                Ok(_) => panic!("{label} should fail as unsupported"),
+                Err(error) => error,
+            };
+            assert_eq!(
+                error.class(),
+                pdfrust_thumbnail::ThumbnailErrorClass::Unsupported,
+                "{label}"
+            );
+            assert_eq!(error.unsupported_feature_bucket(), Some(bucket), "{label}");
+        }
+
+        let memory_error = NativeBackend::with_render_limits(NativeRenderLimits {
+            max_page_pixels: 1,
+            ..NativeRenderLimits::default()
+        })
+        .render(
+            PdfSource::from_bytes(include_bytes!("../../../fixtures/generated/text-page.pdf")),
+            &ThumbnailOptions::default(),
+        )
+        .expect_err("tight page raster budget should fail");
+        assert_eq!(
+            memory_error.unsupported_feature_bucket(),
+            Some(buckets::RENDERER_MEMORY_BUDGET)
+        );
+    }
+
+    #[test]
     fn native_backend_should_render_generated_pdf20_basic_office_fixture() {
         let bytes = include_bytes!("../../../fixtures/generated/pdf20-basic-office.pdf");
         let thumbnail = ThumbnailBackend::render(
@@ -6330,7 +6390,7 @@ mod tests {
     #[test]
     fn native_backend_should_report_generated_chat_emoji_boundary_fixture() {
         let bytes = include_bytes!("../../../fixtures/generated/chat-emoji-fallback-boundary.pdf");
-        assert_unsupported_feature_fixture(bytes, "text.font-program");
+        assert_unsupported_feature_fixture(bytes, buckets::TEXT_FONT_PROGRAM);
     }
 
     #[test]
@@ -8554,7 +8614,7 @@ mod tests {
     }
 
     fn assert_unsupported_image_filter_fixture(bytes: &[u8]) {
-        assert_unsupported_feature_fixture(bytes, "image.filter");
+        assert_unsupported_feature_fixture(bytes, buckets::IMAGE_FILTER);
     }
 
     fn assert_unsupported_feature_fixture(bytes: &[u8], bucket: &'static str) {

@@ -29,8 +29,10 @@ terminates the worker process and returns the `timeout` class.
 
 ## Native Unsupported Feature Buckets
 
-Native renderer diagnostics can attach a stable internal feature bucket while
-preserving the public `unsupported` class:
+Native renderer diagnostics can attach a stable feature bucket while preserving
+the public `unsupported` class. The bucket constants are exposed by
+`pdfrust_thumbnail::unsupported_feature_buckets`, and the full stable set is
+available as `pdfrust_thumbnail::STABLE_UNSUPPORTED_FEATURE_BUCKETS`.
 
 | Bucket | Meaning | Typical owner |
 | --- | --- | --- |
@@ -53,12 +55,27 @@ preserving the public `unsupported` class:
 | `parser.recovery` | Malformed structure requires bounded parser recovery, such as small xref object-offset drift. | 0057 |
 | `renderer.memory-budget` | Rendering exceeded a configured native memory or cache budget and should not be treated as an internal crash. | 0058-0059 |
 
-These buckets are not API classes. They make support matrices and corpus
-reports stable without forcing downstream callers to depend on milestone-level
-implementation details.
+These buckets are stable diagnostics, not separate high-level API classes. Code
+that only needs retry/fallback routing should branch on
+`ThumbnailError::class()`. Code that needs user-facing support categories,
+telemetry, or feature-specific fallback can additionally read
+`ThumbnailError::unsupported_feature_bucket()`.
 
 Native runtime rendering preserves the public `unsupported` class and includes
 the bucket in the error message when one is available. Generic unsupported
 outcomes use `native.unsupported` until a narrower bucket is available. Corpus
 commands such as `summarize-fallbacks --fail-on-fallback` turn these diagnostics
 into local or CI failure gates without loading PDFium.
+
+## Consumer Handling
+
+Recommended application behavior:
+
+| Error class | Suggested handling |
+| --- | --- |
+| `unsupported` with bucket | Treat as a valid PDF that needs an unsupported renderer feature. Use the bucket for telemetry, support copy, or an alternate renderer path. |
+| `unsupported` without bucket | Treat as valid but unsupported; avoid parsing the display message for control flow. |
+| `malformed` | Treat as invalid or unrecoverable within the parser recovery budget. Do not retry as an unsupported feature. |
+| `encrypted` | Ask for password/decryption policy; do not treat as malformed or unsupported. |
+| `timeout` | Retry only under an explicit timeout or isolation policy. |
+| `internal` | Treat as a bug or environment failure; diagnostic text is not stable. |

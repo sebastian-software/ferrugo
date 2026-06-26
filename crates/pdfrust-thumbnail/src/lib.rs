@@ -357,6 +357,60 @@ pub enum ThumbnailError {
     Internal(String),
 }
 
+/// Stable public unsupported-feature buckets.
+///
+/// These strings refine [`ThumbnailErrorClass::Unsupported`] without changing
+/// the high-level class returned by [`ThumbnailError::class`].
+pub mod unsupported_feature_buckets {
+    /// Valid input uses an unsupported native renderer feature without a more
+    /// specific bucket.
+    pub const NATIVE_UNSUPPORTED: &str = "native.unsupported";
+    /// Rendering exceeded a configured native memory, pixel, or cache budget.
+    pub const RENDERER_MEMORY_BUDGET: &str = "renderer.memory-budget";
+    /// Page requires nested Form XObject composition that is not supported.
+    pub const RENDERER_FORM_XOBJECT_COMPOSITION: &str = "renderer.form-xobject-composition";
+    /// Page uses unsupported optional-content policy or viewer state.
+    pub const GRAPHICS_OPTIONAL_CONTENT: &str = "graphics.optional-content";
+    /// Page uses unsupported color-management behavior.
+    pub const GRAPHICS_COLOR_MANAGEMENT: &str = "graphics.color-management";
+    /// Page uses unsupported pattern or shading behavior.
+    pub const GRAPHICS_PATTERN_SHADING: &str = "graphics.pattern-shading";
+    /// Page uses unsupported stroke, dash, or clipping behavior.
+    pub const GRAPHICS_STROKE_CLIP: &str = "graphics.stroke-clip";
+    /// Page uses unsupported transparency, soft-mask, blend, or overprint behavior.
+    pub const GRAPHICS_TRANSPARENCY: &str = "graphics.transparency";
+    /// Image uses unsupported color-space conversion or decode behavior.
+    pub const IMAGE_COLOR_SPACE: &str = "image.color-space";
+    /// Image stream uses an unsupported codec or predictor.
+    pub const IMAGE_FILTER: &str = "image.filter";
+    /// Document requires dynamic XFA processing for faithful rendering.
+    pub const FORM_XFA_DYNAMIC: &str = "form.xfa-dynamic";
+    /// Text requires unsupported CMap or ToUnicode behavior.
+    pub const TEXT_CMAP_TOUNICODE: &str = "text.cmap-tounicode";
+    /// Text requires unsupported font program or encoding behavior.
+    pub const TEXT_FONT_PROGRAM: &str = "text.font-program";
+    /// Text requires unsupported glyph outline behavior.
+    pub const TEXT_GLYPH_OUTLINE: &str = "text.glyph-outline";
+}
+
+/// Stable unsupported-feature bucket names exposed by the thumbnail facade.
+pub const STABLE_UNSUPPORTED_FEATURE_BUCKETS: &[&str] = &[
+    unsupported_feature_buckets::NATIVE_UNSUPPORTED,
+    unsupported_feature_buckets::RENDERER_MEMORY_BUDGET,
+    unsupported_feature_buckets::RENDERER_FORM_XOBJECT_COMPOSITION,
+    unsupported_feature_buckets::GRAPHICS_OPTIONAL_CONTENT,
+    unsupported_feature_buckets::GRAPHICS_COLOR_MANAGEMENT,
+    unsupported_feature_buckets::GRAPHICS_PATTERN_SHADING,
+    unsupported_feature_buckets::GRAPHICS_STROKE_CLIP,
+    unsupported_feature_buckets::GRAPHICS_TRANSPARENCY,
+    unsupported_feature_buckets::IMAGE_COLOR_SPACE,
+    unsupported_feature_buckets::IMAGE_FILTER,
+    unsupported_feature_buckets::FORM_XFA_DYNAMIC,
+    unsupported_feature_buckets::TEXT_CMAP_TOUNICODE,
+    unsupported_feature_buckets::TEXT_FONT_PROGRAM,
+    unsupported_feature_buckets::TEXT_GLYPH_OUTLINE,
+];
+
 impl ThumbnailError {
     /// Creates an internal error with an owned stable message.
     #[must_use]
@@ -364,13 +418,13 @@ impl ThumbnailError {
         Self::Internal(message.into())
     }
 
-    /// Creates an unsupported-feature error with a stable internal bucket.
+    /// Creates an unsupported-feature error with a stable bucket.
     #[must_use]
     pub const fn unsupported_feature(bucket: &'static str) -> Self {
         Self::UnsupportedFeature(bucket)
     }
 
-    /// Returns the internal unsupported-feature bucket when one is available.
+    /// Returns the unsupported-feature bucket when one is available.
     #[must_use]
     pub const fn unsupported_feature_bucket(&self) -> Option<&'static str> {
         match self {
@@ -504,6 +558,20 @@ mod tests {
     #[test]
     fn error_class_should_be_stable() {
         assert_eq!(ThumbnailError::Timeout.class().as_str(), "timeout");
+    }
+
+    #[test]
+    fn unsupported_feature_buckets_should_be_stable() {
+        use unsupported_feature_buckets as buckets;
+
+        let error = ThumbnailError::unsupported_feature(buckets::IMAGE_FILTER);
+
+        assert_eq!(error.class(), ThumbnailErrorClass::Unsupported);
+        assert_eq!(error.unsupported_feature_bucket(), Some("image.filter"));
+        assert!(STABLE_UNSUPPORTED_FEATURE_BUCKETS.contains(&buckets::IMAGE_FILTER));
+        assert!(STABLE_UNSUPPORTED_FEATURE_BUCKETS.contains(&buckets::RENDERER_MEMORY_BUDGET));
+        assert!(STABLE_UNSUPPORTED_FEATURE_BUCKETS.contains(&buckets::FORM_XFA_DYNAMIC));
+        assert_eq!(STABLE_UNSUPPORTED_FEATURE_BUCKETS.len(), 14);
     }
 
     #[test]

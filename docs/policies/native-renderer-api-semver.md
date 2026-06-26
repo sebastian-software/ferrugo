@@ -35,8 +35,8 @@ The following surfaces are not committed as stable application APIs:
   `render-isolated`, `compare-metadata`, `benchmark-pdfium`, and `visual-diff`.
 - Exact visual-diff thresholds, fixture manifests, benchmark JSON shape, and
   conformance triage reports.
-- Internal unsupported-feature bucket names unless promoted by a separate
-  typed unsupported-boundary milestone.
+- Low-level renderer diagnostics beyond the stable unsupported-feature buckets
+  exposed by `pdfrust-thumbnail`.
 
 Internal crates can change between milestones as long as the public consumer
 boundary above continues to build, test, and preserve documented behavior.
@@ -72,10 +72,14 @@ After 1.0, the project follows standard SemVer:
 are safe for logs, CLI automation, and baseline metadata.
 
 `ThumbnailError` variants are stable high-level failure classes. The
-`UnsupportedFeature(&'static str)` bucket gives maintainers a more precise
-native boundary while preserving the public `unsupported` class through
-`ThumbnailError::class()`. Consumers should branch on `class()` unless they
-explicitly need milestone-level unsupported diagnostics.
+`UnsupportedFeature(&'static str)` bucket gives consumers and maintainers a more
+precise native boundary while preserving the public `unsupported` class through
+`ThumbnailError::class()`. The bucket constants in
+`pdfrust_thumbnail::unsupported_feature_buckets` and the
+`STABLE_UNSUPPORTED_FEATURE_BUCKETS` list are stable diagnostic strings.
+Consumers should branch on `class()` for coarse fallback behavior and use
+`unsupported_feature_bucket()` only for feature-specific telemetry, support
+messages, or explicit alternate-renderer routing.
 
 Internal `Internal(String)` messages are not stable. They may change to improve
 debuggability and must not be used as control-flow keys.
@@ -114,6 +118,5 @@ Consumers should migrate to native-only runtime behavior by:
    diffs only.
 
 Applications that previously depended on PDFium fallback should now handle
-`unsupported` as a typed native outcome. A future milestone may promote selected
-unsupported buckets into a stronger public SLA once the typed unsupported
-boundary is frozen.
+`unsupported` as a typed native outcome. Feature-specific handling can use the
+stable unsupported bucket constants instead of parsing display strings.

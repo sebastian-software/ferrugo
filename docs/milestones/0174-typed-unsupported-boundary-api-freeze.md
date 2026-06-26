@@ -1,6 +1,6 @@
 # 0174: Typed Unsupported Boundary API Freeze
 
-Status: todo
+Status: done
 Phase: 32
 Size: small
 Depends on: 0173
@@ -46,4 +46,25 @@ reliable fallback, reporting, and retry behavior around the native renderer.
 
 ## Completion Notes
 
-Empty until done.
+Completed 2026-06-26.
+
+- Promoted unsupported-feature bucket names into
+  `pdfrust_thumbnail::unsupported_feature_buckets` plus
+  `STABLE_UNSUPPORTED_FEATURE_BUCKETS`.
+- Updated the native backend to emit the facade bucket constants instead of
+  private duplicate strings.
+- Added regression tests for stable bucket strings and representative native
+  unsupported boundaries.
+- Updated public consumer handling guidance in `docs/errors.md` and
+  `docs/policies/native-renderer-api-semver.md`.
+- Recorded the API freeze in
+  `docs/reports/typed-unsupported-boundary-api-freeze-2026-06-26.md`.
+
+Validation:
+
+- `cargo test -p pdfrust-thumbnail unsupported_feature_buckets -- --nocapture`
+- `cargo test -p pdfrust-native typed_unsupported_boundary -- --nocapture`
+- Unsupported corpus classification with `summarize-fallbacks`.
+- `cargo test --workspace --no-default-features`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo fmt --check`
