@@ -121,13 +121,15 @@ Core supported runtime families remain native-only:
 
 | Family | Total | Native rendered | Fallback required | Errors |
 | --- | ---: | ---: | ---: | ---: |
-| browser-print | 8 | 8 | 0 | 0 |
+| browser-print | 11 | 11 | 0 | 0 |
 | form | 15 | 15 | 0 | 0 |
 | office-export | 47 | 47 | 0 | 0 |
 
 Visual conformance still has 91 blockers and 8 native unsupported rows in the
 0143 full-corpus baseline. The 0145 office-only refresh adds three
 rendering-core blockers while keeping the office native-supported gate green.
+The 0146 browser-print refresh adds three browser rendering-core blockers while
+keeping the browser native-supported and repeat-render gates green.
 
 | Subsystem tag | Blockers | Native errors | Primary owner |
 | --- | ---: | ---: | --- |

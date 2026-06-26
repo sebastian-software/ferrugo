@@ -52,6 +52,26 @@ This reinforces the first two backlog slices. The three new fixtures should be
 used as representative reductions for header/footer/link composition,
 spreadsheet chart grids, and presentation handout layout.
 
+## Browser Print Corpus Refresh Delta
+
+Milestone 0146 expanded `browser-print` from 8 to 11 fixtures with Chromium,
+Firefox, and WebKit-style synthetic print reductions. The native supported gate
+remains green at 11/11 rendered, 0 fallbacks, and 0 errors.
+
+The focused browser visual oracle now reports:
+
+| Subsystem | Total | Exact | Accepted drift | Blockers | Native errors |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `images-color` | 1 | 1 | 0 | 0 | 0 |
+| `page-geometry` | 3 | 0 | 2 | 1 | 0 |
+| `rendering-core` | 4 | 0 | 1 | 3 | 0 |
+| `text-fonts` | 1 | 0 | 0 | 1 | 0 |
+| `vector-graphics` | 2 | 1 | 1 | 0 | 0 |
+
+Use the new browser fixtures as reductions for CSS backgrounds, table/grid
+rules, clipped overflow, chart geometry, link appearances, and form-like print
+controls.
+
 ## Typed Unsupported Boundaries
 
 | Feature bucket | Fixtures | Current decision |

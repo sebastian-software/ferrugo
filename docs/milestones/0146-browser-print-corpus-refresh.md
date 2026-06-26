@@ -1,6 +1,6 @@
 # 0146: Browser Print Corpus Refresh
 
-Status: todo
+Status: done
 Phase: 27
 Size: medium
 Depends on: 0145
@@ -45,4 +45,16 @@ articles, dashboards, invoices, documentation pages, and forms.
 
 ## Completion Notes
 
-Empty until done.
+- Added generated browser-print fixtures for Chromium-style article print,
+  Firefox-style dashboard print, and WebKit-style receipt/form print.
+- Registered the new fixtures in `fixtures/corpus-manifest.tsv`, bringing
+  `browser-print` to 11 fixtures.
+- Native supported gate passed: 11/11 browser-print fixtures rendered natively,
+  with 0 fallbacks and 0 errors.
+- Repeat native gate passed with 0 budget failures, first mean 26.252 ms, and
+  repeat mean 26.066 ms.
+- PDFium visual oracle classified 5/11 browser-print fixtures as blockers,
+  including the three new rendering-core reductions.
+- Fixture size review confirmed the three new PDFs add 5,163 bytes and no
+  generated PDF exceeds the 512 KiB routine-validation threshold.
+- Report: `docs/reports/browser-print-corpus-refresh-2026-06-26.md`.
