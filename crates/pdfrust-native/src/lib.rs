@@ -3,7 +3,7 @@
 #![forbid(unsafe_code)]
 
 use std::borrow::Cow;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
@@ -63,6 +63,80 @@ const DEFAULT_SPOOL_BYTES_LIMIT: usize = 0;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NativeBackend {
     limits: NativeRenderLimits,
+}
+
+/// Native operator coverage scan options.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OperatorCoverageOptions {
+    /// Zero-based page index to scan.
+    pub page_index: u32,
+    /// Include annotation appearance and synthesized fallback appearance
+    /// streams in addition to page content.
+    pub include_annotations: bool,
+}
+
+impl Default for OperatorCoverageOptions {
+    fn default() -> Self {
+        Self {
+            page_index: 0,
+            include_annotations: true,
+        }
+    }
+}
+
+/// Native support classification for a PDF content-stream operator.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OperatorSupportStatus {
+    /// Native rendering currently implements the operator for common cases.
+    Implemented,
+    /// Native rendering implements a bounded subset or policy-dependent subset.
+    Partial,
+    /// Native rendering does not implement the operator semantics.
+    Unsupported,
+    /// Native rendering intentionally ignores the operator because it is
+    /// non-visual or only carries metadata for current thumbnail output.
+    Ignored,
+}
+
+impl OperatorSupportStatus {
+    /// Stable JSON/report string for the status.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Implemented => "implemented",
+            Self::Partial => "partial",
+            Self::Unsupported => "unsupported",
+            Self::Ignored => "ignored",
+        }
+    }
+}
+
+/// One operator row in a native coverage scan.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OperatorCoverageEntry {
+    /// PDF operator name. Inline images are reported as `BI`.
+    pub operator: String,
+    /// Number of occurrences in scanned streams.
+    pub count: usize,
+    /// Native support status for this operator.
+    pub status: OperatorSupportStatus,
+    /// Suggested typed fallback bucket for unsupported or partial behavior.
+    pub fallback_bucket: Option<&'static str>,
+}
+
+/// Native operator coverage scan result for one document page.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OperatorCoverageReport {
+    /// Scanned zero-based page index.
+    pub page_index: u32,
+    /// Number of decoded content streams scanned.
+    pub streams_scanned: usize,
+    /// Number of content-stream operators, including inline image markers.
+    pub total_operators: usize,
+    /// Number of inline image objects encountered.
+    pub inline_images: usize,
+    /// Sorted operator coverage rows.
+    pub operators: Vec<OperatorCoverageEntry>,
 }
 
 impl NativeBackend {
@@ -774,6 +848,161 @@ fn render_bytes(
     }
     let dimensions = raster.dimensions();
     Thumbnail::rgba(dimensions.width, dimensions.height, raster.into_pixels())
+}
+
+/// Scans native renderer operator coverage for one document page.
+///
+/// The scan uses the same document loading and content decoding boundary as
+/// native rendering, but it only tokenizes content streams and records operator
+/// usage. It does not rasterize or expand image samples.
+///
+/// # Errors
+///
+/// Returns [`ThumbnailError`] when the document cannot be loaded, the page is
+/// unavailable, or a scanned content stream is malformed.
+pub fn scan_operator_coverage(
+    bytes: &[u8],
+    options: OperatorCoverageOptions,
+) -> Result<OperatorCoverageReport, ThumbnailError> {
+    let input = PdfBytes::new(bytes);
+    let (document, page_tree) = load_render_document(input, options.page_index)?;
+    let page = page_tree
+        .pages()
+        .get(options.page_index as usize)
+        .ok_or_else(|| unsupported_feature(BUCKET_RENDERER_UNSUPPORTED))?;
+    let mut scanner = OperatorCoverageScanner::default();
+
+    let content = page_content_stream(&document, page)?;
+    scanner.scan_stream(&content)?;
+
+    if options.include_annotations {
+        let (_, annotation_content, annotation_fallback_content) =
+            page_annotation_appearance_resources(&document, page)?;
+        if !annotation_content.is_empty() {
+            scanner.scan_stream(&annotation_content)?;
+        }
+        if !annotation_fallback_content.is_empty() {
+            scanner.scan_stream(&annotation_fallback_content)?;
+        }
+    }
+
+    Ok(scanner.finish(options.page_index))
+}
+
+#[derive(Default)]
+struct OperatorCoverageScanner {
+    streams_scanned: usize,
+    total_operators: usize,
+    inline_images: usize,
+    operators: BTreeMap<String, OperatorCoverageAccumulator>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct OperatorCoverageAccumulator {
+    count: usize,
+    status: OperatorSupportStatus,
+    fallback_bucket: Option<&'static str>,
+}
+
+impl OperatorCoverageScanner {
+    fn scan_stream(&mut self, content: &[u8]) -> Result<(), ThumbnailError> {
+        self.streams_scanned += 1;
+        for token in tokenize_content(PdfBytes::new(content)) {
+            match token.map_err(|_| ThumbnailError::Malformed)? {
+                ContentToken::Operator { name, .. } => {
+                    self.record(name.as_bytes());
+                }
+                ContentToken::InlineImage { .. } => {
+                    self.inline_images += 1;
+                    self.record(b"BI");
+                }
+                ContentToken::Operand { .. } => {}
+            }
+        }
+        Ok(())
+    }
+
+    fn record(&mut self, operator: &[u8]) {
+        let (status, fallback_bucket) = classify_operator_support(operator);
+        let entry = self
+            .operators
+            .entry(operator_name_string(operator))
+            .or_insert(OperatorCoverageAccumulator {
+                count: 0,
+                status,
+                fallback_bucket,
+            });
+        entry.count += 1;
+        self.total_operators += 1;
+    }
+
+    fn finish(self, page_index: u32) -> OperatorCoverageReport {
+        let operators = self
+            .operators
+            .into_iter()
+            .map(|(operator, entry)| OperatorCoverageEntry {
+                operator,
+                count: entry.count,
+                status: entry.status,
+                fallback_bucket: entry.fallback_bucket,
+            })
+            .collect();
+        OperatorCoverageReport {
+            page_index,
+            streams_scanned: self.streams_scanned,
+            total_operators: self.total_operators,
+            inline_images: self.inline_images,
+            operators,
+        }
+    }
+}
+
+fn operator_name_string(operator: &[u8]) -> String {
+    String::from_utf8_lossy(operator).into_owned()
+}
+
+fn classify_operator_support(operator: &[u8]) -> (OperatorSupportStatus, Option<&'static str>) {
+    match operator {
+        b"q" | b"Q" | b"cm" | b"w" | b"J" | b"j" | b"M" | b"d" | b"g" | b"G" | b"rg" | b"RG"
+        | b"m" | b"l" | b"c" | b"h" | b"re" | b"S" | b"s" | b"f" | b"F" | b"f*" | b"B" | b"B*"
+        | b"n" | b"BT" | b"ET" | b"Tf" | b"Tc" | b"Tw" | b"Tz" | b"Tr" | b"Td" | b"Tm" | b"Tj"
+        | b"TJ" | b"Do" | b"BI" => (OperatorSupportStatus::Implemented, None),
+        b"W" | b"W*" => (
+            OperatorSupportStatus::Partial,
+            Some(BUCKET_GRAPHICS_STROKE_CLIP),
+        ),
+        b"cs" | b"CS" | b"sc" | b"scn" | b"SC" | b"SCN" => (
+            OperatorSupportStatus::Partial,
+            Some(BUCKET_IMAGE_COLOR_SPACE),
+        ),
+        b"gs" => (
+            OperatorSupportStatus::Partial,
+            Some(BUCKET_GRAPHICS_TRANSPARENCY),
+        ),
+        b"sh" => (
+            OperatorSupportStatus::Partial,
+            Some(BUCKET_GRAPHICS_PATTERN_SHADING),
+        ),
+        b"v" | b"y" | b"b" | b"b*" => (
+            OperatorSupportStatus::Unsupported,
+            Some(BUCKET_GRAPHICS_STROKE_CLIP),
+        ),
+        b"T*" | b"TD" | b"TL" | b"Ts" | b"'" | b"\"" => (
+            OperatorSupportStatus::Unsupported,
+            Some(BUCKET_TEXT_FONT_PROGRAM),
+        ),
+        b"K" | b"k" => (
+            OperatorSupportStatus::Unsupported,
+            Some(BUCKET_IMAGE_COLOR_SPACE),
+        ),
+        b"MP" | b"DP" | b"BMC" | b"BDC" | b"EMC" | b"BX" | b"EX" => {
+            (OperatorSupportStatus::Ignored, None)
+        }
+        _ => (
+            OperatorSupportStatus::Unsupported,
+            Some(BUCKET_RENDERER_UNSUPPORTED),
+        ),
+    }
 }
 
 fn load_render_document(
@@ -6801,6 +7030,42 @@ mod tests {
     }
 
     #[test]
+    fn operator_coverage_should_classify_common_vector_fixture_operators() {
+        let bytes = include_bytes!("../../../fixtures/generated/vector-paths.pdf");
+        let report = scan_operator_coverage(bytes, OperatorCoverageOptions::default())
+            .expect("operator coverage should scan generated vector fixture");
+
+        assert!(report.streams_scanned >= 1);
+        assert!(report.total_operators > 0);
+        assert_operator_status(&report, "m", OperatorSupportStatus::Implemented);
+        assert_operator_status(&report, "l", OperatorSupportStatus::Implemented);
+        assert_operator_status(&report, "S", OperatorSupportStatus::Implemented);
+    }
+
+    #[test]
+    fn operator_coverage_should_count_inline_images() {
+        let bytes = include_bytes!("../../../fixtures/generated/inline-image.pdf");
+        let report = scan_operator_coverage(bytes, OperatorCoverageOptions::default())
+            .expect("operator coverage should scan inline image fixture");
+
+        assert_eq!(report.inline_images, 1);
+        assert_operator_status(&report, "BI", OperatorSupportStatus::Implemented);
+    }
+
+    #[test]
+    fn operator_coverage_should_surface_unsupported_shorthand_curves() {
+        let mut scanner = OperatorCoverageScanner::default();
+        scanner
+            .scan_stream(b"10 10 m 20 20 30 30 v")
+            .expect("synthetic content should tokenize");
+        let report = scanner.finish(0);
+
+        let entry = operator_entry(&report, "v");
+        assert_eq!(entry.status, OperatorSupportStatus::Unsupported);
+        assert_eq!(entry.fallback_bucket, Some(BUCKET_GRAPHICS_STROKE_CLIP));
+    }
+
+    #[test]
     fn native_backend_should_inspect_generated_fixture_metadata() {
         let bytes = include_bytes!("../../../fixtures/generated/text-page.pdf");
         let metadata =
@@ -6991,6 +7256,25 @@ mod tests {
             thumbnail.bytes[offset + 2],
             thumbnail.bytes[offset + 3],
         ]
+    }
+
+    fn operator_entry<'a>(
+        report: &'a OperatorCoverageReport,
+        operator: &str,
+    ) -> &'a OperatorCoverageEntry {
+        report
+            .operators
+            .iter()
+            .find(|entry| entry.operator == operator)
+            .expect("operator should be present in coverage report")
+    }
+
+    fn assert_operator_status(
+        report: &OperatorCoverageReport,
+        operator: &str,
+        status: OperatorSupportStatus,
+    ) {
+        assert_eq!(operator_entry(report, operator).status, status);
     }
 
     fn assert_unsupported_image_filter_fixture(bytes: &[u8]) {

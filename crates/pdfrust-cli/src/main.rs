@@ -14,7 +14,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use pdfrust_native::{
-    NativeBackend, NativeMemoryDiagnostics, NativePageCacheKey, NativePageCachePolicy,
+    scan_operator_coverage, NativeBackend, NativeMemoryDiagnostics, NativePageCacheKey,
+    NativePageCachePolicy, OperatorCoverageEntry, OperatorCoverageOptions, OperatorSupportStatus,
 };
 #[cfg(feature = "pdfium")]
 use pdfrust_pdfium::PdfiumBackend;
@@ -57,6 +58,7 @@ fn run(args: Vec<OsString>) -> Result<(), CliError> {
         Some("render-isolated") => render_isolated_command(&args[1..]),
         Some("compare-metadata") => compare_metadata_command(&args[1..]),
         Some("summarize-fallbacks") => summarize_fallbacks_command(&args[1..]),
+        Some("operator-coverage") => operator_coverage_command(&args[1..]),
         Some("extract-corpus-metadata") => extract_corpus_metadata_command(&args[1..]),
         Some("validate-local-corpus") => validate_local_corpus_command(&args[1..]),
         Some("benchmark-native") => benchmark_native_command(&args[1..]),
@@ -357,6 +359,30 @@ fn summarize_fallbacks_command(args: &[OsString]) -> Result<(), CliError> {
     } else {
         Ok(())
     }
+}
+
+fn operator_coverage_command(args: &[OsString]) -> Result<(), CliError> {
+    let config = OperatorCoverageConfig::parse(args)?;
+    let fixtures = pdf_inputs(&config.input)?;
+    let manifest = match &config.manifest {
+        Some(path) => Some(read_corpus_manifest(path)?),
+        None => None,
+    };
+    let fixtures =
+        filter_fixtures_by_family(&fixtures, manifest.as_ref(), &config.include_families)?;
+    let report = scan_operator_coverage_corpus(&fixtures, manifest.as_ref(), &config);
+    let json = operator_coverage_report_json(&report);
+
+    if let Some(output) = config.output {
+        fs::write(&output, &json).map_err(|source| CliError::Io {
+            path: output,
+            source,
+        })?;
+    } else {
+        println!("{json}");
+    }
+
+    Ok(())
 }
 
 fn extract_corpus_metadata_command(args: &[OsString]) -> Result<(), CliError> {
@@ -889,6 +915,16 @@ struct FallbackSummaryConfig {
     native_profile: NativeProfile,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct OperatorCoverageConfig {
+    input: PathBuf,
+    manifest: Option<PathBuf>,
+    include_families: Vec<String>,
+    output: Option<PathBuf>,
+    page_index: u32,
+    include_annotations: bool,
+}
+
 impl FallbackSummaryConfig {
     fn parse(args: &[OsString]) -> Result<Self, CliError> {
         let mut input = None;
@@ -983,6 +1019,66 @@ impl FallbackSummaryConfig {
             fail_on_fallback,
             include_families,
             native_profile,
+        })
+    }
+}
+
+impl OperatorCoverageConfig {
+    fn parse(args: &[OsString]) -> Result<Self, CliError> {
+        let mut input = None;
+        let mut manifest = None;
+        let mut include_families = Vec::new();
+        let mut output = None;
+        let mut page_index = DEFAULT_PAGE_INDEX;
+        let mut include_annotations = true;
+
+        let mut index = 0;
+        while index < args.len() {
+            let arg = args[index]
+                .to_str()
+                .ok_or_else(|| CliError::Usage("arguments must be valid UTF-8".to_string()))?;
+            match arg {
+                "--output" | "-o" => {
+                    index += 1;
+                    output = Some(required_path(args, index, "--output")?);
+                }
+                "--manifest" => {
+                    index += 1;
+                    manifest = Some(required_path(args, index, "--manifest")?);
+                }
+                "--include-family" => {
+                    index += 1;
+                    include_families
+                        .push(required_str(args, index, "--include-family")?.to_string());
+                }
+                "--page-index" => {
+                    index += 1;
+                    page_index = parse_u32(args, index, "--page-index")?;
+                }
+                "--no-annotations" => {
+                    include_annotations = false;
+                }
+                value if value.starts_with('-') => {
+                    return Err(CliError::Usage(format!("unknown option `{value}`")));
+                }
+                value => {
+                    if input.replace(PathBuf::from(value)).is_some() {
+                        return Err(CliError::Usage(
+                            "only one input path is supported".to_string(),
+                        ));
+                    }
+                }
+            }
+            index += 1;
+        }
+
+        Ok(Self {
+            input: input.ok_or_else(|| CliError::Usage("missing input path".to_string()))?,
+            manifest,
+            include_families,
+            output,
+            page_index,
+            include_annotations,
         })
     }
 }
@@ -1826,6 +1922,78 @@ struct CorpusMetadataRecord {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+struct CorpusOperatorCoverageReport {
+    page_index: u32,
+    include_annotations: bool,
+    total: usize,
+    scanned: usize,
+    errors: usize,
+    total_operators: usize,
+    inline_images: usize,
+    status_counts: OperatorStatusCounts,
+    operators: BTreeMap<String, CorpusOperatorSummary>,
+    families: BTreeMap<String, CorpusOperatorFamilySummary>,
+    fixtures: Vec<CorpusOperatorCoverageRecord>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct OperatorStatusCounts {
+    implemented: usize,
+    partial: usize,
+    unsupported: usize,
+    ignored: usize,
+}
+
+impl OperatorStatusCounts {
+    fn record(&mut self, status: OperatorSupportStatus, count: usize) {
+        match status {
+            OperatorSupportStatus::Implemented => self.implemented += count,
+            OperatorSupportStatus::Partial => self.partial += count,
+            OperatorSupportStatus::Unsupported => self.unsupported += count,
+            OperatorSupportStatus::Ignored => self.ignored += count,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CorpusOperatorSummary {
+    count: usize,
+    status: OperatorSupportStatus,
+    fallback_bucket: Option<&'static str>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct CorpusOperatorFamilySummary {
+    total: usize,
+    scanned: usize,
+    errors: usize,
+    total_operators: usize,
+    inline_images: usize,
+    status_counts: OperatorStatusCounts,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CorpusOperatorCoverageRecord {
+    path: String,
+    family: String,
+    outcome: CorpusOperatorCoverageOutcome,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum CorpusOperatorCoverageOutcome {
+    Scanned {
+        streams_scanned: usize,
+        total_operators: usize,
+        inline_images: usize,
+        operators: Vec<OperatorCoverageEntry>,
+    },
+    Error {
+        class: &'static str,
+        message: String,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct LocalCorpusValidationReport {
     sample_count: usize,
     document_count: usize,
@@ -2466,6 +2634,104 @@ fn write_native_diagnostic_bundles(
         written += 1;
     }
     Ok(written)
+}
+
+fn scan_operator_coverage_corpus(
+    paths: &[PathBuf],
+    manifest: Option<&CorpusManifest>,
+    config: &OperatorCoverageConfig,
+) -> CorpusOperatorCoverageReport {
+    let mut report = CorpusOperatorCoverageReport {
+        page_index: config.page_index,
+        include_annotations: config.include_annotations,
+        total: paths.len(),
+        scanned: 0,
+        errors: 0,
+        total_operators: 0,
+        inline_images: 0,
+        status_counts: OperatorStatusCounts::default(),
+        operators: BTreeMap::new(),
+        families: BTreeMap::new(),
+        fixtures: Vec::with_capacity(paths.len()),
+    };
+    let options = OperatorCoverageOptions {
+        page_index: config.page_index,
+        include_annotations: config.include_annotations,
+    };
+
+    for path in paths {
+        let path_key = normalize_manifest_path(path);
+        let family = manifest
+            .and_then(|manifest| manifest.family_for_path(path))
+            .unwrap_or("unclassified")
+            .to_string();
+        report.families.entry(family.clone()).or_default().total += 1;
+
+        let outcome = match fs::read(path) {
+            Ok(bytes) => match scan_operator_coverage(&bytes, options) {
+                Ok(coverage) => {
+                    report.scanned += 1;
+                    report.total_operators += coverage.total_operators;
+                    report.inline_images += coverage.inline_images;
+                    if let Some(family_summary) = report.families.get_mut(&family) {
+                        family_summary.scanned += 1;
+                        family_summary.total_operators += coverage.total_operators;
+                        family_summary.inline_images += coverage.inline_images;
+                    }
+                    for entry in &coverage.operators {
+                        report.status_counts.record(entry.status, entry.count);
+                        if let Some(family_summary) = report.families.get_mut(&family) {
+                            family_summary
+                                .status_counts
+                                .record(entry.status, entry.count);
+                        }
+                        let summary = report.operators.entry(entry.operator.clone()).or_insert(
+                            CorpusOperatorSummary {
+                                count: 0,
+                                status: entry.status,
+                                fallback_bucket: entry.fallback_bucket,
+                            },
+                        );
+                        summary.count += entry.count;
+                    }
+                    CorpusOperatorCoverageOutcome::Scanned {
+                        streams_scanned: coverage.streams_scanned,
+                        total_operators: coverage.total_operators,
+                        inline_images: coverage.inline_images,
+                        operators: coverage.operators,
+                    }
+                }
+                Err(error) => {
+                    report.errors += 1;
+                    if let Some(family_summary) = report.families.get_mut(&family) {
+                        family_summary.errors += 1;
+                    }
+                    CorpusOperatorCoverageOutcome::Error {
+                        class: error.class().as_str(),
+                        message: error.to_string(),
+                    }
+                }
+            },
+            Err(error) => {
+                report.errors += 1;
+                if let Some(family_summary) = report.families.get_mut(&family) {
+                    family_summary.errors += 1;
+                }
+                CorpusOperatorCoverageOutcome::Error {
+                    class: "io",
+                    message: error.to_string(),
+                }
+            }
+        };
+
+        report.fixtures.push(CorpusOperatorCoverageRecord {
+            path: path_key,
+            family,
+            outcome,
+        });
+    }
+
+    report
 }
 
 fn diagnostic_bundle_path(dir: &Path, index: usize, path_key: &str) -> PathBuf {
@@ -4264,6 +4530,170 @@ fn corpus_metadata_json(records: &[CorpusMetadataRecord]) -> String {
     )
 }
 
+fn operator_coverage_report_json(report: &CorpusOperatorCoverageReport) -> String {
+    let operators = report
+        .operators
+        .iter()
+        .map(|(operator, summary)| {
+            format!(
+                "{}:{}",
+                json_string(operator),
+                operator_summary_json(summary)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    let families = report
+        .families
+        .iter()
+        .map(|(family, summary)| {
+            format!("{}:{}", json_string(family), operator_family_json(summary))
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    let fixtures = report
+        .fixtures
+        .iter()
+        .map(operator_coverage_record_json)
+        .collect::<Vec<_>>()
+        .join(",");
+
+    format!(
+        concat!(
+            "{{\n",
+            "  \"schema_version\": 1,\n",
+            "  \"page_index\": {},\n",
+            "  \"include_annotations\": {},\n",
+            "  \"summary\": {{\"total\":{},\"scanned\":{},\"errors\":{},\"total_operators\":{},\"inline_images\":{},\"status_counts\":{}}},\n",
+            "  \"operators\": {{{}}},\n",
+            "  \"families\": {{{}}},\n",
+            "  \"fixtures\": [{}]\n",
+            "}}\n"
+        ),
+        report.page_index,
+        report.include_annotations,
+        report.total,
+        report.scanned,
+        report.errors,
+        report.total_operators,
+        report.inline_images,
+        operator_status_counts_json(&report.status_counts),
+        operators,
+        families,
+        fixtures
+    )
+}
+
+fn operator_summary_json(summary: &CorpusOperatorSummary) -> String {
+    format!(
+        concat!(
+            "{{",
+            "\"count\":{},",
+            "\"status\":{},",
+            "\"fallback_bucket\":{}",
+            "}}"
+        ),
+        summary.count,
+        json_string(summary.status.as_str()),
+        optional_json_string(summary.fallback_bucket)
+    )
+}
+
+fn operator_family_json(summary: &CorpusOperatorFamilySummary) -> String {
+    format!(
+        concat!(
+            "{{",
+            "\"total\":{},",
+            "\"scanned\":{},",
+            "\"errors\":{},",
+            "\"total_operators\":{},",
+            "\"inline_images\":{},",
+            "\"status_counts\":{}",
+            "}}"
+        ),
+        summary.total,
+        summary.scanned,
+        summary.errors,
+        summary.total_operators,
+        summary.inline_images,
+        operator_status_counts_json(&summary.status_counts)
+    )
+}
+
+fn operator_status_counts_json(counts: &OperatorStatusCounts) -> String {
+    format!(
+        concat!(
+            "{{",
+            "\"implemented\":{},",
+            "\"partial\":{},",
+            "\"unsupported\":{},",
+            "\"ignored\":{}",
+            "}}"
+        ),
+        counts.implemented, counts.partial, counts.unsupported, counts.ignored
+    )
+}
+
+fn operator_coverage_record_json(record: &CorpusOperatorCoverageRecord) -> String {
+    format!(
+        "{{\"path\":{},\"family\":{},\"outcome\":{}}}",
+        json_string(&record.path),
+        json_string(&record.family),
+        operator_coverage_outcome_json(&record.outcome)
+    )
+}
+
+fn operator_coverage_outcome_json(outcome: &CorpusOperatorCoverageOutcome) -> String {
+    match outcome {
+        CorpusOperatorCoverageOutcome::Scanned {
+            streams_scanned,
+            total_operators,
+            inline_images,
+            operators,
+        } => {
+            let operators = operators
+                .iter()
+                .map(operator_entry_json)
+                .collect::<Vec<_>>()
+                .join(",");
+            format!(
+                concat!(
+                    "{{",
+                    "\"status\":\"scanned\",",
+                    "\"streams_scanned\":{},",
+                    "\"total_operators\":{},",
+                    "\"inline_images\":{},",
+                    "\"operators\":[{}]",
+                    "}}"
+                ),
+                streams_scanned, total_operators, inline_images, operators
+            )
+        }
+        CorpusOperatorCoverageOutcome::Error { class, message } => format!(
+            "{{\"status\":\"error\",\"class\":{},\"message\":{}}}",
+            json_string(class),
+            json_string(message)
+        ),
+    }
+}
+
+fn operator_entry_json(entry: &OperatorCoverageEntry) -> String {
+    format!(
+        concat!(
+            "{{",
+            "\"operator\":{},",
+            "\"count\":{},",
+            "\"status\":{},",
+            "\"fallback_bucket\":{}",
+            "}}"
+        ),
+        json_string(&entry.operator),
+        entry.count,
+        json_string(entry.status.as_str()),
+        optional_json_string(entry.fallback_bucket)
+    )
+}
+
 fn corpus_metadata_record_json(record: &CorpusMetadataRecord) -> String {
     format!(
         concat!(
@@ -5299,11 +5729,11 @@ fn crc32(bytes: impl IntoIterator<Item = u8>) -> u32 {
 
 fn print_usage() {
     println!(
-        "Usage: pdfrust-cli <render|render-auto|render-native|render-pdfium|render-isolated|compare-metadata|summarize-fallbacks|extract-corpus-metadata|validate-local-corpus|benchmark-native|benchmark-batch-native|benchmark-repeat-native|benchmark-pdfium|visual-diff> <input.pdf> \
+        "Usage: pdfrust-cli <render|render-auto|render-native|render-pdfium|render-isolated|compare-metadata|summarize-fallbacks|operator-coverage|extract-corpus-metadata|validate-local-corpus|benchmark-native|benchmark-batch-native|benchmark-repeat-native|benchmark-pdfium|visual-diff> <input.pdf> \
          [--output PATH] [--page-index N] [--max-edge N] [--background #RRGGBB] \
          [--timeout SECONDS] [--iterations N] [--repetitions N] [--max-workers N] [--max-in-flight-pixels N] [--max-ms N] [--max-p95-ms N] [--max-first-ms N] [--max-repeat-mean-ms N] [--max-output-bytes N] \
          [--native-only] [--manifest PATH] [--include-family FAMILY] \
-         [--diagnostics-dir PATH] [--allow-missing] [--max-mae N] [--max-p95 N] [--max-changed-ratio N]"
+         [--diagnostics-dir PATH] [--allow-missing] [--no-annotations] [--max-mae N] [--max-p95 N] [--max-changed-ratio N]"
     );
 }
 
@@ -5521,6 +5951,77 @@ mod tests {
             config.diagnostics_dir,
             Some(PathBuf::from("target/diagnostics"))
         );
+    }
+
+    #[test]
+    fn operator_coverage_config_should_accept_family_filters() {
+        let config = OperatorCoverageConfig::parse(&[
+            OsString::from("fixtures/generated"),
+            OsString::from("--manifest"),
+            OsString::from("fixtures/corpus-manifest.tsv"),
+            OsString::from("--include-family"),
+            OsString::from("office-export"),
+            OsString::from("--page-index"),
+            OsString::from("0"),
+            OsString::from("--no-annotations"),
+            OsString::from("--output"),
+            OsString::from("target/operator-coverage.json"),
+        ])
+        .expect("valid operator coverage config");
+
+        assert_eq!(config.include_families, vec!["office-export".to_string()]);
+        assert_eq!(config.page_index, 0);
+        assert!(!config.include_annotations);
+        assert_eq!(
+            config.output,
+            Some(PathBuf::from("target/operator-coverage.json"))
+        );
+    }
+
+    #[test]
+    fn operator_coverage_should_aggregate_fixture_operators() {
+        let fixture_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let paths = vec![
+            fixture_root.join("fixtures/generated/vector-paths.pdf"),
+            fixture_root.join("fixtures/generated/inline-image.pdf"),
+        ];
+        let config = OperatorCoverageConfig {
+            input: fixture_root.join("fixtures/generated"),
+            manifest: None,
+            include_families: Vec::new(),
+            output: None,
+            page_index: 0,
+            include_annotations: true,
+        };
+
+        let report = scan_operator_coverage_corpus(&paths, None, &config);
+
+        assert_eq!(report.total, 2);
+        assert_eq!(report.scanned, 2);
+        assert_eq!(report.errors, 0);
+        assert!(report.operators.contains_key("S"));
+        assert!(report.operators.contains_key("BI"));
+    }
+
+    #[test]
+    fn operator_coverage_json_should_include_status_counts() {
+        let fixture_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let paths = vec![fixture_root.join("fixtures/generated/inline-image.pdf")];
+        let config = OperatorCoverageConfig {
+            input: fixture_root.join("fixtures/generated/inline-image.pdf"),
+            manifest: None,
+            include_families: Vec::new(),
+            output: None,
+            page_index: 0,
+            include_annotations: true,
+        };
+        let report = scan_operator_coverage_corpus(&paths, None, &config);
+        let json = operator_coverage_report_json(&report);
+
+        assert!(json.contains("\"schema_version\": 1"));
+        assert!(json.contains("\"status_counts\""));
+        assert!(json.contains("\"BI\""));
+        assert!(json.contains("\"implemented\""));
     }
 
     #[test]
