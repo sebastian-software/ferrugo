@@ -149,6 +149,28 @@ Use `academic-publisher-first-page.pdf`,
 `academic-references-appendix.pdf` as reductions for multi-column layout,
 small-text metrics, equation/symbol placement, and figure/vector fidelity.
 
+## Engineering Drawing Precision Delta
+
+Milestone 0151 expanded the technical-drawing manifest with three new
+synthetic engineering fixtures for floorplans, schematic symbols, and
+large-coordinate transform details. The supported gate is green at 11/11
+rendered, 0 fallbacks, and 0 errors; the vector benchmark reports 0 budget
+failures.
+
+The focused engineering visual oracle reports 2 exact rows and 9 blockers:
+
+| Subsystem | Total | Exact | Blockers | Native errors |
+| --- | ---: | ---: | ---: | ---: |
+| `page-geometry` | 1 | 0 | 1 | 0 |
+| `rendering-core` | 7 | 0 | 7 | 0 |
+| `vector-graphics` | 3 | 2 | 1 | 0 |
+
+Use `engineering-floorplan-precision.pdf`,
+`engineering-schematic-symbols.pdf`, and
+`engineering-large-transform-detail.pdf` as reductions for thin-stroke
+placement, dashed grids, repeated symbols, and large-coordinate transform
+parity.
+
 ## Typed Unsupported Boundaries
 
 | Feature bucket | Fixtures | Current decision |

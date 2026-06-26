@@ -1,6 +1,6 @@
 # 0151: Engineering Drawing Precision Gate
 
-Status: todo
+Status: done
 Phase: 28
 Size: medium
 Depends on: 0150
@@ -45,4 +45,19 @@ floorplans, schematics, and other line-heavy technical PDFs.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-26.
+
+- Added three synthetic engineering drawing fixtures:
+  `engineering-floorplan-precision.pdf`,
+  `engineering-schematic-symbols.pdf`, and
+  `engineering-large-transform-detail.pdf`.
+- Extended `fixtures/technical-drawing-manifest.tsv` with floorplan,
+  schematic, and transform-detail families.
+- Extended the native technical-drawing smoke test to compile and render the
+  new engineering fixtures.
+- Native supported gate is green at 11/11 rendered, 0 fallbacks, and 0 errors.
+- Vector benchmark reports 0 budget failures.
+- Visual oracle reports 2 exact rows, 9 fidelity blockers, and 0 native/PDFium
+  errors; those deltas route to stroke placement, hatch clipping, repeated
+  symbols, and large-coordinate transform parity.
+- Report: `docs/reports/engineering-drawing-precision-gate-2026-06-26.md`.
