@@ -1,6 +1,6 @@
 # 0152: Geospatial Map PDF Rendering Coverage
 
-Status: todo
+Status: done
 Phase: 28
 Size: medium
 Depends on: 0151
@@ -45,4 +45,19 @@ and large page coordinate systems.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-26.
+
+- Added three synthetic map fixtures:
+  `map-raster-tile-routes.pdf`, `map-transparent-zoning-overlay.pdf`, and
+  `map-optional-layer-policy.pdf`.
+- Added `fixtures/map-rendering-manifest.tsv` to separate supported visual map
+  features from the OCMD optional-content unsupported boundary.
+- Extended the native chart/dashboard smoke test to compile and render the new
+  map fixtures.
+- Native supported gate is green at 7/7 rendered, 0 fallbacks, and 0 errors.
+- OCMD remains explicitly typed as `graphics.optional-content`.
+- Benchmark reports 0 budget failures.
+- Visual oracle reports 2 exact rows, 5 fidelity blockers, and 0 native/PDFium
+  errors; those deltas route to raster tiles, alpha overlays, labels, and map
+  route/grid rendering parity.
+- Report: `docs/reports/geospatial-map-rendering-coverage-2026-06-26.md`.

@@ -171,6 +171,30 @@ Use `engineering-floorplan-precision.pdf`,
 placement, dashed grids, repeated symbols, and large-coordinate transform
 parity.
 
+## Geospatial Map Rendering Delta
+
+Milestone 0152 added a focused map-rendering manifest with three new synthetic
+fixtures for raster-tile routes, transparent zoning overlays, and deterministic
+simple OCG layer-off policy. The supported gate is green at 7/7 rendered,
+0 fallbacks, and 0 errors; the benchmark reports 0 budget failures.
+
+The OCMD optional-content membership policy remains explicit:
+
+| Family | Total | Fallback required | Bucket |
+| --- | ---: | ---: | --- |
+| `unsupported-optional-policy` | 1 | 1 | `graphics.optional-content` |
+
+The focused map visual oracle reports 2 exact rows and 5 blockers:
+
+| Subsystem | Total | Exact | Blockers | Native errors |
+| --- | ---: | ---: | ---: | ---: |
+| `rendering-core` | 5 | 0 | 5 | 0 |
+| `vector-graphics` | 2 | 2 | 0 | 0 |
+
+Use `map-raster-tile-routes.pdf`, `map-transparent-zoning-overlay.pdf`, and
+`map-optional-layer-policy.pdf` as reductions for raster tile placement,
+transparent overlays, label/route parity, and deterministic OCG layer handling.
+
 ## Typed Unsupported Boundaries
 
 | Feature bucket | Fixtures | Current decision |

@@ -34,7 +34,6 @@ when the server renderer is already correct and bounded.
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
-| 0152 | [Geospatial Map PDF Rendering Coverage](0152-geospatial-map-pdf-rendering-coverage.md) | 28 | medium | 0151 |
 | 0153 | [E-Signature Workflow Document Coverage](0153-e-signature-workflow-document-coverage.md) | 28 | medium | 0152 |
 | 0154 | [Accessibility Tagged PDF Visual Integrity](0154-accessibility-tagged-pdf-visual-integrity.md) | 28 | medium | 0153 |
 | 0155 | [Incremental Loading Interactive Preview](0155-incremental-loading-interactive-preview.md) | 28 | medium | 0154 |
@@ -113,6 +112,7 @@ when the server renderer is already correct and bounded.
 
 | ID | Milestone | Phase | Size | Completed |
 | --- | --- | --- | --- | --- |
+| 0152 | [Geospatial Map PDF Rendering Coverage](0152-geospatial-map-pdf-rendering-coverage.md) | 28 | medium | 2026-06-26 |
 | 0151 | [Engineering Drawing Precision Gate](0151-engineering-drawing-precision-gate.md) | 28 | medium | 2026-06-26 |
 | 0150 | [Academic Publisher Corpus Gate](0150-academic-publisher-corpus-gate.md) | 27 | medium | 2026-06-26 |
 | 0149 | [Financial Report And Statement Fidelity](0149-financial-report-and-statement-fidelity.md) | 27 | medium | 2026-06-26 |
