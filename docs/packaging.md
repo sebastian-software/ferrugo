@@ -64,6 +64,18 @@ This check confirms that the native-only CLI dependency graph contains neither
 contain hidden fetch or plugin hooks, and that no native binary artifacts are
 checked in under `crates/`.
 
+For release-candidate validation, run the full native-only release gate:
+
+```sh
+bash scripts/check_native_only_release.sh
+```
+
+This local CI-equivalent gate runs native-only check/test, plugin-free and
+PDFium quarantine scans, `pdfrust-cli` package file inspection, leaf package
+artifact dry-runs, and all-features clippy. It writes the inspected CLI package
+file list to
+`target/native-only-release-pdfrust-cli-package-files.txt`.
+
 ## Plugin-Free Install
 
 The native CLI can be installed from the workspace without PDFium binaries,
@@ -184,4 +196,13 @@ Cargo's temporary registry:
 
 ```sh
 cargo package --workspace --allow-dirty
+```
+
+The release hardening gate wraps native-only build and artifact checks. It keeps
+the default path offline-capable. Set `PDFRUST_NATIVE_RELEASE_VERIFY_REGISTRY=1`
+to also run the full registry-backed workspace package verification when
+crates.io access is available:
+
+```sh
+bash scripts/check_native_only_release.sh
 ```
