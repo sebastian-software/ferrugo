@@ -220,6 +220,31 @@ Use `e-signature-contract-workflow.pdf`,
 appearance, stamp appearance, audit-table text/grid parity, and incremental
 catalog/page revision rendering.
 
+## Tagged PDF Visual Integrity Delta
+
+Milestone 0154 added a focused tagged-PDF visual manifest with four new
+synthetic fixtures for report, form, office figure/alt-text, and
+structure-heavy tagged documents. The supported gate is green at 5/5 rendered,
+0 fallbacks, and 0 errors; the default benchmark and the structure-heavy
+low-memory benchmark both report 0 budget failures.
+
+The accessibility boundary remains explicit: tagged metadata, RoleMap, alt
+text, and reading-order structures are diagnostics inputs, not visual drawing
+commands. Full reading-order extraction remains deferred to milestone 0182.
+
+The focused tagged visual oracle reports 1 accepted drift row and 4 blockers:
+
+| Subsystem | Total | Accepted drift | Blockers | Native errors |
+| --- | ---: | ---: | ---: | ---: |
+| `rendering-core` | 4 | 1 | 3 | 0 |
+| `text-fonts` | 1 | 0 | 1 | 0 |
+
+Use `tagged-report-visual-integrity.pdf`,
+`tagged-form-visual-integrity.pdf`, `tagged-office-alt-text.pdf`, and
+`tagged-structure-heavy-report.pdf` as reductions for marked-content visual
+parity, tagged form/widget rendering, figure/table text metrics, and bounded
+structure traversal.
+
 ## Typed Unsupported Boundaries
 
 | Feature bucket | Fixtures | Current decision |

@@ -1,6 +1,6 @@
 # 0154: Accessibility Tagged PDF Visual Integrity
 
-Status: todo
+Status: done
 Phase: 28
 Size: medium
 Depends on: 0153
@@ -45,4 +45,23 @@ reading-order metadata do not break or distort visual native rendering.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-26.
+
+- Added a focused tagged-PDF visual manifest at
+  `fixtures/tagged-pdf-visual-manifest.tsv`.
+- Added synthetic tagged fixtures across report, form, office/figure alt-text,
+  and structure-heavy metadata surfaces:
+  `tagged-report-visual-integrity.pdf`,
+  `tagged-form-visual-integrity.pdf`,
+  `tagged-office-alt-text.pdf`, and
+  `tagged-structure-heavy-report.pdf`.
+- Added native smoke coverage proving tagged metadata and marked-content
+  wrappers do not block visual rendering.
+- Added metadata assertions for language, `/MarkInfo`, `/StructTreeRoot`,
+  RoleMap presence, marked-content references, and bounded role counts.
+- Native supported gate is green at 5/5 rendered, 0 fallbacks, and 0 errors.
+  Default and low-memory benchmark gates report 0 budget failures.
+- PDFium visual comparison reports 1 accepted drift and 4 blockers across
+  `rendering-core` and `text-fonts`; these are visual fidelity deltas, not
+  accessibility-metadata failures.
+- Report: `docs/reports/tagged-pdf-visual-integrity-2026-06-26.md`.
