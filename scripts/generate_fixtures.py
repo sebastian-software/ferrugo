@@ -1409,6 +1409,126 @@ def scanner_large_image_budget_pdf() -> bytes:
     return pdf.render(catalog)
 
 
+def image_heavy_repeated_xobject_report_pdf() -> bytes:
+    pdf = Pdf()
+    width = 96
+    height = 72
+    image = bytes(
+        channel
+        for y in range(height)
+        for x in range(width)
+        for channel in (
+            186 + ((x * 3 + y) % 48),
+            206 + ((x + y * 2) % 34),
+            220 - ((x * 2 + y * 3) % 42),
+        )
+    )
+    compressed = zlib.compress(image)
+    placements = []
+    for row in range(4):
+        for col in range(3):
+            x = 34 + col * 116
+            y = 56 + row * 96
+            placements.append(
+                f"q 92 0 0 68 {x} {y} cm /Photo Do Q "
+                f"q 0.16 0.20 0.24 RG 0.8 w {x - 2} {y - 2} 96 72 re S Q "
+            )
+    content = (
+        "q 0.96 0.97 0.98 rg 0 0 400 480 re f Q "
+        "q 0.08 0.12 0.16 rg 32 438 220 12 re f Q "
+        + "".join(placements)
+        + "q 0.25 0.38 0.62 RG 1.4 w 30 424 m 372 424 l S "
+        "0.72 0.20 0.16 RG 1.0 w 30 38 m 372 38 l S Q"
+    ).encode("ascii")
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 400 480] "
+        "/Resources << /XObject << /Photo 4 0 R >> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    image_object = pdf.add(
+        (
+            f"<< /Type /XObject /Subtype /Image /Width {width} /Height {height} "
+            f"/ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode "
+            f"/Length {len(compressed)} >>\nstream\n"
+        ).encode("ascii")
+        + compressed
+        + b"\nendstream"
+    )
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert image_object == 4
+    return pdf.render(catalog)
+
+
+def image_heavy_rotated_mask_sheet_pdf() -> bytes:
+    pdf = Pdf()
+    width = 96
+    height = 96
+    image = bytes(
+        channel
+        for y in range(height)
+        for x in range(width)
+        for channel in (
+            88 + ((x * 5) % 118),
+            126 + ((y * 4) % 96),
+            178 + (((x + y) * 3) % 58),
+        )
+    )
+    mask = bytes(
+        max(32, 255 - min(220, abs(x - width // 2) * 4 + abs(y - height // 2) * 4))
+        for y in range(height)
+        for x in range(width)
+    )
+    compressed = zlib.compress(image)
+    mask_compressed = zlib.compress(mask)
+    content = (
+        b"q 0.97 0.97 0.94 rg 0 0 360 260 re f Q "
+        b"q 120 16 -16 120 42 42 cm /Masked Do Q "
+        b"q 0 104 -104 0 308 44 cm /Masked Do Q "
+        b"q 82 -22 22 82 128 156 cm /Masked Do Q "
+        b"q 0.10 0.13 0.16 RG 1.0 w 28 28 304 204 re S "
+        b"70 214 m 292 214 l S 70 24 m 292 24 l S Q"
+    )
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 360 260] "
+        "/Resources << /XObject << /Masked 4 0 R >> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    image_object = pdf.add(
+        (
+            f"<< /Type /XObject /Subtype /Image /Width {width} /Height {height} "
+            f"/ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode "
+            f"/SMask 5 0 R /Length {len(compressed)} >>\nstream\n"
+        ).encode("ascii")
+        + compressed
+        + b"\nendstream"
+    )
+    mask_object = pdf.add(
+        (
+            f"<< /Type /XObject /Subtype /Image /Width {width} /Height {height} "
+            f"/ColorSpace /DeviceGray /BitsPerComponent 8 /Filter /FlateDecode "
+            f"/Length {len(mask_compressed)} >>\nstream\n"
+        ).encode("ascii")
+        + mask_compressed
+        + b"\nendstream"
+    )
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert image_object == 4
+    assert mask_object == 5
+    return pdf.render(catalog)
+
+
 def scanner_ocr_form_overlay_pdf() -> bytes:
     pdf = Pdf()
     width = 150
@@ -6629,6 +6749,8 @@ def main() -> None:
     write("mobile-mixed-compression-scan.pdf", mobile_mixed_compression_scan_pdf())
     write("scanner-skewed-mailroom-page.pdf", scanner_skewed_mailroom_page_pdf())
     write("scanner-large-image-budget.pdf", scanner_large_image_budget_pdf())
+    write("image-heavy-repeated-xobject-report.pdf", image_heavy_repeated_xobject_report_pdf())
+    write("image-heavy-rotated-mask-sheet.pdf", image_heavy_rotated_mask_sheet_pdf())
     write("scanner-ocr-form-overlay.pdf", scanner_ocr_form_overlay_pdf())
     write("ocr-invisible-text-layer.pdf", ocr_invisible_text_layer_pdf())
     write("mixed-text-image.pdf", mixed_text_image_pdf())

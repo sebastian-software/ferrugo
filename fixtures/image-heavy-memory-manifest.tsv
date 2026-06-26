@@ -1,0 +1,9 @@
+path	family	source	license	page_count	features	notes
+fixtures/generated/image-heavy-repeated-xobject-report.pdf	repeated-xobject	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image-heavy,repeated-xobject,flate,expected:native	Generated image-heavy report fixture that reuses one Flate image XObject across many placements.
+fixtures/generated/image-heavy-rotated-mask-sheet.pdf	rotated-mask	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image-heavy,soft-mask,rotation,flate,expected:native	Generated image-heavy sheet fixture with rotated masked image placements.
+fixtures/generated/scanner-large-image-budget.pdf	large-scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	scanner,large-image,memory-budget,image,flate,expected:native	Generated large compressed scan image fixture for decode and thumbnail memory-budget coverage.
+fixtures/generated/mobile-mixed-compression-scan.pdf	mixed-compression	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	mobile-scan,image,flate,dct,jpeg,mixed-compression,expected:native	Generated mobile scan fixture combining Flate and DCT image XObjects.
+fixtures/generated/soft-mask-image.pdf	soft-mask	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,soft-mask,alpha,expected:native	Existing image soft-mask alpha fixture.
+fixtures/generated/image-mask-logo.pdf	image-mask	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,image-mask,flate,stencil,expected:native	Existing Flate-compressed ImageMask logo fixture.
+fixtures/generated/predictor-image.pdf	predictor	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,flate,predictor,expected:native	Existing Flate PNG predictor image fixture.
+fixtures/generated/dct-image.pdf	jpeg	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,dct,jpeg,expected:native	Existing DCTDecode Image XObject fixture.

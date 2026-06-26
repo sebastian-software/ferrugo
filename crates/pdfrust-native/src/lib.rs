@@ -4326,6 +4326,115 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_render_generated_image_heavy_memory_fixtures() {
+        type ImageHeavyFixture = (&'static [u8], u32, u32, u32, &'static str, usize);
+
+        let fixtures: &[ImageHeavyFixture] = &[
+            (
+                include_bytes!(
+                    "../../../fixtures/generated/image-heavy-repeated-xobject-report.pdf"
+                ) as &[u8],
+                400,
+                480,
+                480,
+                "repeated image XObject report",
+                150_000,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/image-heavy-rotated-mask-sheet.pdf")
+                    as &[u8],
+                360,
+                260,
+                360,
+                "rotated masked image sheet",
+                60_000,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/scanner-large-image-budget.pdf")
+                    as &[u8],
+                320,
+                440,
+                440,
+                "large scanner image budget",
+                120_000,
+            ),
+        ];
+
+        for &(bytes, expected_width, expected_height, max_edge, label, min_visible_pixels) in
+            fixtures
+        {
+            let thumbnail = ThumbnailBackend::render(
+                &NativeBackend::new(),
+                PdfSource::from_bytes(bytes),
+                &ThumbnailOptions {
+                    max_edge,
+                    ..ThumbnailOptions::default()
+                },
+            )
+            .unwrap_or_else(|error| panic!("{label} fixture should render: {error}"));
+
+            assert_eq!(
+                thumbnail.width, expected_width,
+                "{label} fixture width should match"
+            );
+            assert_eq!(
+                thumbnail.height, expected_height,
+                "{label} fixture height should match"
+            );
+            let visible_pixels = thumbnail
+                .bytes
+                .chunks_exact(4)
+                .filter(|pixel| *pixel != [255, 255, 255, 255])
+                .count();
+            assert!(
+                visible_pixels >= min_visible_pixels,
+                "{label} fixture should preserve image-heavy page content"
+            );
+        }
+    }
+
+    #[test]
+    fn native_low_memory_profile_should_render_generated_image_heavy_fixtures() {
+        let backend = NativeBackend::low_memory();
+
+        for &(bytes, label) in &[
+            (
+                include_bytes!(
+                    "../../../fixtures/generated/image-heavy-repeated-xobject-report.pdf"
+                )
+                .as_slice(),
+                "repeated image XObject report",
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/image-heavy-rotated-mask-sheet.pdf")
+                    .as_slice(),
+                "rotated masked image sheet",
+            ),
+        ] {
+            let thumbnail = backend
+                .render(
+                    PdfSource::from_bytes(bytes),
+                    &ThumbnailOptions {
+                        page_index: 0,
+                        max_edge: 160,
+                        background: pdfrust_thumbnail::Rgba::WHITE,
+                        output_format: pdfrust_thumbnail::OutputFormat::Rgba,
+                        timeout: std::time::Duration::from_secs(5),
+                    },
+                )
+                .unwrap_or_else(|error| panic!("{label} should render under low memory: {error}"));
+
+            assert!(thumbnail.width <= 160);
+            assert!(thumbnail.height <= 160);
+            assert!(thumbnail.bytes.len() <= 160 * 160 * 4);
+            assert!(thumbnail
+                .bytes
+                .chunks_exact(4)
+                .any(|pixel| pixel != [255, 255, 255, 255]));
+        }
+    }
+
+    #[test]
     fn native_backend_should_keep_generated_mobile_ocr_layer_invisible() {
         let bytes = include_bytes!("../../../fixtures/generated/mobile-ocr-overlay-scan.pdf");
         let thumbnail = ThumbnailBackend::render(

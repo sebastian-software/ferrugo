@@ -1,6 +1,6 @@
 # 0170: Raster Image Heavy Document Memory Gate
 
-Status: todo
+Status: done
 Phase: 31
 Size: medium
 Depends on: 0169
@@ -46,4 +46,32 @@ captures, image-based reports, and mixed image/vector pages.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-26.
+
+Report:
+
+- `docs/reports/raster-image-heavy-memory-gate-2026-06-26.md`
+
+Implemented:
+
+- Added `fixtures/image-heavy-memory-manifest.tsv` for repeated image XObject,
+  rotated soft-mask, large scan, mixed compression, soft-mask, image-mask,
+  predictor, and DCT/JPEG image-heavy coverage.
+- Added `image-heavy-repeated-xobject-report.pdf` and
+  `image-heavy-rotated-mask-sheet.pdf` generated fixtures.
+- Added native default and low-memory tests for image-heavy render paths.
+
+Validation:
+
+- `cargo test -p pdfrust-native image_heavy -- --nocapture`
+- Image-heavy supported gate: 8 total, 8 native rendered, 0 fallbacks, 0
+  errors.
+- Image-heavy benchmark: 8 total, 8 native rendered, 0 fallbacks, 0 errors, 0
+  budget failures.
+- Image-heavy low-memory benchmark: 8 total, 8 native rendered, 0 fallbacks, 0
+  errors, 0 budget failures.
+- Maintainer visual comparison: 8 total, 4 exact, 0 accepted drift, 4
+  resampling fidelity blockers, 0 native errors, 0 PDFium errors.
+- `cargo test --workspace --no-default-features`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo fmt --check`
