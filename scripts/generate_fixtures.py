@@ -1048,6 +1048,121 @@ def mobile_mixed_compression_scan_pdf() -> bytes:
     return pdf.render(catalog)
 
 
+def scanner_skewed_mailroom_page_pdf() -> bytes:
+    pdf = Pdf()
+    width = 180
+    height = 240
+    image = bytes(
+        222 - min(54, abs(x - width // 2) // 4 + (y % 23))
+        for y in range(height)
+        for x in range(width)
+    )
+    compressed = zlib.compress(image)
+    content = (
+        b"q 220 12 -8 300 24 18 cm /Scan Do Q "
+        b"q 0.12 0.12 0.12 RG 0.7 w 48 76 m 206 92 l 198 270 l 42 252 l h S Q"
+    )
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 260 340] "
+        "/Resources << /XObject << /Scan 4 0 R >> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    image_object = pdf.add(
+        (
+            f"<< /Type /XObject /Subtype /Image /Width {width} /Height {height} "
+            f"/ColorSpace /DeviceGray /BitsPerComponent 8 /Filter /FlateDecode "
+            f"/Length {len(compressed)} >>\nstream\n"
+        ).encode("ascii")
+        + compressed
+        + b"\nendstream"
+    )
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert image_object == 4
+    return pdf.render(catalog)
+
+
+def scanner_large_image_budget_pdf() -> bytes:
+    pdf = Pdf()
+    width = 640
+    height = 880
+    image = bytes(214 + ((x // 16 + y // 24) % 28) for y in range(height) for x in range(width))
+    compressed = zlib.compress(image)
+    content = (
+        b"q 320 0 0 440 0 0 cm /Scan Do Q "
+        b"q 0.08 0.08 0.08 RG 1 w 38 62 244 318 re S 54 374 m 266 374 l S Q"
+    )
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 320 440] "
+        "/Resources << /XObject << /Scan 4 0 R >> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    image_object = pdf.add(
+        (
+            f"<< /Type /XObject /Subtype /Image /Width {width} /Height {height} "
+            f"/ColorSpace /DeviceGray /BitsPerComponent 8 /Filter /FlateDecode "
+            f"/Length {len(compressed)} >>\nstream\n"
+        ).encode("ascii")
+        + compressed
+        + b"\nendstream"
+    )
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert image_object == 4
+    return pdf.render(catalog)
+
+
+def scanner_ocr_form_overlay_pdf() -> bytes:
+    pdf = Pdf()
+    width = 150
+    height = 210
+    image = bytes(226 - min(38, (x % 37) // 2 + (y % 29) // 3) for y in range(height) for x in range(width))
+    compressed = zlib.compress(image)
+    content = (
+        b"q 240 0 0 336 0 0 cm /Scan Do Q "
+        b"q 0 0 0 RG 0.8 w 34 72 172 204 re S 34 230 m 206 230 l 34 184 m 206 184 l S "
+        b"48 140 10 10 re S 52 144 m 58 152 l S 58 152 m 68 132 l S "
+        b"116 104 m 196 104 l S Q "
+        b"BT /F1 10 Tf 3 Tr 42 238 Td (Invisible OCR account form) Tj "
+        b"0 -46 Td (Invisible checked consent text) Tj ET"
+    )
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 240 336] "
+        "/Resources << /Font << /F1 5 0 R >> /XObject << /Scan 4 0 R >> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    image_object = pdf.add(
+        (
+            f"<< /Type /XObject /Subtype /Image /Width {width} /Height {height} "
+            f"/ColorSpace /DeviceGray /BitsPerComponent 8 /Filter /FlateDecode "
+            f"/Length {len(compressed)} >>\nstream\n"
+        ).encode("ascii")
+        + compressed
+        + b"\nendstream"
+    )
+    font = pdf.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert image_object == 4
+    assert font == 5
+    return pdf.render(catalog)
+
+
 def ocr_invisible_text_layer_pdf() -> bytes:
     return page_pdf(
         "[0 0 220 160]",
@@ -5092,6 +5207,9 @@ def main() -> None:
     write("mobile-cropped-photo-scan.pdf", mobile_cropped_photo_scan_pdf())
     write("mobile-ocr-overlay-scan.pdf", mobile_ocr_overlay_scan_pdf())
     write("mobile-mixed-compression-scan.pdf", mobile_mixed_compression_scan_pdf())
+    write("scanner-skewed-mailroom-page.pdf", scanner_skewed_mailroom_page_pdf())
+    write("scanner-large-image-budget.pdf", scanner_large_image_budget_pdf())
+    write("scanner-ocr-form-overlay.pdf", scanner_ocr_form_overlay_pdf())
     write("ocr-invisible-text-layer.pdf", ocr_invisible_text_layer_pdf())
     write("mixed-text-image.pdf", mixed_text_image_pdf())
     write("transparency-group.pdf", transparency_group_pdf())
