@@ -213,6 +213,21 @@ rasterization. Tagged and malformed structure fixtures both continue to render
 through the native backend without requiring accessibility metadata success.
 See `docs/reports/tagged-pdf-accessibility-metadata-2026-06-25.md`.
 
+## Incremental Preview Boundary
+
+`NativeBackend::render_first_page_preview` is the explicit page-zero preview
+entry point. It forces `page_index = 0`, renders through the native backend, and
+reports whether the linearized first-page loader was usable or whether the
+render fell back to full-document loading.
+
+`NativeBackend::render_preview_pages_partial` exposes the partial preview
+boundary for multi-page callers. It preserves page-level success and error
+status, honors cooperative cancellation before scheduling further page batches,
+and applies the render limits of the backend instance. This is still a local
+byte-source preview API; remote range streaming and viewer UI behavior are
+outside the current boundary. See
+`docs/reports/incremental-preview-boundary-2026-06-26.md`.
+
 ## CMap And Identity Text Decoding
 
 ToUnicode CMaps support explicit `begincodespacerange`, `beginbfchar`, and

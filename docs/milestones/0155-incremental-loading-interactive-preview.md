@@ -1,6 +1,6 @@
 # 0155: Incremental Loading Interactive Preview
 
-Status: todo
+Status: done
 Phase: 28
 Size: medium
 Depends on: 0154
@@ -45,4 +45,18 @@ without reintroducing PDFium or loading the entire document eagerly.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-26.
+
+- Added an explicit `NativeBackend::render_first_page_preview` boundary that
+  reports whether page-zero rendering used the linearized first-page loader or
+  full-document fallback.
+- Added `NativeBackend::render_preview_pages_partial` for backend-owned partial
+  preview rendering with page-level outcomes, cooperative cancellation, and
+  backend-specific render limits.
+- Added focused tests for linearized first-page preview, malformed linearized
+  fallback, partial page results, and pre-scheduling cancellation.
+- Added `fixtures/incremental-preview-manifest.tsv` to group existing
+  linearized, page-targeted, multi-page, and longform preview fixtures.
+- Native supported gate is green at 5/5 rendered, 0 fallbacks, and 0 errors.
+  Default and low-memory benchmark gates report 0 budget failures.
+- Report: `docs/reports/incremental-preview-boundary-2026-06-26.md`.
