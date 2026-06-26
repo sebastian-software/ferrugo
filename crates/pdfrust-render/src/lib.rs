@@ -7381,6 +7381,7 @@ fn decode_ext_graphics_state(
     dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
 ) -> GraphicsResult<ExtGraphicsState> {
     ext_graphics_state_soft_mask(dictionary)?;
+    ext_graphics_state_black_point_compensation(dictionary)?;
     Ok(ExtGraphicsState {
         blend_mode: ext_graphics_state_blend_mode(dictionary)?,
         fill_alpha: ext_graphics_state_alpha(dictionary, b"ca")?,
@@ -7471,6 +7472,26 @@ fn ext_graphics_state_soft_mask(
             feature: b"SMask".to_vec(),
         },
     ))
+}
+
+fn ext_graphics_state_black_point_compensation(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+) -> GraphicsResult<()> {
+    let Some(value) = dictionary_value(dictionary, b"UseBlackPtComp") else {
+        return Ok(());
+    };
+    let PdfPrimitive::Boolean(enabled) = value else {
+        return Err(invalid_ext_graphics_state(b"UseBlackPtComp"));
+    };
+    if *enabled {
+        return Err(GraphicsError::new(
+            None,
+            GraphicsErrorKind::UnsupportedColorManagement {
+                feature: b"UseBlackPtComp".to_vec(),
+            },
+        ));
+    }
+    Ok(())
 }
 
 fn ext_graphics_state_bool(
@@ -12188,6 +12209,11 @@ pub enum GraphicsErrorKind {
         /// Unsupported overprint feature name.
         feature: Vec<u8>,
     },
+    /// Color-management feature is unsupported.
+    UnsupportedColorManagement {
+        /// Unsupported color-management feature name.
+        feature: Vec<u8>,
+    },
     /// Stroke dash pattern exceeds the fixed graphics-state representation.
     UnsupportedDashPattern {
         /// Configured dash segment limit.
@@ -12456,6 +12482,11 @@ impl fmt::Display for GraphicsErrorKind {
             Self::UnsupportedOverprint { feature } => write!(
                 f,
                 "unsupported overprint feature {}",
+                String::from_utf8_lossy(feature)
+            ),
+            Self::UnsupportedColorManagement { feature } => write!(
+                f,
+                "unsupported color-management feature {}",
                 String::from_utf8_lossy(feature)
             ),
             Self::UnsupportedDashPattern { limit } => {
@@ -13560,6 +13591,26 @@ mod tests {
             error.kind(),
             &GraphicsErrorKind::UnsupportedBlendMode {
                 mode: b"Overlay".to_vec(),
+            }
+        );
+    }
+
+    #[test]
+    fn ext_graphics_state_resources_should_reject_pdf20_black_point_compensation() {
+        let dictionary = vec![(
+            PdfName::new(b"GS1"),
+            PdfPrimitive::Dictionary(vec![(
+                PdfName::new(b"UseBlackPtComp"),
+                PdfPrimitive::Boolean(true),
+            )]),
+        )];
+        let error = ExtGraphicsStateResources::from_extgstate_dictionary(&dictionary)
+            .expect_err("black point compensation should be typed unsupported");
+
+        assert_eq!(
+            error.kind(),
+            &GraphicsErrorKind::UnsupportedColorManagement {
+                feature: b"UseBlackPtComp".to_vec(),
             }
         );
     }

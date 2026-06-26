@@ -1,6 +1,6 @@
 # 0162: PDF 2.0 Compatibility Boundary Gate
 
-Status: todo
+Status: done
 Phase: 30
 Size: medium
 Depends on: 0161
@@ -49,4 +49,14 @@ or render errors.
 
 ## Completion Notes
 
-Empty until done.
+- Added the first PDF 2.0 fixture corpus in
+  `fixtures/pdf20-compatibility-manifest.tsv`.
+- Added generated fixtures for accepted `%PDF-2.0` / catalog `/Version /2.0`
+  rendering, accepted associated-file metadata, and typed unsupported black
+  point compensation.
+- Added `docs/policies/pdf-2-0-compatibility.md` and
+  `docs/reports/pdf-2-0-compatibility-boundary-2026-06-26.md`.
+- Native renderer maps `/UseBlackPtComp true` to typed unsupported bucket
+  `graphics.color-management`.
+- Native-only check/test/clippy, focused PDF 2.0 tests, PDF 2.0 fallback
+  summaries, and affected supported-family fallback gate passed.

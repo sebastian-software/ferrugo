@@ -35,6 +35,7 @@ use pdfrust_thumbnail::{
 pub const CRATE_ROLE: &str = "native-backend";
 
 const BUCKET_GRAPHICS_OPTIONAL_CONTENT: &str = "graphics.optional-content";
+const BUCKET_GRAPHICS_COLOR_MANAGEMENT: &str = "graphics.color-management";
 const BUCKET_GRAPHICS_PATTERN_SHADING: &str = "graphics.pattern-shading";
 const BUCKET_GRAPHICS_STROKE_CLIP: &str = "graphics.stroke-clip";
 const BUCKET_GRAPHICS_TRANSPARENCY: &str = "graphics.transparency";
@@ -2961,6 +2962,9 @@ fn map_graphics_error(error: GraphicsError) -> ThumbnailError {
         | GraphicsErrorKind::SoftMaskDepthOverflow { .. } => {
             unsupported_feature(BUCKET_GRAPHICS_TRANSPARENCY)
         }
+        GraphicsErrorKind::UnsupportedColorManagement { .. } => {
+            unsupported_feature(BUCKET_GRAPHICS_COLOR_MANAGEMENT)
+        }
         GraphicsErrorKind::UnsupportedShading { .. }
         | GraphicsErrorKind::UnsupportedPattern { .. } => {
             unsupported_feature(BUCKET_GRAPHICS_PATTERN_SHADING)
@@ -4133,6 +4137,55 @@ mod tests {
     fn native_backend_should_report_generated_unsupported_jpx_fixture() {
         let bytes = include_bytes!("../../../fixtures/generated/unsupported-jpx-image.pdf");
         assert_unsupported_image_filter_fixture(bytes);
+    }
+
+    #[test]
+    fn native_backend_should_render_generated_pdf20_basic_office_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/pdf20-basic-office.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 160,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("PDF 2.0 basic office fixture should render through native backend");
+
+        assert!(thumbnail.width > 0);
+        assert!(thumbnail.height > 0);
+        assert!(thumbnail
+            .bytes
+            .chunks_exact(4)
+            .any(|pixel| pixel != [255, 255, 255, 255]));
+    }
+
+    #[test]
+    fn native_backend_should_render_generated_pdf20_associated_files_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/pdf20-associated-files.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 160,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("PDF 2.0 associated-files fixture should render through native backend");
+
+        assert!(thumbnail.width > 0);
+        assert!(thumbnail.height > 0);
+        assert!(thumbnail
+            .bytes
+            .chunks_exact(4)
+            .any(|pixel| pixel != [255, 255, 255, 255]));
+    }
+
+    #[test]
+    fn native_backend_should_report_generated_pdf20_black_point_compensation_fixture() {
+        let bytes =
+            include_bytes!("../../../fixtures/generated/pdf20-black-point-compensation.pdf");
+        assert_unsupported_feature_fixture(bytes, "graphics.color-management");
     }
 
     #[test]

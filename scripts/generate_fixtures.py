@@ -26,11 +26,12 @@ class Pdf:
         root: int,
         offset_drift: dict[int, int] | None = None,
         trailer_entries: str | bytes = b"",
+        header_version: str = "1.4",
     ) -> bytes:
         offset_drift = offset_drift or {}
         if isinstance(trailer_entries, str):
             trailer_entries = trailer_entries.encode("ascii")
-        out = bytearray(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
+        out = bytearray(f"%PDF-{header_version}\n".encode("ascii") + b"%\xe2\xe3\xcf\xd3\n")
         offsets = [0]
         for idx, body in enumerate(self.objects, start=1):
             offsets.append(len(out))
@@ -141,6 +142,88 @@ def user_unit_page_pdf() -> bytes:
     catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
     assert font == 4
     return pdf.render(catalog)
+
+
+def pdf20_basic_office_pdf() -> bytes:
+    pdf = Pdf()
+    content = (
+        b"q 0.94 0.96 0.99 rg 0 0 220 140 re f "
+        b"0.12 0.24 0.42 rg 20 90 180 26 re f "
+        b"0 0 0 RG 0.8 w 20 40 180 50 re S 20 65 m 200 65 l S Q "
+        b"BT /F1 10 Tf 28 102 Td (PDF 2.0 office baseline) Tj "
+        b"0 -34 Td (Standard page content only) Tj ET"
+    )
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 220 140] "
+        f"/Resources << /Font << /F1 4 0 R >> >> /Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    font = pdf.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    catalog = pdf.add(f"<< /Type /Catalog /Version /2.0 /Pages {pages} 0 R >>")
+    assert font == 4
+    return pdf.render(catalog, header_version="2.0")
+
+
+def pdf20_associated_files_pdf() -> bytes:
+    pdf = Pdf()
+    content = (
+        b"q 0.96 0.94 0.90 rg 0 0 240 140 re f "
+        b"0.1 0.45 0.36 rg 24 36 192 64 re f Q "
+        b"BT /F1 10 Tf 32 72 Td (PDF 2.0 associated file) Tj ET"
+    )
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 240 140] "
+        f"/Resources << /Font << /F1 4 0 R >> >> /Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    font = pdf.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    embedded_payload = b"pdf20-associated-file,metadata-only\n"
+    embedded = pdf.add(
+        b"<< /Type /EmbeddedFile /Subtype /text#2Fplain /Length "
+        + str(len(embedded_payload)).encode("ascii")
+        + b" >>\nstream\n"
+        + embedded_payload
+        + b"endstream"
+    )
+    filespec = pdf.add(
+        f"<< /Type /Filespec /F (payload.txt) /UF (payload.txt) "
+        f"/AFRelationship /Data /EF << /F {embedded} 0 R >> >>"
+    )
+    catalog = pdf.add(
+        f"<< /Type /Catalog /Version /2.0 /Pages {pages} 0 R "
+        f"/AF [{filespec} 0 R] "
+        f"/Names << /EmbeddedFiles << /Names [(payload.txt) {filespec} 0 R] >> >> >>"
+    )
+    assert font == 4
+    return pdf.render(catalog, header_version="2.0")
+
+
+def pdf20_black_point_compensation_pdf() -> bytes:
+    pdf = Pdf()
+    content = b"/GSbp gs 0.2 0.4 0.6 rg 20 20 120 70 re f"
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 180 120] "
+        "/Resources << /ExtGState << /GSbp << /Type /ExtGState "
+        f"/UseBlackPtComp true >> >> >> /Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    catalog = pdf.add(f"<< /Type /Catalog /Version /2.0 /Pages {pages} 0 R >>")
+    return pdf.render(catalog, header_version="2.0")
 
 
 def metadata_outline_page_labels_pdf() -> bytes:
@@ -6230,6 +6313,9 @@ def main() -> None:
     write("browser-chromium-article-print.pdf", browser_chromium_article_print_pdf())
     write("browser-firefox-dashboard-print.pdf", browser_firefox_dashboard_print_pdf())
     write("browser-webkit-receipt-form-print.pdf", browser_webkit_receipt_form_print_pdf())
+    write("pdf20-basic-office.pdf", pdf20_basic_office_pdf())
+    write("pdf20-associated-files.pdf", pdf20_associated_files_pdf())
+    write("pdf20-black-point-compensation.pdf", pdf20_black_point_compensation_pdf())
     write("office-report-header-footer-link.pdf", office_report_header_footer_link_pdf())
     write("office-spreadsheet-chart-comments.pdf", office_spreadsheet_chart_comments_pdf())
     write("office-presentation-handout.pdf", office_presentation_handout_pdf())

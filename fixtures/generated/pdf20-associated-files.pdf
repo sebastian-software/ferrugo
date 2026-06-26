@@ -1,0 +1,44 @@
+%PDF-2.0
+%‚„œ”
+1 0 obj
+<< /Length 127 >>
+stream
+q 0.96 0.94 0.90 rg 0 0 240 140 re f 0.1 0.45 0.36 rg 24 36 192 64 re f Q BT /F1 10 Tf 32 72 Td (PDF 2.0 associated file) Tj ET
+endstream
+endobj
+2 0 obj
+<< /Type /Page /Parent 3 0 R /MediaBox [0 0 240 140] /Resources << /Font << /F1 4 0 R >> >> /Contents 1 0 R >>
+endobj
+3 0 obj
+<< /Type /Pages /Kids [2 0 R] /Count 1 >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+5 0 obj
+<< /Type /EmbeddedFile /Subtype /text#2Fplain /Length 36 >>
+stream
+pdf20-associated-file,metadata-only
+endstream
+endobj
+6 0 obj
+<< /Type /Filespec /F (payload.txt) /UF (payload.txt) /AFRelationship /Data /EF << /F 5 0 R >> >>
+endobj
+7 0 obj
+<< /Type /Catalog /Version /2.0 /Pages 3 0 R /AF [6 0 R] /Names << /EmbeddedFiles << /Names [(payload.txt) 6 0 R] >> >> >>
+endobj
+xref
+0 8
+0000000000 65535 f 
+0000000015 00000 n 
+0000000193 00000 n 
+0000000319 00000 n 
+0000000376 00000 n 
+0000000446 00000 n 
+0000000574 00000 n 
+0000000687 00000 n 
+trailer
+<< /Size 8 /Root 7 0 R >>
+startxref
+825
+%%EOF

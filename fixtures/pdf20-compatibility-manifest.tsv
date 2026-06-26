@@ -1,0 +1,4 @@
+path	family	source	license	page_count	features	notes
+fixtures/generated/pdf20-basic-office.pdf	accepted-office	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	pdf-2.0,catalog-version,text,expected:native	Generated PDF 2.0 office-style page using only existing native rendering features.
+fixtures/generated/pdf20-associated-files.pdf	accepted-associated-file	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	pdf-2.0,associated-files,embedded-file,expected:native	Generated PDF 2.0 document with associated file metadata that does not affect thumbnail output.
+fixtures/generated/pdf20-black-point-compensation.pdf	unsupported-color-management	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	pdf-2.0,black-point-compensation,extgstate,unsupported,expected:native-unsupported	Generated PDF 2.0 graphics-state boundary for unsupported black point compensation.
