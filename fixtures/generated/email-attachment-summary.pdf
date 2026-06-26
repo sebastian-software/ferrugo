@@ -1,0 +1,44 @@
+%PDF-1.4
+%‚„œ”
+1 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+2 0 obj
+<< /Length 290 >>
+stream
+q 1 1 1 rg 0 0 240 180 re f Q q 0.13 0.19 0.30 rg 0 146 240 34 re f Q q 1 0.94 0.70 rg 24 58 118 28 re f Q q 0.16 0.16 0.16 RG 0.8 w 24 58 118 28 re S Q BT /F1 11 Tf 24 158 Td (Mail Attachment Summary) Tj /F1 8 Tf 34 68 Td (notes.txt attached) Tj 24 116 Td (Payload is metadata only.) Tj ET
+endstream
+endobj
+3 0 obj
+<< /Type /EmbeddedFile /Subtype /text#2Fplain /Length 25 >>
+stream
+meeting notes attachment
+endstream
+endobj
+4 0 obj
+<< /Type /Filespec /F (notes.txt) /UF (notes.txt) /EF << /F 3 0 R >> >>
+endobj
+5 0 obj
+<< /Type /Page /Parent 6 0 R /MediaBox [0 0 240 180] /Resources << /Font << /F1 1 0 R >> >> /Contents 2 0 R >>
+endobj
+6 0 obj
+<< /Type /Pages /Kids [5 0 R] /Count 1 >>
+endobj
+7 0 obj
+<< /Type /Catalog /Pages 6 0 R /Names << /EmbeddedFiles << /Names [(notes.txt) 4 0 R] >> >> >>
+endobj
+xref
+0 8
+0000000000 65535 f 
+0000000015 00000 n 
+0000000085 00000 n 
+0000000426 00000 n 
+0000000543 00000 n 
+0000000630 00000 n 
+0000000756 00000 n 
+0000000813 00000 n 
+trailer
+<< /Size 8 /Root 7 0 R >>
+startxref
+923
+%%EOF

@@ -1,0 +1,8 @@
+path	family	source	license	page_count	features	notes
+fixtures/generated/email-client-thread.pdf	email-thread	scripts/generate_fixtures.py	MIT OR Apache-2.0	3	email-client,thread,headers,quoted-replies,long-thread,expected:native	Generated email client thread print fixture with repeated reply panels.
+fixtures/generated/email-inline-image-link.pdf	inline-image-link	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	email-client,inline-image,link-annotation,expected:native	Generated mobile mail-style fixture with inline image and inert link annotation.
+fixtures/generated/web-archive-snapshot.pdf	web-archive	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	web-archive,reader-mode,sidebar,link-annotation,expected:native	Generated saved web archive snapshot fixture with article/sidebar layout.
+fixtures/generated/email-attachment-summary.pdf	attachment-policy	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	email-client,embedded-file,attachment-policy,expected:native	Generated email attachment summary with inert embedded file metadata.
+fixtures/generated/embedded-source-file.pdf	attachment-policy	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	embedded-file,filespec,source-attachment,expected:native	Existing embedded source file policy fixture.
+fixtures/generated/file-attachment-annotation.pdf	attachment-policy	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	annotation,file-attachment,appearance,filespec,expected:native	Existing visible file attachment annotation fixture.
+fixtures/generated/portfolio-embedded-files.pdf	attachment-policy	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	portfolio,collection,embedded-file,expected:native	Existing portfolio fixture for non-page embedded content policy.

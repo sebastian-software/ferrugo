@@ -6147,6 +6147,114 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_render_generated_email_web_archive_fixtures() {
+        let fixtures: &[(&[u8], u32, u32, &str, usize)] = &[
+            (
+                include_bytes!("../../../fixtures/generated/email-client-thread.pdf") as &[u8],
+                300,
+                420,
+                "email client thread",
+                20_000,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/email-inline-image-link.pdf")
+                    as &[u8],
+                260,
+                220,
+                "email inline image link",
+                10_000,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/web-archive-snapshot.pdf") as &[u8],
+                320,
+                360,
+                "web archive snapshot",
+                20_000,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/email-attachment-summary.pdf")
+                    as &[u8],
+                240,
+                180,
+                "email attachment summary",
+                6_000,
+            ),
+        ];
+
+        for &(bytes, expected_width, expected_height, label, min_visible_pixels) in fixtures {
+            let thumbnail = ThumbnailBackend::render(
+                &NativeBackend::new(),
+                PdfSource::from_bytes(bytes),
+                &ThumbnailOptions {
+                    max_edge: expected_width.max(expected_height),
+                    ..ThumbnailOptions::default()
+                },
+            )
+            .unwrap_or_else(|error| panic!("{label} fixture should render: {error}"));
+
+            assert_eq!(
+                thumbnail.width, expected_width,
+                "{label} width should match"
+            );
+            assert_eq!(
+                thumbnail.height, expected_height,
+                "{label} height should match"
+            );
+            let visible_pixels = thumbnail
+                .bytes
+                .chunks_exact(4)
+                .filter(|pixel| *pixel != [255, 255, 255, 255])
+                .count();
+            assert!(
+                visible_pixels >= min_visible_pixels,
+                "{label} should preserve visible email/web archive structure"
+            );
+        }
+    }
+
+    #[test]
+    fn native_backend_should_inspect_generated_email_attachment_policy_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/email-attachment-summary.pdf");
+        let metadata =
+            DocumentMetadataBackend::inspect(&NativeBackend::new(), PdfSource::from_bytes(bytes))
+                .expect("email attachment summary fixture should inspect");
+
+        assert!(metadata.structure.has_embedded_files);
+        assert!(!metadata.structure.has_portfolio_collection);
+        assert!(!metadata.structure.has_file_attachment_annotations);
+    }
+
+    #[test]
+    fn native_parallel_renderer_should_sample_generated_email_thread_pages() {
+        let bytes = include_bytes!("../../../fixtures/generated/email-client-thread.pdf");
+        let metadata =
+            DocumentMetadataBackend::inspect(&NativeBackend::new(), PdfSource::from_bytes(bytes))
+                .expect("email client thread fixture should inspect");
+        assert_eq!(metadata.page_count(), 3);
+
+        let result = render_pages_parallel(
+            PdfSource::from_bytes(bytes),
+            &[0, 2],
+            &ThumbnailOptions {
+                max_edge: 420,
+                ..ThumbnailOptions::default()
+            },
+            ParallelRenderOptions {
+                max_workers: 2,
+                max_in_flight_pixels: 420 * 420 * 2,
+            },
+        )
+        .expect("email thread sample pages should render through parallel scheduler");
+
+        assert_eq!(result.workers, 2);
+        assert_eq!(result.pages.len(), 2);
+        for page in result.pages {
+            assert_eq!(page.width, 300);
+            assert_eq!(page.height, 420);
+        }
+    }
+
+    #[test]
     fn native_backend_should_render_generated_font_subset_regression_fixtures() {
         let cases: &[(&str, &[u8], u32, u32)] = &[
             (

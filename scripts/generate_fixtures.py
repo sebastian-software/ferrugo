@@ -4671,6 +4671,211 @@ def browser_print_raster_vector_mix_pdf() -> bytes:
     return pdf.render(catalog)
 
 
+def email_client_thread_pdf() -> bytes:
+    pdf = Pdf()
+    font = pdf.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+
+    def content(page: int) -> bytes:
+        y_offset = (page - 1) * 8
+        ops = [
+            "q 0.99 0.99 0.98 rg 0 0 300 420 re f Q",
+            "q 0.12 0.18 0.28 rg 0 382 300 38 re f Q",
+            "q 0.91 0.94 0.98 rg 24 304 252 54 re f Q",
+            "q 0.96 0.96 0.94 rg 24 206 252 78 re f Q",
+            "q 0.90 0.93 0.88 rg 24 94 252 88 re f Q",
+            "q 0.70 0.76 0.84 rg 36 316 92 5 re f 36 266 168 4 re f 36 246 196 4 re f Q",
+            "q 0.70 0.70 0.66 rg 36 224 132 4 re f 36 202 180 4 re f 36 154 206 4 re f Q",
+            "q 0.16 0.38 0.66 rg 36 110 78 5 re f 36 88 158 4 re f Q",
+            (
+                "BT /F1 12 Tf 24 394 Td (Re: quarterly launch thread) Tj "
+                f"/F1 8 Tf 36 {340 - y_offset} Td (From: Priya Example) Tj "
+                f"0 -18 Td (To: release-list@example.invalid) Tj "
+                f"0 -68 Td (On Tue, Alex wrote:) Tj "
+                f"0 -104 Td (Forwarded web archive summary follows.) Tj ET"
+            ),
+        ]
+        return " ".join(ops).encode("ascii")
+
+    contents = [
+        pdf.add(
+            f"<< /Length {len(page_content)} >>\nstream\n".encode("ascii")
+            + page_content
+            + b"\nendstream"
+        )
+        for page_content in (content(1), content(2), content(3))
+    ]
+    page_1 = pdf.add(
+        "<< /Type /Page /Parent 8 0 R /MediaBox [0 0 300 420] "
+        f"/Resources << /Font << /F1 {font} 0 R >> >> /Contents {contents[0]} 0 R >>"
+    )
+    page_2 = pdf.add(
+        "<< /Type /Page /Parent 8 0 R /MediaBox [0 0 300 420] "
+        f"/Resources << /Font << /F1 {font} 0 R >> >> /Contents {contents[1]} 0 R >>"
+    )
+    page_3 = pdf.add(
+        "<< /Type /Page /Parent 8 0 R /MediaBox [0 0 300 420] "
+        f"/Resources << /Font << /F1 {font} 0 R >> >> /Contents {contents[2]} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page_1} 0 R {page_2} 0 R {page_3} 0 R] /Count 3 >>")
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert font == 1
+    assert pages == 8
+    return pdf.render(catalog)
+
+
+def email_inline_image_link_pdf() -> bytes:
+    pdf = Pdf()
+    font = pdf.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    image = bytes(
+        [
+            34,
+            78,
+            128,
+            82,
+            138,
+            190,
+            224,
+            232,
+            240,
+            238,
+            184,
+            96,
+            186,
+            94,
+            72,
+            88,
+            132,
+            172,
+        ]
+        * 3
+    )
+    image_object = pdf.add(
+        b"<< /Type /XObject /Subtype /Image /Width 3 /Height 6 "
+        b"/ColorSpace /DeviceRGB /BitsPerComponent 8 /Length "
+        + str(len(image)).encode("ascii")
+        + b" >>\nstream\n"
+        + image
+        + b"\nendstream"
+    )
+    content = (
+        b"q 0.99 0.99 1 rg 0 0 260 220 re f Q "
+        b"q 0.14 0.22 0.36 rg 0 188 260 32 re f Q "
+        b"q 72 0 0 72 24 84 cm /Hero Do Q "
+        b"q 0.86 0.92 0.98 rg 116 92 112 44 re f Q "
+        b"q 0.12 0.38 0.66 rg 126 118 76 5 re f 126 104 88 4 re f Q "
+        b"BT /F1 11 Tf 24 199 Td (Mobile mail inline image) Tj "
+        b"/F1 8 Tf 116 154 Td (Campaign preview) Tj 0 -92 Td (Open archived link) Tj ET"
+    )
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    appearance = b"0.72 0.86 1 rg 0 0 74 12 re f"
+    appearance_object = pdf.add(
+        b"<< /Type /XObject /Subtype /Form /BBox [0 0 74 12] /Length "
+        + str(len(appearance)).encode("ascii")
+        + b" >>\nstream\n"
+        + appearance
+        + b"\nendstream"
+    )
+    annotation = pdf.add(
+        "<< /Type /Annot /Subtype /Link /Rect [116 58 190 70] "
+        "/Border [0 0 0] /A << /S /URI /URI (https://example.invalid/archive) >> "
+        f"/AP << /N {appearance_object} 0 R >> >>"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 7 0 R /MediaBox [0 0 260 220] "
+        f"/Resources << /Font << /F1 {font} 0 R >> /XObject << /Hero {image_object} 0 R >> >> "
+        f"/Contents {contents} 0 R /Annots [{annotation} 0 R] >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert pages == 7
+    return pdf.render(catalog)
+
+
+def web_archive_snapshot_pdf() -> bytes:
+    pdf = Pdf()
+    font = pdf.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    content = (
+        b"q 0.98 0.98 0.96 rg 0 0 320 360 re f Q "
+        b"q 0.12 0.18 0.28 rg 0 326 320 34 re f Q "
+        b"q 0.92 0.95 0.98 rg 24 236 176 68 re f Q "
+        b"q 0.95 0.92 0.84 rg 216 92 76 212 re f Q "
+        b"q 0.14 0.36 0.58 rg 36 274 118 6 re f 36 254 144 4 re f 36 122 150 4 re f Q "
+        b"q 0.64 0.42 0.18 rg 228 268 52 5 re f 228 232 44 4 re f 228 196 56 4 re f Q "
+        b"BT /F1 12 Tf 24 337 Td (Saved Web Archive) Tj "
+        b"/F1 8 Tf 36 292 Td (Article content captured from reader mode.) Tj "
+        b"0 -188 Td (Original URL remains an inert link annotation.) Tj ET"
+    )
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    appearance = b"0.72 0.86 1 rg 0 0 92 12 re f"
+    appearance_object = pdf.add(
+        b"<< /Type /XObject /Subtype /Form /BBox [0 0 92 12] /Length "
+        + str(len(appearance)).encode("ascii")
+        + b" >>\nstream\n"
+        + appearance
+        + b"\nendstream"
+    )
+    annotation = pdf.add(
+        "<< /Type /Annot /Subtype /Link /Rect [36 98 128 110] "
+        "/Border [0 0 0] /A << /S /URI /URI (https://example.invalid/story) >> "
+        f"/AP << /N {appearance_object} 0 R >> >>"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 6 0 R /MediaBox [0 0 320 360] "
+        f"/Resources << /Font << /F1 {font} 0 R >> >> "
+        f"/Contents {contents} 0 R /Annots [{annotation} 0 R] >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert pages == 6
+    return pdf.render(catalog)
+
+
+def email_attachment_summary_pdf() -> bytes:
+    pdf = Pdf()
+    font = pdf.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    attachment = b"meeting notes attachment\n"
+    content = (
+        b"q 1 1 1 rg 0 0 240 180 re f Q "
+        b"q 0.13 0.19 0.30 rg 0 146 240 34 re f Q "
+        b"q 1 0.94 0.70 rg 24 58 118 28 re f Q "
+        b"q 0.16 0.16 0.16 RG 0.8 w 24 58 118 28 re S Q "
+        b"BT /F1 11 Tf 24 158 Td (Mail Attachment Summary) Tj "
+        b"/F1 8 Tf 34 68 Td (notes.txt attached) Tj 24 116 Td (Payload is metadata only.) Tj ET"
+    )
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    embedded_file = pdf.add(
+        f"<< /Type /EmbeddedFile /Subtype /text#2Fplain /Length {len(attachment)} >>\nstream\n".encode("ascii")
+        + attachment
+        + b"endstream"
+    )
+    filespec = pdf.add(
+        f"<< /Type /Filespec /F (notes.txt) /UF (notes.txt) /EF << /F {embedded_file} 0 R >> >>"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 6 0 R /MediaBox [0 0 240 180] "
+        f"/Resources << /Font << /F1 {font} 0 R >> >> /Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    catalog = pdf.add(
+        f"<< /Type /Catalog /Pages {pages} 0 R "
+        f"/Names << /EmbeddedFiles << /Names [(notes.txt) {filespec} 0 R] >> >> >>"
+    )
+    assert pages == 6
+    return pdf.render(catalog)
+
+
 def office_report_header_footer_link_pdf() -> bytes:
     pdf = Pdf()
     content = (
@@ -6539,6 +6744,10 @@ def main() -> None:
     write("browser-print-clipped-backgrounds.pdf", browser_print_clipped_backgrounds_pdf())
     write("browser-print-transformed-cards.pdf", browser_print_transformed_cards_pdf())
     write("browser-print-raster-vector-mix.pdf", browser_print_raster_vector_mix_pdf())
+    write("email-client-thread.pdf", email_client_thread_pdf())
+    write("email-inline-image-link.pdf", email_inline_image_link_pdf())
+    write("web-archive-snapshot.pdf", web_archive_snapshot_pdf())
+    write("email-attachment-summary.pdf", email_attachment_summary_pdf())
     write("pdf20-basic-office.pdf", pdf20_basic_office_pdf())
     write("pdf20-associated-files.pdf", pdf20_associated_files_pdf())
     write("pdf20-black-point-compensation.pdf", pdf20_black_point_compensation_pdf())
