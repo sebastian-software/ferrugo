@@ -195,6 +195,31 @@ Use `map-raster-tile-routes.pdf`, `map-transparent-zoning-overlay.pdf`, and
 `map-optional-layer-policy.pdf` as reductions for raster tile placement,
 transparent overlays, label/route parity, and deterministic OCG layer handling.
 
+## E-Signature Workflow Delta
+
+Milestone 0153 added a focused e-signature workflow manifest with three new
+synthetic fixtures for contract signing, audit-trail certificates, and
+incrementally updated signed revisions. The supported gate is green at 5/5
+rendered, 0 fallbacks, and 0 errors; the benchmark reports 0 budget failures.
+
+The signature validation boundary remains explicit: signature fields and
+`/ByteRange` are reported as presence-only metadata, and the native renderer
+does not validate cryptographic trust, digest contents, timestamps, or legal
+signature status.
+
+The focused e-signature visual oracle reports 1 accepted drift row and
+4 blockers:
+
+| Subsystem | Total | Accepted drift | Blockers | Native errors |
+| --- | ---: | ---: | ---: | ---: |
+| `annotations-forms` | 5 | 1 | 4 | 0 |
+
+Use `e-signature-contract-workflow.pdf`,
+`e-signature-audit-certificate.pdf`, and
+`e-signature-incremental-revision.pdf` as reductions for static signature
+appearance, stamp appearance, audit-table text/grid parity, and incremental
+catalog/page revision rendering.
+
 ## Typed Unsupported Boundaries
 
 | Feature bucket | Fixtures | Current decision |

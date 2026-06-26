@@ -1,6 +1,6 @@
 # 0153: E-Signature Workflow Document Coverage
 
-Status: todo
+Status: done
 Phase: 28
 Size: medium
 Depends on: 0152
@@ -45,4 +45,21 @@ signature appearance, audit pages, stamps, and annotations must remain readable.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-26.
+
+- Added a focused e-signature workflow manifest at
+  `fixtures/e-signature-workflow-manifest.tsv`.
+- Added synthetic workflow fixtures for contract signing, audit-trail
+  certificate pages, and an incrementally updated signed revision:
+  `e-signature-contract-workflow.pdf`,
+  `e-signature-audit-certificate.pdf`, and
+  `e-signature-incremental-revision.pdf`.
+- Extended native rendering smoke coverage and signature-presence metadata
+  checks. Signature metadata remains presence-only and does not validate
+  cryptographic trust.
+- Native supported gate is green at 5/5 rendered, 0 fallbacks, and 0 errors.
+  Benchmark gate reports 0 budget failures.
+- PDFium visual comparison reports 1 accepted drift and 4 blockers under
+  `annotations-forms`; those are static appearance fidelity deltas, not native
+  runtime fallbacks.
+- Report: `docs/reports/e-signature-workflow-coverage-2026-06-26.md`.
