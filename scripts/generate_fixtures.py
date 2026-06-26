@@ -3734,6 +3734,129 @@ def business_form_stamp_signature_pdf() -> bytes:
     )
 
 
+def government_permit_checkbox_form_pdf() -> bytes:
+    pdf = Pdf()
+    content = (
+        b"q 0.98 0.99 1 rg 0 0 360 260 re f Q "
+        b"q 0.10 0.24 0.38 rg 0 222 360 38 re f Q "
+        b"q 0.15 0.22 0.36 RG 0.8 w 24 36 312 164 re S "
+        b"24 168 m 336 168 l S 24 132 m 336 132 l S 24 96 m 336 96 l S "
+        b"128 36 m 128 200 l S 232 36 m 232 200 l S Q "
+        b"q 0.72 0.05 0.05 RG 1.4 w 262 176 46 18 re S Q "
+        b"q 0 0 0 rg 258 54 1 18 re f 263 54 3 18 re f 270 54 1 18 re f "
+        b"277 54 4 18 re f 286 54 1 18 re f 292 54 3 18 re f Q "
+        b"BT /F1 11 Tf 24 238 Td (Public Works Permit) Tj "
+        b"/F1 8 Tf 30 188 Td (Applicant) Tj 104 0 Td (Permit ID) Tj 104 0 Td (Status) Tj "
+        b"-208 -36 Td (Example Works LLC) Tj 104 0 Td (PW-0148) Tj 104 0 Td (APPROVED) Tj "
+        b"-208 -36 Td (Inspection) Tj 104 0 Td (Required) Tj 104 0 Td (Scheduled) Tj "
+        b"-208 -58 Td (I certify the information is complete) Tj "
+        b"174 -32 Td (Authorized signature) Tj ET"
+    )
+    yes_appearance = (
+        b"1 1 1 rg 0 0 16 16 re f "
+        b"0 0 0 RG 0.8 w 0.5 0.5 15 15 re S "
+        b"0 0 0 RG 1.2 w 4 8 m 7 4 l S 7 4 m 13 13 l S"
+    )
+    off_appearance = b"1 1 1 rg 0 0 16 16 re f 0 0 0 RG 0.8 w 0.5 0.5 15 15 re S"
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 360 260] "
+        "/Resources << /Font << /F1 4 0 R >> >> "
+        f"/Contents {contents} 0 R /Annots [7 0 R] >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    font = pdf.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    yes_appearance_object = pdf.add(
+        b"<< /Type /XObject /Subtype /Form /BBox [0 0 16 16] /Length "
+        + str(len(yes_appearance)).encode("ascii")
+        + b" >>\nstream\n"
+        + yes_appearance
+        + b"\nendstream"
+    )
+    off_appearance_object = pdf.add(
+        b"<< /Type /XObject /Subtype /Form /BBox [0 0 16 16] /Length "
+        + str(len(off_appearance)).encode("ascii")
+        + b" >>\nstream\n"
+        + off_appearance
+        + b"\nendstream"
+    )
+    field = pdf.add(
+        "<< /Type /Annot /Subtype /Widget /FT /Btn /T (Certification) /V /Yes /AS /Yes "
+        "/Rect [30 64 46 80] "
+        f"/AP << /N << /Yes {yes_appearance_object} 0 R /Off {off_appearance_object} 0 R >> >> >>"
+    )
+    catalog = pdf.add(
+        f"<< /Type /Catalog /Pages {pages} 0 R /AcroForm << /Fields [{field} 0 R] >> >>"
+    )
+    assert font == 4
+    assert field == 7
+    return pdf.render(catalog)
+
+
+def government_certificate_seal_signature_pdf() -> bytes:
+    pdf = Pdf()
+    content = (
+        b"q 0.99 0.98 0.93 rg 0 0 420 300 re f Q "
+        b"q 0.18 0.22 0.28 RG 1.2 w 24 24 372 252 re S 32 32 356 236 re S Q "
+        b"q 0.72 0.05 0.05 RG 1.8 w 294 152 58 58 re S 304 162 38 38 re S "
+        b"314 181 m 332 181 l S 323 172 m 323 190 l S Q "
+        b"q 0 0 0 rg 54 44 4 4 re f 66 44 4 4 re f 78 44 4 4 re f "
+        b"54 56 4 4 re f 78 56 4 4 re f 90 56 4 4 re f "
+        b"54 68 4 4 re f 66 68 4 4 re f 90 68 4 4 re f Q "
+        b"q 0.12 0.12 0.12 RG 0.9 w 236 70 m 360 70 l S Q "
+        b"BT /F1 16 Tf 92 242 Td (Certificate of Public Record) Tj "
+        b"/F1 9 Tf 74 210 Td (This synthetic certificate records a public-agency style layout.) Tj "
+        b"/F1 10 Tf 98 178 Td (Certificate No. CERT-0148) Tj "
+        b"/F1 8 Tf 278 136 Td (OFFICIAL SEAL) Tj "
+        b"236 56 Td (Authorized signature appearance) Tj "
+        b"-182 28 Td (QR marker) Tj ET"
+    )
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 420 300] "
+        "/Resources << /Font << /F1 4 0 R >> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    font = pdf.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    catalog = pdf.add(
+        f"<< /Type /Catalog /Pages {pages} 0 R "
+        "/PageLabels << /Nums [0 << /P (CERT-) /S /D /St 1 >>] >> >>"
+    )
+    assert font == 4
+    return pdf.render(catalog)
+
+
+def government_tax_notice_barcode_pdf() -> bytes:
+    return page_pdf(
+        "[0 0 360 260]",
+        (
+            "q 1 1 1 rg 0 0 360 260 re f Q "
+            "q 0.92 0.95 0.98 rg 18 206 324 34 re f Q "
+            "q 0.18 0.22 0.28 RG 0.7 w 18 42 324 164 re S "
+            "18 174 m 342 174 l S 18 142 m 342 142 l S 18 110 m 342 110 l S "
+            "18 78 m 342 78 l S 126 42 m 126 206 l S 246 42 m 246 206 l S Q "
+            "q 0.76 0.06 0.04 RG 1.4 w 260 184 48 18 re S Q "
+            "q 0 0 0 rg 252 54 1 22 re f 258 54 3 22 re f 266 54 1 22 re f "
+            "272 54 5 22 re f 282 54 1 22 re f 288 54 3 22 re f 296 54 1 22 re f Q "
+            "BT /F1 11 Tf 24 222 Td (Tax Payment Notice) Tj 214 0 Td (FILED) Tj "
+            "/F1 8 Tf 28 190 Td (Account) Tj 108 0 Td (Period) Tj 120 0 Td (Amount) Tj "
+            "-228 -32 Td (TAX-0148) Tj 108 0 Td (2026-Q2) Tj 120 0 Td (128.40) Tj "
+            "-228 -32 Td (Due Date) Tj 108 0 Td (Status) Tj 120 0 Td (Barcode) Tj "
+            "-228 -32 Td (2026-07-31) Tj 108 0 Td (Open) Tj "
+            "0 -70 Td (Public agency synthetic fixture; no private identity data.) Tj ET"
+        ),
+    )
+
+
 def browser_chromium_article_print_pdf() -> bytes:
     pdf = Pdf()
     content = (
@@ -5333,6 +5456,9 @@ def main() -> None:
     write("account-statement-ledger.pdf", account_statement_ledger_pdf())
     write("thermal-receipt.pdf", thermal_receipt_pdf())
     write("business-form-stamp-signature.pdf", business_form_stamp_signature_pdf())
+    write("government-permit-checkbox-form.pdf", government_permit_checkbox_form_pdf())
+    write("government-certificate-seal-signature.pdf", government_certificate_seal_signature_pdf())
+    write("government-tax-notice-barcode.pdf", government_tax_notice_barcode_pdf())
     write("browser-chromium-article-print.pdf", browser_chromium_article_print_pdf())
     write("browser-firefox-dashboard-print.pdf", browser_firefox_dashboard_print_pdf())
     write("browser-webkit-receipt-form-print.pdf", browser_webkit_receipt_form_print_pdf())
