@@ -6085,6 +6085,68 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_render_generated_browser_print_edge_fixtures() {
+        let fixtures: &[(&[u8], u32, u32, &str)] = &[
+            (
+                include_bytes!("../../../fixtures/generated/browser-print-sticky-headers.pdf")
+                    as &[u8],
+                160,
+                160,
+                "sticky headers browser print",
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/browser-print-clipped-backgrounds.pdf")
+                    as &[u8],
+                160,
+                160,
+                "clipped backgrounds browser print",
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/browser-print-transformed-cards.pdf")
+                    as &[u8],
+                160,
+                160,
+                "transformed cards browser print",
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/browser-print-raster-vector-mix.pdf")
+                    as &[u8],
+                160,
+                160,
+                "raster/vector browser print",
+            ),
+        ];
+
+        for &(bytes, expected_width, expected_height, label) in fixtures {
+            let thumbnail = ThumbnailBackend::render(
+                &NativeBackend::new(),
+                PdfSource::from_bytes(bytes),
+                &ThumbnailOptions {
+                    max_edge: expected_width.max(expected_height),
+                    ..ThumbnailOptions::default()
+                },
+            )
+            .expect("generated browser-print edge fixture should render through native backend");
+
+            assert_eq!(
+                thumbnail.width, expected_width,
+                "{label} width should match"
+            );
+            assert_eq!(
+                thumbnail.height, expected_height,
+                "{label} height should match"
+            );
+            assert!(
+                thumbnail
+                    .bytes
+                    .chunks_exact(4)
+                    .any(|pixel| pixel != [255, 255, 255, 255]),
+                "{label} fixture should render visible content"
+            );
+        }
+    }
+
+    #[test]
     fn native_backend_should_render_generated_font_subset_regression_fixtures() {
         let cases: &[(&str, &[u8], u32, u32)] = &[
             (

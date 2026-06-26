@@ -1,6 +1,6 @@
 # 0167: Browser Print CSS Edge Case Coverage
 
-Status: todo
+Status: done
 Phase: 31
 Size: medium
 Depends on: 0166
@@ -45,4 +45,32 @@ renderer gaps in clipping, transforms, images, and transparency.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-26.
+
+Report:
+
+- `docs/reports/browser-print-css-edge-coverage-2026-06-26.md`
+
+Implemented:
+
+- Added four generated browser-print edge fixtures covering repeated/sticky
+  header geometry, sibling clipped backgrounds, transformed card geometry, and
+  mixed raster/vector print paint order.
+- Added `fixtures/browser-print-edge-manifest.tsv` and registered the new
+  fixtures in `fixtures/corpus-manifest.tsv`.
+- Fixed native clipping scope handling so clipping paths created inside sibling
+  `q/Q` graphics-state scopes do not intersect after restore.
+
+Validation:
+
+- `cargo test -p pdfrust-render rasterize_paths_should_restore_clip_with_graphics_state -- --nocapture`
+- `cargo test -p pdfrust-native browser_print_edge -- --nocapture`
+- Browser-print native support gate: 7 total, 7 native rendered, 0 fallbacks,
+  0 errors.
+- Browser-print benchmark: 7 total, 7 native rendered, 0 fallbacks, 0 errors,
+  0 budget failures.
+- Maintainer visual comparison for the four new fixtures: 4 exact, 0 accepted
+  drift, 0 blockers, 0 native errors, 0 PDFium errors.
+- `cargo test --workspace --no-default-features`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo fmt --check`

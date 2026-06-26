@@ -4569,6 +4569,108 @@ def browser_webkit_receipt_form_print_pdf() -> bytes:
     return page_pdf("[0 0 240 360]", " ".join(ops))
 
 
+def browser_print_sticky_headers_pdf() -> bytes:
+    ops: list[str] = [
+        "q 0.99 0.99 0.98 rg 0 0 160 160 re f Q",
+        "q 0.10 0.16 0.26 rg 0 136 160 24 re f Q",
+        "q 0.92 0.95 0.99 rg 16 108 128 14 re f 16 58 128 14 re f Q",
+        "q 0.70 0.78 0.88 rg 16 96 128 8 re f 16 46 128 8 re f Q",
+    ]
+    for y in range(24, 123, 12):
+        ops.append(f"0.78 0.82 0.88 rg 16 {y} 128 1 re f")
+    for x in (16, 56, 104, 144):
+        ops.append(f"0.78 0.82 0.88 rg {x} 24 1 98 re f")
+    ops.extend(
+        [
+            "q 0.12 0.42 0.68 rg 22 112 28 5 re f 62 112 28 5 re f 110 112 28 5 re f Q",
+            "q 0.12 0.42 0.68 rg 22 62 28 5 re f 62 62 28 5 re f 110 62 28 5 re f Q",
+        ]
+    )
+    return page_pdf("[0 0 160 160]", " ".join(ops))
+
+
+def browser_print_clipped_backgrounds_pdf() -> bytes:
+    ops: list[str] = [
+        "q 0.98 0.98 0.96 rg 0 0 160 160 re f Q",
+        "q 18 30 48 96 re W n 0.10 0.34 0.72 rg 0 0 160 160 re f Q",
+        "q 94 30 48 96 re W n 0.88 0.42 0.12 rg 0 0 160 160 re f Q",
+        "q 0.92 0.94 0.98 rg 28 58 28 18 re f 104 58 28 18 re f Q",
+    ]
+    return page_pdf("[0 0 160 160]", " ".join(ops))
+
+
+def browser_print_transformed_cards_pdf() -> bytes:
+    ops: list[str] = [
+        "q 0.98 0.99 1 rg 0 0 160 160 re f Q",
+        "q 2 0 0 2 16 24 cm 0.16 0.36 0.68 rg 0 0 28 18 re f Q",
+        "q 1 0 0 1 86 28 cm 0.86 0.34 0.16 rg 0 0 54 34 re f Q",
+        "q 1 0 0 1 24 100 cm 0.18 0.56 0.38 rg 0 0 112 22 re f Q",
+    ]
+    return page_pdf("[0 0 160 160]", " ".join(ops))
+
+
+def browser_print_raster_vector_mix_pdf() -> bytes:
+    pdf = Pdf()
+    content = (
+        b"q 0.99 0.99 0.98 rg 0 0 160 160 re f Q "
+        b"q 56 0 0 32 18 88 cm /Hero Do Q "
+        b"q 0.12 0.34 0.66 rg 88 88 16 34 re f 112 88 16 24 re f 136 88 16 44 re f Q "
+        b"q 0.10 0.12 0.16 rg 18 78 134 2 re f 88 88 64 2 re f Q"
+    )
+    hero = bytes(
+        [
+            42,
+            78,
+            130,
+            64,
+            102,
+            158,
+            92,
+            132,
+            180,
+            224,
+            232,
+            240,
+            236,
+            154,
+            82,
+            210,
+            120,
+            56,
+            180,
+            96,
+            48,
+            66,
+            96,
+            142,
+        ]
+    )
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 160 160] "
+        "/Resources << /Font << /F1 4 0 R >> /XObject << /Hero 5 0 R >> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    font = pdf.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    image = pdf.add(
+        b"<< /Type /XObject /Subtype /Image /Width 4 /Height 2 "
+        b"/ColorSpace /DeviceRGB /BitsPerComponent 8 /Length "
+        + str(len(hero)).encode("ascii")
+        + b" >>\nstream\n"
+        + hero
+        + b"\nendstream"
+    )
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert font == 4
+    assert image == 5
+    return pdf.render(catalog)
+
+
 def office_report_header_footer_link_pdf() -> bytes:
     pdf = Pdf()
     content = (
@@ -6433,6 +6535,10 @@ def main() -> None:
     write("browser-chromium-article-print.pdf", browser_chromium_article_print_pdf())
     write("browser-firefox-dashboard-print.pdf", browser_firefox_dashboard_print_pdf())
     write("browser-webkit-receipt-form-print.pdf", browser_webkit_receipt_form_print_pdf())
+    write("browser-print-sticky-headers.pdf", browser_print_sticky_headers_pdf())
+    write("browser-print-clipped-backgrounds.pdf", browser_print_clipped_backgrounds_pdf())
+    write("browser-print-transformed-cards.pdf", browser_print_transformed_cards_pdf())
+    write("browser-print-raster-vector-mix.pdf", browser_print_raster_vector_mix_pdf())
     write("pdf20-basic-office.pdf", pdf20_basic_office_pdf())
     write("pdf20-associated-files.pdf", pdf20_associated_files_pdf())
     write("pdf20-black-point-compensation.pdf", pdf20_black_point_compensation_pdf())

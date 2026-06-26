@@ -1,0 +1,8 @@
+path	family	source	license	page_count	features	notes
+fixtures/generated/browser-print-sticky-headers.pdf	sticky-headers	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	browser-print,css-position-sticky,repeated-table-header,expected:native	Generated browser-print sticky/repeated table header fixture.
+fixtures/generated/browser-print-clipped-backgrounds.pdf	clipped-backgrounds	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	browser-print,css-overflow,clipped-background,expected:native	Generated browser-print clipped background panels fixture.
+fixtures/generated/browser-print-transformed-cards.pdf	transformed-elements	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	browser-print,css-transform,scaled-card,expected:native	Generated browser-print transformed card fixture.
+fixtures/generated/browser-print-raster-vector-mix.pdf	raster-vector	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	browser-print,image,vector,chart,expected:native	Generated browser-print raster/vector mixed content fixture.
+fixtures/generated/browser-chromium-article-print.pdf	article	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	chromium,article,css-background,hyperlink,annotation,image,table,text,expected:native	Existing Chromium-style article print fixture.
+fixtures/generated/browser-firefox-dashboard-print.pdf	dashboard	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	firefox,dashboard,css-grid,cards,chart,table,small-text,expected:native	Existing Firefox-style dashboard print fixture.
+fixtures/generated/browser-webkit-receipt-form-print.pdf	receipt-form	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	webkit,receipt,form,clipping,barcode,checkbox,css-overflow,expected:native	Existing WebKit receipt/form print fixture.

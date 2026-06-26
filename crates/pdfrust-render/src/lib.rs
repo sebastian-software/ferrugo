@@ -742,6 +742,10 @@ pub struct GraphicsState {
     pub stroke_overprint: bool,
     /// Current PDF overprint mode, validated but approximated in RGB output.
     pub overprint_mode: u8,
+    /// Current graphics-state stack depth for scoping clipping paths.
+    pub graphics_state_depth: usize,
+    /// Current graphics-state scope id for distinguishing sibling save scopes.
+    pub graphics_state_scope_id: u64,
     /// Placeholder flag set by `W` or `W*` until clipping is modeled fully.
     pub clip_path_pending: bool,
 }
@@ -768,6 +772,8 @@ impl Default for GraphicsState {
             fill_overprint: false,
             stroke_overprint: false,
             overprint_mode: 0,
+            graphics_state_depth: 0,
+            graphics_state_scope_id: 0,
             clip_path_pending: false,
         }
     }
@@ -4698,6 +4704,11 @@ pub fn rasterize_paths_into(
     for item in display_list.items() {
         match item {
             DisplayItem::Path(path) => {
+                truncate_clips_to_scope(
+                    &mut active_clips,
+                    path.state.graphics_state_depth,
+                    path.state.graphics_state_scope_id,
+                );
                 rasterize_path_item(
                     path,
                     device,
@@ -4709,7 +4720,16 @@ pub fn rasterize_paths_into(
                     &mut pattern_cache,
                 )?;
             }
-            DisplayItem::ClipPlaceholder { segments, rule, .. } => {
+            DisplayItem::ClipPlaceholder {
+                segments,
+                rule,
+                state,
+            } => {
+                truncate_clips_to_scope(
+                    &mut active_clips,
+                    state.graphics_state_depth,
+                    state.graphics_state_scope_id,
+                );
                 active_clips.push(ActiveClip {
                     path: flatten_path_segments(
                         segments,
@@ -4717,10 +4737,17 @@ pub fn rasterize_paths_into(
                         options.max_flattened_segments,
                     )?,
                     rule: *rule,
+                    graphics_state_depth: state.graphics_state_depth,
+                    graphics_state_scope_id: state.graphics_state_scope_id,
                 });
             }
             DisplayItem::Shading(shading) => rasterize_shading_item(shading, device, transform)?,
             DisplayItem::TransparencyGroup(group) => {
+                truncate_clips_to_scope(
+                    &mut active_clips,
+                    group.state.graphics_state_depth,
+                    group.state.graphics_state_scope_id,
+                );
                 rasterize_transparency_group(group, device, transform, options, &active_clips)?;
             }
             DisplayItem::Text(_) | DisplayItem::Image(_) => {}
@@ -4753,6 +4780,11 @@ pub fn rasterize_display_list_into(
     for item in display_list.items() {
         match item {
             DisplayItem::Path(path) => {
+                truncate_clips_to_scope(
+                    &mut active_clips,
+                    path.state.graphics_state_depth,
+                    path.state.graphics_state_scope_id,
+                );
                 rasterize_path_item(
                     path,
                     device,
@@ -4764,7 +4796,16 @@ pub fn rasterize_display_list_into(
                     &mut pattern_cache,
                 )?;
             }
-            DisplayItem::ClipPlaceholder { segments, rule, .. } => {
+            DisplayItem::ClipPlaceholder {
+                segments,
+                rule,
+                state,
+            } => {
+                truncate_clips_to_scope(
+                    &mut active_clips,
+                    state.graphics_state_depth,
+                    state.graphics_state_scope_id,
+                );
                 active_clips.push(ActiveClip {
                     path: flatten_path_segments(
                         segments,
@@ -4772,10 +4813,17 @@ pub fn rasterize_display_list_into(
                         options.max_flattened_segments,
                     )?,
                     rule: *rule,
+                    graphics_state_depth: state.graphics_state_depth,
+                    graphics_state_scope_id: state.graphics_state_scope_id,
                 });
             }
             DisplayItem::Shading(shading) => rasterize_shading_item(shading, device, transform)?,
             DisplayItem::TransparencyGroup(group) => {
+                truncate_clips_to_scope(
+                    &mut active_clips,
+                    group.state.graphics_state_depth,
+                    group.state.graphics_state_scope_id,
+                );
                 rasterize_transparency_group(group, device, transform, options, &active_clips)?;
             }
             DisplayItem::Image(image) => draw_image(device, image, transform)?,
@@ -5280,6 +5328,7 @@ struct DisplayListInterpreter<'r> {
     options: DisplayListOptions,
     resources: GraphicsResourceContext<'r>,
     forms: Option<FormInterpreterContext<'r>>,
+    next_graphics_state_scope_id: u64,
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -5329,6 +5378,7 @@ impl<'r> DisplayListInterpreter<'r> {
             options,
             resources: GraphicsResourceContext::default(),
             forms: None,
+            next_graphics_state_scope_id: 1,
         }
     }
 
@@ -5353,6 +5403,7 @@ impl<'r> DisplayListInterpreter<'r> {
             options,
             resources,
             forms: None,
+            next_graphics_state_scope_id: 1,
         }
     }
 
@@ -5376,6 +5427,7 @@ impl<'r> DisplayListInterpreter<'r> {
                 scope,
                 recursion_depth,
             }),
+            next_graphics_state_scope_id: 1,
         }
     }
 
@@ -5590,6 +5642,9 @@ impl<'r> DisplayListInterpreter<'r> {
             ));
         }
         self.stack.push(self.current);
+        self.current.graphics_state_depth += 1;
+        self.current.graphics_state_scope_id = self.next_graphics_state_scope_id;
+        self.next_graphics_state_scope_id += 1;
         Ok(())
     }
 
@@ -6167,6 +6222,8 @@ struct StrokeJoin {
 struct ActiveClip {
     path: FlattenedPath,
     rule: FillRule,
+    graphics_state_depth: usize,
+    graphics_state_scope_id: u64,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -6187,6 +6244,20 @@ struct StrokeRasterState {
     line_cap: LineCap,
     line_join: LineJoin,
     miter_limit: f64,
+}
+
+fn truncate_clips_to_scope(
+    active_clips: &mut Vec<ActiveClip>,
+    graphics_state_depth: usize,
+    graphics_state_scope_id: u64,
+) {
+    while active_clips.last().is_some_and(|clip| {
+        clip.graphics_state_depth > graphics_state_depth
+            || (clip.graphics_state_depth == graphics_state_depth
+                && clip.graphics_state_scope_id != graphics_state_scope_id)
+    }) {
+        active_clips.pop();
+    }
 }
 
 struct TextDisplayListInterpreter<'r> {
@@ -14628,6 +14699,33 @@ mod tests {
         assert_eq!(raster.pixel(6, 10).expect("inside clip"), black);
         assert_eq!(raster.pixel(2, 10).expect("left of clip"), Rgba::WHITE);
         assert_eq!(raster.pixel(6, 4).expect("above clip"), Rgba::WHITE);
+    }
+
+    #[test]
+    fn rasterize_paths_should_restore_clip_with_graphics_state() {
+        let raster = rasterize_clip_stream(
+            b"q 4 4 4 12 re W n 0 0 0 rg 0 0 20 20 re f Q \
+              q 12 4 4 12 re W n 1 0 0 rg 0 0 20 20 re f Q",
+        );
+        let black = Rgba {
+            r: 0,
+            g: 0,
+            b: 0,
+            a: 255,
+        };
+        let red = Rgba {
+            r: 255,
+            g: 0,
+            b: 0,
+            a: 255,
+        };
+
+        assert_eq!(raster.pixel(6, 10).expect("inside first clip"), black);
+        assert_eq!(raster.pixel(14, 10).expect("inside second clip"), red);
+        assert_eq!(
+            raster.pixel(10, 10).expect("between clip scopes"),
+            Rgba::WHITE
+        );
     }
 
     #[test]
