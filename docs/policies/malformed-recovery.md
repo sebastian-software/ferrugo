@@ -16,12 +16,21 @@ cannot be repaired safely.
   xref offset.
 - A recovered candidate must parse as the exact object number and generation
   declared by the xref entry.
+- Malformed linearization hints may fall back to the full classic loader when
+  the complete document remains valid.
+- Missing annotation object references are ignored for page rendering when the
+  page content itself is valid.
+- Malformed non-visual metadata may fail metadata inspection without aborting
+  thumbnail rendering.
 
 ## Non-Recoverable Cases
 
 - Missing or corrupt encryption metadata.
 - Cross-reference chains that cycle or exceed the incremental update budget.
 - Object offsets that point at a different valid indirect object.
+- Partial or overdeclared streams whose declared bytes cannot be parsed at the
+  expected stream boundary.
+- Page trees whose required structural fields are missing or malformed.
 - Whole-file rescans for arbitrary object headers.
 - Security-sensitive repair that would reinterpret encrypted or permissioned
   content as plain PDF.

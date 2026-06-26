@@ -1,6 +1,6 @@
 # 0173: Corrupt-But-Common PDF Recovery Corpus
 
-Status: todo
+Status: done
 Phase: 32
 Size: medium
 Depends on: 0172
@@ -46,4 +46,27 @@ returning precise typed errors.
 
 ## Completion Notes
 
-Empty until done.
+Completed 2026-06-26.
+
+- Added `fixtures/corrupt-recovery-manifest.tsv` and five new generated
+  corrupt-but-common fixtures covering benign broken annotations, xref object
+  mismatch, partial stream boundaries, missing page-tree structure, and
+  malformed Info metadata.
+- Kept recovery bounded: xref offset drift, malformed linearization hints,
+  missing annotation references, and isolated metadata corruption are covered;
+  xref mismatch, partial streams, and malformed page trees remain stable
+  `malformed` errors.
+- Updated `docs/policies/malformed-recovery.md` with the explicit accepted and
+  non-recoverable cases.
+- Recorded parser, renderer, benchmark, and fuzz-smoke evidence in
+  `docs/reports/corrupt-common-recovery-corpus-2026-06-26.md`.
+
+Validation:
+
+- `cargo test -p pdfrust-native corrupt -- --nocapture`
+- `cargo test -p pdfrust-native malformed_metadata -- --nocapture`
+- `cargo test -p pdfrust-native xref_offset_drift -- --nocapture`
+- Corrupt corpus recoverable gate, full classification, and benchmark subset.
+- `cargo run --manifest-path fuzz/Cargo.toml --bin xref_load -- --smoke`
+- `cargo run --manifest-path fuzz/Cargo.toml --bin stream_decode -- --smoke`
+- `cargo run --manifest-path fuzz/Cargo.toml --bin render_setup -- --smoke`

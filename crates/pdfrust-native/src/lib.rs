@@ -5907,6 +5907,147 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_render_recoverable_corrupt_common_fixtures() {
+        let fixtures: &[(&[u8], u32, u32, &str, usize)] = &[
+            (
+                include_bytes!("../../../fixtures/generated/malformed-xref-offset-drift.pdf")
+                    as &[u8],
+                120,
+                80,
+                "xref offset drift",
+                2_000,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/linearized-malformed-hints.pdf")
+                    as &[u8],
+                160,
+                90,
+                "malformed linearization hints",
+                2_000,
+            ),
+            (
+                include_bytes!(
+                    "../../../fixtures/generated/corrupt-broken-annotation-reference.pdf"
+                ) as &[u8],
+                120,
+                80,
+                "broken annotation reference",
+                2_000,
+            ),
+        ];
+
+        for &(bytes, expected_width, expected_height, label, min_visible_pixels) in fixtures {
+            let thumbnail = ThumbnailBackend::render(
+                &NativeBackend::new(),
+                PdfSource::from_bytes(bytes),
+                &ThumbnailOptions {
+                    max_edge: expected_width.max(expected_height),
+                    ..ThumbnailOptions::default()
+                },
+            )
+            .unwrap_or_else(|error| panic!("{label} fixture should render: {error}"));
+
+            assert_eq!(thumbnail.width, expected_width, "{label} width");
+            assert_eq!(thumbnail.height, expected_height, "{label} height");
+            let visible_pixels = thumbnail
+                .bytes
+                .chunks_exact(4)
+                .filter(|pixel| *pixel != [255, 255, 255, 255])
+                .count();
+            assert!(
+                visible_pixels >= min_visible_pixels,
+                "{label} fixture should keep visible page content"
+            );
+        }
+    }
+
+    #[test]
+    fn native_backend_should_report_common_corruption_as_stable_malformed() {
+        let fixtures: &[(&[u8], &str)] = &[
+            (
+                include_bytes!("../../../fixtures/generated/corrupt-xref-object-mismatch.pdf")
+                    as &[u8],
+                "xref object mismatch",
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/corrupt-partial-stream.pdf") as &[u8],
+                "partial stream",
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/corrupt-page-tree-missing-kids.pdf")
+                    as &[u8],
+                "missing page tree kids",
+            ),
+        ];
+
+        for &(bytes, label) in fixtures {
+            let render_error = ThumbnailBackend::render(
+                &NativeBackend::new(),
+                PdfSource::from_bytes(bytes),
+                &ThumbnailOptions {
+                    max_edge: 120,
+                    ..ThumbnailOptions::default()
+                },
+            )
+            .expect_err("corrupt fixture should not render");
+            let metadata_error = DocumentMetadataBackend::inspect(
+                &NativeBackend::new(),
+                PdfSource::from_bytes(bytes),
+            )
+            .expect_err("corrupt fixture should not inspect");
+
+            assert_eq!(render_error, ThumbnailError::Malformed, "{label} render");
+            assert_eq!(
+                metadata_error,
+                ThumbnailError::Malformed,
+                "{label} metadata"
+            );
+        }
+    }
+
+    #[test]
+    fn native_backend_should_keep_malformed_metadata_from_aborting_render() {
+        let fixtures: &[(&[u8], u32, u32, &str)] = &[
+            (
+                include_bytes!("../../../fixtures/generated/malformed-tagged-structure.pdf")
+                    as &[u8],
+                120,
+                80,
+                "malformed tagged structure",
+            ),
+            (
+                include_bytes!(
+                    "../../../fixtures/generated/corrupt-info-metadata-non-dictionary.pdf"
+                ) as &[u8],
+                120,
+                80,
+                "non-dictionary info metadata",
+            ),
+        ];
+
+        for &(bytes, expected_width, expected_height, label) in fixtures {
+            let thumbnail = ThumbnailBackend::render(
+                &NativeBackend::new(),
+                PdfSource::from_bytes(bytes),
+                &ThumbnailOptions {
+                    max_edge: expected_width.max(expected_height),
+                    ..ThumbnailOptions::default()
+                },
+            )
+            .unwrap_or_else(|error| panic!("{label} fixture should render: {error}"));
+            let metadata_error = DocumentMetadataBackend::inspect(
+                &NativeBackend::new(),
+                PdfSource::from_bytes(bytes),
+            )
+            .expect_err("corrupt metadata fixture should not inspect");
+
+            assert_eq!(thumbnail.width, expected_width, "{label} width");
+            assert_eq!(thumbnail.height, expected_height, "{label} height");
+            assert_eq!(metadata_error, ThumbnailError::Malformed, "{label}");
+        }
+    }
+
+    #[test]
     fn native_backend_should_report_encrypted_generated_fixture_for_render() {
         let bytes = include_bytes!("../../../fixtures/generated/encrypted-placeholder.pdf");
         let error = ThumbnailBackend::render(

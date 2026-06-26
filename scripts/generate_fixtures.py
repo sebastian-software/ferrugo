@@ -55,6 +55,25 @@ class Pdf:
         return bytes(out)
 
 
+def indirect_object_offset(document: bytes, object_number: int) -> int:
+    marker = f"\n{object_number} 0 obj\n".encode("ascii")
+    offset = document.find(marker)
+    if offset == -1:
+        raise ValueError(f"object {object_number} not found")
+    return offset + 1
+
+
+def replace_xref_offset(document: bytes, object_number: int, offset: int) -> bytes:
+    lines = document.splitlines(keepends=True)
+    for index, line in enumerate(lines):
+        if line == b"xref\n":
+            entry_index = index + 3 + object_number - 1
+            entry = lines[entry_index]
+            lines[entry_index] = f"{offset:010d}".encode("ascii") + entry[10:]
+            return b"".join(lines)
+    raise ValueError("xref table not found")
+
+
 def page_pdf(media_box: str, content: str | bytes) -> bytes:
     pdf = Pdf()
     content_bytes = content.encode("ascii") if isinstance(content, str) else content
@@ -541,6 +560,94 @@ def malformed_xref_offset_drift_pdf() -> bytes:
     pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
     catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
     return pdf.render(catalog, offset_drift={contents: 1})
+
+
+def corrupt_broken_annotation_reference_pdf() -> bytes:
+    pdf = Pdf()
+    content = b"q 0.1 0.45 0.72 rg 12 18 92 34 re f Q"
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 120 80] "
+        f"/Resources << >> /Contents {contents} 0 R /Annots [99 0 R /Broken] >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    return pdf.render(catalog)
+
+
+def corrupt_xref_object_mismatch_pdf() -> bytes:
+    pdf = Pdf()
+    content = b"q 0.75 0.1 0.1 rg 18 22 64 32 re f Q"
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 120 80] "
+        f"/Resources << >> /Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    document = pdf.render(catalog)
+    return replace_xref_offset(document, contents, indirect_object_offset(document, page))
+
+
+def corrupt_partial_stream_pdf() -> bytes:
+    pdf = Pdf()
+    content = b"q 0.2 0.2 0.2 rg 20 20 60 30 re f Q"
+    contents = pdf.add(
+        f"<< /Length {len(content) + 20} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 120 80] "
+        f"/Resources << >> /Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    return pdf.render(catalog)
+
+
+def corrupt_page_tree_missing_kids_pdf() -> bytes:
+    pdf = Pdf()
+    content = b"q 0 0.55 0.2 rg 18 18 70 36 re f Q"
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 120 80] "
+        f"/Resources << >> /Contents {contents} 0 R >>"
+    )
+    pages = pdf.add("<< /Type /Pages /Count 1 >>")
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert page == 2
+    return pdf.render(catalog)
+
+
+def corrupt_info_metadata_non_dictionary_pdf() -> bytes:
+    pdf = Pdf()
+    content = b"q 0.12 0.18 0.32 rg 14 20 88 32 re f Q"
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 120 80] "
+        f"/Resources << >> /Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    info = pdf.add("(not a metadata dictionary)")
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    return pdf.render(catalog, trailer_entries=f"/Info {info} 0 R ")
 
 
 def form_xobject_pdf() -> bytes:
@@ -6968,6 +7075,11 @@ def main() -> None:
     write("hybrid-reference.pdf", hybrid_reference_pdf())
     write("encrypted-placeholder.pdf", encrypted_placeholder_pdf())
     write("malformed-xref-offset-drift.pdf", malformed_xref_offset_drift_pdf())
+    write("corrupt-broken-annotation-reference.pdf", corrupt_broken_annotation_reference_pdf())
+    write("corrupt-xref-object-mismatch.pdf", corrupt_xref_object_mismatch_pdf())
+    write("corrupt-partial-stream.pdf", corrupt_partial_stream_pdf())
+    write("corrupt-page-tree-missing-kids.pdf", corrupt_page_tree_missing_kids_pdf())
+    write("corrupt-info-metadata-non-dictionary.pdf", corrupt_info_metadata_non_dictionary_pdf())
     write("embedded-font.pdf", embedded_font_pdf())
     write("tounicode-text.pdf", tounicode_text_pdf())
     write("cid-font-text.pdf", cid_font_text_pdf())
