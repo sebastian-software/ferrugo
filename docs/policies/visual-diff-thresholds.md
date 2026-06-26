@@ -1,7 +1,9 @@
 # Visual Diff Thresholds And Review Workflow
 
 This policy covers local native-versus-PDFium visual review runs produced by
-`pdfrust-cli visual-diff`.
+`pdfrust-cli visual-diff`. It is a maintainer comparison policy, not a runtime
+or release-gate requirement. The release/oracle split is defined in
+`docs/policies/reference-oracle-strategy.md`.
 
 Visual-diff JSON includes target platform metadata (`os`, `arch`, `family`,
 `endian`, and `pointer_width_bits`). Use that block when comparing drift across
@@ -66,6 +68,6 @@ not a replacement for typed renderer errors.
    subsystem.
 6. Keep encrypted or unsupported-category outcomes separate from pixel drift.
 
-The JSON report is the committed evidence source for milestone notes. Generated
-PNG or diff-image artifacts should stay local unless a later milestone adds a
-bounded artifact retention policy.
+The JSON report is comparison evidence for milestone notes. Generated PNG or
+diff-image artifacts should stay local unless a later milestone adds a bounded
+artifact retention policy.
