@@ -1,6 +1,6 @@
 # 0175: Native Render Trace And Operator Replay Tool
 
-Status: todo
+Status: done
 Phase: 32
 Size: medium
 Depends on: 0174
@@ -46,4 +46,23 @@ PDFium comparison logs.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-26.
+
+Implemented opt-in CLI maintainer tooling:
+
+- `pdfrust-cli trace-native` emits bounded native render traces with metadata,
+  render outcome, aggregate operator coverage, typed unsupported outcomes, and
+  capped operator events.
+- `pdfrust-cli replay-operators` reads native trace JSON and emits compact
+  operator replay counts for reduced fixture triage.
+- `docs/policies/native-render-trace.md` defines the trace format, privacy
+  boundary, size limits, and replay boundary.
+- `docs/reports/native-render-trace-operator-replay-2026-06-26.md` records the
+  smoke commands, artifact sizes, privacy review, and disabled benchmark.
+
+Validation completed:
+
+- `cargo test -p pdfrust-cli trace -- --nocapture`
+- `cargo test -p pdfrust-cli replay_operator -- --nocapture`
+- Trace/replay smoke commands on `fixtures/generated/vector-paths.pdf`.
+- Disabled native benchmark on the report corpus family.

@@ -37,6 +37,8 @@ const PDFIUM_RUNTIME_FALLBACK_REMOVED_MESSAGE: &str =
     "PDFium runtime fallback has been removed from render/render-auto; use render-pdfium or maintainer comparison commands with --features pdfium";
 #[cfg(feature = "pdfium")]
 const PDFIUM_RENDER_WORKER_ENV: &str = "PDFRUST_PDFIUM_RENDER_WORKER";
+const DEFAULT_TRACE_MAX_EVENTS: usize = 256;
+const TRACE_MAX_EVENTS_LIMIT: usize = 4096;
 
 fn main() -> ExitCode {
     match run(env::args_os().skip(1).collect()) {
@@ -59,6 +61,8 @@ fn run(args: Vec<OsString>) -> Result<(), CliError> {
         Some("compare-metadata") => compare_metadata_command(&args[1..]),
         Some("summarize-fallbacks") => summarize_fallbacks_command(&args[1..]),
         Some("operator-coverage") => operator_coverage_command(&args[1..]),
+        Some("trace-native") => trace_native_command(&args[1..]),
+        Some("replay-operators") => replay_operators_command(&args[1..]),
         Some("extract-corpus-metadata") => extract_corpus_metadata_command(&args[1..]),
         Some("validate-local-corpus") => validate_local_corpus_command(&args[1..]),
         Some("benchmark-native") => benchmark_native_command(&args[1..]),
@@ -382,6 +386,34 @@ fn operator_coverage_command(args: &[OsString]) -> Result<(), CliError> {
         println!("{json}");
     }
 
+    Ok(())
+}
+
+fn trace_native_command(args: &[OsString]) -> Result<(), CliError> {
+    let config = TraceNativeConfig::parse(args)?;
+    let json = native_render_trace_json(&config)?;
+    write_optional_json(config.output.as_deref(), &json)
+}
+
+fn replay_operators_command(args: &[OsString]) -> Result<(), CliError> {
+    let config = ReplayOperatorsConfig::parse(args)?;
+    let trace = fs::read_to_string(&config.input).map_err(|source| CliError::ReadFile {
+        path: config.input.clone(),
+        source,
+    })?;
+    let json = replay_operator_trace_json(&trace)?;
+    write_optional_json(config.output.as_deref(), &json)
+}
+
+fn write_optional_json(output: Option<&Path>, json: &str) -> Result<(), CliError> {
+    if let Some(output) = output {
+        fs::write(output, json).map_err(|source| CliError::Io {
+            path: output.to_path_buf(),
+            source,
+        })?;
+    } else {
+        println!("{json}");
+    }
     Ok(())
 }
 
@@ -925,6 +957,22 @@ struct OperatorCoverageConfig {
     include_annotations: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct TraceNativeConfig {
+    input: PathBuf,
+    output: Option<PathBuf>,
+    page_index: u32,
+    max_edge: u32,
+    max_events: usize,
+    include_annotations: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ReplayOperatorsConfig {
+    input: PathBuf,
+    output: Option<PathBuf>,
+}
+
 impl FallbackSummaryConfig {
     fn parse(args: &[OsString]) -> Result<Self, CliError> {
         let mut input = None;
@@ -1079,6 +1127,112 @@ impl OperatorCoverageConfig {
             output,
             page_index,
             include_annotations,
+        })
+    }
+}
+
+impl TraceNativeConfig {
+    fn parse(args: &[OsString]) -> Result<Self, CliError> {
+        let mut input = None;
+        let mut output = None;
+        let mut page_index = DEFAULT_PAGE_INDEX;
+        let mut max_edge = DEFAULT_MAX_EDGE;
+        let mut max_events = DEFAULT_TRACE_MAX_EVENTS;
+        let mut include_annotations = true;
+
+        let mut index = 0;
+        while index < args.len() {
+            let arg = args[index]
+                .to_str()
+                .ok_or_else(|| CliError::Usage("arguments must be valid UTF-8".to_string()))?;
+            match arg {
+                "--output" | "-o" => {
+                    index += 1;
+                    output = Some(required_path(args, index, "--output")?);
+                }
+                "--page-index" => {
+                    index += 1;
+                    page_index = parse_u32(args, index, "--page-index")?;
+                }
+                "--max-edge" => {
+                    index += 1;
+                    max_edge = parse_u32(args, index, "--max-edge")?;
+                }
+                "--max-events" => {
+                    index += 1;
+                    max_events = parse_usize(args, index, "--max-events")?;
+                }
+                "--no-annotations" => {
+                    include_annotations = false;
+                }
+                value if value.starts_with('-') => {
+                    return Err(CliError::Usage(format!("unknown option `{value}`")));
+                }
+                value => {
+                    if input.replace(PathBuf::from(value)).is_some() {
+                        return Err(CliError::Usage(
+                            "only one input PDF is supported".to_string(),
+                        ));
+                    }
+                }
+            }
+            index += 1;
+        }
+
+        if max_edge == 0 {
+            return Err(CliError::Usage(
+                "--max-edge must be greater than zero".to_string(),
+            ));
+        }
+        if max_events > TRACE_MAX_EVENTS_LIMIT {
+            return Err(CliError::Usage(format!(
+                "--max-events must be <= {TRACE_MAX_EVENTS_LIMIT}"
+            )));
+        }
+
+        Ok(Self {
+            input: input.ok_or_else(|| CliError::Usage("missing input PDF".to_string()))?,
+            output,
+            page_index,
+            max_edge,
+            max_events,
+            include_annotations,
+        })
+    }
+}
+
+impl ReplayOperatorsConfig {
+    fn parse(args: &[OsString]) -> Result<Self, CliError> {
+        let mut input = None;
+        let mut output = None;
+
+        let mut index = 0;
+        while index < args.len() {
+            let arg = args[index]
+                .to_str()
+                .ok_or_else(|| CliError::Usage("arguments must be valid UTF-8".to_string()))?;
+            match arg {
+                "--output" | "-o" => {
+                    index += 1;
+                    output = Some(required_path(args, index, "--output")?);
+                }
+                value if value.starts_with('-') => {
+                    return Err(CliError::Usage(format!("unknown option `{value}`")));
+                }
+                value => {
+                    if input.replace(PathBuf::from(value)).is_some() {
+                        return Err(CliError::Usage(
+                            "only one trace file is supported".to_string(),
+                        ));
+                    }
+                }
+            }
+            index += 1;
+        }
+
+        Ok(Self {
+            input: input.ok_or_else(|| CliError::Usage("missing trace file".to_string()))?,
+            output,
         })
     }
 }
@@ -4694,6 +4848,297 @@ fn operator_entry_json(entry: &OperatorCoverageEntry) -> String {
     )
 }
 
+fn native_render_trace_json(config: &TraceNativeConfig) -> Result<String, CliError> {
+    let bytes = fs::read(&config.input).map_err(|source| CliError::ReadFile {
+        path: config.input.clone(),
+        source,
+    })?;
+    let native = NativeBackend::new();
+    let options = ThumbnailOptions {
+        page_index: config.page_index,
+        max_edge: config.max_edge,
+        background: Rgba::WHITE,
+        output_format: pdfrust_thumbnail::OutputFormat::Rgba,
+        timeout: DEFAULT_TIMEOUT,
+    };
+    let metadata = DocumentMetadataBackend::inspect(&native, PdfSource::from_bytes(&bytes));
+    let coverage = scan_operator_coverage(
+        &bytes,
+        OperatorCoverageOptions {
+            page_index: config.page_index,
+            include_annotations: config.include_annotations,
+        },
+    );
+    let render = native.render(PdfSource::from_bytes(&bytes), &options);
+
+    let (coverage_json, operators, events_json, emitted_events, total_events, events_truncated) =
+        match coverage {
+            Ok(coverage) => {
+                let (events_json, emitted_events, total_events, events_truncated) =
+                    trace_operator_events_json(&coverage.operators, config.max_events);
+                (
+                    format!(
+                        concat!(
+                            "{{",
+                            "\"status\":\"scanned\",",
+                            "\"streams_scanned\":{},",
+                            "\"total_operators\":{},",
+                            "\"inline_images\":{},",
+                            "\"operators\":[{}]",
+                            "}}"
+                        ),
+                        coverage.streams_scanned,
+                        coverage.total_operators,
+                        coverage.inline_images,
+                        coverage
+                            .operators
+                            .iter()
+                            .map(operator_entry_json)
+                            .collect::<Vec<_>>()
+                            .join(",")
+                    ),
+                    coverage.operators,
+                    events_json,
+                    emitted_events,
+                    total_events,
+                    events_truncated,
+                )
+            }
+            Err(error) => (
+                format!(
+                    concat!(
+                        "{{",
+                        "\"status\":\"error\",",
+                        "\"class\":{},",
+                        "\"bucket\":{},",
+                        "\"message\":{}",
+                        "}}"
+                    ),
+                    json_string(error.class().as_str()),
+                    optional_json_string(error.unsupported_feature_bucket()),
+                    json_string(&error.to_string())
+                ),
+                Vec::new(),
+                String::new(),
+                0,
+                0,
+                false,
+            ),
+        };
+    let operator_summary = trace_operator_summary_json(&operators);
+    let metadata_json = trace_metadata_json(metadata);
+    let render_json = trace_render_outcome_json(render);
+
+    Ok(format!(
+        concat!(
+            "{{\n",
+            "  \"schema_version\": 1,\n",
+            "  \"trace_kind\": \"native-render-trace\",\n",
+            "  \"privacy\": \"no document bytes, stream bytes, operands, text, or image samples\",\n",
+            "  \"input\": {},\n",
+            "  \"page_index\": {},\n",
+            "  \"max_edge\": {},\n",
+            "  \"include_annotations\": {},\n",
+            "  \"max_events\": {},\n",
+            "  \"events_emitted\": {},\n",
+            "  \"events_total\": {},\n",
+            "  \"events_truncated\": {},\n",
+            "  \"metadata\": {},\n",
+            "  \"render\": {},\n",
+            "  \"operator_coverage\": {},\n",
+            "  \"operator_summary\": {},\n",
+            "  \"events\": [{}]\n",
+            "}}\n"
+        ),
+        json_string(&normalize_manifest_path(&config.input)),
+        config.page_index,
+        config.max_edge,
+        config.include_annotations,
+        config.max_events,
+        emitted_events,
+        total_events,
+        events_truncated,
+        metadata_json,
+        render_json,
+        coverage_json,
+        operator_summary,
+        events_json
+    ))
+}
+
+fn trace_metadata_json(result: Result<DocumentMetadata, ThumbnailError>) -> String {
+    match result {
+        Ok(metadata) => {
+            let first_page = metadata
+                .first_page_size()
+                .map(|size| format!("{{\"width\":{},\"height\":{}}}", size.width, size.height))
+                .unwrap_or_else(|| "null".to_string());
+            format!(
+                "{{\"status\":\"ok\",\"page_count\":{},\"first_page_size\":{}}}",
+                metadata.page_count(),
+                first_page
+            )
+        }
+        Err(error) => format!(
+            "{{\"status\":\"error\",\"class\":{},\"bucket\":{},\"message\":{}}}",
+            json_string(error.class().as_str()),
+            optional_json_string(error.unsupported_feature_bucket()),
+            json_string(&error.to_string())
+        ),
+    }
+}
+
+fn trace_render_outcome_json(
+    result: Result<pdfrust_thumbnail::Thumbnail, ThumbnailError>,
+) -> String {
+    match result {
+        Ok(thumbnail) => format!(
+            concat!(
+                "{{",
+                "\"status\":\"rendered\",",
+                "\"width\":{},",
+                "\"height\":{},",
+                "\"stride\":{},",
+                "\"output_bytes\":{}",
+                "}}"
+            ),
+            thumbnail.width,
+            thumbnail.height,
+            thumbnail.stride,
+            thumbnail.bytes.len()
+        ),
+        Err(error) => format!(
+            "{{\"status\":\"error\",\"class\":{},\"bucket\":{},\"message\":{}}}",
+            json_string(error.class().as_str()),
+            optional_json_string(error.unsupported_feature_bucket()),
+            json_string(&error.to_string())
+        ),
+    }
+}
+
+fn trace_operator_summary_json(operators: &[OperatorCoverageEntry]) -> String {
+    let entries = operators
+        .iter()
+        .map(|entry| format!("{}:{}", json_string(&entry.operator), entry.count))
+        .collect::<Vec<_>>()
+        .join(",");
+    format!("{{{entries}}}")
+}
+
+fn trace_operator_events_json(
+    operators: &[OperatorCoverageEntry],
+    max_events: usize,
+) -> (String, usize, usize, bool) {
+    let total_events = operators.iter().map(|entry| entry.count).sum();
+    let mut emitted = 0usize;
+    let mut events = Vec::new();
+
+    'outer: for entry in operators {
+        for _ in 0..entry.count {
+            if emitted == max_events {
+                break 'outer;
+            }
+            events.push(format!(
+                concat!(
+                    "{{",
+                    "\"seq\":{},",
+                    "\"phase\":\"operator\",",
+                    "\"operator\":{},",
+                    "\"status\":{},",
+                    "\"fallback_bucket\":{}",
+                    "}}"
+                ),
+                emitted,
+                json_string(&entry.operator),
+                json_string(entry.status.as_str()),
+                optional_json_string(entry.fallback_bucket)
+            ));
+            emitted += 1;
+        }
+    }
+
+    (
+        events.join(","),
+        emitted,
+        total_events,
+        emitted < total_events,
+    )
+}
+
+fn replay_operator_trace_json(trace: &str) -> Result<String, CliError> {
+    if !trace.contains("\"trace_kind\": \"native-render-trace\"")
+        && !trace.contains("\"trace_kind\":\"native-render-trace\"")
+    {
+        return Err(CliError::Usage(
+            "trace file is not a native-render-trace".to_string(),
+        ));
+    }
+    let counts = replay_operator_counts(trace);
+    let events_replayed: usize = counts.values().sum();
+    let operators = counts
+        .iter()
+        .map(|(operator, count)| format!("{}:{}", json_string(operator), count))
+        .collect::<Vec<_>>()
+        .join(",");
+
+    Ok(format!(
+        concat!(
+            "{{\n",
+            "  \"schema_version\": 1,\n",
+            "  \"trace_kind\": \"operator-replay\",\n",
+            "  \"events_replayed\": {},\n",
+            "  \"operator_counts\": {{{}}}\n",
+            "}}\n"
+        ),
+        events_replayed, operators
+    ))
+}
+
+fn replay_operator_counts(trace: &str) -> BTreeMap<String, usize> {
+    let marker = "\"phase\":\"operator\",\"operator\":";
+    let mut counts = BTreeMap::new();
+    let mut remaining = trace;
+
+    while let Some(position) = remaining.find(marker) {
+        let value = &remaining[position + marker.len()..];
+        let Some((operator, consumed)) = parse_json_string_value(value) else {
+            break;
+        };
+        *counts.entry(operator).or_insert(0) += 1;
+        remaining = &value[consumed..];
+    }
+
+    counts
+}
+
+fn parse_json_string_value(input: &str) -> Option<(String, usize)> {
+    if !input.starts_with('"') {
+        return None;
+    }
+    let mut value = String::new();
+    let mut escaped = false;
+    for (offset, character) in input[1..].char_indices() {
+        if escaped {
+            value.push(match character {
+                '"' => '"',
+                '\\' => '\\',
+                'n' => '\n',
+                'r' => '\r',
+                't' => '\t',
+                other => other,
+            });
+            escaped = false;
+            continue;
+        }
+        match character {
+            '\\' => escaped = true,
+            '"' => return Some((value, offset + 2)),
+            other => value.push(other),
+        }
+    }
+    None
+}
+
 fn corpus_metadata_record_json(record: &CorpusMetadataRecord) -> String {
     format!(
         concat!(
@@ -5729,9 +6174,9 @@ fn crc32(bytes: impl IntoIterator<Item = u8>) -> u32 {
 
 fn print_usage() {
     println!(
-        "Usage: pdfrust-cli <render|render-auto|render-native|render-pdfium|render-isolated|compare-metadata|summarize-fallbacks|operator-coverage|extract-corpus-metadata|validate-local-corpus|benchmark-native|benchmark-batch-native|benchmark-repeat-native|benchmark-pdfium|visual-diff> <input.pdf> \
+        "Usage: pdfrust-cli <render|render-auto|render-native|render-pdfium|render-isolated|compare-metadata|summarize-fallbacks|operator-coverage|trace-native|replay-operators|extract-corpus-metadata|validate-local-corpus|benchmark-native|benchmark-batch-native|benchmark-repeat-native|benchmark-pdfium|visual-diff> <input.pdf> \
          [--output PATH] [--page-index N] [--max-edge N] [--background #RRGGBB] \
-         [--timeout SECONDS] [--iterations N] [--repetitions N] [--max-workers N] [--max-in-flight-pixels N] [--max-ms N] [--max-p95-ms N] [--max-first-ms N] [--max-repeat-mean-ms N] [--max-output-bytes N] \
+         [--timeout SECONDS] [--iterations N] [--repetitions N] [--max-events N] [--max-workers N] [--max-in-flight-pixels N] [--max-ms N] [--max-p95-ms N] [--max-first-ms N] [--max-repeat-mean-ms N] [--max-output-bytes N] \
          [--native-only] [--manifest PATH] [--include-family FAMILY] \
          [--diagnostics-dir PATH] [--allow-missing] [--no-annotations] [--max-mae N] [--max-p95 N] [--max-changed-ratio N]"
     );
@@ -6022,6 +6467,83 @@ mod tests {
         assert!(json.contains("\"status_counts\""));
         assert!(json.contains("\"BI\""));
         assert!(json.contains("\"implemented\""));
+    }
+
+    #[test]
+    fn trace_native_config_should_bound_event_count() {
+        let config = TraceNativeConfig::parse(&[
+            OsString::from("fixtures/generated/vector-paths.pdf"),
+            OsString::from("--page-index"),
+            OsString::from("0"),
+            OsString::from("--max-edge"),
+            OsString::from("160"),
+            OsString::from("--max-events"),
+            OsString::from("12"),
+            OsString::from("--no-annotations"),
+            OsString::from("--output"),
+            OsString::from("target/native-trace.json"),
+        ])
+        .expect("valid trace config");
+
+        assert_eq!(config.page_index, 0);
+        assert_eq!(config.max_edge, 160);
+        assert_eq!(config.max_events, 12);
+        assert!(!config.include_annotations);
+        assert_eq!(
+            config.output,
+            Some(PathBuf::from("target/native-trace.json"))
+        );
+
+        let too_large = TraceNativeConfig::parse(&[
+            OsString::from("fixtures/generated/vector-paths.pdf"),
+            OsString::from("--max-events"),
+            OsString::from((TRACE_MAX_EVENTS_LIMIT + 1).to_string()),
+        ]);
+        assert!(too_large.is_err());
+    }
+
+    #[test]
+    fn native_trace_json_should_omit_document_bytes_and_bound_events() {
+        let fixture_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let config = TraceNativeConfig {
+            input: fixture_root.join("fixtures/generated/vector-paths.pdf"),
+            output: None,
+            page_index: 0,
+            max_edge: 160,
+            max_events: 2,
+            include_annotations: true,
+        };
+
+        let json = native_render_trace_json(&config).expect("trace should render");
+
+        assert!(json.contains("\"trace_kind\": \"native-render-trace\""));
+        assert!(json.contains("\"privacy\""));
+        assert!(json.contains("\"events_emitted\": 2"));
+        assert!(json.contains("\"events_truncated\": true"));
+        assert!(json.contains("\"operator_summary\""));
+        assert!(!json.contains("stream\n"));
+        assert!(!json.contains("pdfrust thumbnail fixture"));
+    }
+
+    #[test]
+    fn replay_operator_trace_should_count_bounded_events() {
+        let trace = concat!(
+            "{",
+            "\"trace_kind\":\"native-render-trace\",",
+            "\"events\":[",
+            "{\"seq\":0,\"phase\":\"operator\",\"operator\":\"q\",\"status\":\"implemented\",\"fallback_bucket\":null},",
+            "{\"seq\":1,\"phase\":\"operator\",\"operator\":\"S\",\"status\":\"implemented\",\"fallback_bucket\":null},",
+            "{\"seq\":2,\"phase\":\"operator\",\"operator\":\"S\",\"status\":\"implemented\",\"fallback_bucket\":null}",
+            "]",
+            "}"
+        );
+
+        let json = replay_operator_trace_json(trace).expect("trace should replay");
+
+        assert!(json.contains("\"trace_kind\": \"operator-replay\""));
+        assert!(json.contains("\"events_replayed\": 3"));
+        assert!(json.contains("\"q\":1"));
+        assert!(json.contains("\"S\":2"));
     }
 
     #[test]

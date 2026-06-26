@@ -34,7 +34,6 @@ when the server renderer is already correct and bounded.
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
-| 0175 | [Native Render Trace And Operator Replay Tool](0175-native-render-trace-and-operator-replay-tool.md) | 32 | medium | 0174 |
 | 0176 | [WASM Viewer Integration Performance Gate](0176-wasm-viewer-integration-performance-gate.md) | 33 | medium | 0175 |
 | 0177 | [Server-Side Batch Rendering Isolation Gate](0177-server-side-batch-rendering-isolation-gate.md) | 33 | medium | 0175 |
 | 0178 | [Security Fuzz Nightly And Crash Triage Loop](0178-security-fuzz-nightly-and-crash-triage-loop.md) | 33 | medium | 0177 |
@@ -90,6 +89,7 @@ when the server renderer is already correct and bounded.
 
 | ID | Milestone | Phase | Size | Completed |
 | --- | --- | --- | --- | --- |
+| 0175 | [Native Render Trace And Operator Replay Tool](0175-native-render-trace-and-operator-replay-tool.md) | 32 | medium | 2026-06-26 |
 | 0174 | [Typed Unsupported Boundary API Freeze](0174-typed-unsupported-boundary-api-freeze.md) | 32 | small | 2026-06-26 |
 | 0173 | [Corrupt-But-Common PDF Recovery Corpus](0173-corrupt-but-common-pdf-recovery-corpus.md) | 32 | medium | 2026-06-26 |
 | 0172 | [High-DPI Thumbnail And Preview Fidelity](0172-high-dpi-thumbnail-and-preview-fidelity.md) | 32 | medium | 2026-06-26 |
