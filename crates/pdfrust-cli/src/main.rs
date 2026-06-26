@@ -1394,6 +1394,7 @@ struct BatchBenchmarkConfig {
     max_errors: usize,
     fail_on_budget: bool,
     native_profile: NativeProfile,
+    cancel_after_jobs: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1579,6 +1580,7 @@ impl BatchBenchmarkConfig {
         let mut max_errors = 0;
         let mut fail_on_budget = false;
         let mut native_profile = NativeProfile::Default;
+        let mut cancel_after_jobs = None;
 
         let mut index = 0;
         while index < args.len() {
@@ -1644,6 +1646,10 @@ impl BatchBenchmarkConfig {
                     native_profile =
                         parse_native_profile(required_str(args, index, "--native-profile")?)?;
                 }
+                "--cancel-after-jobs" => {
+                    index += 1;
+                    cancel_after_jobs = Some(parse_usize(args, index, "--cancel-after-jobs")?);
+                }
                 value if value.starts_with('-') => {
                     return Err(CliError::Usage(format!("unknown option `{value}`")));
                 }
@@ -1695,6 +1701,7 @@ impl BatchBenchmarkConfig {
             max_errors,
             fail_on_budget,
             native_profile,
+            cancel_after_jobs,
         })
     }
 }
@@ -2209,6 +2216,7 @@ struct BatchBenchmarkReport {
     throughput_per_sec: f64,
     max_p95_ms: u64,
     max_errors: usize,
+    isolation: BatchIsolationSummary,
     memory: BatchMemorySummary,
     latency: BatchLatencySummary,
     families: BTreeMap<String, BatchFamilySummary>,
@@ -2239,6 +2247,18 @@ struct BatchMemorySummary {
     rss_end_kib: Option<u64>,
     max_in_flight_pixels: usize,
     max_output_bytes: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct BatchIsolationSummary {
+    cache_policy: NativePageCachePolicy,
+    cancel_after_jobs: Option<usize>,
+    scheduled_jobs: usize,
+    skipped_jobs: usize,
+    cancelled: bool,
+    backend_scope: &'static str,
+    shared_document_state: bool,
+    timeout_ms: u128,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -2945,7 +2965,15 @@ fn benchmark_native_batch(
     config: &BatchBenchmarkConfig,
 ) -> Result<BatchBenchmarkReport, CliError> {
     let workers = effective_batch_workers(config, options)?;
-    let jobs = batch_jobs(paths, manifest, config.repetitions);
+    let mut jobs = batch_jobs(paths, manifest, config.repetitions);
+    let requested_jobs = jobs.len();
+    let scheduled_jobs = config.cancel_after_jobs.map_or(requested_jobs, |limit| {
+        let scheduled = requested_jobs.min(limit);
+        jobs.truncate(scheduled);
+        scheduled
+    });
+    let skipped_jobs = requested_jobs.saturating_sub(scheduled_jobs);
+    let cancelled = skipped_jobs > 0;
     let mut records = Vec::with_capacity(jobs.len());
     let mut memory = BatchMemorySummary {
         rss_start_kib: current_rss_kib(),
@@ -2997,6 +3025,16 @@ fn benchmark_native_batch(
         config,
         records,
         memory,
+        BatchIsolationSummary {
+            cache_policy: NativePageCachePolicy::IsolatedRender,
+            cancel_after_jobs: config.cancel_after_jobs,
+            scheduled_jobs,
+            skipped_jobs,
+            cancelled,
+            backend_scope: "per-job",
+            shared_document_state: false,
+            timeout_ms: options.timeout.as_millis(),
+        },
         elapsed_ms(started.elapsed()),
     ))
 }
@@ -3087,6 +3125,7 @@ fn batch_report_from_records(
     config: &BatchBenchmarkConfig,
     records: Vec<BatchBenchmarkRecord>,
     memory: BatchMemorySummary,
+    isolation: BatchIsolationSummary,
     elapsed_ms: f64,
 ) -> BatchBenchmarkReport {
     let mut native_rendered = 0;
@@ -3132,6 +3171,7 @@ fn batch_report_from_records(
         throughput_per_sec: total_jobs as f64 / elapsed_secs,
         max_p95_ms: config.max_p95_ms,
         max_errors: config.max_errors,
+        isolation,
         memory,
         latency,
         families,
@@ -5237,8 +5277,9 @@ fn batch_benchmark_report_json(report: &BatchBenchmarkReport) -> String {
             "  \"schema_version\": 1,\n",
             "  \"backend\": \"rust-native\",\n",
             "  \"platform\": {},\n",
-            "  \"config\": {{\"repetitions\":{},\"workers\":{},\"max_p95_ms\":{},\"max_errors\":{},\"max_in_flight_pixels\":{}}},\n",
+            "  \"config\": {{\"repetitions\":{},\"workers\":{},\"max_p95_ms\":{},\"max_errors\":{},\"max_in_flight_pixels\":{},\"cancel_after_jobs\":{}}},\n",
             "  \"summary\": {{\"total_inputs\":{},\"total_jobs\":{},\"native_rendered\":{},\"fallback_required\":{},\"errors\":{},\"budget_failures\":{},\"elapsed_ms\":{:.3},\"throughput_per_sec\":{:.3}}},\n",
+            "  \"isolation\": {},\n",
             "  \"latency\": {},\n",
             "  \"memory\": {},\n",
             "  \"families\": {},\n",
@@ -5251,6 +5292,7 @@ fn batch_benchmark_report_json(report: &BatchBenchmarkReport) -> String {
         report.max_p95_ms,
         report.max_errors,
         report.memory.max_in_flight_pixels,
+        optional_json_usize(report.isolation.cancel_after_jobs),
         report.total_inputs,
         report.total_jobs,
         report.native_rendered,
@@ -5259,10 +5301,34 @@ fn batch_benchmark_report_json(report: &BatchBenchmarkReport) -> String {
         report.budget_failures,
         report.elapsed_ms,
         report.throughput_per_sec,
+        batch_isolation_summary_json(&report.isolation),
         batch_latency_summary_json(&report.latency),
         batch_memory_summary_json(&report.memory),
         batch_family_map_json(&report.families),
         records
+    )
+}
+
+fn batch_isolation_summary_json(summary: &BatchIsolationSummary) -> String {
+    format!(
+        concat!(
+            "{{",
+            "\"cache_policy\":{},",
+            "\"scheduled_jobs\":{},",
+            "\"skipped_jobs\":{},",
+            "\"cancelled\":{},",
+            "\"backend_scope\":{},",
+            "\"shared_document_state\":{},",
+            "\"timeout_ms\":{}",
+            "}}"
+        ),
+        native_page_cache_policy_json(summary.cache_policy),
+        summary.scheduled_jobs,
+        summary.skipped_jobs,
+        summary.cancelled,
+        json_string(summary.backend_scope),
+        summary.shared_document_state,
+        summary.timeout_ms
     )
 }
 
@@ -6049,6 +6115,10 @@ fn optional_json_u64(value: Option<u64>) -> String {
     value.map_or_else(|| "null".to_string(), |value| value.to_string())
 }
 
+fn optional_json_usize(value: Option<usize>) -> String {
+    value.map_or_else(|| "null".to_string(), |value| value.to_string())
+}
+
 fn json_string_array(values: &[String]) -> String {
     let values = values
         .iter()
@@ -6176,7 +6246,7 @@ fn print_usage() {
     println!(
         "Usage: pdfrust-cli <render|render-auto|render-native|render-pdfium|render-isolated|compare-metadata|summarize-fallbacks|operator-coverage|trace-native|replay-operators|extract-corpus-metadata|validate-local-corpus|benchmark-native|benchmark-batch-native|benchmark-repeat-native|benchmark-pdfium|visual-diff> <input.pdf> \
          [--output PATH] [--page-index N] [--max-edge N] [--background #RRGGBB] \
-         [--timeout SECONDS] [--iterations N] [--repetitions N] [--max-events N] [--max-workers N] [--max-in-flight-pixels N] [--max-ms N] [--max-p95-ms N] [--max-first-ms N] [--max-repeat-mean-ms N] [--max-output-bytes N] \
+         [--timeout SECONDS] [--iterations N] [--repetitions N] [--max-events N] [--max-workers N] [--max-in-flight-pixels N] [--cancel-after-jobs N] [--max-ms N] [--max-p95-ms N] [--max-first-ms N] [--max-repeat-mean-ms N] [--max-output-bytes N] \
          [--native-only] [--manifest PATH] [--include-family FAMILY] \
          [--diagnostics-dir PATH] [--allow-missing] [--no-annotations] [--max-mae N] [--max-p95 N] [--max-changed-ratio N]"
     );
@@ -6893,6 +6963,8 @@ status = "candidate"
             OsString::from("4"),
             OsString::from("--max-in-flight-pixels"),
             OsString::from("25600"),
+            OsString::from("--cancel-after-jobs"),
+            OsString::from("2"),
         ])
         .expect("valid batch benchmark config");
         let options = ThumbnailOptions {
@@ -6905,6 +6977,7 @@ status = "candidate"
 
         assert_eq!(config.repetitions, 3);
         assert_eq!(config.max_workers, 4);
+        assert_eq!(config.cancel_after_jobs, Some(2));
         assert_eq!(
             effective_batch_workers(&config, &options).expect("workers"),
             1
@@ -6944,6 +7017,7 @@ status = "candidate"
             max_errors: 2,
             fail_on_budget: false,
             native_profile: NativeProfile::Default,
+            cancel_after_jobs: None,
         };
 
         let report = benchmark_native_batch(&paths, &options, Some(&manifest), &config)
@@ -6957,15 +7031,79 @@ status = "candidate"
         assert_eq!(report.errors, 0);
         assert_eq!(report.budget_failures, 0);
         assert_eq!(report.workers, 2);
+        assert_eq!(
+            report.isolation.cache_policy,
+            NativePageCachePolicy::IsolatedRender
+        );
+        assert_eq!(report.isolation.scheduled_jobs, 4);
+        assert_eq!(report.isolation.skipped_jobs, 0);
+        assert!(!report.isolation.cancelled);
+        assert_eq!(report.isolation.backend_scope, "per-job");
+        assert!(!report.isolation.shared_document_state);
+        assert_eq!(report.isolation.timeout_ms, 5_000);
         assert!(report.throughput_per_sec > 0.0);
         assert!(report.latency.p95_ms >= report.latency.p50_ms);
         assert!(report.memory.max_output_bytes > 0);
         assert!(json.contains("\"throughput_per_sec\""));
+        assert!(json.contains("\"isolation\""));
+        assert!(json.contains("\"backend_scope\":\"per-job\""));
         assert!(json.contains("\"latency\""));
         assert!(json.contains("\"memory\""));
         assert!(json.contains("\"page_index\":0"));
         assert!(json.contains("\"status\":\"fallback_required\""));
         assert!(json.contains("\"category\":\"graphics.optional-content\""));
+    }
+
+    #[test]
+    fn batch_benchmark_should_report_cooperative_cancellation_boundary() {
+        let fixture_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let manifest_path = fixture_root.join("fixtures/corpus-manifest.tsv");
+        let manifest = read_corpus_manifest(&manifest_path).expect("manifest should parse");
+        let paths = vec![
+            fixture_root.join("fixtures/generated/text-page.pdf"),
+            fixture_root.join("fixtures/generated/office-table.pdf"),
+        ];
+        let options = ThumbnailOptions {
+            page_index: 0,
+            max_edge: 120,
+            background: Rgba::WHITE,
+            output_format: pdfrust_thumbnail::OutputFormat::Rgba,
+            timeout: Duration::from_secs(5),
+        };
+        let config = BatchBenchmarkConfig {
+            input: fixture_root.join("fixtures/generated"),
+            manifest: Some(manifest_path),
+            include_families: Vec::new(),
+            output: None,
+            page_index: 0,
+            max_edge: 120,
+            background: Rgba::WHITE,
+            timeout: Duration::from_secs(5),
+            repetitions: 3,
+            max_workers: 2,
+            max_in_flight_pixels: 120 * 120 * 2,
+            max_p95_ms: 60_000,
+            max_errors: 0,
+            fail_on_budget: false,
+            native_profile: NativeProfile::Default,
+            cancel_after_jobs: Some(3),
+        };
+
+        let report = benchmark_native_batch(&paths, &options, Some(&manifest), &config)
+            .expect("batch benchmark should report cancellation");
+        let json = batch_benchmark_report_json(&report);
+
+        assert_eq!(report.total_jobs, 3);
+        assert_eq!(report.native_rendered, 3);
+        assert_eq!(report.isolation.scheduled_jobs, 3);
+        assert_eq!(report.isolation.skipped_jobs, 3);
+        assert!(report.isolation.cancelled);
+        assert_eq!(report.isolation.cancel_after_jobs, Some(3));
+        assert!(report.records.iter().all(|record| record.repetition < 2));
+        assert!(json.contains("\"cancel_after_jobs\":3"));
+        assert!(json.contains("\"skipped_jobs\":3"));
+        assert!(json.contains("\"cancelled\":true"));
+        assert!(json.contains("\"shared_document_state\":false"));
     }
 
     #[test]

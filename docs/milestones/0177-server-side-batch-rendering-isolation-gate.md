@@ -1,6 +1,6 @@
 # 0177: Server-Side Batch Rendering Isolation Gate
 
-Status: todo
+Status: done
 Phase: 33
 Size: medium
 Depends on: 0175
@@ -51,4 +51,32 @@ PDFium-replacement path and does not depend on WASM readiness.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-26.
+
+Implemented explicit server batch isolation reporting for
+`benchmark-batch-native`:
+
+- per-job backend scope in the JSON report;
+- `isolated-render` cache policy and disk-persistence status;
+- no shared document state;
+- scheduled and skipped job counts;
+- cooperative scheduler cancellation via `--cancel-after-jobs`;
+- timeout budget in the isolation block.
+
+Added `docs/policies/server-batch-rendering.md` with recommended server gate
+configuration, isolation rules, cancellation behavior, timeout handling, and
+failure semantics.
+
+Recorded the gate evidence in
+`docs/reports/server-side-batch-isolation-gate-2026-06-26.md`:
+
+- 24/24 jobs native rendered in the normal server batch gate;
+- 0 fallbacks, 0 errors, 0 budget failures;
+- cancellation gate scheduled 5 jobs and skipped 19 jobs without fallbacks or
+  errors.
+
+Validation completed:
+
+- `cargo test -p pdfrust-cli batch_benchmark -- --nocapture`
+- server batch isolation gate with `--fail-on-budget`
+- server batch cancellation gate with `--cancel-after-jobs 5`
