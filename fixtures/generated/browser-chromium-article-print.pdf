@@ -1,0 +1,51 @@
+%PDF-1.4
+%âãÏÓ
+1 0 obj
+<< /Length 862 >>
+stream
+q 1 1 1 rg 0 0 360 460 re f Q q 0.10 0.16 0.26 rg 0 414 360 46 re f Q q 0.92 0.95 0.99 rg 28 286 304 96 re f Q q 76 0 0 46 42 316 cm /Hero Do Q q 0.16 0.20 0.28 RG 0.6 w 28 274 m 332 274 l 28 248 m 332 248 l 28 222 m 332 222 l 28 196 m 332 196 l S Q q 0.05 0.28 0.65 RG 0.8 w 42 74 m 168 74 l S Q BT /F1 14 Tf 28 430 Td (Browser Article Print) Tj /F1 9 Tf 28 394 Td (Author: Example Newsroom) Tj /F1 10 Tf 132 350 Td (Hero image with CSS background panel) Tj /F1 8 Tf 42 258 Td (Section) Tj 94 0 Td (Metric) Tj 82 0 Td (Status) Tj -176 -26 Td (Traffic) Tj 94 0 Td (128k) Tj 82 0 Td (stable) Tj -176 -26 Td (Signup) Tj 94 0 Td (4.8%) Tj 82 0 Td (up) Tj /F1 8 Tf 42 160 Td (Main paragraph text wraps into print columns with link styling.) Tj 0 -18 Td (CSS backgrounds and table rules stay visible in print mode.) Tj 0 -68 Td (https://example.invalid/article) Tj ET
+endstream
+endobj
+2 0 obj
+<< /Type /Page /Parent 3 0 R /MediaBox [0 0 360 460] /Resources << /Font << /F1 4 0 R >> /XObject << /Hero 5 0 R >> >> /Contents 1 0 R /Annots [7 0 R] >>
+endobj
+3 0 obj
+<< /Type /Pages /Kids [2 0 R] /Count 1 >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+5 0 obj
+<< /Type /XObject /Subtype /Image /Width 4 /Height 2 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Length 24 >>
+stream
+8`–L|²h”ÂàèðèŒHÚz8¼f2*J~
+endstream
+endobj
+6 0 obj
+<< /Type /XObject /Subtype /Form /BBox [0 0 126 12] /Length 37 >>
+stream
+0.05 0.28 0.65 RG 1 w 0 1 m 126 1 l S
+endstream
+endobj
+7 0 obj
+<< /Type /Annot /Subtype /Link /Rect [42 68 168 82] /Border [0 0 0] /A << /S /URI /URI (https://example.invalid/article) >> /AP << /N 6 0 R >> >>
+endobj
+8 0 obj
+<< /Type /Catalog /Pages 3 0 R >>
+endobj
+xref
+0 9
+0000000000 65535 f 
+0000000015 00000 n 
+0000000928 00000 n 
+0000001097 00000 n 
+0000001154 00000 n 
+0000001224 00000 n 
+0000001391 00000 n 
+0000001527 00000 n 
+0000001688 00000 n 
+trailer
+<< /Size 9 /Root 8 0 R >>
+startxref
+1737
+%%EOF

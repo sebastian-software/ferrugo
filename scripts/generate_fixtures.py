@@ -3619,6 +3619,143 @@ def business_form_stamp_signature_pdf() -> bytes:
     )
 
 
+def browser_chromium_article_print_pdf() -> bytes:
+    pdf = Pdf()
+    content = (
+        b"q 1 1 1 rg 0 0 360 460 re f Q "
+        b"q 0.10 0.16 0.26 rg 0 414 360 46 re f Q "
+        b"q 0.92 0.95 0.99 rg 28 286 304 96 re f Q "
+        b"q 76 0 0 46 42 316 cm /Hero Do Q "
+        b"q 0.16 0.20 0.28 RG 0.6 w 28 274 m 332 274 l 28 248 m 332 248 l "
+        b"28 222 m 332 222 l 28 196 m 332 196 l S Q "
+        b"q 0.05 0.28 0.65 RG 0.8 w 42 74 m 168 74 l S Q "
+        b"BT /F1 14 Tf 28 430 Td (Browser Article Print) Tj "
+        b"/F1 9 Tf 28 394 Td (Author: Example Newsroom) Tj "
+        b"/F1 10 Tf 132 350 Td (Hero image with CSS background panel) Tj "
+        b"/F1 8 Tf 42 258 Td (Section) Tj 94 0 Td (Metric) Tj 82 0 Td (Status) Tj "
+        b"-176 -26 Td (Traffic) Tj 94 0 Td (128k) Tj 82 0 Td (stable) Tj "
+        b"-176 -26 Td (Signup) Tj 94 0 Td (4.8%) Tj 82 0 Td (up) Tj "
+        b"/F1 8 Tf 42 160 Td (Main paragraph text wraps into print columns with link styling.) Tj "
+        b"0 -18 Td (CSS backgrounds and table rules stay visible in print mode.) Tj "
+        b"0 -68 Td (https://example.invalid/article) Tj ET"
+    )
+    hero = bytes(
+        [
+            56,
+            96,
+            150,
+            76,
+            124,
+            178,
+            104,
+            148,
+            194,
+            224,
+            232,
+            240,
+            232,
+            140,
+            72,
+            218,
+            122,
+            56,
+            188,
+            102,
+            50,
+            42,
+            74,
+            126,
+        ]
+    )
+    appearance = b"0.05 0.28 0.65 RG 1 w 0 1 m 126 1 l S"
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 360 460] "
+        "/Resources << /Font << /F1 4 0 R >> /XObject << /Hero 5 0 R >> >> "
+        f"/Contents {contents} 0 R /Annots [7 0 R] >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    font = pdf.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    image = pdf.add(
+        b"<< /Type /XObject /Subtype /Image /Width 4 /Height 2 "
+        b"/ColorSpace /DeviceRGB /BitsPerComponent 8 /Length "
+        + str(len(hero)).encode("ascii")
+        + b" >>\nstream\n"
+        + hero
+        + b"\nendstream"
+    )
+    appearance_object = pdf.add(
+        b"<< /Type /XObject /Subtype /Form /BBox [0 0 126 12] /Length "
+        + str(len(appearance)).encode("ascii")
+        + b" >>\nstream\n"
+        + appearance
+        + b"\nendstream"
+    )
+    annotation = pdf.add(
+        "<< /Type /Annot /Subtype /Link /Rect [42 68 168 82] "
+        "/Border [0 0 0] /A << /S /URI /URI (https://example.invalid/article) >> "
+        f"/AP << /N {appearance_object} 0 R >> >>"
+    )
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert font == 4
+    assert image == 5
+    assert annotation == 7
+    return pdf.render(catalog)
+
+
+def browser_firefox_dashboard_print_pdf() -> bytes:
+    ops: list[str] = [
+        "q 0.97 0.98 0.99 rg 0 0 420 300 re f Q",
+        "q 0.12 0.16 0.24 rg 0 256 420 44 re f Q",
+        "q 1 1 1 rg 24 168 112 62 re f 154 168 112 62 re f 284 168 112 62 re f Q",
+        "q 0.15 0.47 0.72 rg 24 168 112 16 re f 154 168 112 16 re f Q",
+        "q 0.85 0.36 0.14 rg 284 168 112 16 re f Q",
+        "q 1 1 1 rg 24 38 184 100 re f 230 38 166 100 re f Q",
+        "q 0.18 0.20 0.26 RG 0.6 w 24 38 184 100 re S 230 38 166 100 re S",
+    ]
+    for y in range(58, 139, 20):
+        ops.append(f"230 {y} m 396 {y} l S")
+    for x in range(258, 397, 34):
+        ops.append(f"{x} 38 m {x} 138 l S")
+    ops.extend(
+        [
+            "Q",
+            "q 0.18 0.47 0.72 rg 48 58 24 58 re f 88 58 24 42 re f 128 58 24 70 re f Q",
+            "q 0.86 0.36 0.14 RG 1.6 w 48 96 m 88 84 l 128 116 l 168 104 l S Q",
+            "BT /F1 12 Tf 24 274 Td (Dashboard Print) Tj /F1 8 Tf 24 214 Td (Revenue) Tj 130 0 Td (Orders) Tj 130 0 Td (Queue) Tj ET",
+            "BT /F1 16 Tf 36 192 Td (128k) Tj 130 0 Td (912) Tj 130 0 Td (17) Tj ET",
+            "BT /F1 8 Tf 34 146 Td (Chart) Tj 212 0 Td (Detail table) Tj ET",
+        ]
+    )
+    for row in range(4):
+        y = 122 - row * 20
+        ops.append(
+            f"BT /F1 6 Tf 236 {y} Td (Item {row + 1}) Tj 68 0 Td ({row * 17 + 40}) Tj "
+            f"44 0 Td (ok) Tj ET"
+        )
+    return page_pdf("[0 0 420 300]", " ".join(ops))
+
+
+def browser_webkit_receipt_form_print_pdf() -> bytes:
+    ops: list[str] = [
+        "q 0.98 0.98 0.94 rg 0 0 240 360 re f Q",
+        "q 1 1 1 rg 24 38 192 284 re f Q",
+        "q 0.18 0.18 0.18 RG 0.6 w 24 38 192 284 re S 24 278 m 216 278 l 24 116 m 216 116 l S Q",
+        "q 0.96 0.72 0.16 rg 188 294 14 14 re f Q",
+        "q 42 236 156 18 re W n BT /F1 8 Tf 42 242 Td (Very long clipped product title from print CSS overflow) Tj ET Q",
+        "q 0 0 0 rg 52 58 1 24 re f 58 58 3 24 re f 66 58 1 24 re f 74 58 4 24 re f 84 58 1 24 re f 92 58 3 24 re f Q",
+        "q 0 0 0 RG 0.8 w 42 152 10 10 re S 46 156 m 52 164 l S 52 164 m 60 146 l S Q",
+        "BT /F1 10 Tf 42 302 Td (Web Checkout Receipt) Tj /F1 7 Tf 42 264 Td (Item) Tj 110 0 Td (Amount) Tj ET",
+        "BT /F1 8 Tf 42 218 Td (Coffee beans) Tj 110 0 Td (12.00) Tj 0 -20 Td (Shipping) Tj 110 0 Td (4.50) Tj ET",
+        "BT /F1 9 Tf 42 96 Td (Total 16.50) Tj /F1 7 Tf 42 138 Td (Subscribe to email updates) Tj 42 42 Td (Order 2026-0146) Tj ET",
+    ]
+    return page_pdf("[0 0 240 360]", " ".join(ops))
+
+
 def office_report_header_footer_link_pdf() -> bytes:
     pdf = Pdf()
     content = (
@@ -5078,6 +5215,9 @@ def main() -> None:
     write("account-statement-ledger.pdf", account_statement_ledger_pdf())
     write("thermal-receipt.pdf", thermal_receipt_pdf())
     write("business-form-stamp-signature.pdf", business_form_stamp_signature_pdf())
+    write("browser-chromium-article-print.pdf", browser_chromium_article_print_pdf())
+    write("browser-firefox-dashboard-print.pdf", browser_firefox_dashboard_print_pdf())
+    write("browser-webkit-receipt-form-print.pdf", browser_webkit_receipt_form_print_pdf())
     write("office-report-header-footer-link.pdf", office_report_header_footer_link_pdf())
     write("office-spreadsheet-chart-comments.pdf", office_spreadsheet_chart_comments_pdf())
     write("office-presentation-handout.pdf", office_presentation_handout_pdf())
