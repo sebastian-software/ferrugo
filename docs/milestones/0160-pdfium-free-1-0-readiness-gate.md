@@ -1,6 +1,6 @@
 # 0160: PDFium-Free 1.0 Readiness Gate
 
-Status: todo
+Status: done
 Phase: 29
 Size: medium
 Depends on: 0159
@@ -48,4 +48,16 @@ large share of typical documents with explicit unsupported boundaries.
 
 ## Completion Notes
 
-Empty until done.
+- Added `docs/reports/pdfium-free-1-0-readiness-2026-06-26.md` with the
+  PDFium-free 1.0 release decision.
+- Decision: defer a broad PDFium-free 1.0 GA / visual replacement claim, but
+  approve the PDFium-free supported runtime slice for `browser-print`,
+  `office-export`, and `form`.
+- Native core gate renders 87/87 fixtures with 0 fallbacks and 0 errors.
+- Full corpus renders 177/186 natively; the remaining 8 fallback rows stay
+  explicit in typed unsupported buckets, plus 1 encrypted fixture error.
+- Core visual PDFium oracle still reports 77 blockers across
+  `rendering-core`, `text-fonts`, `annotations-forms`, `page-geometry`, and
+  `vector-graphics`, so PDFium remains maintainer oracle tooling.
+- Package, plugin-free distribution, PDFium quarantine, native-only
+  check/test/clippy, benchmark, batch memory, and fuzz smoke gates passed.
