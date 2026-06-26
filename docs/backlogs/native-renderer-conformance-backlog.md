@@ -129,6 +129,26 @@ Use `financial-annual-report-page.pdf`,
 reductions for decimal text alignment, dense table-rule fidelity, chart vector
 geometry, and report page-geometry parity.
 
+## Academic Publisher Corpus Delta
+
+Milestone 0150 added a focused academic-publisher manifest with three new
+synthetic fixtures for publisher article first pages, equation/symbol pages,
+and references/appendix pages. The supported gate is green at 9/9 rendered,
+0 fallbacks, and 0 errors; the benchmark reports 0 budget failures.
+
+The focused academic visual oracle reports 1 accepted drift row and 8 blockers:
+
+| Subsystem | Total | Accepted drift | Blockers | Native errors |
+| --- | ---: | ---: | ---: | ---: |
+| `page-geometry` | 2 | 0 | 2 | 0 |
+| `rendering-core` | 5 | 0 | 5 | 0 |
+| `text-fonts` | 2 | 1 | 1 | 0 |
+
+Use `academic-publisher-first-page.pdf`,
+`academic-equation-symbols-page.pdf`, and
+`academic-references-appendix.pdf` as reductions for multi-column layout,
+small-text metrics, equation/symbol placement, and figure/vector fidelity.
+
 ## Typed Unsupported Boundaries
 
 | Feature bucket | Fixtures | Current decision |

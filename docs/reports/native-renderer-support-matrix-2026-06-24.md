@@ -123,7 +123,7 @@ Core supported runtime families remain native-only:
 | --- | ---: | ---: | ---: | ---: |
 | browser-print | 11 | 11 | 0 | 0 |
 | form | 18 | 18 | 0 | 0 |
-| office-export | 50 | 50 | 0 | 0 |
+| office-export | 53 | 53 | 0 | 0 |
 
 Visual conformance still has 91 blockers and 8 native unsupported rows in the
 0143 full-corpus baseline. The 0145 office-only refresh adds three
@@ -136,6 +136,9 @@ The 0148 government/form refresh adds permit, certificate, and tax-notice
 reductions while keeping the supported form-family gate green.
 The 0149 financial-document refresh adds annual-report, cashflow, and
 chart-summary reductions while keeping the office-export supported gate green.
+The 0150 academic-publisher refresh adds publisher article, equation/symbol,
+and references/appendix reductions while keeping the office-export supported
+gate green.
 
 | Subsystem tag | Blockers | Native errors | Primary owner |
 | --- | ---: | ---: | --- |
