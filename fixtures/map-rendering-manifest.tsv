@@ -1,0 +1,9 @@
+path	family	source	license	page_count	features	notes
+fixtures/generated/map-marker-clusters.pdf	map	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	map,markers,clusters,dash,small-text,expected:native	Existing map-style fixture with regions, dashed routes, clustered markers, and labels.
+fixtures/generated/map-raster-tile-routes.pdf	raster-tile	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	map,raster-tile,image-xobject,route,labels,grid,expected:native	Generated map fixture with repeated raster tile image, grid, vector route, markers, and labels.
+fixtures/generated/map-transparent-zoning-overlay.pdf	zoning-overlay	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	map,transparency,zoning,grid,route,labels,expected:native	Generated map fixture with transparent zoning overlays over grid and route vectors.
+fixtures/generated/map-optional-layer-policy.pdf	optional-layer	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	map,optional-content,ocg,layer-off,expected:native	Generated map fixture with simple OCG zoning layer off by default.
+fixtures/generated/dashboard-heatmap-overlay.pdf	zoning-overlay	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	dashboard,heatmap,transparency,grid,small-text,expected:native	Existing heatmap overlay baseline reused for map-like zoning transparency.
+fixtures/generated/clipped-paths.pdf	vector-layer	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	map,clipping,vector,expected:native	Existing clipping-path baseline used as a map-shaped vector layer proxy.
+fixtures/generated/tiling-pattern.pdf	pattern-layer	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	pattern,tiling,map-layer,expected:native	Existing tiling pattern baseline for repeated map fills.
+fixtures/generated/optional-content-ocmd.pdf	unsupported-optional-policy	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	map,optional-content,ocmd,expected:pdfium-fallback	Existing OCMD membership-policy boundary; native reports graphics.optional-content.

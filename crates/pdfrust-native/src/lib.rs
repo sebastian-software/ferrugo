@@ -6348,6 +6348,29 @@ mod tests {
                 7_000,
             ),
             (
+                include_bytes!("../../../fixtures/generated/map-raster-tile-routes.pdf") as &[u8],
+                420,
+                300,
+                "map raster tile routes",
+                30_000,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/map-transparent-zoning-overlay.pdf")
+                    as &[u8],
+                380,
+                260,
+                "map transparent zoning overlay",
+                18_000,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/map-optional-layer-policy.pdf")
+                    as &[u8],
+                360,
+                240,
+                "map optional layer policy",
+                8_000,
+            ),
+            (
                 include_bytes!("../../../fixtures/generated/dashboard-heatmap-overlay.pdf")
                     as &[u8],
                 340,

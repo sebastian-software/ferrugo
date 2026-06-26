@@ -4894,6 +4894,127 @@ def map_marker_clusters_pdf() -> bytes:
     return page_pdf("[0 0 360 240]", " ".join(ops))
 
 
+def map_raster_tile_routes_pdf() -> bytes:
+    pdf = Pdf()
+    tile = bytes(
+        [
+            224,
+            238,
+            216,
+            196,
+            224,
+            238,
+            214,
+            226,
+            206,
+            236,
+            232,
+            194,
+        ]
+        * 4
+    )
+    content = (
+        b"q 0.94 0.97 0.92 rg 0 0 420 300 re f Q "
+        b"q 180 0 0 120 28 58 cm /Tile Do Q "
+        b"q 180 0 0 120 208 58 cm /Tile Do Q "
+        b"q 0.40 0.55 0.42 RG 0.7 w [6 4] 0 d 32 56 m 388 56 l 32 116 m 388 116 l "
+        b"32 176 m 388 176 l 32 236 m 388 236 l 64 42 m 64 258 l 144 42 m 144 258 l "
+        b"224 42 m 224 258 l 304 42 m 304 258 l 384 42 m 384 258 l S Q "
+        b"q 0.12 0.28 0.52 RG 2.2 w 42 74 m 118 126 l 196 112 l 278 184 l 360 206 l S Q "
+        b"q 0.86 0.22 0.10 rg 96 122 9 9 re f 190 108 9 9 re f 272 180 9 9 re f 354 202 9 9 re f Q "
+        b"BT /F1 10 Tf 34 270 Td (Raster tile route map) Tj "
+        b"/F1 6 Tf 96 136 Td (A1) Tj 190 122 Td (B2) Tj 272 194 Td (C3) Tj 330 -168 Td (Legend) Tj ET"
+    )
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 420 300] "
+        "/Resources << /Font << /F1 5 0 R >> /XObject << /Tile 4 0 R >> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    image_object = pdf.add(
+        b"<< /Type /XObject /Subtype /Image /Width 4 /Height 4 "
+        b"/ColorSpace /DeviceRGB /BitsPerComponent 8 /Length "
+        + str(len(tile)).encode("ascii")
+        + b" >>\nstream\n"
+        + tile
+        + b"\nendstream"
+    )
+    font = pdf.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert image_object == 4
+    assert font == 5
+    return pdf.render(catalog)
+
+
+def map_transparent_zoning_overlay_pdf() -> bytes:
+    pdf = Pdf()
+    content = (
+        b"q 0.91 0.95 0.90 rg 0 0 380 260 re f Q "
+        b"q 0.72 0.82 0.90 rg 0 96 380 42 re f Q "
+        b"q 0.36 0.48 0.34 RG 0.7 w 28 46 m 348 46 l 348 218 l 28 218 l h S "
+        b"60 46 m 60 218 l S 112 46 m 112 218 l S 164 46 m 164 218 l S "
+        b"216 46 m 216 218 l S 268 46 m 268 218 l S 320 46 m 320 218 l S Q "
+        b"q /Zone gs 0.90 0.20 0.10 rg 54 74 118 92 re f Q "
+        b"q /Zone gs 0.10 0.42 0.82 rg 188 84 118 106 re f Q "
+        b"q 0.10 0.20 0.32 RG 1.2 w [7 4] 0 d 38 68 m 328 206 l S Q "
+        b"BT /F1 10 Tf 30 232 Td (Transparent zoning overlay) Tj "
+        b"/F1 6 Tf 72 172 Td (Zone A) Tj 214 184 Td (Zone B) Tj 42 58 Td (Route + grid remain visible) Tj ET"
+    )
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 380 260] "
+        "/Resources << /Font << /F1 4 0 R >> /ExtGState << /Zone << /ca 0.32 >> >> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    font = pdf.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert font == 4
+    return pdf.render(catalog)
+
+
+def map_optional_layer_policy_pdf() -> bytes:
+    pdf = Pdf()
+    content = (
+        b"q 0.92 0.96 0.91 rg 0 0 360 240 re f Q "
+        b"q 0.68 0.80 0.92 rg 0 88 360 46 re f Q "
+        b"q 0.28 0.42 0.28 RG 0.7 w 28 38 m 332 38 l 332 208 l 28 208 l h S "
+        b"48 68 m 310 190 l 72 188 m 304 62 l S Q "
+        b"/OC /Zoning BDC q 0.95 0.25 0.10 rg 96 76 82 62 re f 204 128 72 52 re f Q EMC "
+        b"BT /F1 10 Tf 34 218 Td (Optional zoning layer map) Tj "
+        b"/F1 6 Tf 56 54 Td (Layer OFF by default; base map remains deterministic.) Tj ET"
+    )
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 360 240] "
+        "/Resources << /Font << /F1 5 0 R >> /Properties << /Zoning 4 0 R >> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    layer = pdf.add("<< /Type /OCG /Name (Zoning Overlay) >>")
+    font = pdf.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    catalog = pdf.add(
+        f"<< /Type /Catalog /Pages {pages} 0 R "
+        f"/OCProperties << /OCGs [{layer} 0 R] /D << /BaseState /ON /OFF [{layer} 0 R] >> >> >>"
+    )
+    assert layer == 4
+    assert font == 5
+    return pdf.render(catalog)
+
+
 def dashboard_heatmap_overlay_pdf() -> bytes:
     pdf = Pdf()
     ops: list[str] = [
@@ -5713,6 +5834,9 @@ def main() -> None:
     write("chart-combo-legend.pdf", chart_combo_legend_pdf())
     write("dashboard-kpi-panels.pdf", dashboard_kpi_panels_pdf())
     write("map-marker-clusters.pdf", map_marker_clusters_pdf())
+    write("map-raster-tile-routes.pdf", map_raster_tile_routes_pdf())
+    write("map-transparent-zoning-overlay.pdf", map_transparent_zoning_overlay_pdf())
+    write("map-optional-layer-policy.pdf", map_optional_layer_policy_pdf())
     write("dashboard-heatmap-overlay.pdf", dashboard_heatmap_overlay_pdf())
     write("scientific-two-column-paper.pdf", scientific_two_column_paper_pdf())
     write("scientific-equation-figure.pdf", scientific_equation_figure_pdf())
