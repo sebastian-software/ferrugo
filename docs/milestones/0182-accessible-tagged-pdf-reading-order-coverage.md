@@ -60,8 +60,11 @@ Native slice committed toward 0182 on 2026-06-28.
 - Native gates are green: 7 tagged fixtures render natively with 0 fallback,
   0 errors, and 0 benchmark budget failures.
 - PDFium visual-diff was attempted, but the local `libpdfium.dylib` oracle was
-  not available, so 0182 remains in progress until that maintainer comparison
-  can be rerun.
+  not available.
+- Added PDFium-free `visual-diff-poppler` maintainer tooling. The tagged
+  Poppler oracle run completed with 0 native errors and 0 reference errors, but
+  all 7 tagged fixtures remain strict visual blockers. 0182 remains in progress
+  for fidelity work, not for oracle availability.
 
 ## Completion Notes
 

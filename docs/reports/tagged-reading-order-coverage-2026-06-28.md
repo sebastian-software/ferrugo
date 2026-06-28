@@ -124,7 +124,49 @@ cargo run -p pdfrust-cli --features pdfium -- visual-diff fixtures/generated \
   --output target/tagged-0182-visual-diff.json
 ```
 
-This keeps 0182 in progress until a maintainer visual-oracle run is available.
+That initial PDFium attempt kept 0182 in progress until another maintainer
+visual-oracle path was available.
+
+PDFium-free maintainer oracle tooling was added with `visual-diff-poppler` and
+run against the same tagged fixture slice. Poppler rendered all 7 fixtures with
+0 reference errors, and the native renderer produced 0 render errors. The strict
+threshold report still classifies all 7 fixtures as blockers, so 0182 remains in
+progress for visual-fidelity work rather than oracle availability.
+
+Poppler command:
+
+```sh
+cargo run -p pdfrust-cli --no-default-features -- visual-diff-poppler fixtures/generated \
+  --manifest fixtures/tagged-pdf-visual-manifest.tsv \
+  --include-family tagged-report \
+  --include-family tagged-form \
+  --include-family tagged-office \
+  --include-family tagged-invoice \
+  --include-family reading-order-warning \
+  --include-family structure-heavy \
+  --include-family metadata-baseline \
+  --max-edge 160 \
+  --timeout 20 \
+  --max-mae 2.0 \
+  --max-p95 16 \
+  --max-changed-ratio 0.05 \
+  --output target/tagged-0182-poppler-visual-diff.json
+```
+
+Result: 7 total, 0 exact, 0 accepted drift, 7 blockers, 0 native errors,
+0 reference errors, 0 both errors.
+
+Blocker split:
+
+| Fixture | Status | Evidence |
+| --- | --- | --- |
+| `tagged-accessibility-metadata.pdf` | blocker | MAE 1.228, p95 1, changed ratio 0.161765, max delta 171. |
+| `tagged-form-visual-integrity.pdf` | blocker | MAE 7.568, p95 89, changed ratio 0.090129, max delta 255. |
+| `tagged-invoice-reading-order.pdf` | blocker | MAE 14.934, p95 101, changed ratio 0.137861, max delta 255. |
+| `tagged-office-alt-text.pdf` | blocker | MAE 9.645, p95 96, changed ratio 0.096963, max delta 255. |
+| `tagged-reading-order-missing-page-context.pdf` | blocker | Dimension mismatch: native 160x87, Poppler 160x88. |
+| `tagged-report-visual-integrity.pdf` | blocker | MAE 12.468, p95 100, changed ratio 0.131412, max delta 252. |
+| `tagged-structure-heavy-report.pdf` | blocker | Dimension mismatch: native 160x133, Poppler 160x134. |
 
 ## Validation
 
@@ -140,6 +182,7 @@ cargo test -p pdfrust-cli corpus_metadata_json_should_include_manifest_and_page_
 cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/tagged-pdf-visual-manifest.tsv --include-family tagged-report --include-family tagged-form --include-family tagged-office --include-family tagged-invoice --include-family reading-order-warning --include-family structure-heavy --include-family metadata-baseline --fail-on-fallback --max-edge 160 --output target/tagged-0182-supported-gate.json
 cargo run -p pdfrust-cli --no-default-features -- extract-corpus-metadata fixtures/generated --manifest fixtures/tagged-pdf-visual-manifest.tsv --output target/tagged-0182-metadata.json
 cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/tagged-pdf-visual-manifest.tsv --include-family tagged-report --include-family tagged-form --include-family tagged-office --include-family tagged-invoice --include-family reading-order-warning --include-family structure-heavy --include-family metadata-baseline --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/tagged-0182-benchmark.json
+cargo run -p pdfrust-cli --no-default-features -- visual-diff-poppler fixtures/generated --manifest fixtures/tagged-pdf-visual-manifest.tsv --include-family tagged-report --include-family tagged-form --include-family tagged-office --include-family tagged-invoice --include-family reading-order-warning --include-family structure-heavy --include-family metadata-baseline --max-edge 160 --timeout 20 --max-mae 2.0 --max-p95 16 --max-changed-ratio 0.05 --output target/tagged-0182-poppler-visual-diff.json
 wc -c fixtures/generated/tagged-invoice-reading-order.pdf fixtures/generated/tagged-reading-order-missing-page-context.pdf
 find fixtures/generated -name '*.pdf' -size +512k -print
 ```

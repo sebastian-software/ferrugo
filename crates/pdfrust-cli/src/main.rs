@@ -7,9 +7,7 @@ use std::fmt;
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
-#[cfg(feature = "pdfium")]
-use std::process::{Child, Stdio};
-use std::process::{Command, ExitCode};
+use std::process::{Child, Command, ExitCode, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -26,9 +24,7 @@ use pdfrust_thumbnail::{
     ThumbnailOptions, DEFAULT_MAX_EDGE, DEFAULT_PAGE_INDEX, DEFAULT_TIMEOUT,
 };
 
-#[cfg(feature = "pdfium")]
 const WORKER_POLL_INTERVAL: Duration = Duration::from_millis(10);
-#[cfg(any(feature = "pdfium", test))]
 const LOW_AMPLITUDE_VISUAL_DRIFT_MAX_DELTA: u8 = 8;
 #[cfg(not(feature = "pdfium"))]
 const PDFIUM_FEATURE_MESSAGE: &str =
@@ -71,6 +67,7 @@ fn run(args: Vec<OsString>) -> Result<(), CliError> {
         Some("benchmark-repeat-native") => benchmark_repeat_native_command(&args[1..]),
         Some("benchmark-pdfium") => benchmark_pdfium_command(&args[1..]),
         Some("visual-diff") => visual_diff_command(&args[1..]),
+        Some("visual-diff-poppler") => visual_diff_poppler_command(&args[1..]),
         Some("--version" | "-V") => {
             println!("pdfrust-cli {}", env!("CARGO_PKG_VERSION"));
             Ok(())
@@ -676,6 +673,44 @@ fn visual_diff_command_enabled(args: &[OsString]) -> Result<(), CliError> {
         config.thresholds,
     );
     let json = visual_diff_report_json(&report);
+
+    if let Some(output) = config.output {
+        fs::write(&output, &json).map_err(|source| CliError::Io {
+            path: output,
+            source,
+        })?;
+    } else {
+        println!("{json}");
+    }
+
+    Ok(())
+}
+
+fn visual_diff_poppler_command(args: &[OsString]) -> Result<(), CliError> {
+    let config = VisualDiffConfig::parse(args)?;
+    let options = ThumbnailOptions {
+        page_index: config.page_index,
+        max_edge: config.max_edge,
+        background: config.background,
+        output_format: pdfrust_thumbnail::OutputFormat::Rgba,
+        timeout: config.timeout,
+    };
+    let fixtures = pdf_inputs(&config.input)?;
+    let manifest = match &config.manifest {
+        Some(path) => Some(read_corpus_manifest(path)?),
+        None => None,
+    };
+    let fixtures =
+        filter_fixtures_by_family(&fixtures, manifest.as_ref(), &config.include_families)?;
+    let native = NativeBackend::new();
+    let report = poppler_visual_diff_report(
+        &native,
+        &fixtures,
+        &options,
+        manifest.as_ref(),
+        config.thresholds,
+    );
+    let json = poppler_visual_diff_report_json(&report);
 
     if let Some(output) = config.output {
         fs::write(&output, &json).map_err(|source| CliError::Io {
@@ -1539,7 +1574,6 @@ struct RepeatBenchmarkConfig {
     native_profile: NativeProfile,
 }
 
-#[cfg(feature = "pdfium")]
 #[derive(Debug, Clone, PartialEq)]
 struct VisualDiffConfig {
     input: PathBuf,
@@ -1553,7 +1587,6 @@ struct VisualDiffConfig {
     thresholds: VisualDiffThresholds,
 }
 
-#[cfg(any(feature = "pdfium", test))]
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct VisualDiffThresholds {
     max_mean_abs_error: f64,
@@ -1561,7 +1594,6 @@ struct VisualDiffThresholds {
     max_changed_ratio: f64,
 }
 
-#[cfg(any(feature = "pdfium", test))]
 impl Default for VisualDiffThresholds {
     fn default() -> Self {
         Self {
@@ -1951,7 +1983,6 @@ impl RepeatBenchmarkConfig {
     }
 }
 
-#[cfg(feature = "pdfium")]
 impl VisualDiffConfig {
     fn parse(args: &[OsString]) -> Result<Self, CliError> {
         let mut input = None;
@@ -2695,7 +2726,6 @@ struct VisualDiffRecord {
     pdfium_error: Option<VisualDiffError>,
 }
 
-#[cfg(any(feature = "pdfium", test))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum VisualDiffStatus {
     Exact,
@@ -2723,7 +2753,6 @@ impl VisualDiffStatus {
     }
 }
 
-#[cfg(any(feature = "pdfium", test))]
 #[derive(Debug, Clone, PartialEq)]
 struct VisualDiffMetrics {
     width: u32,
@@ -2737,11 +2766,86 @@ struct VisualDiffMetrics {
     pdfium_nonwhite_pixels: usize,
 }
 
-#[cfg(feature = "pdfium")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct VisualDiffError {
     class: &'static str,
     message: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct PopplerVisualDiffReport {
+    platform: PlatformMetadata,
+    thresholds: VisualDiffThresholds,
+    total: usize,
+    exact: usize,
+    accepted_drift: usize,
+    blockers: usize,
+    native_errors: usize,
+    reference_errors: usize,
+    both_errors: usize,
+    families: BTreeMap<String, PopplerFamilyVisualDiffSummary>,
+    subsystems: BTreeMap<String, PopplerFamilyVisualDiffSummary>,
+    fixtures: Vec<PopplerVisualDiffRecord>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq)]
+struct PopplerFamilyVisualDiffSummary {
+    total: usize,
+    exact: usize,
+    accepted_drift: usize,
+    blockers: usize,
+    native_errors: usize,
+    reference_errors: usize,
+    both_errors: usize,
+}
+
+impl PopplerFamilyVisualDiffSummary {
+    fn record(&mut self, record: &PopplerVisualDiffRecord) {
+        self.total += 1;
+        match record.status {
+            PopplerVisualDiffStatus::Exact => self.exact += 1,
+            PopplerVisualDiffStatus::AcceptedDrift => self.accepted_drift += 1,
+            PopplerVisualDiffStatus::Blocker => self.blockers += 1,
+            PopplerVisualDiffStatus::NativeError => self.native_errors += 1,
+            PopplerVisualDiffStatus::ReferenceError => self.reference_errors += 1,
+            PopplerVisualDiffStatus::BothError => self.both_errors += 1,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct PopplerVisualDiffRecord {
+    path: String,
+    family: String,
+    subsystem: &'static str,
+    status: PopplerVisualDiffStatus,
+    metrics: Option<VisualDiffMetrics>,
+    comparison_error: Option<VisualDiffError>,
+    native_error: Option<VisualDiffError>,
+    reference_error: Option<VisualDiffError>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PopplerVisualDiffStatus {
+    Exact,
+    AcceptedDrift,
+    Blocker,
+    NativeError,
+    ReferenceError,
+    BothError,
+}
+
+impl PopplerVisualDiffStatus {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Exact => "exact",
+            Self::AcceptedDrift => "accepted_drift",
+            Self::Blocker => "blocker",
+            Self::NativeError => "native_error",
+            Self::ReferenceError => "reference_error",
+            Self::BothError => "both_error",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -4138,7 +4242,369 @@ fn visual_diff_fixture<N: ThumbnailBackend, P: ThumbnailBackend>(
     }
 }
 
-#[cfg(any(feature = "pdfium", test))]
+fn poppler_visual_diff_report<N: ThumbnailBackend>(
+    native: &N,
+    paths: &[PathBuf],
+    options: &ThumbnailOptions,
+    manifest: Option<&CorpusManifest>,
+    thresholds: VisualDiffThresholds,
+) -> PopplerVisualDiffReport {
+    let mut families = BTreeMap::new();
+    let mut fixtures = Vec::with_capacity(paths.len());
+    let mut exact = 0;
+    let mut accepted_drift = 0;
+    let mut blockers = 0;
+    let mut native_errors = 0;
+    let mut reference_errors = 0;
+    let mut both_errors = 0;
+    let mut subsystems = BTreeMap::new();
+
+    for path in paths {
+        let path_key = normalize_manifest_path(path);
+        let family = manifest
+            .and_then(|manifest| manifest.family_for_path(path))
+            .unwrap_or("unclassified")
+            .to_string();
+        let record =
+            poppler_visual_diff_fixture(native, path, options, path_key, family, thresholds);
+        match record.status {
+            PopplerVisualDiffStatus::Exact => exact += 1,
+            PopplerVisualDiffStatus::AcceptedDrift => accepted_drift += 1,
+            PopplerVisualDiffStatus::Blocker => blockers += 1,
+            PopplerVisualDiffStatus::NativeError => native_errors += 1,
+            PopplerVisualDiffStatus::ReferenceError => reference_errors += 1,
+            PopplerVisualDiffStatus::BothError => both_errors += 1,
+        }
+        families
+            .entry(record.family.clone())
+            .or_insert_with(PopplerFamilyVisualDiffSummary::default)
+            .record(&record);
+        subsystems
+            .entry(record.subsystem.to_string())
+            .or_insert_with(PopplerFamilyVisualDiffSummary::default)
+            .record(&record);
+        fixtures.push(record);
+    }
+
+    PopplerVisualDiffReport {
+        platform: PlatformMetadata::current(),
+        thresholds,
+        total: paths.len(),
+        exact,
+        accepted_drift,
+        blockers,
+        native_errors,
+        reference_errors,
+        both_errors,
+        families,
+        subsystems,
+        fixtures,
+    }
+}
+
+fn poppler_visual_diff_fixture<N: ThumbnailBackend>(
+    native: &N,
+    path: &Path,
+    options: &ThumbnailOptions,
+    path_key: String,
+    family: String,
+    thresholds: VisualDiffThresholds,
+) -> PopplerVisualDiffRecord {
+    let native_result = native.render(PdfSource::from_path(path), options);
+    let reference_result = render_poppler_ppm(path, options);
+    let subsystem = visual_diff_subsystem(path_key.as_str(), family.as_str());
+
+    match (native_result, reference_result) {
+        (Ok(native), Ok(reference)) => {
+            let metrics = visual_diff_metrics(&native, &reference);
+            let comparison_error = metrics.is_none().then(|| VisualDiffError {
+                class: "dimension_mismatch",
+                message: format!(
+                    "native rendered {}x{} but poppler rendered {}x{}",
+                    native.width, native.height, reference.width, reference.height
+                ),
+            });
+            let status = metrics
+                .as_ref()
+                .map(|metrics| classify_visual_diff(metrics, thresholds))
+                .map(poppler_status_from_visual_status)
+                .unwrap_or(PopplerVisualDiffStatus::Blocker);
+            PopplerVisualDiffRecord {
+                path: path_key,
+                family,
+                subsystem,
+                status,
+                metrics,
+                comparison_error,
+                native_error: None,
+                reference_error: None,
+            }
+        }
+        (Err(native), Ok(_)) => PopplerVisualDiffRecord {
+            path: path_key,
+            family,
+            subsystem,
+            status: PopplerVisualDiffStatus::NativeError,
+            metrics: None,
+            comparison_error: None,
+            native_error: Some(VisualDiffError {
+                class: native.class().as_str(),
+                message: native.to_string(),
+            }),
+            reference_error: None,
+        },
+        (Ok(_), Err(reference)) => PopplerVisualDiffRecord {
+            path: path_key,
+            family,
+            subsystem,
+            status: PopplerVisualDiffStatus::ReferenceError,
+            metrics: None,
+            comparison_error: None,
+            native_error: None,
+            reference_error: Some(reference_visual_error(reference)),
+        },
+        (Err(native), Err(reference)) => PopplerVisualDiffRecord {
+            path: path_key,
+            family,
+            subsystem,
+            status: PopplerVisualDiffStatus::BothError,
+            metrics: None,
+            comparison_error: None,
+            native_error: Some(VisualDiffError {
+                class: native.class().as_str(),
+                message: native.to_string(),
+            }),
+            reference_error: Some(reference_visual_error(reference)),
+        },
+    }
+}
+
+fn poppler_status_from_visual_status(status: VisualDiffStatus) -> PopplerVisualDiffStatus {
+    match status {
+        VisualDiffStatus::Exact => PopplerVisualDiffStatus::Exact,
+        VisualDiffStatus::AcceptedDrift => PopplerVisualDiffStatus::AcceptedDrift,
+        VisualDiffStatus::Blocker => PopplerVisualDiffStatus::Blocker,
+        #[cfg(feature = "pdfium")]
+        VisualDiffStatus::NativeError => PopplerVisualDiffStatus::NativeError,
+        #[cfg(feature = "pdfium")]
+        VisualDiffStatus::PdfiumError => PopplerVisualDiffStatus::ReferenceError,
+        #[cfg(feature = "pdfium")]
+        VisualDiffStatus::BothError => PopplerVisualDiffStatus::BothError,
+    }
+}
+
+fn reference_visual_error(error: CliError) -> VisualDiffError {
+    let class = match error {
+        CliError::Render { class, .. } => class,
+        CliError::Process(_) => "process",
+        CliError::Io { .. } | CliError::ReadFile { .. } | CliError::ReadDir { .. } => "io",
+        CliError::Usage(_) => "usage",
+        CliError::Backend(_) => "backend",
+        CliError::Compare(_) => "compare",
+        CliError::Benchmark(_) => "benchmark",
+        CliError::Encode(_) => "decode",
+    };
+    VisualDiffError {
+        class,
+        message: error.to_string(),
+    }
+}
+
+fn render_poppler_ppm(
+    path: &Path,
+    options: &ThumbnailOptions,
+) -> Result<pdfrust_thumbnail::Thumbnail, CliError> {
+    let command = env::var_os("PDFRUST_POPPLER_PDFTOPPM")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("pdftoppm"));
+    let temp_dir = env::temp_dir().join(format!(
+        "pdfrust-poppler-{}-{}",
+        std::process::id(),
+        document_identity_hash(path)?
+    ));
+    let cache_dir = env::temp_dir().join(format!("pdfrust-poppler-cache-{}", std::process::id()));
+    fs::create_dir_all(&temp_dir).map_err(|source| CliError::Io {
+        path: temp_dir.clone(),
+        source,
+    })?;
+    fs::create_dir_all(&cache_dir).map_err(|source| CliError::Io {
+        path: cache_dir.clone(),
+        source,
+    })?;
+    let output_prefix = temp_dir.join("page");
+    let output_path = output_prefix.with_extension("ppm");
+    let page_number = options.page_index.saturating_add(1).to_string();
+    let max_edge = options.max_edge.to_string();
+    let mut poppler = Command::new(&command);
+    poppler
+        .arg("-q")
+        .arg("-f")
+        .arg(page_number.as_str())
+        .arg("-l")
+        .arg(page_number.as_str())
+        .arg("-singlefile")
+        .arg("-scale-to")
+        .arg(max_edge.as_str())
+        .arg(path)
+        .arg(&output_prefix)
+        .env("HOME", &cache_dir)
+        .env("XDG_CACHE_HOME", &cache_dir)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    if let Some(fontconfig_file) = poppler_fontconfig_file(&command) {
+        poppler.env("FONTCONFIG_FILE", fontconfig_file);
+    }
+    let mut child = poppler.spawn().map_err(|source| CliError::Io {
+        path: command.clone(),
+        source,
+    })?;
+    let status = wait_for_child(&mut child, options.timeout)?;
+    if !status.success() {
+        let _ = fs::remove_file(&output_path);
+        let _ = fs::remove_dir(&temp_dir);
+        return Err(CliError::Process(format!(
+            "`{}` exited with status {status}",
+            command.display()
+        )));
+    }
+    let ppm = fs::read(&output_path).map_err(|source| CliError::ReadFile {
+        path: output_path.clone(),
+        source,
+    })?;
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_dir(&temp_dir);
+    decode_ppm_rgb_as_rgba(&ppm)
+}
+
+fn wait_for_child(
+    child: &mut Child,
+    timeout: Duration,
+) -> Result<std::process::ExitStatus, CliError> {
+    let started = Instant::now();
+    loop {
+        if let Some(status) = child.try_wait().map_err(|source| {
+            CliError::Process(format!("failed to poll child process: {source}"))
+        })? {
+            return Ok(status);
+        }
+        if started.elapsed() >= timeout {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(CliError::Render {
+                class: "timeout",
+                message: format!("pdftoppm exceeded {}s timeout", timeout.as_secs()),
+            });
+        }
+        thread::sleep(WORKER_POLL_INTERVAL);
+    }
+}
+
+fn poppler_fontconfig_file(command: &Path) -> Option<PathBuf> {
+    if let Some(path) = env::var_os("PDFRUST_POPPLER_FONTCONFIG_FILE").map(PathBuf::from) {
+        return path.is_file().then_some(path);
+    }
+    let executable = resolve_command_path(command)?;
+    let dependencies_dir = executable.parent()?.parent()?;
+    let fontconfig = dependencies_dir
+        .join("native")
+        .join("poppler")
+        .join("poppler")
+        .join("etc")
+        .join("fonts")
+        .join("fonts.conf");
+    fontconfig.is_file().then_some(fontconfig)
+}
+
+fn resolve_command_path(command: &Path) -> Option<PathBuf> {
+    if command.components().count() > 1 {
+        return command.is_file().then(|| command.to_path_buf());
+    }
+    let paths = env::var_os("PATH")?;
+    env::split_paths(&paths)
+        .map(|path| path.join(command))
+        .find(|path| path.is_file())
+}
+
+fn decode_ppm_rgb_as_rgba(bytes: &[u8]) -> Result<pdfrust_thumbnail::Thumbnail, CliError> {
+    let mut index = 0;
+    let magic = next_ppm_token(bytes, &mut index)
+        .ok_or_else(|| CliError::Encode("PPM is missing magic header".to_string()))?;
+    if magic != b"P6" {
+        return Err(CliError::Encode(
+            "PPM decoder only supports binary P6 data".to_string(),
+        ));
+    }
+    let width = parse_ppm_u32(bytes, &mut index, "width")?;
+    let height = parse_ppm_u32(bytes, &mut index, "height")?;
+    let max_value = parse_ppm_u32(bytes, &mut index, "max value")?;
+    if max_value != 255 {
+        return Err(CliError::Encode(
+            "PPM decoder only supports 8-bit RGB data".to_string(),
+        ));
+    }
+    if index >= bytes.len() || !bytes[index].is_ascii_whitespace() {
+        return Err(CliError::Encode(
+            "PPM header must be followed by raster data".to_string(),
+        ));
+    }
+    index += 1;
+
+    let pixels = (width as usize)
+        .checked_mul(height as usize)
+        .ok_or_else(|| CliError::Encode("PPM dimensions overflow".to_string()))?;
+    let expected_rgb_bytes = pixels
+        .checked_mul(3)
+        .ok_or_else(|| CliError::Encode("PPM byte count overflow".to_string()))?;
+    let rgb = bytes
+        .get(index..index + expected_rgb_bytes)
+        .ok_or_else(|| CliError::Encode("PPM raster data is truncated".to_string()))?;
+    if bytes.len() != index + expected_rgb_bytes {
+        return Err(CliError::Encode(
+            "PPM raster data has trailing bytes".to_string(),
+        ));
+    }
+
+    let mut rgba = Vec::with_capacity(pixels * 4);
+    for pixel in rgb.chunks_exact(3) {
+        rgba.extend_from_slice(pixel);
+        rgba.push(255);
+    }
+    pdfrust_thumbnail::Thumbnail::rgba(width, height, rgba)
+        .map_err(|err| CliError::Encode(err.to_string()))
+}
+
+fn parse_ppm_u32(bytes: &[u8], index: &mut usize, field: &str) -> Result<u32, CliError> {
+    let token = next_ppm_token(bytes, index)
+        .ok_or_else(|| CliError::Encode(format!("PPM is missing {field}")))?;
+    std::str::from_utf8(token)
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .ok_or_else(|| CliError::Encode(format!("PPM {field} is not an unsigned integer")))
+}
+
+fn next_ppm_token<'a>(bytes: &'a [u8], index: &mut usize) -> Option<&'a [u8]> {
+    loop {
+        while bytes.get(*index).is_some_and(u8::is_ascii_whitespace) {
+            *index += 1;
+        }
+        if bytes.get(*index) != Some(&b'#') {
+            break;
+        }
+        while bytes.get(*index).is_some_and(|byte| *byte != b'\n') {
+            *index += 1;
+        }
+    }
+    let start = *index;
+    while bytes
+        .get(*index)
+        .is_some_and(|byte| !byte.is_ascii_whitespace() && *byte != b'#')
+    {
+        *index += 1;
+    }
+    (start != *index).then_some(&bytes[start..*index])
+}
+
 fn visual_diff_subsystem(path: &str, family: &str) -> &'static str {
     let path = path.rsplit('/').next().unwrap_or(path);
     if family == "secure-document" || path.contains("encrypted") {
@@ -4201,7 +4667,6 @@ fn visual_diff_subsystem(path: &str, family: &str) -> &'static str {
     "rendering-core"
 }
 
-#[cfg(any(feature = "pdfium", test))]
 fn visual_diff_metrics(
     native: &pdfrust_thumbnail::Thumbnail,
     pdfium: &pdfrust_thumbnail::Thumbnail,
@@ -4261,7 +4726,6 @@ fn visual_diff_metrics(
     })
 }
 
-#[cfg(any(feature = "pdfium", test))]
 fn classify_visual_diff(
     metrics: &VisualDiffMetrics,
     thresholds: VisualDiffThresholds,
@@ -4281,7 +4745,6 @@ fn classify_visual_diff(
     }
 }
 
-#[cfg(any(feature = "pdfium", test))]
 fn percentile_delta(histogram: &[usize; 256], total: usize, percentile: f64) -> u8 {
     if total == 0 {
         return 0;
@@ -4856,14 +5319,12 @@ fn parse_u64(args: &[OsString], index: usize, option: &str) -> Result<u64, CliEr
         .map_err(|_| CliError::Usage(format!("{option} must be an unsigned integer")))
 }
 
-#[cfg(feature = "pdfium")]
 fn parse_u8(args: &[OsString], index: usize, option: &str) -> Result<u8, CliError> {
     required_str(args, index, option)?
         .parse()
         .map_err(|_| CliError::Usage(format!("{option} must be an integer between 0 and 255")))
 }
 
-#[cfg(feature = "pdfium")]
 fn parse_f64(args: &[OsString], index: usize, option: &str) -> Result<f64, CliError> {
     required_str(args, index, option)?
         .parse()
@@ -6482,13 +6943,144 @@ fn visual_diff_metrics_json(metrics: Option<&VisualDiffMetrics>) -> String {
     }
 }
 
-#[cfg(feature = "pdfium")]
 fn visual_diff_error_json(error: Option<&VisualDiffError>) -> String {
     match error {
         Some(error) => format!(
             "{{\"class\":{},\"message\":{}}}",
             json_string(error.class),
             json_string(&error.message)
+        ),
+        None => "null".to_string(),
+    }
+}
+
+fn poppler_visual_diff_report_json(report: &PopplerVisualDiffReport) -> String {
+    let fixtures = report
+        .fixtures
+        .iter()
+        .map(poppler_visual_diff_record_json)
+        .collect::<Vec<_>>()
+        .join(",");
+    format!(
+        concat!(
+            "{{\n",
+            "  \"schema_version\": 1,\n",
+            "  \"reference_backend\": \"poppler-pdftoppm\",\n",
+            "  \"platform\": {},\n",
+            "  \"thresholds\": {{\"max_mean_abs_error\":{:.3},\"max_p95_channel_delta\":{},\"max_changed_ratio\":{:.6}}},\n",
+            "  \"summary\": {{\"total\":{},\"exact\":{},\"accepted_drift\":{},\"blockers\":{},\"native_errors\":{},\"reference_errors\":{},\"both_errors\":{}}},\n",
+            "  \"families\": {},\n",
+            "  \"subsystems\": {},\n",
+            "  \"fixtures\": [{}]\n",
+            "}}\n"
+        ),
+        platform_metadata_json(&report.platform),
+        report.thresholds.max_mean_abs_error,
+        report.thresholds.max_p95_channel_delta,
+        report.thresholds.max_changed_ratio,
+        report.total,
+        report.exact,
+        report.accepted_drift,
+        report.blockers,
+        report.native_errors,
+        report.reference_errors,
+        report.both_errors,
+        poppler_visual_diff_family_map_json(&report.families),
+        poppler_visual_diff_family_map_json(&report.subsystems),
+        fixtures
+    )
+}
+
+fn poppler_visual_diff_family_map_json(
+    families: &BTreeMap<String, PopplerFamilyVisualDiffSummary>,
+) -> String {
+    let values = families
+        .iter()
+        .map(|(family, summary)| {
+            format!(
+                "{}:{}",
+                json_string(family),
+                poppler_visual_diff_family_summary_json(summary)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    format!("{{{values}}}")
+}
+
+fn poppler_visual_diff_family_summary_json(summary: &PopplerFamilyVisualDiffSummary) -> String {
+    format!(
+        concat!(
+            "{{",
+            "\"total\":{},",
+            "\"exact\":{},",
+            "\"accepted_drift\":{},",
+            "\"blockers\":{},",
+            "\"native_errors\":{},",
+            "\"reference_errors\":{},",
+            "\"both_errors\":{}",
+            "}}"
+        ),
+        summary.total,
+        summary.exact,
+        summary.accepted_drift,
+        summary.blockers,
+        summary.native_errors,
+        summary.reference_errors,
+        summary.both_errors
+    )
+}
+
+fn poppler_visual_diff_record_json(record: &PopplerVisualDiffRecord) -> String {
+    format!(
+        concat!(
+            "{{",
+            "\"path\":{},",
+            "\"family\":{},",
+            "\"subsystem\":{},",
+            "\"status\":{},",
+            "\"metrics\":{},",
+            "\"comparison_error\":{},",
+            "\"native_error\":{},",
+            "\"reference_error\":{}",
+            "}}"
+        ),
+        json_string(&record.path),
+        json_string(&record.family),
+        json_string(record.subsystem),
+        json_string(record.status.as_str()),
+        poppler_visual_diff_metrics_json(record.metrics.as_ref()),
+        visual_diff_error_json(record.comparison_error.as_ref()),
+        visual_diff_error_json(record.native_error.as_ref()),
+        visual_diff_error_json(record.reference_error.as_ref())
+    )
+}
+
+fn poppler_visual_diff_metrics_json(metrics: Option<&VisualDiffMetrics>) -> String {
+    match metrics {
+        Some(metrics) => format!(
+            concat!(
+                "{{",
+                "\"width\":{},",
+                "\"height\":{},",
+                "\"changed_pixels\":{},",
+                "\"changed_ratio\":{:.6},",
+                "\"mean_abs_error\":{:.3},",
+                "\"p95_channel_delta\":{},",
+                "\"max_channel_delta\":{},",
+                "\"native_nonwhite_pixels\":{},",
+                "\"reference_nonwhite_pixels\":{}",
+                "}}"
+            ),
+            metrics.width,
+            metrics.height,
+            metrics.changed_pixels,
+            metrics.changed_ratio,
+            metrics.mean_abs_error,
+            metrics.p95_channel_delta,
+            metrics.max_channel_delta,
+            metrics.native_nonwhite_pixels,
+            metrics.pdfium_nonwhite_pixels
         ),
         None => "null".to_string(),
     }
@@ -6852,7 +7444,7 @@ fn crc32(bytes: impl IntoIterator<Item = u8>) -> u32 {
 
 fn print_usage() {
     println!(
-        "Usage: pdfrust-cli <render|render-auto|render-native|render-pdfium|render-isolated|compare-metadata|summarize-fallbacks|operator-coverage|trace-native|replay-operators|extract-corpus-metadata|classify-pdf20-usage|validate-local-corpus|benchmark-native|benchmark-batch-native|benchmark-repeat-native|benchmark-pdfium|visual-diff> <input.pdf> \
+        "Usage: pdfrust-cli <render|render-auto|render-native|render-pdfium|render-isolated|compare-metadata|summarize-fallbacks|operator-coverage|trace-native|replay-operators|extract-corpus-metadata|classify-pdf20-usage|validate-local-corpus|benchmark-native|benchmark-batch-native|benchmark-repeat-native|benchmark-pdfium|visual-diff|visual-diff-poppler> <input.pdf> \
          [--output PATH] [--page-index N] [--max-edge N] [--background #RRGGBB] \
          [--timeout SECONDS] [--iterations N] [--repetitions N] [--max-events N] [--max-workers N] [--max-in-flight-pixels N] [--cancel-after-jobs N] [--max-ms N] [--max-p95-ms N] [--max-first-ms N] [--max-repeat-mean-ms N] [--max-output-bytes N] \
          [--native-only] [--manifest PATH] [--include-family FAMILY] \
@@ -8240,6 +8832,27 @@ status = "candidate"
                 "secure-document",
             ),
             "document-security"
+        );
+    }
+
+    #[test]
+    fn ppm_decoder_should_convert_binary_rgb_to_rgba() {
+        let ppm = b"P6\n# generated by test\n2 1\n255\n\x00\x01\x02\xfd\xfe\xff";
+        let thumbnail = decode_ppm_rgb_as_rgba(ppm).expect("valid PPM");
+
+        assert_eq!(thumbnail.width, 2);
+        assert_eq!(thumbnail.height, 1);
+        assert_eq!(thumbnail.bytes, vec![0, 1, 2, 255, 253, 254, 255, 255]);
+    }
+
+    #[test]
+    fn ppm_decoder_should_reject_non_8_bit_rgb() {
+        let error =
+            decode_ppm_rgb_as_rgba(b"P6\n1 1\n65535\n\x00\x00\x00").expect_err("invalid PPM");
+
+        assert_eq!(
+            error.to_string(),
+            "PNG encode error: PPM decoder only supports 8-bit RGB data"
         );
     }
 

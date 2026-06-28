@@ -1,9 +1,14 @@
 # Visual Diff Thresholds And Review Workflow
 
-This policy covers local native-versus-PDFium visual review runs produced by
-`pdfrust-cli visual-diff`. It is a maintainer comparison policy, not a runtime
-or release-gate requirement. The release/oracle split is defined in
-`docs/policies/reference-oracle-strategy.md`.
+This policy covers local native-versus-reference visual review runs produced by
+`pdfrust-cli visual-diff` and `pdfrust-cli visual-diff-poppler`. It is a
+maintainer comparison policy, not a runtime or release-gate requirement. The
+release/oracle split is defined in `docs/policies/reference-oracle-strategy.md`.
+
+`visual-diff` uses PDFium behind the opt-in `pdfium` feature. `visual-diff-poppler`
+uses an external `pdftoppm` binary and writes no PDF bytes or rendered rasters to
+the repository. It uses a per-process writable Fontconfig cache so server-style
+sandbox runs do not depend on host home-directory caches.
 
 Visual-diff JSON includes target platform metadata (`os`, `arch`, `family`,
 `endian`, and `pointer_width_bits`). Use that block when comparing drift across
@@ -33,6 +38,7 @@ surface.
 | `blocker` | At least one threshold failed. | Review before treating the category as covered. |
 | `native_error` | Native renderer failed and PDFium rendered. | Track as native gap or unsupported bucket. |
 | `pdfium_error` | PDFium failed and native rendered. | Validate fixture and comparison setup. |
+| `reference_error` | Poppler failed and native rendered. | Validate fixture, `pdftoppm`, Fontconfig, and timeout setup. |
 | `both_error` | Both renderers failed. | Classify by shared error class, not visual drift. |
 
 Blockers must not be hidden by loosening thresholds. If a threshold change is
