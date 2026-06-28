@@ -10664,6 +10664,9 @@ fn ascii_glyph(character: char) -> [&'static str; 7] {
 
 fn ascii_uppercase_glyph(character: char) -> [&'static str; 7] {
     match character {
+        ' ' => [
+            "     ", "     ", "     ", "     ", "     ", "     ", "     ",
+        ],
         'A' => [
             " ### ", "#   #", "#   #", "#####", "#   #", "#   #", "#   #",
         ],
@@ -15964,6 +15967,23 @@ mod tests {
             "standard base fallback should paint a lighter mask"
         );
         assert_eq!(cache.len(), 2);
+    }
+
+    #[test]
+    fn fallback_space_glyph_should_not_paint_pixels() {
+        let mut cache = GlyphBitmapCache::new(8);
+        let bitmap = cache
+            .bitmap_for(
+                FontFallback {
+                    face: FontFallbackFace::Sans,
+                    source: FontFallbackSource::StandardBase,
+                },
+                ' ',
+                2.0,
+            )
+            .clone();
+
+        assert_eq!(glyph_bitmap_area(&bitmap), 0.0);
     }
 
     #[test]
