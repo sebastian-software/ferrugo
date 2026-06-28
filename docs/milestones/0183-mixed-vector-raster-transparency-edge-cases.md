@@ -96,6 +96,13 @@ Native baseline slice started on 2026-06-28.
   remaining blocker set: `office-vector-repeated-effects.pdf` p95 drops from
   62 to 53, `map-transparent-zoning-overlay.pdf` max delta drops from 151 to
   144, and accepted text/image fixtures keep their accepted status.
+- Tightened the StandardBase inset again to better match simple Helvetica-style
+  thumbnail text. The 0183 summary remains 5 accepted drift and 3 blockers, but
+  `office-vector-repeated-effects.pdf` p95 drops from 53 to 49,
+  `slide-layered-image-shadow.pdf` p95 drops from 5 to 4, and
+  `office-vector-clipped-transparency-group.pdf` MAE drops from 0.699 to 0.613.
+  `high-dpi-preview-fidelity.pdf` remains dominated by image/grid fidelity and
+  regresses only slightly within its already-blocking distribution.
 
 ## Completion Notes
 

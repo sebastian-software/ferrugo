@@ -237,3 +237,30 @@ Full 0183 Poppler follow-up result remains 8 total, 0 exact, 5 accepted drift,
 Compared with the previous 0183 follow-up, the largest remaining text-heavy
 blocker improvement is `office-vector-repeated-effects.pdf` p95 `62 -> 53`.
 The high-DPI fixture remains dominated by image/grid fidelity.
+
+## StandardBase Glyph Weight Refinement
+
+The StandardBase fallback mask inset is now smaller again while still staying
+below the missing-font fallback mask weight. This favors common Helvetica-style
+office and tagged-PDF text without changing accepted-drift thresholds or adding
+per-glyph allocations.
+
+Full 0183 Poppler follow-up result remains 8 total, 0 exact, 5 accepted drift,
+3 blockers, 0 native errors, 0 reference errors, 0 both errors.
+
+| Fixture | Status | MAE | P95 delta | Changed ratio | Max delta |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `browser-print-raster-vector-mix.pdf` | accepted drift | 0.396 | 0 | 0.018945 | 202 |
+| `high-dpi-preview-fidelity.pdf` | blocker | 20.803 | 105 | 0.380260 | 225 |
+| `image-heavy-rotated-mask-sheet.pdf` | accepted drift | 3.266 | 5 | 0.392134 | 222 |
+| `map-transparent-zoning-overlay.pdf` | blocker | 5.345 | 31 | 0.968521 | 143 |
+| `office-vector-clipped-transparency-group.pdf` | accepted drift | 0.613 | 2 | 0.231989 | 118 |
+| `office-vector-repeated-effects.pdf` | blocker | 7.258 | 49 | 0.292407 | 225 |
+| `slide-layered-image-shadow.pdf` | accepted drift | 2.881 | 4 | 0.310069 | 216 |
+| `soft-mask-image.pdf` | accepted drift | 0.829 | 0 | 0.011181 | 255 |
+
+Compared with the previous StandardBase run, this reduces the repeated office
+effects p95 tail `53 -> 49`, lowers slide-layered image shadow p95 `5 -> 4`,
+and improves clipped transparency MAE `0.699 -> 0.613`. The high-DPI preview
+fixture is still blocked by image/grid fidelity; its slight max-delta increase
+does not change the blocker classification.
