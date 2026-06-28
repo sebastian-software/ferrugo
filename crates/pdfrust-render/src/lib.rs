@@ -2485,6 +2485,52 @@ fn fallback_text_cell(font_size: f64, fallback: FontFallback) -> f64 {
     font_size * scale / 7.0
 }
 
+fn standard_base_glyph_width(face: FontFallbackFace, unicode: &str) -> Option<f64> {
+    let mut chars = unicode.chars();
+    let character = chars.next()?;
+    if chars.next().is_some() {
+        return None;
+    }
+    match face {
+        FontFallbackFace::Sans => standard_sans_glyph_width(character),
+        FontFallbackFace::Monospace => character.is_ascii().then_some(600.0),
+        FontFallbackFace::Serif | FontFallbackFace::Symbol => None,
+    }
+}
+
+fn standard_sans_glyph_width(character: char) -> Option<f64> {
+    let width = match character {
+        ' ' | '!' | ',' | '.' | ':' | ';' => 278.0,
+        '"' => 355.0,
+        '#' | '$' | '0'..='9' | '?' | '_' => 556.0,
+        '%' => 889.0,
+        '&' | 'A' | 'B' | 'P' | 'X' => 667.0,
+        '\'' | '`' | 'i' | 'j' | 'l' => 222.0,
+        '(' | ')' | '-' | '[' | ']' => 333.0,
+        '*' => 389.0,
+        '+' | '<' | '=' | '>' | '~' => 584.0,
+        '/' | '\\' | 'I' | 'f' | 't' => 278.0,
+        '@' => 1015.0,
+        'C' | 'D' | 'N' | 'R' | 'U' => 722.0,
+        'E' | 'K' | 'S' => 667.0,
+        'F' | 'T' | 'Z' => 611.0,
+        'G' | 'O' | 'Q' => 778.0,
+        'H' => 722.0,
+        'J' | 'a' | 'b' | 'd' | 'e' | 'g' | 'h' | 'n' | 'o' | 'p' | 'q' | 'u' => 556.0,
+        'L' => 556.0,
+        'M' => 833.0,
+        'V' | 'Y' => 667.0,
+        'W' => 944.0,
+        'c' | 'k' | 's' | 'v' | 'x' | 'y' | 'z' => 500.0,
+        'm' => 833.0,
+        'r' => 333.0,
+        '{' | '}' => 334.0,
+        '|' => 260.0,
+        _ => return None,
+    };
+    Some(width)
+}
+
 #[derive(Debug, Clone, PartialEq)]
 struct CachedGlyphBitmap {
     key: GlyphBitmapKey,
@@ -3017,9 +3063,17 @@ impl FontDescriptor {
         {
             return width;
         }
-        self.cid_metrics.as_ref().map_or(500.0, |metrics| {
-            f64::from(metrics.default_width.unwrap_or(1000))
-        })
+        if let Some(metrics) = &self.cid_metrics {
+            return f64::from(metrics.default_width.unwrap_or(1000));
+        }
+        if let Some(fallback) = self.fallback {
+            if fallback.source == FontFallbackSource::StandardBase {
+                if let Some(width) = standard_base_glyph_width(fallback.face, &glyph.unicode) {
+                    return width;
+                }
+            }
+        }
+        500.0
     }
 }
 
@@ -15876,6 +15930,33 @@ mod tests {
 
         assert!((fallback_text_cell(14.0, standard) - 1.5).abs() < f64::EPSILON);
         assert!((fallback_text_cell(14.0, missing) - 2.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn standard_base_fallback_should_use_helvetica_advance_widths() {
+        let mut font = FontDescriptor::new("F1", Some("Helvetica"));
+        font.subtype = Some(FontSubtype::Type1);
+        font.fallback = Some(FontFallback {
+            face: FontFallbackFace::Sans,
+            source: FontFallbackSource::StandardBase,
+        });
+
+        assert_eq!(
+            font.advance_width_for_glyph(&TextGlyph {
+                character_code: u32::from('i'),
+                unicode: "i".to_string(),
+                layout: TextLayoutStatus::Simple,
+            }),
+            222.0
+        );
+        assert_eq!(
+            font.advance_width_for_glyph(&TextGlyph {
+                character_code: u32::from('W'),
+                unicode: "W".to_string(),
+                layout: TextLayoutStatus::Simple,
+            }),
+            944.0
+        );
     }
 
     #[test]

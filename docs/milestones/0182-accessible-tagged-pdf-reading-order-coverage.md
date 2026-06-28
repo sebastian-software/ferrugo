@@ -81,6 +81,10 @@ Native slice committed toward 0182 on 2026-06-28.
 - Scaled the standard-base-font fallback cell to better approximate Helvetica
   cap height. This reduces several text-heavy drift metrics, but the strict
   tagged visual gate still has 6 blockers.
+- Added deterministic Helvetica advance widths for standard-base-font fallback
+  glyph positioning. This reduces text-heavy drift further, especially the
+  tagged form fixture p95 delta, while the strict visual gate still has 6
+  blockers.
 
 ## Completion Notes
 
