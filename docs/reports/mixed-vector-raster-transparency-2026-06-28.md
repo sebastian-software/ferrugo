@@ -264,3 +264,22 @@ effects p95 tail `53 -> 49`, lowers slide-layered image shadow p95 `5 -> 4`,
 and improves clipped transparency MAE `0.699 -> 0.613`. The high-DPI preview
 fixture is still blocked by image/grid fidelity; its slight max-delta increase
 does not change the blocker classification.
+
+## Rejected Follow-Up Probes
+
+Three small follow-up probes were measured and rejected on 2026-06-28 because
+they did not produce a clean 0183 gate improvement.
+
+| Probe | Output | Result |
+| --- | --- | --- |
+| StandardBase full width scaling | `target/mixed-transparency-0183-poppler-standardbase-xscale.json` | Summary stayed 5 accepted drift / 3 blockers, but `office-vector-repeated-effects.pdf` regressed p95 `49 -> 51`. |
+| StandardBase 25% width scaling | `target/mixed-transparency-0183-poppler-standardbase-xscale-blend25.json` | Avoided p95 regression but only produced small MAE shifts and regressed some accepted text/image edge metrics. |
+| StandardBase widen-only scaling | `target/mixed-transparency-0183-poppler-standardbase-widen25.json` | Regressed `office-vector-repeated-effects.pdf` p95 `49 -> 50` and `slide-layered-image-shadow.pdf` p95 `4 -> 5`. |
+| Unconditional bilinear RGB/gray sampling | `target/mixed-transparency-0183-poppler-bilinear-rgb.json` | Regressed the summary to 3 accepted drift / 5 blockers; `slide-layered-image-shadow.pdf` and `soft-mask-image.pdf` became blockers. |
+| Global DeviceColor floor quantization | `target/mixed-transparency-0183-poppler-color-floor.json` | Improved `map-transparent-zoning-overlay.pdf` changed ratio `0.968521 -> 0.363016`, but regressed colored fixtures broadly and moved the summary to 3 accepted drift / 5 blockers. |
+
+The rejected probes indicate that the remaining blockers need more targeted
+work: actual Base14/text raster fidelity for text-heavy tails, diagonal
+route/grid antialiasing for `map-transparent-zoning-overlay.pdf`, and
+fixture-specific image/compositing evidence instead of broad sampler or color
+quantization changes.

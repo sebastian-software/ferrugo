@@ -103,6 +103,18 @@ Native baseline slice started on 2026-06-28.
   `office-vector-clipped-transparency-group.pdf` MAE drops from 0.699 to 0.613.
   `high-dpi-preview-fidelity.pdf` remains dominated by image/grid fidelity and
   regresses only slightly within its already-blocking distribution.
+- Rejected three narrow renderer probes that looked plausible but did not
+  produce a clean gate improvement:
+  StandardBase per-glyph width scaling left the 0183 summary unchanged and
+  regressed `office-vector-repeated-effects.pdf` p95; unconditional bilinear
+  RGB/gray image sampling moved `slide-layered-image-shadow.pdf` and
+  `soft-mask-image.pdf` from accepted drift to blockers; global DeviceColor
+  floor quantization improved `map-transparent-zoning-overlay.pdf` changed
+  ratio but regressed broad colored fixtures and moved additional 0182/0183
+  cases into blocker status.
+  The remaining blockers should stay focused on a real Base14/text renderer,
+  route/grid antialiasing, and fixture-specific compositing evidence rather
+  than these broad approximations.
 
 ## Completion Notes
 
