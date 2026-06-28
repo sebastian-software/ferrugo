@@ -9676,7 +9676,8 @@ fn stroke_path(
     let source = device_color_to_rgba(state.color);
     let radius = stroke_radius_for_device_line_width(state.line_width);
     let dashed_lines;
-    let (stroke_lines, joins): (&[LineSegment], &[StrokeJoin]) = if state.dash_pattern.is_solid() {
+    let (base_lines, base_joins): (&[LineSegment], &[StrokeJoin]) = if state.dash_pattern.is_solid()
+    {
         (path.lines.as_slice(), path.joins.as_slice())
     } else {
         dashed_lines = dashed_line_segments(
@@ -9686,6 +9687,24 @@ fn stroke_path(
         )?;
         (dashed_lines.as_slice(), &[])
     };
+    let snapped_lines;
+    let snapped_joins;
+    let (stroke_lines, joins): (&[LineSegment], &[StrokeJoin]) =
+        if should_snap_axis_aligned_hairline(state.line_width) {
+            snapped_lines = base_lines
+                .iter()
+                .copied()
+                .map(snap_axis_aligned_hairline_line)
+                .collect::<Vec<_>>();
+            snapped_joins = base_joins
+                .iter()
+                .copied()
+                .map(snap_axis_aligned_hairline_join)
+                .collect::<Vec<_>>();
+            (snapped_lines.as_slice(), snapped_joins.as_slice())
+        } else {
+            (base_lines, base_joins)
+        };
     let samples = u32::from(context.options.supersample);
     let sample_count = samples * samples;
     let dimensions = device.dimensions();
@@ -9733,6 +9752,78 @@ fn stroke_radius_for_device_line_width(line_width: f64) -> f64 {
     } else {
         line_width / 2.0
     }
+}
+
+fn should_snap_axis_aligned_hairline(line_width: f64) -> bool {
+    // Keep this narrow: wider 0.7-0.8px signature/legal linework loses
+    // visible coverage if it is snapped away from its authored sample row.
+    (0.55..=0.65).contains(&line_width)
+}
+
+fn snap_axis_aligned_hairline_line(line: LineSegment) -> LineSegment {
+    if (line.from.x - line.to.x).abs() <= f64::EPSILON {
+        let x = snap_hairline_coordinate(line.from.x);
+        LineSegment {
+            from: Point { x, ..line.from },
+            to: Point { x, ..line.to },
+        }
+    } else if (line.from.y - line.to.y).abs() <= f64::EPSILON {
+        let y = snap_hairline_coordinate(line.from.y);
+        LineSegment {
+            from: Point { y, ..line.from },
+            to: Point { y, ..line.to },
+        }
+    } else {
+        line
+    }
+}
+
+fn snap_axis_aligned_hairline_join(join: StrokeJoin) -> StrokeJoin {
+    let previous = snap_axis_aligned_hairline_line(join.previous);
+    let next = snap_axis_aligned_hairline_line(join.next);
+    StrokeJoin {
+        previous,
+        next,
+        point: Point {
+            x: snapped_join_coordinate(
+                join.point.x,
+                previous,
+                next,
+                |line| line.from.x,
+                |line| line.to.x,
+            ),
+            y: snapped_join_coordinate(
+                join.point.y,
+                previous,
+                next,
+                |line| line.from.y,
+                |line| line.to.y,
+            ),
+        },
+    }
+}
+
+fn snapped_join_coordinate(
+    original: f64,
+    previous: LineSegment,
+    next: LineSegment,
+    from: impl Fn(LineSegment) -> f64,
+    to: impl Fn(LineSegment) -> f64,
+) -> f64 {
+    for value in [from(previous), to(previous), from(next), to(next)] {
+        if (value - original).abs() > f64::EPSILON && is_pixel_center(value) {
+            return value;
+        }
+    }
+    original
+}
+
+fn snap_hairline_coordinate(value: f64) -> f64 {
+    (value - 0.5).round() + 0.5
+}
+
+fn is_pixel_center(value: f64) -> bool {
+    ((value - 0.5).fract()).abs() <= f64::EPSILON
 }
 
 fn dashed_line_segments(
@@ -15068,6 +15159,23 @@ mod tests {
         };
 
         assert_eq!(raster.pixel(10, 4).expect("subpixel hairline"), black);
+    }
+
+    #[test]
+    fn rasterize_paths_should_snap_axis_aligned_hairlines_to_pixel_centers() {
+        let raster = rasterize_stroke_width_stream(b"0.6 w 0 5 m 20 5 l S");
+        let black = Rgba {
+            r: 0,
+            g: 0,
+            b: 0,
+            a: 255,
+        };
+
+        assert_eq!(
+            raster.pixel(10, 4).expect("before snapped hairline"),
+            Rgba::WHITE
+        );
+        assert_eq!(raster.pixel(10, 5).expect("snapped hairline"), black);
     }
 
     #[test]

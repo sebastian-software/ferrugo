@@ -64,6 +64,13 @@ Native baseline slice started on 2026-06-28.
 - Next fidelity focus: reduce `office-vector-clipped-transparency-group.pdf`
   and `map-transparent-zoning-overlay.pdf` blockers before broadening the
   fixture slice.
+- Reduced the `office-vector-clipped-transparency-group.pdf` Poppler diff by
+  snapping axis-aligned device hairlines to pixel centers. The focused
+  `office-clipped-transparency` run remains a blocker on changed-ratio, but
+  mean absolute error dropped from 3.381 to 0.885, p95 channel delta from 3 to
+  2, changed ratio from 0.254091 to 0.232045, and max channel delta from 177
+  to 123. The remaining difference is dominated by low-amplitude transparent
+  fill color drift.
 
 ## Completion Notes
 

@@ -136,3 +136,18 @@ Next 0183 work should prioritize blocker reduction by subsystem rather than
 adding more fixtures: start with the `transparency` row
 `office-vector-clipped-transparency-group.pdf`, then the high changed-ratio
 `map-overlay` row.
+
+## Office Hairline Follow-Up
+
+After snapping axis-aligned device hairlines to pixel centers, the focused
+`office-clipped-transparency` Poppler run improved but still fails the
+changed-ratio gate:
+
+| Fixture | Status | MAE | P95 delta | Changed ratio | Max delta |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `office-vector-clipped-transparency-group.pdf` | blocker | 0.885 | 2 | 0.232045 | 123 |
+
+Compared with the baseline, this removes the hard stroke-position error
+(`MAE 3.381 -> 0.885`, `max delta 177 -> 123`). Remaining drift is mostly
+1-2 channel differences across transparent fills, so the next transparency
+work should focus on alpha/color compositing parity rather than geometry.
