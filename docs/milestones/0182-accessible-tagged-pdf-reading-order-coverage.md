@@ -72,6 +72,9 @@ Native slice committed toward 0182 on 2026-06-28.
   target dimensions when native rendering succeeds. The two former 1px
   dimension mismatches now produce comparable Poppler metrics, while all 7
   fixtures remain strict visual blockers.
+- Added case-sensitive standard-font fallback bitmaps with lowercase x-height
+  masks. This improves the text-heavy Poppler metrics, but the strict tagged
+  visual gate still has 7 blockers.
 
 ## Completion Notes
 
