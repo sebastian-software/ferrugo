@@ -90,6 +90,12 @@ Native baseline slice started on 2026-06-28.
   antialiasing drift, while `high-dpi-preview-fidelity.pdf`,
   `map-transparent-zoning-overlay.pdf`, and
   `office-vector-repeated-effects.pdf` remain blockers.
+- Increased the StandardBase fallback glyph mask weight while keeping it
+  lighter than missing-font fallback masks. The 0183 summary stays at
+  5 accepted drift and 3 blockers, but text-heavy drift improves in the
+  remaining blocker set: `office-vector-repeated-effects.pdf` p95 drops from
+  62 to 53, `map-transparent-zoning-overlay.pdf` max delta drops from 151 to
+  144, and accepted text/image fixtures keep their accepted status.
 
 ## Completion Notes
 

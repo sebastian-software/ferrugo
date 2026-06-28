@@ -2683,8 +2683,8 @@ impl GlyphBitmapRect {
             GlyphBitmapPaintPolicy::StandardBaseThin => {
                 let width = right - left;
                 let height = top - bottom;
-                let inset_x = width * 0.24;
-                let inset_y = height * 0.18;
+                let inset_x = width * 0.12;
+                let inset_y = height * 0.12;
                 Self {
                     left: left + inset_x,
                     right: right - inset_x,
@@ -16201,6 +16201,10 @@ mod tests {
         assert!(
             standard_area < missing_area,
             "standard base fallback should paint a lighter mask"
+        );
+        assert!(
+            standard_area > missing_area * 0.55,
+            "standard base fallback should stay close enough to real base-font weight"
         );
         assert_eq!(cache.len(), 2);
     }

@@ -215,3 +215,25 @@ Full 0183 Poppler follow-up result: 8 total, 0 exact, 5 accepted drift,
 The remaining blockers are high-amplitude distributions rather than bounded
 edge drift: high-DPI image/grid/text fidelity, map route/grid linework, and
 repeated office vector effects.
+
+## StandardBase Glyph Weight Follow-Up
+
+StandardBase fallback glyph masks are still lighter than missing-font fallback
+masks, but the mask inset is less aggressive so simple Helvetica-style text is
+closer to Poppler output at thumbnail sizes. This is a renderer change, not a
+threshold change.
+
+Full 0183 Poppler follow-up result remains 8 total, 0 exact, 5 accepted drift,
+3 blockers, 0 native errors, 0 reference errors, 0 both errors.
+
+| Fixture | Status | MAE | P95 delta | Changed ratio | Max delta |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `high-dpi-preview-fidelity.pdf` | blocker | 20.785 | 105 | 0.380260 | 220 |
+| `map-transparent-zoning-overlay.pdf` | blocker | 5.353 | 31 | 0.968463 | 144 |
+| `office-vector-clipped-transparency-group.pdf` | accepted drift | 0.699 | 2 | 0.231989 | 118 |
+| `office-vector-repeated-effects.pdf` | blocker | 7.281 | 53 | 0.292348 | 225 |
+| `slide-layered-image-shadow.pdf` | accepted drift | 2.988 | 5 | 0.309375 | 216 |
+
+Compared with the previous 0183 follow-up, the largest remaining text-heavy
+blocker improvement is `office-vector-repeated-effects.pdf` p95 `62 -> 53`.
+The high-DPI fixture remains dominated by image/grid fidelity.
