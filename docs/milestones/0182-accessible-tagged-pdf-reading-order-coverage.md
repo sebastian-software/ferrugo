@@ -89,10 +89,9 @@ Native slice committed toward 0182 on 2026-06-28.
   fallback positioning. The tagged reading-order warning fixture remains
   accepted Poppler drift with lower changed ratio and max channel delta, while
   the strict tagged visual gate still has 6 blockers.
-- Added dedicated fallback bitmaps for common punctuation instead of routing
-  those characters through the unknown-glyph mask. The tagged invoice fixture
-  drift improved slightly, while the strict tagged visual gate still has 6
-  blockers.
+- Completed printable ASCII fallback bitmap coverage instead of routing
+  punctuation through the unknown-glyph mask. The tagged invoice fixture drift
+  improved slightly, while the strict tagged visual gate still has 6 blockers.
 
 ## Completion Notes
 

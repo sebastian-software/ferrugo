@@ -140,11 +140,11 @@ accepted drift. Follow-up deterministic Helvetica advance widths reduced the
 text-heavy drift further, especially the tagged form fixture p95 delta. The
 printable ASCII Helvetica width table is now complete for standard-base
 fallback positioning, which reduces the accepted warning fixture changed ratio
-and max channel delta. Dedicated fallback bitmaps for common punctuation avoid
-painting those characters as unknown-glyph masks and slightly reduce the tagged
-invoice drift. The strict threshold report still classifies 6 fixtures as
-blockers, so 0182 remains in progress for visual-fidelity work rather than
-oracle availability.
+and max channel delta. Printable ASCII fallback bitmap coverage is now complete,
+so punctuation no longer routes through the unknown-glyph mask; this slightly
+reduces the tagged invoice drift. The strict threshold report still classifies
+6 fixtures as blockers, so 0182 remains in progress for visual-fidelity work
+rather than oracle availability.
 
 Poppler command:
 
