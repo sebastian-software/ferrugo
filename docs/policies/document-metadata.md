@@ -18,6 +18,10 @@ success as a rendering prerequisite.
 - Bounded tagged-PDF accessibility signals: catalog `/Lang`,
   `/MarkInfo /Marked`, RoleMap presence, structure role count, and
   marked-content reference presence.
+- Bounded tagged-PDF reading-order signals: marked-content reference count,
+  page-associated marked-content reference count, alternate-text count, and
+  warning count for marked-content references that cannot be associated with a
+  page context.
 - Named-destination presence through catalog `/Dests` or `/Names /Dests`.
 - Outline presence and bounded outline item counting.
 - Direct page-label number trees with decimal, roman, alphabetic, prefix, and
@@ -28,7 +32,9 @@ success as a rendering prerequisite.
 
 ## Unsupported
 
-- Accessibility tree extraction or role-map interpretation.
+- Full accessibility tree extraction or role-map interpretation.
+- Exact logical reading-order reconstruction. The native metadata path exposes
+  bounded signals and warning counts, not a complete accessibility API.
 - Full XMP packet parsing.
 - Viewer UI behavior for outlines or named destinations.
 - Name-tree traversal beyond the direct common `/Nums` page-label form.

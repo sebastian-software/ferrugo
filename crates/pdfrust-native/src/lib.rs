@@ -3127,6 +3127,10 @@ fn accessibility_metadata(
     let summary = summarize_structure_tree(document, kids)?;
     metadata.structure_role_count = summary.role_count;
     metadata.has_marked_content_references = summary.has_marked_content_references;
+    metadata.marked_content_reference_count = summary.marked_content_reference_count;
+    metadata.page_content_reference_count = summary.page_content_reference_count;
+    metadata.alt_text_count = summary.alt_text_count;
+    metadata.reading_order_warning_count = summary.reading_order_warning_count;
     metadata.truncated = summary.truncated;
     Ok(metadata)
 }
@@ -3150,7 +3154,17 @@ fn mark_info_marked(
 struct StructureTreeSummary {
     role_count: usize,
     has_marked_content_references: bool,
+    marked_content_reference_count: usize,
+    page_content_reference_count: usize,
+    alt_text_count: usize,
+    reading_order_warning_count: usize,
     truncated: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct StructureStackItem<'a> {
+    value: &'a PdfPrimitive<'a>,
+    has_page_context: bool,
 }
 
 fn summarize_structure_tree(
@@ -3159,16 +3173,17 @@ fn summarize_structure_tree(
 ) -> Result<StructureTreeSummary, ThumbnailError> {
     let mut summary = StructureTreeSummary::default();
     let mut stack = Vec::new();
-    push_structure_value(&mut stack, root_kids);
+    push_structure_value(&mut stack, root_kids, false);
     let mut visited = HashSet::new();
     let mut reached_items = 0usize;
 
-    while let Some(value) = stack.pop() {
+    while let Some(item) = stack.pop() {
         if reached_items == MAX_METADATA_STRUCTURE_ITEMS {
             summary.truncated = true;
             break;
         }
         reached_items += 1;
+        let value = item.value;
         match value {
             PdfPrimitive::Reference(reference) => {
                 let reference = object_reference(*reference)?;
@@ -3180,18 +3195,36 @@ fn summarize_structure_tree(
                     .get(reference.id)
                     .ok_or(ThumbnailError::Malformed)?;
                 let dictionary = object_dictionary(&object.value)?;
-                summarize_structure_dictionary(document, dictionary, &mut stack, &mut summary)?;
+                summarize_structure_dictionary(
+                    document,
+                    dictionary,
+                    item.has_page_context,
+                    &mut stack,
+                    &mut summary,
+                )?;
             }
             PdfPrimitive::Dictionary(dictionary) => {
-                summarize_structure_dictionary(document, dictionary, &mut stack, &mut summary)?;
+                summarize_structure_dictionary(
+                    document,
+                    dictionary,
+                    item.has_page_context,
+                    &mut stack,
+                    &mut summary,
+                )?;
             }
             PdfPrimitive::Array(values) => {
                 for value in values.iter().rev() {
-                    push_structure_value(&mut stack, value);
+                    push_structure_value(&mut stack, value, item.has_page_context);
                 }
             }
             PdfPrimitive::Number(_) => {
                 summary.has_marked_content_references = true;
+                summary.marked_content_reference_count += 1;
+                if item.has_page_context {
+                    summary.page_content_reference_count += 1;
+                } else {
+                    summary.reading_order_warning_count += 1;
+                }
             }
             _ => return Err(ThumbnailError::Malformed),
         }
@@ -3203,29 +3236,50 @@ fn summarize_structure_tree(
 fn summarize_structure_dictionary<'a>(
     document: &ClassicDocument<'a>,
     dictionary: &'a [(PdfName<'a>, PdfPrimitive<'a>)],
-    stack: &mut Vec<&'a PdfPrimitive<'a>>,
+    inherited_page_context: bool,
+    stack: &mut Vec<StructureStackItem<'a>>,
     summary: &mut StructureTreeSummary,
 ) -> Result<(), ThumbnailError> {
+    let has_page_context = match dictionary_value(dictionary, b"Pg") {
+        Some(page) => {
+            let _ = metadata_dictionary_from_value(document, page)?;
+            true
+        }
+        None => inherited_page_context,
+    };
     if dictionary_name_is(dictionary, b"Type", b"MCR")
         || dictionary_value(dictionary, b"MCID").is_some()
     {
         summary.has_marked_content_references = true;
+        summary.marked_content_reference_count += 1;
+        if has_page_context {
+            summary.page_content_reference_count += 1;
+        } else {
+            summary.reading_order_warning_count += 1;
+        }
         return Ok(());
     }
     if dictionary_value(dictionary, b"S").is_some() {
         summary.role_count += 1;
     }
-    if let Some(kids) = dictionary_value(dictionary, b"K") {
-        push_structure_value(stack, kids);
+    if dictionary_value(dictionary, b"Alt").is_some() {
+        summary.alt_text_count += 1;
     }
-    if let Some(parent) = dictionary_value(dictionary, b"Pg") {
-        let _ = metadata_dictionary_from_value(document, parent)?;
+    if let Some(kids) = dictionary_value(dictionary, b"K") {
+        push_structure_value(stack, kids, has_page_context);
     }
     Ok(())
 }
 
-fn push_structure_value<'a>(stack: &mut Vec<&'a PdfPrimitive<'a>>, value: &'a PdfPrimitive<'a>) {
-    stack.push(value);
+fn push_structure_value<'a>(
+    stack: &mut Vec<StructureStackItem<'a>>,
+    value: &'a PdfPrimitive<'a>,
+    has_page_context: bool,
+) {
+    stack.push(StructureStackItem {
+        value,
+        has_page_context,
+    });
 }
 
 fn has_file_attachment_annotations(
@@ -8370,27 +8424,41 @@ mod tests {
         assert!(metadata.accessibility.has_role_map);
         assert_eq!(metadata.accessibility.structure_role_count, 1);
         assert!(metadata.accessibility.has_marked_content_references);
+        assert_eq!(metadata.accessibility.marked_content_reference_count, 1);
+        assert_eq!(metadata.accessibility.page_content_reference_count, 1);
+        assert_eq!(metadata.accessibility.alt_text_count, 0);
+        assert_eq!(metadata.accessibility.reading_order_warning_count, 0);
         assert!(!metadata.accessibility.truncated);
     }
 
     #[test]
     fn native_backend_should_report_tagged_visual_integrity_metadata() {
-        let fixtures: &[(&[u8], &str, usize)] = &[
+        let fixtures: &[(&[u8], &str, usize, usize)] = &[
             (
                 include_bytes!("../../../fixtures/generated/tagged-report-visual-integrity.pdf")
                     as &[u8],
                 "tagged report visual integrity",
                 3,
+                2,
             ),
             (
                 include_bytes!("../../../fixtures/generated/tagged-form-visual-integrity.pdf")
                     as &[u8],
                 "tagged form visual integrity",
                 2,
+                1,
             ),
             (
                 include_bytes!("../../../fixtures/generated/tagged-office-alt-text.pdf") as &[u8],
                 "tagged office alt text",
+                3,
+                2,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/tagged-invoice-reading-order.pdf")
+                    as &[u8],
+                "tagged invoice reading order",
+                4,
                 3,
             ),
             (
@@ -8398,10 +8466,11 @@ mod tests {
                     as &[u8],
                 "tagged structure heavy report",
                 65,
+                64,
             ),
         ];
 
-        for &(bytes, label, minimum_role_count) in fixtures {
+        for &(bytes, label, minimum_role_count, minimum_marked_content_count) in fixtures {
             let metadata = DocumentMetadataBackend::inspect(
                 &NativeBackend::new(),
                 PdfSource::from_bytes(bytes),
@@ -8424,8 +8493,39 @@ mod tests {
                 "{label} should report bounded structure roles"
             );
             assert!(metadata.accessibility.has_marked_content_references);
+            assert!(
+                metadata.accessibility.marked_content_reference_count
+                    >= minimum_marked_content_count,
+                "{label} should report marked content references"
+            );
+            assert_eq!(
+                metadata.accessibility.marked_content_reference_count,
+                metadata.accessibility.page_content_reference_count,
+                "{label} should associate marked content with pages"
+            );
+            assert_eq!(
+                metadata.accessibility.reading_order_warning_count, 0,
+                "{label} should have no reading-order warnings"
+            );
             assert!(!metadata.accessibility.truncated);
         }
+    }
+
+    #[test]
+    fn native_backend_should_warn_when_tagged_reading_order_lacks_page_context() {
+        let bytes = include_bytes!(
+            "../../../fixtures/generated/tagged-reading-order-missing-page-context.pdf"
+        );
+        let metadata =
+            DocumentMetadataBackend::inspect(&NativeBackend::new(), PdfSource::from_bytes(bytes))
+                .expect("tagged reading-order warning fixture should inspect");
+
+        assert_eq!(metadata.accessibility.structure_role_count, 2);
+        assert!(metadata.accessibility.has_marked_content_references);
+        assert_eq!(metadata.accessibility.marked_content_reference_count, 1);
+        assert_eq!(metadata.accessibility.page_content_reference_count, 0);
+        assert_eq!(metadata.accessibility.reading_order_warning_count, 1);
+        assert!(!metadata.accessibility.truncated);
     }
 
     #[test]
@@ -8440,6 +8540,10 @@ mod tests {
         assert!(!metadata.accessibility.has_role_map);
         assert_eq!(metadata.accessibility.structure_role_count, 0);
         assert!(!metadata.accessibility.has_marked_content_references);
+        assert_eq!(metadata.accessibility.marked_content_reference_count, 0);
+        assert_eq!(metadata.accessibility.page_content_reference_count, 0);
+        assert_eq!(metadata.accessibility.alt_text_count, 0);
+        assert_eq!(metadata.accessibility.reading_order_warning_count, 0);
         assert!(!metadata.accessibility.truncated);
     }
 

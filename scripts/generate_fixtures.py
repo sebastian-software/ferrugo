@@ -477,6 +477,87 @@ def tagged_office_alt_text_pdf() -> bytes:
     return pdf.render(catalog, trailer_entries=f"/Info {info} 0 R ")
 
 
+def tagged_invoice_reading_order_pdf() -> bytes:
+    pdf = Pdf()
+    content = (
+        b"q 1 1 1 rg 0 0 340 220 re f Q "
+        b"/H1 << /MCID 0 >> BDC "
+        b"q 0.12 0.18 0.28 rg 0 184 340 36 re f Q "
+        b"BT /F1 12 Tf 24 198 Td (Tagged Invoice) Tj ET EMC "
+        b"/Table << /MCID 1 >> BDC "
+        b"q 0.97 0.98 0.99 rg 24 58 292 108 re f Q "
+        b"q 0.18 0.22 0.30 RG 0.7 w 24 58 292 108 re S "
+        b"24 138 m 316 138 l S 24 110 m 316 110 l S 24 82 m 316 82 l S "
+        b"176 58 m 176 166 l S 250 58 m 250 166 l S Q "
+        b"BT /F1 8 Tf 34 148 Td (Description) Tj 156 0 Td (Qty) Tj 72 0 Td (Total) Tj "
+        b"-228 -28 Td (Support plan) Tj 156 0 Td (1) Tj 72 0 Td (120.00) Tj "
+        b"-228 -28 Td (Usage) Tj 156 0 Td (4) Tj 72 0 Td (48.00) Tj ET EMC "
+        b"/P << /MCID 2 >> BDC "
+        b"BT /F1 9 Tf 204 38 Td (Amount due: 168.00) Tj ET EMC"
+    )
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 340 220] "
+        "/Resources << /Font << /F1 4 0 R >> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    font = pdf.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    struct_tree = pdf.add(
+        f"<< /Type /StructTreeRoot /K [<< /S /Document /Pg {page} 0 R /K ["
+        f"<< /S /H1 /Pg {page} 0 R /K << /Type /MCR /Pg {page} 0 R /MCID 0 >> >> "
+        f"<< /S /Table /Pg {page} 0 R /K << /Type /MCR /Pg {page} 0 R /MCID 1 >> >> "
+        f"<< /S /P /Pg {page} 0 R /K << /Type /MCR /Pg {page} 0 R /MCID 2 >> >>"
+        "] >>] /RoleMap << /Document /Document /H1 /H /Table /Table /P /P >> >>"
+    )
+    info = pdf.add("<< /Title (Tagged Invoice Reading Order) /Author (pdfrust) >>")
+    catalog = pdf.add(
+        f"<< /Type /Catalog /Pages {pages} 0 R /Lang (en-US) "
+        "/MarkInfo << /Marked true >> "
+        f"/StructTreeRoot {struct_tree} 0 R >>"
+    )
+    assert font == 4
+    return pdf.render(catalog, trailer_entries=f"/Info {info} 0 R ")
+
+
+def tagged_reading_order_missing_page_context_pdf() -> bytes:
+    pdf = Pdf()
+    content = (
+        b"/P << /MCID 0 >> BDC "
+        b"q 0.94 0.96 0.99 rg 0 0 220 120 re f Q "
+        b"BT /F1 10 Tf 24 72 Td (Tagged order warning) Tj ET EMC"
+    )
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 220 120] "
+        "/Resources << /Font << /F1 4 0 R >> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    font = pdf.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    struct_tree = pdf.add(
+        "<< /Type /StructTreeRoot /K [<< /S /Document /K ["
+        "<< /S /P /K << /Type /MCR /MCID 0 >> >>"
+        "] >>] /RoleMap << /Document /Document /P /P >> >>"
+    )
+    info = pdf.add("<< /Title (Tagged Reading Order Warning) /Author (pdfrust) >>")
+    catalog = pdf.add(
+        f"<< /Type /Catalog /Pages {pages} 0 R /Lang (en-US) "
+        "/MarkInfo << /Marked true >> "
+        f"/StructTreeRoot {struct_tree} 0 R >>"
+    )
+    assert font == 4
+    return pdf.render(catalog, trailer_entries=f"/Info {info} 0 R ")
+
+
 def tagged_structure_heavy_report_pdf() -> bytes:
     pdf = Pdf()
     ops: list[str] = [
@@ -6937,6 +7018,11 @@ def main() -> None:
     write("tagged-report-visual-integrity.pdf", tagged_report_visual_integrity_pdf())
     write("tagged-form-visual-integrity.pdf", tagged_form_visual_integrity_pdf())
     write("tagged-office-alt-text.pdf", tagged_office_alt_text_pdf())
+    write("tagged-invoice-reading-order.pdf", tagged_invoice_reading_order_pdf())
+    write(
+        "tagged-reading-order-missing-page-context.pdf",
+        tagged_reading_order_missing_page_context_pdf(),
+    )
     write("tagged-structure-heavy-report.pdf", tagged_structure_heavy_report_pdf())
     write("malformed-tagged-structure.pdf", malformed_tagged_structure_pdf())
     write(

@@ -289,6 +289,14 @@ pub struct AccessibilityMetadata {
     pub structure_role_count: usize,
     /// Structure tree references at least one marked-content sequence.
     pub has_marked_content_references: bool,
+    /// Number of marked-content references reached in structure-tree order.
+    pub marked_content_reference_count: usize,
+    /// Number of marked-content references associated with a page context.
+    pub page_content_reference_count: usize,
+    /// Number of structure entries carrying alternate text.
+    pub alt_text_count: usize,
+    /// Number of bounded reading-order warnings, such as MCID references without page context.
+    pub reading_order_warning_count: usize,
     /// Structure traversal stopped because the bounded item budget was reached.
     pub truncated: bool,
 }

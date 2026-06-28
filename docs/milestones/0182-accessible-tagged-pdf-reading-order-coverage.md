@@ -1,6 +1,6 @@
 # 0182: Accessible Tagged PDF Reading Order Coverage
 
-Status: todo
+Status: in-progress
 Phase: 34
 Size: medium
 Depends on: 0181
@@ -42,6 +42,26 @@ order signals for searchable, accessible, and reviewable typical documents.
 - Run tagged PDF fixture rendering.
 - Run text and metadata classification tests.
 - Run visual comparison for tagged fixtures.
+
+## Progress Notes
+
+Native slice committed toward 0182 on 2026-06-28.
+
+- Added bounded reading-order metadata signals:
+  `marked_content_reference_count`, `page_content_reference_count`,
+  `alt_text_count`, and `reading_order_warning_count`.
+- Added `tagged-invoice-reading-order.pdf` for typical invoice/header/table
+  reading-order associations.
+- Added `tagged-reading-order-missing-page-context.pdf` as a warning-boundary
+  fixture for MCID references without page context.
+- Updated `fixtures/tagged-pdf-visual-manifest.tsv` and
+  `fixtures/corpus-manifest.tsv`.
+- Added `docs/reports/tagged-reading-order-coverage-2026-06-28.md`.
+- Native gates are green: 7 tagged fixtures render natively with 0 fallback,
+  0 errors, and 0 benchmark budget failures.
+- PDFium visual-diff was attempted, but the local `libpdfium.dylib` oracle was
+  not available, so 0182 remains in progress until that maintainer comparison
+  can be rerun.
 
 ## Completion Notes
 

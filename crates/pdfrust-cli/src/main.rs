@@ -6693,12 +6693,16 @@ fn page_labels_metadata_json(page_labels: &pdfrust_thumbnail::PageLabelsMetadata
 
 fn accessibility_metadata_json(accessibility: &pdfrust_thumbnail::AccessibilityMetadata) -> String {
     format!(
-        "{{\"language\":{},\"mark_info_marked\":{},\"has_role_map\":{},\"structure_role_count\":{},\"has_marked_content_references\":{},\"truncated\":{}}}",
+        "{{\"language\":{},\"mark_info_marked\":{},\"has_role_map\":{},\"structure_role_count\":{},\"has_marked_content_references\":{},\"marked_content_reference_count\":{},\"page_content_reference_count\":{},\"alt_text_count\":{},\"reading_order_warning_count\":{},\"truncated\":{}}}",
         optional_json_string(accessibility.language.as_deref()),
         optional_json_bool(accessibility.mark_info_marked),
         accessibility.has_role_map,
         accessibility.structure_role_count,
         accessibility.has_marked_content_references,
+        accessibility.marked_content_reference_count,
+        accessibility.page_content_reference_count,
+        accessibility.alt_text_count,
+        accessibility.reading_order_warning_count,
         accessibility.truncated
     )
 }
@@ -7426,6 +7430,10 @@ mod tests {
         assert!(json.contains("\"mark_info_marked\":true"));
         assert!(json.contains("\"structure_role_count\":1"));
         assert!(json.contains("\"has_marked_content_references\":true"));
+        assert!(json.contains("\"marked_content_reference_count\":1"));
+        assert!(json.contains("\"page_content_reference_count\":1"));
+        assert!(json.contains("\"alt_text_count\":0"));
+        assert!(json.contains("\"reading_order_warning_count\":0"));
     }
 
     #[test]
