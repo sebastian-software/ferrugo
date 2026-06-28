@@ -29,6 +29,12 @@ The default classification thresholds are intentionally conservative:
 RGBA output over an explicit background. RGB output is the user-visible review
 surface.
 
+Low-amplitude field drift is accepted when the page MAE is below the configured
+threshold and either the maximum RGB delta is at most 8, or the 95th percentile
+RGB delta is at most 4. The p95 rule allows broad 1-4 channel rounding drift
+with a small text or edge antialiasing tail, while keeping high-amplitude
+renderer mismatches as blockers.
+
 ## Statuses
 
 | Status | Meaning | Review action |

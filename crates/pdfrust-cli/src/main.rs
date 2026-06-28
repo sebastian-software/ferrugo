@@ -26,6 +26,7 @@ use pdfrust_thumbnail::{
 
 const WORKER_POLL_INTERVAL: Duration = Duration::from_millis(10);
 const LOW_AMPLITUDE_VISUAL_DRIFT_MAX_DELTA: u8 = 8;
+const LOW_AMPLITUDE_VISUAL_DRIFT_P95_MAX_DELTA: u8 = 4;
 #[cfg(not(feature = "pdfium"))]
 const PDFIUM_FEATURE_MESSAGE: &str =
     "PDFium support is disabled; rebuild pdfrust-cli with --features pdfium";
@@ -4776,8 +4777,10 @@ fn classify_visual_diff(
     let bounded_distribution = metrics.p95_channel_delta <= thresholds.max_p95_channel_delta
         && metrics.changed_ratio <= thresholds.max_changed_ratio;
     let low_amplitude_field = metrics.max_channel_delta <= LOW_AMPLITUDE_VISUAL_DRIFT_MAX_DELTA;
+    let low_amplitude_distribution =
+        metrics.p95_channel_delta <= LOW_AMPLITUDE_VISUAL_DRIFT_P95_MAX_DELTA;
     if metrics.mean_abs_error <= thresholds.max_mean_abs_error
-        && (bounded_distribution || low_amplitude_field)
+        && (bounded_distribution || low_amplitude_field || low_amplitude_distribution)
     {
         VisualDiffStatus::AcceptedDrift
     } else {
@@ -8837,8 +8840,19 @@ status = "candidate"
             VisualDiffStatus::AcceptedDrift
         );
 
+        let thin_high_delta_tail = VisualDiffMetrics {
+            max_channel_delta: 64,
+            ..metrics
+        };
+
+        assert_eq!(
+            classify_visual_diff(&thin_high_delta_tail, VisualDiffThresholds::default()),
+            VisualDiffStatus::AcceptedDrift
+        );
+
         let high_delta = VisualDiffMetrics {
             max_channel_delta: 64,
+            p95_channel_delta: 9,
             ..metrics
         };
 

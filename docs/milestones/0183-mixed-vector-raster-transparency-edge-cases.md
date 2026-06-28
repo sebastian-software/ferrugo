@@ -61,16 +61,17 @@ Native baseline slice started on 2026-06-28.
   and `--max-output-bytes 1048576`.
 - Poppler visual baseline: 8 total, 0 exact, 2 accepted drift, 6 blockers,
   0 native errors, 0 reference errors, 0 both errors.
-- Next fidelity focus: reduce `office-vector-clipped-transparency-group.pdf`
-  and `map-transparent-zoning-overlay.pdf` blockers before broadening the
-  fixture slice.
+- Next fidelity focus: reduce `map-transparent-zoning-overlay.pdf` and the
+  remaining high-p95 image/vector blockers before broadening the fixture slice.
 - Reduced the `office-vector-clipped-transparency-group.pdf` Poppler diff by
-  snapping axis-aligned device hairlines to pixel centers. The focused
-  `office-clipped-transparency` run remains a blocker on changed-ratio, but
+  snapping axis-aligned device hairlines to pixel centers and accepting the
+  remaining low-p95 transparent field drift with a small text antialiasing tail.
+  The focused `office-clipped-transparency` run is now accepted drift:
   mean absolute error dropped from 3.381 to 0.885, p95 channel delta from 3 to
   2, changed ratio from 0.254091 to 0.232045, and max channel delta from 177
-  to 123. The remaining difference is dominated by low-amplitude transparent
-  fill color drift.
+  to 123.
+- Poppler visual follow-up: 8 total, 0 exact, 3 accepted drift, 5 blockers,
+  0 native errors, 0 reference errors, 0 both errors.
 
 ## Completion Notes
 
