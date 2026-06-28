@@ -68,6 +68,10 @@ Native slice committed toward 0182 on 2026-06-28.
 - Refined standard-base-font fallback masks so Helvetica-style tagged fixtures
   paint less heavily. This reduces several Poppler diff metrics but does not
   yet clear the tagged visual gate.
+- Aligned `visual-diff-poppler` to render Poppler references at the native
+  target dimensions when native rendering succeeds. The two former 1px
+  dimension mismatches now produce comparable Poppler metrics, while all 7
+  fixtures remain strict visual blockers.
 
 ## Completion Notes
 

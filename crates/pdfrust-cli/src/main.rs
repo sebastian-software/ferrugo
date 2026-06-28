@@ -4311,7 +4311,14 @@ fn poppler_visual_diff_fixture<N: ThumbnailBackend>(
     thresholds: VisualDiffThresholds,
 ) -> PopplerVisualDiffRecord {
     let native_result = native.render(PdfSource::from_path(path), options);
-    let reference_result = render_poppler_ppm(path, options);
+    let reference_result = render_poppler_ppm(
+        path,
+        options,
+        native_result
+            .as_ref()
+            .ok()
+            .map(PopplerTargetDimensions::from),
+    );
     let subsystem = visual_diff_subsystem(path_key.as_str(), family.as_str());
 
     match (native_result, reference_result) {
@@ -4379,6 +4386,21 @@ fn poppler_visual_diff_fixture<N: ThumbnailBackend>(
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PopplerTargetDimensions {
+    width: u32,
+    height: u32,
+}
+
+impl From<&pdfrust_thumbnail::Thumbnail> for PopplerTargetDimensions {
+    fn from(thumbnail: &pdfrust_thumbnail::Thumbnail) -> Self {
+        Self {
+            width: thumbnail.width,
+            height: thumbnail.height,
+        }
+    }
+}
+
 fn poppler_status_from_visual_status(status: VisualDiffStatus) -> PopplerVisualDiffStatus {
     match status {
         VisualDiffStatus::Exact => PopplerVisualDiffStatus::Exact,
@@ -4413,6 +4435,7 @@ fn reference_visual_error(error: CliError) -> VisualDiffError {
 fn render_poppler_ppm(
     path: &Path,
     options: &ThumbnailOptions,
+    target_dimensions: Option<PopplerTargetDimensions>,
 ) -> Result<pdfrust_thumbnail::Thumbnail, CliError> {
     let command = env::var_os("PDFRUST_POPPLER_PDFTOPPM")
         .map(PathBuf::from)
@@ -4434,7 +4457,7 @@ fn render_poppler_ppm(
     let output_prefix = temp_dir.join("page");
     let output_path = output_prefix.with_extension("ppm");
     let page_number = options.page_index.saturating_add(1).to_string();
-    let max_edge = options.max_edge.to_string();
+    let scale_args = poppler_scale_args(options.max_edge, target_dimensions);
     let mut poppler = Command::new(&command);
     poppler
         .arg("-q")
@@ -4443,8 +4466,7 @@ fn render_poppler_ppm(
         .arg("-l")
         .arg(page_number.as_str())
         .arg("-singlefile")
-        .arg("-scale-to")
-        .arg(max_edge.as_str())
+        .args(scale_args.iter())
         .arg(path)
         .arg(&output_prefix)
         .env("HOME", &cache_dir)
@@ -4475,6 +4497,24 @@ fn render_poppler_ppm(
     let _ = fs::remove_file(&output_path);
     let _ = fs::remove_dir(&temp_dir);
     decode_ppm_rgb_as_rgba(&ppm)
+}
+
+fn poppler_scale_args(
+    max_edge: u32,
+    target_dimensions: Option<PopplerTargetDimensions>,
+) -> Vec<OsString> {
+    match target_dimensions {
+        Some(dimensions) => vec![
+            OsString::from("-scale-to-x"),
+            OsString::from(dimensions.width.to_string()),
+            OsString::from("-scale-to-y"),
+            OsString::from(dimensions.height.to_string()),
+        ],
+        None => vec![
+            OsString::from("-scale-to"),
+            OsString::from(max_edge.to_string()),
+        ],
+    }
 }
 
 fn wait_for_child(
@@ -8832,6 +8872,37 @@ status = "candidate"
                 "secure-document",
             ),
             "document-security"
+        );
+    }
+
+    #[test]
+    fn poppler_scale_args_should_use_native_target_dimensions_when_available() {
+        let args = poppler_scale_args(
+            160,
+            Some(PopplerTargetDimensions {
+                width: 160,
+                height: 87,
+            }),
+        );
+
+        assert_eq!(
+            args,
+            vec![
+                OsString::from("-scale-to-x"),
+                OsString::from("160"),
+                OsString::from("-scale-to-y"),
+                OsString::from("87"),
+            ]
+        );
+    }
+
+    #[test]
+    fn poppler_scale_args_should_fallback_to_max_edge_without_native_render() {
+        let args = poppler_scale_args(160, None);
+
+        assert_eq!(
+            args,
+            vec![OsString::from("-scale-to"), OsString::from("160")]
         );
     }
 

@@ -129,10 +129,12 @@ visual-oracle path was available.
 
 PDFium-free maintainer oracle tooling was added with `visual-diff-poppler` and
 run against the same tagged fixture slice. Poppler rendered all 7 fixtures with
-0 reference errors, and the native renderer produced 0 render errors. A follow-up
-standard-base-font fallback refinement reduced several text-drift metrics, but
-the strict threshold report still classifies all 7 fixtures as blockers, so 0182
-remains in progress for visual-fidelity work rather than oracle availability.
+0 reference errors, and the native renderer produced 0 render errors. Follow-up
+work refined standard-base-font fallback masks and aligned Poppler reference
+renders to the native target dimensions. That removed the former 1px dimension
+mismatches from the oracle report, but the strict threshold report still
+classifies all 7 fixtures as blockers, so 0182 remains in progress for
+visual-fidelity work rather than oracle availability.
 
 Poppler command:
 
@@ -162,12 +164,12 @@ Blocker split:
 | Fixture | Status | Evidence |
 | --- | --- | --- |
 | `tagged-accessibility-metadata.pdf` | blocker | MAE 1.228, p95 1, changed ratio 0.161765, max delta 171. |
-| `tagged-form-visual-integrity.pdf` | blocker | MAE 6.637, p95 89, changed ratio 0.086799, max delta 255. |
-| `tagged-invoice-reading-order.pdf` | blocker | MAE 13.832, p95 100, changed ratio 0.134195, max delta 255. |
-| `tagged-office-alt-text.pdf` | blocker | MAE 9.460, p95 95, changed ratio 0.096495, max delta 255. |
-| `tagged-reading-order-missing-page-context.pdf` | blocker | Dimension mismatch: native 160x87, Poppler 160x88. |
-| `tagged-report-visual-integrity.pdf` | blocker | MAE 11.787, p95 97, changed ratio 0.128610, max delta 252. |
-| `tagged-structure-heavy-report.pdf` | blocker | Dimension mismatch: native 160x133, Poppler 160x134. |
+| `tagged-form-visual-integrity.pdf` | blocker | MAE 6.645, p95 89, changed ratio 0.086974, max delta 255. |
+| `tagged-invoice-reading-order.pdf` | blocker | MAE 16.935, p95 147, changed ratio 0.144231, max delta 255. |
+| `tagged-office-alt-text.pdf` | blocker | MAE 15.165, p95 176, changed ratio 0.111974, max delta 255. |
+| `tagged-reading-order-missing-page-context.pdf` | blocker | MAE 6.794, p95 0, changed ratio 0.037213, max delta 252. |
+| `tagged-report-visual-integrity.pdf` | blocker | MAE 16.980, p95 175, changed ratio 0.143211, max delta 252. |
+| `tagged-structure-heavy-report.pdf` | blocker | MAE 21.599, p95 102, changed ratio 0.226504, max delta 255. |
 
 ## Validation
 
