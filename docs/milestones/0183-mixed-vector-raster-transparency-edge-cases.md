@@ -115,6 +115,13 @@ Native baseline slice started on 2026-06-28.
   The remaining blockers should stay focused on a real Base14/text renderer,
   route/grid antialiasing, and fixture-specific compositing evidence rather
   than these broad approximations.
+- Accounted for graphics CTM scale when converting stroked path line widths and
+  dash lengths into device space, while limiting the extra ultrathin hairline
+  snapping band to scaled CTMs. This targets high-DPI preview grid linework
+  without snapping identity-CTM structure-heavy tagged rectangles. The 0183
+  summary remains 5 accepted drift and 3 blockers, but
+  `high-dpi-preview-fidelity.pdf` improves from MAE 20.803, p95 105, changed
+  ratio 0.380260 to MAE 7.320, p95 40, changed ratio 0.244479.
 
 ## Completion Notes
 

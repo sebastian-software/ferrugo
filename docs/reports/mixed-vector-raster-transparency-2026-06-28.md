@@ -283,3 +283,29 @@ work: actual Base14/text raster fidelity for text-heavy tails, diagonal
 route/grid antialiasing for `map-transparent-zoning-overlay.pdf`, and
 fixture-specific image/compositing evidence instead of broad sampler or color
 quantization changes.
+
+## CTM-Scaled Stroke Widths
+
+Stroked path rasterization now multiplies authored line width and dash lengths
+by both the page transform and the active graphics CTM scale. The added
+ultrathin snap band is gated to scaled CTMs, so high-DPI preview grids can snap
+without changing identity-CTM 0.4w structure-heavy tagged rectangles.
+
+Full 0183 Poppler follow-up result remains 8 total, 0 exact, 5 accepted drift,
+3 blockers, 0 native errors, 0 reference errors, 0 both errors.
+
+| Fixture | Status | MAE | P95 delta | Changed ratio | Max delta |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `browser-print-raster-vector-mix.pdf` | accepted drift | 0.396 | 0 | 0.018945 | 202 |
+| `high-dpi-preview-fidelity.pdf` | blocker | 7.320 | 40 | 0.244479 | 225 |
+| `image-heavy-rotated-mask-sheet.pdf` | accepted drift | 3.266 | 5 | 0.392134 | 222 |
+| `map-transparent-zoning-overlay.pdf` | blocker | 5.345 | 31 | 0.968521 | 143 |
+| `office-vector-clipped-transparency-group.pdf` | accepted drift | 0.613 | 2 | 0.231989 | 118 |
+| `office-vector-repeated-effects.pdf` | blocker | 7.258 | 49 | 0.292407 | 225 |
+| `slide-layered-image-shadow.pdf` | accepted drift | 2.881 | 4 | 0.310069 | 216 |
+| `soft-mask-image.pdf` | accepted drift | 0.829 | 0 | 0.011181 | 255 |
+
+The targeted improvement is `high-dpi-preview-fidelity.pdf`: MAE `20.803 ->
+7.320`, p95 `105 -> 40`, and changed ratio `0.380260 -> 0.244479`. The fixture
+remains a blocker, but the remaining delta is much narrower and no 0183 fixture
+changed status.

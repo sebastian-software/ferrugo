@@ -5277,12 +5277,13 @@ fn rasterize_path_item(
                 device,
                 &flattened,
                 StrokeRasterState {
-                    line_width: path.state.line_width * context.transform.scale,
+                    line_width: device_stroke_width(path.state, context.transform),
+                    ctm_scale: matrix_average_scale(path.state.ctm),
                     color: path.state.stroke_color,
                     blend_mode: path.state.blend_mode,
                     alpha: path.state.stroke_alpha,
                     dash_pattern: path.state.stroke_dash,
-                    dash_scale: context.transform.scale,
+                    dash_scale: device_stroke_scale(path.state, context.transform),
                     line_cap: path.state.line_cap,
                     line_join: path.state.line_join,
                     miter_limit: path.state.miter_limit,
@@ -5316,12 +5317,13 @@ fn rasterize_path_item(
                 device,
                 &flattened,
                 StrokeRasterState {
-                    line_width: path.state.line_width * context.transform.scale,
+                    line_width: device_stroke_width(path.state, context.transform),
+                    ctm_scale: matrix_average_scale(path.state.ctm),
                     color: path.state.stroke_color,
                     blend_mode: path.state.blend_mode,
                     alpha: path.state.stroke_alpha,
                     dash_pattern: path.state.stroke_dash,
-                    dash_scale: context.transform.scale,
+                    dash_scale: device_stroke_scale(path.state, context.transform),
                     line_cap: path.state.line_cap,
                     line_join: path.state.line_join,
                     miter_limit: path.state.miter_limit,
@@ -5331,6 +5333,14 @@ fn rasterize_path_item(
         }
     }
     Ok(())
+}
+
+fn device_stroke_width(state: GraphicsState, transform: PageTransform) -> f64 {
+    state.line_width * device_stroke_scale(state, transform)
+}
+
+fn device_stroke_scale(state: GraphicsState, transform: PageTransform) -> f64 {
+    matrix_average_scale(state.ctm) * transform.scale
 }
 
 fn rasterize_transparency_group(
@@ -6399,6 +6409,7 @@ struct PathRasterContext<'a> {
 #[derive(Debug, Clone, Copy)]
 struct StrokeRasterState {
     line_width: f64,
+    ctm_scale: f64,
     color: DeviceColor,
     blend_mode: BlendMode,
     alpha: f64,
@@ -9700,7 +9711,7 @@ fn stroke_path(
     let snapped_lines;
     let snapped_joins;
     let (stroke_lines, joins): (&[LineSegment], &[StrokeJoin]) =
-        if should_snap_axis_aligned_hairline(state.line_width) {
+        if should_snap_axis_aligned_hairline(state.line_width, state.ctm_scale) {
             snapped_lines = base_lines
                 .iter()
                 .copied()
@@ -9764,10 +9775,12 @@ fn stroke_radius_for_device_line_width(line_width: f64) -> f64 {
     }
 }
 
-fn should_snap_axis_aligned_hairline(line_width: f64) -> bool {
+fn should_snap_axis_aligned_hairline(line_width: f64, ctm_scale: f64) -> bool {
     // Keep these bands narrow: wider 0.7-0.8px signature/legal linework
     // loses visible coverage if it is snapped away from its authored sample row.
-    (0.25..=0.45).contains(&line_width) || (0.55..=0.65).contains(&line_width)
+    (0.25..=0.45).contains(&line_width)
+        || (0.55..=0.65).contains(&line_width)
+        || (ctm_scale > 1.0 + f64::EPSILON && (0.15..0.25).contains(&line_width))
 }
 
 fn snap_axis_aligned_hairline_line(line: LineSegment) -> LineSegment {
@@ -15169,6 +15182,35 @@ mod tests {
         };
 
         assert_eq!(raster.pixel(10, 4).expect("subpixel hairline"), black);
+    }
+
+    #[test]
+    fn device_stroke_width_should_include_graphics_ctm_scale() {
+        let state = GraphicsState {
+            ctm: Matrix::scale(2.0, 2.0),
+            line_width: 0.35,
+            ..GraphicsState::default()
+        };
+        let transform = PageTransform {
+            source_box: PathBounds {
+                min_x: 0.0,
+                min_y: 0.0,
+                max_x: 30.0,
+                max_y: 30.0,
+            },
+            rotation: PageRotation::Deg0,
+            scale: 1.0 / 3.0,
+            dimensions: RasterDimensions::new(10, 10).expect("valid raster dimensions"),
+            matrix: Matrix::scale(1.0 / 3.0, -1.0 / 3.0),
+        };
+
+        assert!((device_stroke_width(state, transform) - 0.2333333333333333).abs() < 0.000001);
+    }
+
+    #[test]
+    fn hairline_snap_policy_should_limit_ultrathin_band_to_scaled_ctm() {
+        assert!(!should_snap_axis_aligned_hairline(0.177, 1.0));
+        assert!(should_snap_axis_aligned_hairline(0.233, 2.0));
     }
 
     #[test]
