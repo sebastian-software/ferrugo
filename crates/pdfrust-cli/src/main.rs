@@ -64,6 +64,7 @@ fn run(args: Vec<OsString>) -> Result<(), CliError> {
         Some("trace-native") => trace_native_command(&args[1..]),
         Some("replay-operators") => replay_operators_command(&args[1..]),
         Some("extract-corpus-metadata") => extract_corpus_metadata_command(&args[1..]),
+        Some("classify-pdf20-usage") => classify_pdf20_usage_command(&args[1..]),
         Some("validate-local-corpus") => validate_local_corpus_command(&args[1..]),
         Some("benchmark-native") => benchmark_native_command(&args[1..]),
         Some("benchmark-batch-native") => benchmark_batch_native_command(&args[1..]),
@@ -426,6 +427,37 @@ fn extract_corpus_metadata_command(args: &[OsString]) -> Result<(), CliError> {
     };
     let records = extract_native_corpus_metadata(&fixtures, manifest.as_ref());
     let json = corpus_metadata_json(&records);
+
+    if let Some(output) = config.output {
+        fs::write(&output, &json).map_err(|source| CliError::Io {
+            path: output,
+            source,
+        })?;
+    } else {
+        println!("{json}");
+    }
+
+    Ok(())
+}
+
+fn classify_pdf20_usage_command(args: &[OsString]) -> Result<(), CliError> {
+    let config = Pdf20UsageConfig::parse(args)?;
+    let options = ThumbnailOptions {
+        page_index: config.page_index,
+        max_edge: config.max_edge,
+        background: config.background,
+        output_format: pdfrust_thumbnail::OutputFormat::Png,
+        timeout: config.timeout,
+    };
+    let fixtures = pdf_inputs(&config.input)?;
+    let manifest = match &config.manifest {
+        Some(path) => Some(read_corpus_manifest(path)?),
+        None => None,
+    };
+    let fixtures =
+        filter_fixtures_by_family(&fixtures, manifest.as_ref(), &config.include_families)?;
+    let report = classify_pdf20_usage(&fixtures, manifest.as_ref(), &options)?;
+    let json = pdf20_usage_report_json(&report);
 
     if let Some(output) = config.output {
         fs::write(&output, &json).map_err(|source| CliError::Io {
@@ -1319,6 +1351,98 @@ impl CorpusMetadataConfig {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+struct Pdf20UsageConfig {
+    input: PathBuf,
+    manifest: Option<PathBuf>,
+    output: Option<PathBuf>,
+    include_families: Vec<String>,
+    page_index: u32,
+    max_edge: u32,
+    background: Rgba,
+    timeout: Duration,
+}
+
+impl Pdf20UsageConfig {
+    fn parse(args: &[OsString]) -> Result<Self, CliError> {
+        let mut input = None;
+        let mut manifest = None;
+        let mut output = None;
+        let mut include_families = Vec::new();
+        let mut page_index = DEFAULT_PAGE_INDEX;
+        let mut max_edge = DEFAULT_MAX_EDGE;
+        let mut background = Rgba::WHITE;
+        let mut timeout = DEFAULT_TIMEOUT;
+
+        let mut index = 0;
+        while index < args.len() {
+            let arg = args[index]
+                .to_str()
+                .ok_or_else(|| CliError::Usage("arguments must be valid UTF-8".to_string()))?;
+            match arg {
+                "--output" | "-o" => {
+                    index += 1;
+                    output = Some(required_path(args, index, "--output")?);
+                }
+                "--manifest" => {
+                    index += 1;
+                    manifest = Some(required_path(args, index, "--manifest")?);
+                }
+                "--include-family" => {
+                    index += 1;
+                    include_families
+                        .push(required_str(args, index, "--include-family")?.to_string());
+                }
+                "--page-index" => {
+                    index += 1;
+                    page_index = parse_u32(args, index, "--page-index")?;
+                }
+                "--max-edge" => {
+                    index += 1;
+                    max_edge = parse_u32(args, index, "--max-edge")?;
+                }
+                "--background" => {
+                    index += 1;
+                    background = parse_background(required_str(args, index, "--background")?)?;
+                }
+                "--timeout" => {
+                    index += 1;
+                    let seconds = parse_u64(args, index, "--timeout")?;
+                    timeout = Duration::from_secs(seconds);
+                }
+                value if value.starts_with('-') => {
+                    return Err(CliError::Usage(format!("unknown option `{value}`")));
+                }
+                value => {
+                    if input.replace(PathBuf::from(value)).is_some() {
+                        return Err(CliError::Usage(
+                            "only one input path is supported".to_string(),
+                        ));
+                    }
+                }
+            }
+            index += 1;
+        }
+
+        if max_edge == 0 {
+            return Err(CliError::Usage(
+                "--max-edge must be greater than zero".to_string(),
+            ));
+        }
+
+        Ok(Self {
+            input: input.ok_or_else(|| CliError::Usage("missing input path".to_string()))?,
+            manifest,
+            output,
+            include_families,
+            page_index,
+            max_edge,
+            background,
+            timeout,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct LocalCorpusValidationConfig {
     input: PathBuf,
     allow_missing: bool,
@@ -2080,6 +2204,88 @@ struct CorpusMetadataRecord {
     path: String,
     manifest: Option<CorpusManifestEntry>,
     metadata: MetadataOutcome,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Pdf20UsageReport {
+    total_scanned: usize,
+    pdf20_documents: usize,
+    native_rendered: usize,
+    typed_unsupported: usize,
+    errors: usize,
+    feature_counts: BTreeMap<String, usize>,
+    impact_counts: BTreeMap<&'static str, usize>,
+    families: BTreeMap<String, Pdf20FamilySummary>,
+    followups: Vec<Pdf20Followup>,
+    fixtures: Vec<Pdf20UsageRecord>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct Pdf20FamilySummary {
+    total: usize,
+    pdf20_documents: usize,
+    native_rendered: usize,
+    typed_unsupported: usize,
+    errors: usize,
+}
+
+impl Pdf20FamilySummary {
+    fn record(&mut self, record: &Pdf20UsageRecord) {
+        self.total += 1;
+        if record.version.detected_pdf20 {
+            self.pdf20_documents += 1;
+        }
+        match record.render {
+            Pdf20RenderOutcome::NativeRendered => self.native_rendered += 1,
+            Pdf20RenderOutcome::TypedUnsupported { .. } => self.typed_unsupported += 1,
+            Pdf20RenderOutcome::Error { .. } => self.errors += 1,
+            Pdf20RenderOutcome::NotPdf20 => {}
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Pdf20UsageRecord {
+    path: String,
+    family: String,
+    manifest_features: Vec<String>,
+    version: Pdf20VersionEvidence,
+    features: Vec<Pdf20FeatureObservation>,
+    render: Pdf20RenderOutcome,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Pdf20VersionEvidence {
+    header_version: Option<String>,
+    catalog_version_20: bool,
+    manifest_pdf20_tag: bool,
+    detected_pdf20: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Pdf20FeatureObservation {
+    feature: &'static str,
+    policy: &'static str,
+    visual_impact: &'static str,
+    bucket: Option<&'static str>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Pdf20RenderOutcome {
+    NotPdf20,
+    NativeRendered,
+    TypedUnsupported { bucket: &'static str },
+    Error { class: &'static str },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Pdf20Followup {
+    rank: usize,
+    feature: String,
+    observed_documents: usize,
+    visual_impact: &'static str,
+    bucket: Option<&'static str>,
+    recommendation: &'static str,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2948,6 +3154,238 @@ fn extract_native_corpus_metadata(
             }
         })
         .collect()
+}
+
+fn classify_pdf20_usage(
+    paths: &[PathBuf],
+    manifest: Option<&CorpusManifest>,
+    options: &ThumbnailOptions,
+) -> Result<Pdf20UsageReport, CliError> {
+    let native = NativeBackend::new();
+    let mut fixtures = Vec::with_capacity(paths.len());
+    let mut feature_counts = BTreeMap::new();
+    let mut impact_counts = BTreeMap::new();
+    let mut families = BTreeMap::new();
+    let mut pdf20_documents = 0usize;
+    let mut native_rendered = 0usize;
+    let mut typed_unsupported = 0usize;
+    let mut errors = 0usize;
+
+    for path in paths {
+        let bytes = fs::read(path).map_err(|source| CliError::ReadFile {
+            path: path.clone(),
+            source,
+        })?;
+        let path_key = normalize_manifest_path(path);
+        let manifest_entry = manifest.and_then(|manifest| manifest.entry_for_path(&path_key));
+        let family = manifest_entry
+            .map(|entry| entry.family.as_str())
+            .unwrap_or("unclassified")
+            .to_string();
+        let manifest_features = manifest_entry
+            .map(|entry| entry.features.clone())
+            .unwrap_or_default();
+        let version = pdf20_version_evidence(&bytes, manifest_entry);
+        let features = pdf20_feature_observations(&bytes, &manifest_features, &version);
+        let render = if version.detected_pdf20 {
+            match native.render(PdfSource::from_path(path), options) {
+                Ok(_) => {
+                    native_rendered += 1;
+                    Pdf20RenderOutcome::NativeRendered
+                }
+                Err(error)
+                    if error.class() == pdfrust_thumbnail::ThumbnailErrorClass::Unsupported =>
+                {
+                    typed_unsupported += 1;
+                    Pdf20RenderOutcome::TypedUnsupported {
+                        bucket: FallbackReason::from_native_error(&error).category(),
+                    }
+                }
+                Err(error) => {
+                    errors += 1;
+                    Pdf20RenderOutcome::Error {
+                        class: error.class().as_str(),
+                    }
+                }
+            }
+        } else {
+            Pdf20RenderOutcome::NotPdf20
+        };
+
+        if version.detected_pdf20 {
+            pdf20_documents += 1;
+            for feature in &features {
+                *feature_counts
+                    .entry(feature.feature.to_string())
+                    .or_insert(0) += 1;
+                *impact_counts.entry(feature.visual_impact).or_insert(0) += 1;
+            }
+        }
+
+        let record = Pdf20UsageRecord {
+            path: path_key,
+            family,
+            manifest_features,
+            version,
+            features,
+            render,
+        };
+        families
+            .entry(record.family.clone())
+            .or_insert_with(Pdf20FamilySummary::default)
+            .record(&record);
+        fixtures.push(record);
+    }
+
+    let followups = pdf20_followups(&feature_counts);
+    Ok(Pdf20UsageReport {
+        total_scanned: paths.len(),
+        pdf20_documents,
+        native_rendered,
+        typed_unsupported,
+        errors,
+        feature_counts,
+        impact_counts,
+        families,
+        followups,
+        fixtures,
+    })
+}
+
+fn pdf20_version_evidence(
+    bytes: &[u8],
+    manifest: Option<&CorpusManifestEntry>,
+) -> Pdf20VersionEvidence {
+    let header_version = pdf_header_version(bytes);
+    let catalog_version_20 =
+        contains_bytes(bytes, b"/Version /2.0") || contains_bytes(bytes, b"/Version/2.0");
+    let manifest_pdf20_tag =
+        manifest.is_some_and(|entry| feature_present(&entry.features, "pdf-2.0"));
+    let detected_pdf20 = manifest_pdf20_tag
+        || catalog_version_20
+        || header_version.as_deref().is_some_and(pdf20_or_later);
+
+    Pdf20VersionEvidence {
+        header_version,
+        catalog_version_20,
+        manifest_pdf20_tag,
+        detected_pdf20,
+    }
+}
+
+fn pdf20_feature_observations(
+    bytes: &[u8],
+    manifest_features: &[String],
+    version: &Pdf20VersionEvidence,
+) -> Vec<Pdf20FeatureObservation> {
+    if !version.detected_pdf20 {
+        return Vec::new();
+    }
+
+    let mut observations = Vec::new();
+    observations.push(Pdf20FeatureObservation {
+        feature: "pdf-2.0-version-marker",
+        policy: "accept-existing-render-path",
+        visual_impact: "visual-supported",
+        bucket: None,
+    });
+    if version.catalog_version_20 || feature_present(manifest_features, "catalog-version") {
+        observations.push(Pdf20FeatureObservation {
+            feature: "catalog-version",
+            policy: "accept-existing-render-path",
+            visual_impact: "non-visual",
+            bucket: None,
+        });
+    }
+    if contains_bytes(bytes, b"/AF ")
+        || contains_bytes(bytes, b"/AF[")
+        || contains_bytes(bytes, b"/AFRelationship")
+        || feature_present(manifest_features, "associated-files")
+    {
+        observations.push(Pdf20FeatureObservation {
+            feature: "associated-files",
+            policy: "ignore-metadata-only",
+            visual_impact: "non-visual",
+            bucket: None,
+        });
+    }
+    if contains_bytes(bytes, b"/UseBlackPtComp")
+        || feature_present(manifest_features, "black-point-compensation")
+    {
+        observations.push(Pdf20FeatureObservation {
+            feature: "black-point-compensation",
+            policy: "typed-unsupported",
+            visual_impact: "visual-unsupported",
+            bucket: Some(pdfrust_thumbnail::unsupported_feature_buckets::GRAPHICS_COLOR_MANAGEMENT),
+        });
+    }
+
+    observations
+}
+
+fn pdf20_followups(feature_counts: &BTreeMap<String, usize>) -> Vec<Pdf20Followup> {
+    let mut followups = Vec::new();
+    if let Some(&count) = feature_counts.get("black-point-compensation") {
+        followups.push(Pdf20Followup {
+            rank: 1,
+            feature: "black-point-compensation".to_string(),
+            observed_documents: count,
+            visual_impact: "visual-unsupported",
+            bucket: Some(pdfrust_thumbnail::unsupported_feature_buckets::GRAPHICS_COLOR_MANAGEMENT),
+            recommendation: "keep typed unsupported for 1.2 unless real-corpus frequency rises; implement only with color-threshold evidence",
+        });
+    }
+    if let Some(&count) = feature_counts.get("associated-files") {
+        followups.push(Pdf20Followup {
+            rank: followups.len() + 1,
+            feature: "associated-files".to_string(),
+            observed_documents: count,
+            visual_impact: "non-visual",
+            bucket: None,
+            recommendation:
+                "keep accepted as metadata-only for thumbnails and preserve regression fixtures",
+        });
+    }
+    if let Some(&count) = feature_counts.get("catalog-version") {
+        followups.push(Pdf20Followup {
+            rank: followups.len() + 1,
+            feature: "catalog-version".to_string(),
+            observed_documents: count,
+            visual_impact: "non-visual",
+            bucket: None,
+            recommendation: "keep as a compatibility signal and continue accepting when render operators stay in supported paths",
+        });
+    }
+    followups
+}
+
+fn pdf_header_version(bytes: &[u8]) -> Option<String> {
+    let prefix = bytes.get(..bytes.len().min(16))?;
+    let header = std::str::from_utf8(prefix).ok()?;
+    let version = header
+        .strip_prefix("%PDF-")?
+        .chars()
+        .take(3)
+        .collect::<String>();
+    (version.len() == 3).then_some(version)
+}
+
+fn pdf20_or_later(version: &str) -> bool {
+    version
+        .split_once('.')
+        .and_then(|(major, _)| major.parse::<u8>().ok())
+        .is_some_and(|major| major >= 2)
+}
+
+fn contains_bytes(haystack: &[u8], needle: &[u8]) -> bool {
+    !needle.is_empty()
+        && haystack
+            .windows(needle.len())
+            .any(|window| window == needle)
+}
+
+fn feature_present(features: &[String], needle: &str) -> bool {
+    features.iter().any(|feature| feature == needle)
 }
 
 #[derive(Debug, Clone)]
@@ -4724,6 +5162,172 @@ fn corpus_metadata_json(records: &[CorpusMetadataRecord]) -> String {
     )
 }
 
+fn pdf20_usage_report_json(report: &Pdf20UsageReport) -> String {
+    let families = report
+        .families
+        .iter()
+        .map(|(family, summary)| format!("{}:{}", json_string(family), pdf20_family_json(summary)))
+        .collect::<Vec<_>>()
+        .join(",");
+    let followups = report
+        .followups
+        .iter()
+        .map(pdf20_followup_json)
+        .collect::<Vec<_>>()
+        .join(",");
+    let fixtures = report
+        .fixtures
+        .iter()
+        .map(pdf20_usage_record_json)
+        .collect::<Vec<_>>()
+        .join(",");
+
+    format!(
+        concat!(
+            "{{\n",
+            "  \"schema_version\": 1,\n",
+            "  \"report_kind\": \"pdf-2-0-feature-usage\",\n",
+            "  \"privacy\": \"no PDF bytes, rendered pixels, text samples, or stream operands\",\n",
+            "  \"total_scanned\": {},\n",
+            "  \"pdf20_documents\": {},\n",
+            "  \"native_rendered\": {},\n",
+            "  \"typed_unsupported\": {},\n",
+            "  \"errors\": {},\n",
+            "  \"feature_counts\": {},\n",
+            "  \"visual_impact_counts\": {},\n",
+            "  \"families\": {{{}}},\n",
+            "  \"followups\": [{}],\n",
+            "  \"fixtures\": [{}]\n",
+            "}}\n"
+        ),
+        report.total_scanned,
+        report.pdf20_documents,
+        report.native_rendered,
+        report.typed_unsupported,
+        report.errors,
+        string_count_map_json(&report.feature_counts),
+        count_map_json(&report.impact_counts),
+        families,
+        followups,
+        fixtures
+    )
+}
+
+fn pdf20_family_json(summary: &Pdf20FamilySummary) -> String {
+    format!(
+        concat!(
+            "{{",
+            "\"total\":{},",
+            "\"pdf20_documents\":{},",
+            "\"native_rendered\":{},",
+            "\"typed_unsupported\":{},",
+            "\"errors\":{}",
+            "}}"
+        ),
+        summary.total,
+        summary.pdf20_documents,
+        summary.native_rendered,
+        summary.typed_unsupported,
+        summary.errors
+    )
+}
+
+fn pdf20_followup_json(followup: &Pdf20Followup) -> String {
+    format!(
+        concat!(
+            "{{",
+            "\"rank\":{},",
+            "\"feature\":{},",
+            "\"observed_documents\":{},",
+            "\"visual_impact\":{},",
+            "\"bucket\":{},",
+            "\"recommendation\":{}",
+            "}}"
+        ),
+        followup.rank,
+        json_string(&followup.feature),
+        followup.observed_documents,
+        json_string(followup.visual_impact),
+        optional_json_string(followup.bucket),
+        json_string(followup.recommendation)
+    )
+}
+
+fn pdf20_usage_record_json(record: &Pdf20UsageRecord) -> String {
+    let features = record
+        .features
+        .iter()
+        .map(pdf20_feature_observation_json)
+        .collect::<Vec<_>>()
+        .join(",");
+    format!(
+        concat!(
+            "{{",
+            "\"path\":{},",
+            "\"family\":{},",
+            "\"manifest_features\":{},",
+            "\"version\":{},",
+            "\"features\":[{}],",
+            "\"render\":{}",
+            "}}"
+        ),
+        json_string(&record.path),
+        json_string(&record.family),
+        json_string_array(&record.manifest_features),
+        pdf20_version_json(&record.version),
+        features,
+        pdf20_render_outcome_json(record.render)
+    )
+}
+
+fn pdf20_version_json(version: &Pdf20VersionEvidence) -> String {
+    format!(
+        concat!(
+            "{{",
+            "\"header_version\":{},",
+            "\"catalog_version_20\":{},",
+            "\"manifest_pdf20_tag\":{},",
+            "\"detected_pdf20\":{}",
+            "}}"
+        ),
+        optional_json_string(version.header_version.as_deref()),
+        version.catalog_version_20,
+        version.manifest_pdf20_tag,
+        version.detected_pdf20
+    )
+}
+
+fn pdf20_feature_observation_json(feature: &Pdf20FeatureObservation) -> String {
+    format!(
+        concat!(
+            "{{",
+            "\"feature\":{},",
+            "\"policy\":{},",
+            "\"visual_impact\":{},",
+            "\"bucket\":{}",
+            "}}"
+        ),
+        json_string(feature.feature),
+        json_string(feature.policy),
+        json_string(feature.visual_impact),
+        optional_json_string(feature.bucket)
+    )
+}
+
+fn pdf20_render_outcome_json(outcome: Pdf20RenderOutcome) -> String {
+    match outcome {
+        Pdf20RenderOutcome::NotPdf20 => "{\"status\":\"not_pdf20\"}".to_string(),
+        Pdf20RenderOutcome::NativeRendered => "{\"status\":\"native_rendered\"}".to_string(),
+        Pdf20RenderOutcome::TypedUnsupported { bucket } => format!(
+            "{{\"status\":\"typed_unsupported\",\"bucket\":{}}}",
+            json_string(bucket)
+        ),
+        Pdf20RenderOutcome::Error { class } => {
+            format!("{{\"status\":\"error\",\"class\":{}}}", json_string(class))
+        }
+    }
+}
+
 fn operator_coverage_report_json(report: &CorpusOperatorCoverageReport) -> String {
     let operators = report
         .operators
@@ -6244,7 +6848,7 @@ fn crc32(bytes: impl IntoIterator<Item = u8>) -> u32 {
 
 fn print_usage() {
     println!(
-        "Usage: pdfrust-cli <render|render-auto|render-native|render-pdfium|render-isolated|compare-metadata|summarize-fallbacks|operator-coverage|trace-native|replay-operators|extract-corpus-metadata|validate-local-corpus|benchmark-native|benchmark-batch-native|benchmark-repeat-native|benchmark-pdfium|visual-diff> <input.pdf> \
+        "Usage: pdfrust-cli <render|render-auto|render-native|render-pdfium|render-isolated|compare-metadata|summarize-fallbacks|operator-coverage|trace-native|replay-operators|extract-corpus-metadata|classify-pdf20-usage|validate-local-corpus|benchmark-native|benchmark-batch-native|benchmark-repeat-native|benchmark-pdfium|visual-diff> <input.pdf> \
          [--output PATH] [--page-index N] [--max-edge N] [--background #RRGGBB] \
          [--timeout SECONDS] [--iterations N] [--repetitions N] [--max-events N] [--max-workers N] [--max-in-flight-pixels N] [--cancel-after-jobs N] [--max-ms N] [--max-p95-ms N] [--max-first-ms N] [--max-repeat-mean-ms N] [--max-output-bytes N] \
          [--native-only] [--manifest PATH] [--include-family FAMILY] \
@@ -6822,6 +7426,113 @@ mod tests {
         assert!(json.contains("\"mark_info_marked\":true"));
         assert!(json.contains("\"structure_role_count\":1"));
         assert!(json.contains("\"has_marked_content_references\":true"));
+    }
+
+    #[test]
+    fn pdf20_usage_should_classify_version_features_and_typed_boundary() {
+        let fixture_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let manifest_path = fixture_root.join("fixtures/pdf20-compatibility-manifest.tsv");
+        let manifest = read_corpus_manifest(&manifest_path).expect("manifest should parse");
+        let paths = vec![
+            fixture_root.join("fixtures/generated/pdf20-basic-office.pdf"),
+            fixture_root.join("fixtures/generated/pdf20-associated-files.pdf"),
+            fixture_root.join("fixtures/generated/pdf20-black-point-compensation.pdf"),
+        ];
+        let options = ThumbnailOptions {
+            page_index: 0,
+            max_edge: 120,
+            background: Rgba::WHITE,
+            output_format: pdfrust_thumbnail::OutputFormat::Png,
+            timeout: Duration::from_secs(5),
+        };
+
+        let report =
+            classify_pdf20_usage(&paths, Some(&manifest), &options).expect("usage should scan");
+
+        assert_eq!(report.pdf20_documents, 3);
+        assert_eq!(report.native_rendered, 2);
+        assert_eq!(report.typed_unsupported, 1);
+        assert_eq!(
+            report.feature_counts.get("black-point-compensation"),
+            Some(&1)
+        );
+        assert_eq!(report.impact_counts.get("visual-unsupported"), Some(&1));
+        assert_eq!(
+            report
+                .families
+                .get("unsupported-color-management")
+                .map(|family| family.typed_unsupported),
+            Some(1)
+        );
+        assert_eq!(report.followups[0].feature, "black-point-compensation");
+        assert_eq!(
+            report.followups[0].bucket,
+            Some(pdfrust_thumbnail::unsupported_feature_buckets::GRAPHICS_COLOR_MANAGEMENT)
+        );
+    }
+
+    #[test]
+    fn pdf20_usage_json_should_include_privacy_and_policy_fields() {
+        let report = Pdf20UsageReport {
+            total_scanned: 1,
+            pdf20_documents: 1,
+            native_rendered: 0,
+            typed_unsupported: 1,
+            errors: 0,
+            feature_counts: BTreeMap::from([("black-point-compensation".to_string(), 1)]),
+            impact_counts: BTreeMap::from([("visual-unsupported", 1)]),
+            families: BTreeMap::from([(
+                "report".to_string(),
+                Pdf20FamilySummary {
+                    total: 1,
+                    pdf20_documents: 1,
+                    native_rendered: 0,
+                    typed_unsupported: 1,
+                    errors: 0,
+                },
+            )]),
+            followups: vec![Pdf20Followup {
+                rank: 1,
+                feature: "black-point-compensation".to_string(),
+                observed_documents: 1,
+                visual_impact: "visual-unsupported",
+                bucket: Some(
+                    pdfrust_thumbnail::unsupported_feature_buckets::GRAPHICS_COLOR_MANAGEMENT,
+                ),
+                recommendation: "keep typed unsupported for 1.2 unless real-corpus frequency rises; implement only with color-threshold evidence",
+            }],
+            fixtures: vec![Pdf20UsageRecord {
+                path: "fixtures/generated/pdf20-black-point-compensation.pdf".to_string(),
+                family: "report".to_string(),
+                manifest_features: vec!["pdf-2.0".to_string()],
+                version: Pdf20VersionEvidence {
+                    header_version: Some("2.0".to_string()),
+                    catalog_version_20: true,
+                    manifest_pdf20_tag: true,
+                    detected_pdf20: true,
+                },
+                features: vec![Pdf20FeatureObservation {
+                    feature: "black-point-compensation",
+                    policy: "typed-unsupported",
+                    visual_impact: "visual-unsupported",
+                    bucket: Some(
+                        pdfrust_thumbnail::unsupported_feature_buckets::GRAPHICS_COLOR_MANAGEMENT,
+                    ),
+                }],
+                render: Pdf20RenderOutcome::TypedUnsupported {
+                    bucket: pdfrust_thumbnail::unsupported_feature_buckets::GRAPHICS_COLOR_MANAGEMENT,
+                },
+            }],
+        };
+
+        let json = pdf20_usage_report_json(&report);
+
+        assert!(json.contains("\"report_kind\": \"pdf-2-0-feature-usage\""));
+        assert!(json.contains(
+            "\"privacy\": \"no PDF bytes, rendered pixels, text samples, or stream operands\""
+        ));
+        assert!(json.contains("\"policy\":\"typed-unsupported\""));
+        assert!(json.contains("\"bucket\":\"graphics.color-management\""));
     }
 
     #[test]

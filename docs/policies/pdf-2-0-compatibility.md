@@ -40,3 +40,15 @@ Maintainer PDFium comparisons may be used only as oracle evidence.
 - Prefer typed unsupported buckets over silent approximate rendering for
   color, transparency, layer, security, or annotation semantics that affect
   pixels.
+
+## Usage Classification
+
+Milestone 0181 adds `classify-pdf20-usage` as the repeatable corpus gate for
+PDF 2.0 roadmap work. The classifier records version evidence, manifest feature
+tags, visual-impact policy, native render outcome, and ranked follow-ups without
+persisting PDF bytes, rendered pixels, text samples, stream bytes, or operands.
+
+The 1.2 roadmap should use `docs/backlogs/pdf-2-0-feature-priority-backlog.md`
+as the source for PDF 2.0 prioritization. Version markers and metadata-only
+associated files remain accepted; `/UseBlackPtComp true` remains the current
+typed visual boundary under `graphics.color-management`.
