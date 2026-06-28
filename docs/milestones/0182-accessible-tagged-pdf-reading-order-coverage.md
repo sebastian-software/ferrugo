@@ -85,6 +85,10 @@ Native slice committed toward 0182 on 2026-06-28.
   glyph positioning. This reduces text-heavy drift further, especially the
   tagged form fixture p95 delta, while the strict visual gate still has 6
   blockers.
+- Completed the printable ASCII Helvetica width table for standard-base-font
+  fallback positioning. The tagged reading-order warning fixture remains
+  accepted Poppler drift with lower changed ratio and max channel delta, while
+  the strict tagged visual gate still has 6 blockers.
 
 ## Completion Notes
 

@@ -2522,9 +2522,11 @@ fn standard_sans_glyph_width(character: char) -> Option<f64> {
         'M' => 833.0,
         'V' | 'Y' => 667.0,
         'W' => 944.0,
+        '^' => 469.0,
         'c' | 'k' | 's' | 'v' | 'x' | 'y' | 'z' => 500.0,
         'm' => 833.0,
         'r' => 333.0,
+        'w' => 722.0,
         '{' | '}' => 334.0,
         '|' => 260.0,
         _ => return None,
@@ -16003,6 +16005,22 @@ mod tests {
                 layout: TextLayoutStatus::Simple,
             }),
             944.0
+        );
+        assert_eq!(
+            font.advance_width_for_glyph(&TextGlyph {
+                character_code: u32::from('w'),
+                unicode: "w".to_string(),
+                layout: TextLayoutStatus::Simple,
+            }),
+            722.0
+        );
+        assert_eq!(
+            font.advance_width_for_glyph(&TextGlyph {
+                character_code: u32::from('^'),
+                unicode: "^".to_string(),
+                layout: TextLayoutStatus::Simple,
+            }),
+            469.0
         );
     }
 
