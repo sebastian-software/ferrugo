@@ -2494,7 +2494,8 @@ fn standard_base_glyph_width(face: FontFallbackFace, unicode: &str) -> Option<f6
     match face {
         FontFallbackFace::Sans => standard_sans_glyph_width(character),
         FontFallbackFace::Monospace => character.is_ascii().then_some(600.0),
-        FontFallbackFace::Serif | FontFallbackFace::Symbol => None,
+        FontFallbackFace::Serif => standard_serif_glyph_width(character),
+        FontFallbackFace::Symbol => None,
     }
 }
 
@@ -2526,6 +2527,52 @@ fn standard_sans_glyph_width(character: char) -> Option<f64> {
         'r' => 333.0,
         '{' | '}' => 334.0,
         '|' => 260.0,
+        _ => return None,
+    };
+    Some(width)
+}
+
+fn standard_serif_glyph_width(character: char) -> Option<f64> {
+    let width = match character {
+        ' ' | ',' | '.' => 250.0,
+        '!' | '(' | ')' | '-' | 'I' | '[' | ']' | '`' => 333.0,
+        '"' => 408.0,
+        '#'
+        | '$'
+        | '*'
+        | '0'..='9'
+        | '_'
+        | 'b'
+        | 'd'
+        | 'g'
+        | 'h'
+        | 'k'
+        | 'n'
+        | 'o'
+        | 'p'
+        | 'q'
+        | 'u'
+        | 'x' => 500.0,
+        '%' => 833.0,
+        '&' | 'm' => 778.0,
+        '\'' => 180.0,
+        '+' | '<' | '=' | '>' => 564.0,
+        '/' | '\\' | ':' | ';' | 'i' | 'j' | 'l' | 't' => 278.0,
+        '?' | 'a' | 'c' | 'e' | 'z' => 444.0,
+        '@' => 921.0,
+        'A' | 'D' | 'G' | 'H' | 'K' | 'N' | 'O' | 'Q' | 'U' | 'V' | 'X' | 'Y' | 'w' => 722.0,
+        'B' | 'C' | 'R' => 667.0,
+        'E' | 'L' | 'T' | 'Z' => 611.0,
+        'F' | 'P' | 'S' => 556.0,
+        'J' | 's' => 389.0,
+        'M' => 889.0,
+        'W' => 944.0,
+        '^' => 469.0,
+        'f' | 'r' => 333.0,
+        'v' | 'y' => 500.0,
+        '{' | '}' => 480.0,
+        '|' => 200.0,
+        '~' => 541.0,
         _ => return None,
     };
     Some(width)
@@ -15948,6 +15995,33 @@ mod tests {
                 layout: TextLayoutStatus::Simple,
             }),
             222.0
+        );
+        assert_eq!(
+            font.advance_width_for_glyph(&TextGlyph {
+                character_code: u32::from('W'),
+                unicode: "W".to_string(),
+                layout: TextLayoutStatus::Simple,
+            }),
+            944.0
+        );
+    }
+
+    #[test]
+    fn standard_base_fallback_should_use_times_advance_widths() {
+        let mut font = FontDescriptor::new("F1", Some("Times-Roman"));
+        font.subtype = Some(FontSubtype::Type1);
+        font.fallback = Some(FontFallback {
+            face: FontFallbackFace::Serif,
+            source: FontFallbackSource::StandardBase,
+        });
+
+        assert_eq!(
+            font.advance_width_for_glyph(&TextGlyph {
+                character_code: u32::from('i'),
+                unicode: "i".to_string(),
+                layout: TextLayoutStatus::Simple,
+            }),
+            278.0
         );
         assert_eq!(
             font.advance_width_for_glyph(&TextGlyph {

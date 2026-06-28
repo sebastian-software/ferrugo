@@ -87,6 +87,31 @@ The remaining blockers are visual-fidelity work around small text metrics,
 manual illustration stroke placement, ebook text density, and image/text
 antialiasing differences, not native coverage failures.
 
+## Follow-Up Text Metrics 2026-06-28
+
+The native renderer now uses deterministic Times-Roman advance widths for
+standard-base serif fallback text instead of the generic 500-unit glyph advance.
+The focused Poppler check was rerun for the `book` family:
+
+```sh
+cargo run -p pdfrust-cli --no-default-features -- visual-diff-poppler fixtures/generated \
+  --manifest fixtures/longform-text-manifest.tsv \
+  --include-family book \
+  --max-edge 160 \
+  --timeout 20 \
+  --max-mae 2.0 \
+  --max-p95 16 \
+  --max-changed-ratio 0.05 \
+  --output target/book-times-poppler-visual-diff.json
+```
+
+Result: 2 total, 1 exact, 0 accepted drift, 1 blocker, 0 native errors,
+0 reference errors, 0 both errors. The `book-frontmatter-page-labels.pdf`
+blocker remains, but the Times-Roman width table reduced changed ratio from
+0.061207 to 0.060614 and MAE from 5.960 to 5.911. The remaining blocker is
+still glyph-shape and text-antialiasing fidelity, not standard serif advance
+spacing.
+
 ## Follow-Up Backlog
 
 - Expand sanitized producer-derived books, manuals, and ebook exports.

@@ -62,3 +62,7 @@ Completed on 2026-06-25.
 - PDFium visual oracle: 1 exact match, 7 strict-threshold blockers, 0 native
   render errors, 0 PDFium render errors.
 - Report: `docs/reports/longform-text-fidelity-2026-06-25.md`.
+- Follow-up on 2026-06-28 added deterministic Times-Roman advance widths for
+  standard-base-font fallback text. The book fixture remains a strict Poppler
+  blocker, but its measured drift improved slightly without introducing native
+  or reference render errors.
