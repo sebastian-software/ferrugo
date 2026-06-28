@@ -140,8 +140,10 @@ accepted drift. Follow-up deterministic Helvetica advance widths reduced the
 text-heavy drift further, especially the tagged form fixture p95 delta. The
 printable ASCII Helvetica width table is now complete for standard-base
 fallback positioning, which reduces the accepted warning fixture changed ratio
-and max channel delta. The strict threshold report still classifies 6 fixtures
-as blockers, so 0182 remains in progress for visual-fidelity work rather than
+and max channel delta. Dedicated fallback bitmaps for common punctuation avoid
+painting those characters as unknown-glyph masks and slightly reduce the tagged
+invoice drift. The strict threshold report still classifies 6 fixtures as
+blockers, so 0182 remains in progress for visual-fidelity work rather than
 oracle availability.
 
 Poppler command:
@@ -157,7 +159,7 @@ cargo run -p pdfrust-cli --no-default-features -- visual-diff-poppler fixtures/g
   --include-family structure-heavy \
   --include-family metadata-baseline \
   --max-edge 160 \
-  --timeout 20 \
+  --timeout 60 \
   --max-mae 2.0 \
   --max-p95 16 \
   --max-changed-ratio 0.05 \
@@ -173,7 +175,7 @@ Blocker split:
 | --- | --- | --- |
 | `tagged-accessibility-metadata.pdf` | blocker | MAE 1.228, p95 1, changed ratio 0.161765, max delta 171. |
 | `tagged-form-visual-integrity.pdf` | blocker | MAE 4.552, p95 11, changed ratio 0.083762, max delta 255. |
-| `tagged-invoice-reading-order.pdf` | blocker | MAE 10.637, p95 97, changed ratio 0.128546, max delta 209. |
+| `tagged-invoice-reading-order.pdf` | blocker | MAE 10.626, p95 97, changed ratio 0.128305, max delta 209. |
 | `tagged-office-alt-text.pdf` | blocker | MAE 13.294, p95 105, changed ratio 0.109579, max delta 209. |
 | `tagged-reading-order-missing-page-context.pdf` | accepted drift | MAE 1.733, p95 0, changed ratio 0.023635, max delta 200. |
 | `tagged-report-visual-integrity.pdf` | blocker | MAE 12.002, p95 100, changed ratio 0.130011, max delta 201. |
