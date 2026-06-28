@@ -158,3 +158,20 @@ Full 0183 Poppler follow-up result: 8 total, 0 exact, 3 accepted drift,
 blockers are `high-dpi-preview-fidelity.pdf`, `image-heavy-rotated-mask-sheet.pdf`,
 `map-transparent-zoning-overlay.pdf`, `office-vector-repeated-effects.pdf`, and
 `slide-layered-image-shadow.pdf`.
+
+## Map Linework Follow-Up
+
+The `map-transparent-zoning-overlay.pdf` fixture uses transparent zoning fills
+over ultrathin grid/border strokes plus a diagonal dashed route. Extending the
+axis-aligned hairline snap band to 0.25-0.45 device pixels reduced the
+grid/border mismatch without changing the broader 0.7-0.8px legal/signature
+linework band that previously regressed.
+
+| Fixture | Status | MAE | P95 delta | Changed ratio | Max delta |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `map-transparent-zoning-overlay.pdf` | blocker | 5.387 | 31 | 0.968521 | 151 |
+
+Compared with the previous focused Poppler run, this improves
+`MAE 5.842 -> 5.387` and `p95 52 -> 31`. The fixture remains a blocker because
+the remaining high-delta tail is dominated by diagonal dashed route
+antialiasing and small text rendering, not by the transparent overlay fills.

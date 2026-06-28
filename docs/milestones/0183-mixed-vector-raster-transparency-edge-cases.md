@@ -72,6 +72,12 @@ Native baseline slice started on 2026-06-28.
   to 123.
 - Poppler visual follow-up: 8 total, 0 exact, 3 accepted drift, 5 blockers,
   0 native errors, 0 reference errors, 0 both errors.
+- Reduced the `map-transparent-zoning-overlay.pdf` linework diff by extending
+  axis-aligned hairline snapping to ultrathin 0.25-0.45 device-pixel strokes.
+  The focused `map-overlay` Poppler run remains a blocker, but mean absolute
+  error dropped from 5.842 to 5.387 and p95 channel delta from 52 to 31. The
+  remaining drift is dominated by diagonal dashed route antialiasing and small
+  text rendering, not transparent overlay compositing.
 
 ## Completion Notes
 

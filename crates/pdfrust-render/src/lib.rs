@@ -9755,9 +9755,9 @@ fn stroke_radius_for_device_line_width(line_width: f64) -> f64 {
 }
 
 fn should_snap_axis_aligned_hairline(line_width: f64) -> bool {
-    // Keep this narrow: wider 0.7-0.8px signature/legal linework loses
-    // visible coverage if it is snapped away from its authored sample row.
-    (0.55..=0.65).contains(&line_width)
+    // Keep these bands narrow: wider 0.7-0.8px signature/legal linework
+    // loses visible coverage if it is snapped away from its authored sample row.
+    (0.25..=0.45).contains(&line_width) || (0.55..=0.65).contains(&line_width)
 }
 
 fn snap_axis_aligned_hairline_line(line: LineSegment) -> LineSegment {
@@ -15176,6 +15176,28 @@ mod tests {
             Rgba::WHITE
         );
         assert_eq!(raster.pixel(10, 5).expect("snapped hairline"), black);
+    }
+
+    #[test]
+    fn rasterize_paths_should_snap_ultrathin_axis_aligned_hairlines_to_pixel_centers() {
+        let raster = rasterize_stroke_width_stream(b"0.3 w 0 5 m 20 5 l S");
+        let black = Rgba {
+            r: 0,
+            g: 0,
+            b: 0,
+            a: 255,
+        };
+
+        assert_eq!(
+            raster
+                .pixel(10, 4)
+                .expect("before snapped ultrathin hairline"),
+            Rgba::WHITE
+        );
+        assert_eq!(
+            raster.pixel(10, 5).expect("snapped ultrathin hairline"),
+            black
+        );
     }
 
     #[test]
