@@ -65,6 +65,9 @@ Native slice committed toward 0182 on 2026-06-28.
   Poppler oracle run completed with 0 native errors and 0 reference errors, but
   all 7 tagged fixtures remain strict visual blockers. 0182 remains in progress
   for fidelity work, not for oracle availability.
+- Refined standard-base-font fallback masks so Helvetica-style tagged fixtures
+  paint less heavily. This reduces several Poppler diff metrics but does not
+  yet clear the tagged visual gate.
 
 ## Completion Notes
 

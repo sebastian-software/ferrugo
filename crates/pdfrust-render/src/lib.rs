@@ -2363,12 +2363,12 @@ impl GlyphBitmapCache {
         }
     }
 
-    fn bitmap_for(&mut self, face: FontFallbackFace, character: char, cell: f64) -> &GlyphBitmap {
-        let key = GlyphBitmapKey::new(face, character, cell);
+    fn bitmap_for(&mut self, fallback: FontFallback, character: char, cell: f64) -> &GlyphBitmap {
+        let key = GlyphBitmapKey::new(fallback, character, cell);
         if let Some(index) = self.entries.iter().position(|entry| entry.key == key) {
             return &self.entries[index].bitmap;
         }
-        let bitmap = GlyphBitmap::from_ascii(character, cell);
+        let bitmap = GlyphBitmap::from_ascii(character, cell, key.paint_policy);
         if self.max_entries == 0 {
             self.entries.clear();
             self.entries.push(CachedGlyphBitmap { key, bitmap });
@@ -2488,12 +2488,12 @@ struct GlyphBitmapKey {
 }
 
 impl GlyphBitmapKey {
-    fn new(face: FontFallbackFace, character: char, cell: f64) -> Self {
+    fn new(fallback: FontFallback, character: char, cell: f64) -> Self {
         Self {
-            face,
+            face: fallback.face,
             character: character.to_ascii_lowercase(),
             cell_microunits: quantize_glyph_cell(cell),
-            paint_policy: GlyphBitmapPaintPolicy::MaskOnly,
+            paint_policy: GlyphBitmapPaintPolicy::from_fallback_source(fallback.source),
         }
     }
 }
@@ -2501,6 +2501,18 @@ impl GlyphBitmapKey {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum GlyphBitmapPaintPolicy {
     MaskOnly,
+    StandardBaseThin,
+}
+
+impl GlyphBitmapPaintPolicy {
+    const fn from_fallback_source(source: FontFallbackSource) -> Self {
+        match source {
+            FontFallbackSource::StandardBase => Self::StandardBaseThin,
+            FontFallbackSource::EmbeddedProgram
+            | FontFallbackSource::MissingEmbeddedProgram
+            | FontFallbackSource::Unspecified => Self::MaskOnly,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -2509,7 +2521,7 @@ struct GlyphBitmap {
 }
 
 impl GlyphBitmap {
-    fn from_ascii(character: char, cell: f64) -> Self {
+    fn from_ascii(character: char, cell: f64, paint_policy: GlyphBitmapPaintPolicy) -> Self {
         let glyph = ascii_glyph(character);
         let mut rects = Vec::new();
         for (row, pattern) in glyph.iter().enumerate() {
@@ -2521,12 +2533,7 @@ impl GlyphBitmap {
                 let right = left + cell;
                 let top = (7 - row) as f64 * cell;
                 let bottom = top - cell;
-                rects.push(GlyphBitmapRect {
-                    left,
-                    right,
-                    top,
-                    bottom,
-                });
+                rects.push(GlyphBitmapRect::new(left, right, top, bottom, paint_policy));
             }
         }
         Self { rects }
@@ -2539,6 +2546,37 @@ struct GlyphBitmapRect {
     right: f64,
     top: f64,
     bottom: f64,
+}
+
+impl GlyphBitmapRect {
+    fn new(
+        left: f64,
+        right: f64,
+        top: f64,
+        bottom: f64,
+        paint_policy: GlyphBitmapPaintPolicy,
+    ) -> Self {
+        match paint_policy {
+            GlyphBitmapPaintPolicy::MaskOnly => Self {
+                left,
+                right,
+                top,
+                bottom,
+            },
+            GlyphBitmapPaintPolicy::StandardBaseThin => {
+                let width = right - left;
+                let height = top - bottom;
+                let inset_x = width * 0.24;
+                let inset_y = height * 0.18;
+                Self {
+                    left: left + inset_x,
+                    right: right - inset_x,
+                    top: top - inset_y,
+                    bottom: bottom + inset_y,
+                }
+            }
+        }
+    }
 }
 
 fn quantize_glyph_cell(cell: f64) -> i64 {
@@ -10344,11 +10382,11 @@ fn draw_text_run(
         if character == ' ' || character == '\u{00a0}' {
             continue;
         }
-        let face = text
-            .font
-            .fallback
-            .map_or(FontFallbackFace::Sans, |fallback| fallback.face);
-        let bitmap = glyph_cache.bitmap_for(face, character, cell);
+        let fallback = text.font.fallback.unwrap_or(FontFallback {
+            face: FontFallbackFace::Sans,
+            source: FontFallbackSource::Unspecified,
+        });
+        let bitmap = glyph_cache.bitmap_for(fallback, character, cell);
         draw_ascii_glyph(
             device,
             page_transform,
@@ -15568,8 +15606,12 @@ mod tests {
     #[test]
     fn glyph_bitmap_cache_should_reuse_same_character_and_size() {
         let mut cache = GlyphBitmapCache::new(8);
-        let first = cache.bitmap_for(FontFallbackFace::Sans, 'A', 2.0).clone();
-        let second = cache.bitmap_for(FontFallbackFace::Sans, 'A', 2.0).clone();
+        let fallback = FontFallback {
+            face: FontFallbackFace::Sans,
+            source: FontFallbackSource::MissingEmbeddedProgram,
+        };
+        let first = cache.bitmap_for(fallback, 'A', 2.0).clone();
+        let second = cache.bitmap_for(fallback, 'A', 2.0).clone();
 
         assert_eq!(first, second);
         assert_eq!(cache.len(), 1);
@@ -15578,8 +15620,12 @@ mod tests {
     #[test]
     fn glyph_bitmap_cache_should_include_size_in_key() {
         let mut cache = GlyphBitmapCache::new(8);
-        let small = cache.bitmap_for(FontFallbackFace::Sans, 'A', 1.0).clone();
-        let large = cache.bitmap_for(FontFallbackFace::Sans, 'A', 2.0).clone();
+        let fallback = FontFallback {
+            face: FontFallbackFace::Sans,
+            source: FontFallbackSource::MissingEmbeddedProgram,
+        };
+        let small = cache.bitmap_for(fallback, 'A', 1.0).clone();
+        let large = cache.bitmap_for(fallback, 'A', 2.0).clone();
 
         assert_ne!(small, large);
         assert_eq!(cache.len(), 2);
@@ -15588,8 +15634,12 @@ mod tests {
     #[test]
     fn glyph_bitmap_cache_should_evict_oldest_entry_at_limit() {
         let mut cache = GlyphBitmapCache::new(1);
-        cache.bitmap_for(FontFallbackFace::Sans, 'A', 1.0);
-        cache.bitmap_for(FontFallbackFace::Sans, 'B', 1.0);
+        let fallback = FontFallback {
+            face: FontFallbackFace::Sans,
+            source: FontFallbackSource::MissingEmbeddedProgram,
+        };
+        cache.bitmap_for(fallback, 'A', 1.0);
+        cache.bitmap_for(fallback, 'B', 1.0);
 
         assert_eq!(cache.len(), 1);
         assert_eq!(cache.entries[0].key.character, 'b');
@@ -15598,9 +15648,56 @@ mod tests {
     #[test]
     fn glyph_bitmap_cache_should_include_fallback_face_in_key() {
         let mut cache = GlyphBitmapCache::new(8);
-        cache.bitmap_for(FontFallbackFace::Sans, 'A', 1.0);
-        cache.bitmap_for(FontFallbackFace::Serif, 'A', 1.0);
+        cache.bitmap_for(
+            FontFallback {
+                face: FontFallbackFace::Sans,
+                source: FontFallbackSource::MissingEmbeddedProgram,
+            },
+            'A',
+            1.0,
+        );
+        cache.bitmap_for(
+            FontFallback {
+                face: FontFallbackFace::Serif,
+                source: FontFallbackSource::MissingEmbeddedProgram,
+            },
+            'A',
+            1.0,
+        );
 
+        assert_eq!(cache.len(), 2);
+    }
+
+    #[test]
+    fn glyph_bitmap_cache_should_include_standard_base_paint_policy_in_key() {
+        let mut cache = GlyphBitmapCache::new(8);
+        let missing = cache
+            .bitmap_for(
+                FontFallback {
+                    face: FontFallbackFace::Sans,
+                    source: FontFallbackSource::MissingEmbeddedProgram,
+                },
+                'A',
+                2.0,
+            )
+            .clone();
+        let standard = cache
+            .bitmap_for(
+                FontFallback {
+                    face: FontFallbackFace::Sans,
+                    source: FontFallbackSource::StandardBase,
+                },
+                'A',
+                2.0,
+            )
+            .clone();
+
+        let missing_area = glyph_bitmap_area(&missing);
+        let standard_area = glyph_bitmap_area(&standard);
+        assert!(
+            standard_area < missing_area,
+            "standard base fallback should paint a lighter mask"
+        );
         assert_eq!(cache.len(), 2);
     }
 
@@ -18208,6 +18305,14 @@ mod tests {
             rendering_mode: TextRenderingMode::Fill,
             state: GraphicsState::default(),
         }
+    }
+
+    fn glyph_bitmap_area(bitmap: &GlyphBitmap) -> f64 {
+        bitmap
+            .rects
+            .iter()
+            .map(|rect| (rect.right - rect.left).max(0.0) * (rect.top - rect.bottom).max(0.0))
+            .sum()
     }
 
     fn test_truetype_program() -> FontProgram {
