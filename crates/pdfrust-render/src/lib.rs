@@ -10245,7 +10245,7 @@ fn distance_to_line_segment_squared(point: Point, line: LineSegment) -> f64 {
 fn device_color_to_rgba(color: DeviceColor) -> Rgba {
     match color {
         DeviceColor::Gray(DeviceGray(value)) => {
-            let channel = normalized_to_u8(value);
+            let channel = normalized_color_to_u8(value);
             Rgba {
                 r: channel,
                 g: channel,
@@ -10254,17 +10254,28 @@ fn device_color_to_rgba(color: DeviceColor) -> Rgba {
             }
         }
         DeviceColor::Rgb { r, g, b } => Rgba {
-            r: normalized_to_u8(r),
-            g: normalized_to_u8(g),
-            b: normalized_to_u8(b),
+            r: normalized_color_to_u8(r),
+            g: normalized_color_to_u8(g),
+            b: normalized_color_to_u8(b),
             a: 255,
         },
         DeviceColor::Spot { r, g, b, .. } => Rgba {
-            r: normalized_to_u8(r),
-            g: normalized_to_u8(g),
-            b: normalized_to_u8(b),
+            r: normalized_color_to_u8(r),
+            g: normalized_color_to_u8(g),
+            b: normalized_color_to_u8(b),
             a: 255,
         },
+    }
+}
+
+fn normalized_color_to_u8(value: f64) -> u8 {
+    let scaled = value.clamp(0.0, 1.0) * 255.0;
+    // Poppler rounds bright exact half-step DeviceColor channels down; keep
+    // darker and midpoint colors on the existing round-to-nearest path.
+    if scaled > 127.5 {
+        (scaled + 0.5 - 1e-9).floor() as u8
+    } else {
+        scaled.round() as u8
     }
 }
 
@@ -13418,7 +13429,7 @@ mod tests {
         assert_eq!(
             raster.pixel(100, 100).expect("filled rectangle pixel"),
             Rgba {
-                r: 230,
+                r: 229,
                 g: 51,
                 b: 26,
                 a: 255,
@@ -14401,6 +14412,14 @@ mod tests {
     }
 
     #[test]
+    fn color_quantization_should_round_bright_half_values_down() {
+        assert_eq!(normalized_color_to_u8(0.1), 26);
+        assert_eq!(normalized_color_to_u8(0.5), 128);
+        assert_eq!(normalized_color_to_u8(0.9), 229);
+        assert_eq!(normalized_to_u8(0.5), 128);
+    }
+
+    #[test]
     fn source_over_should_preserve_intermediate_alpha() {
         let source = Rgba {
             r: 255,
@@ -15009,7 +15028,7 @@ mod tests {
             raster.pixel(5, 5).expect("first tile"),
             Rgba {
                 r: 51,
-                g: 179,
+                g: 178,
                 b: 77,
                 a: 255,
             }
@@ -15018,7 +15037,7 @@ mod tests {
             raster.pixel(15, 5).expect("second tile"),
             Rgba {
                 r: 51,
-                g: 179,
+                g: 178,
                 b: 77,
                 a: 255,
             }

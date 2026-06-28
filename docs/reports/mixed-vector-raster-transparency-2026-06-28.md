@@ -276,6 +276,7 @@ they did not produce a clean 0183 gate improvement.
 | StandardBase 25% width scaling | `target/mixed-transparency-0183-poppler-standardbase-xscale-blend25.json` | Avoided p95 regression but only produced small MAE shifts and regressed some accepted text/image edge metrics. |
 | StandardBase widen-only scaling | `target/mixed-transparency-0183-poppler-standardbase-widen25.json` | Regressed `office-vector-repeated-effects.pdf` p95 `49 -> 50` and `slide-layered-image-shadow.pdf` p95 `4 -> 5`. |
 | Unconditional bilinear RGB/gray sampling | `target/mixed-transparency-0183-poppler-bilinear-rgb.json` | Regressed the summary to 3 accepted drift / 5 blockers; `slide-layered-image-shadow.pdf` and `soft-mask-image.pdf` became blockers. |
+| Upscaled RGB/gray-only bilinear sampling | `target/mixed-transparency-0183-poppler-targeted-image-interp.json` | Regressed the summary to 4 accepted drift / 4 blockers; `slide-layered-image-shadow.pdf` became a blocker. |
 | Global DeviceColor floor quantization | `target/mixed-transparency-0183-poppler-color-floor.json` | Improved `map-transparent-zoning-overlay.pdf` changed ratio `0.968521 -> 0.363016`, but regressed colored fixtures broadly and moved the summary to 3 accepted drift / 5 blockers. |
 
 The rejected probes indicate that the remaining blockers need more targeted
@@ -309,3 +310,31 @@ The targeted improvement is `high-dpi-preview-fidelity.pdf`: MAE `20.803 ->
 7.320`, p95 `105 -> 40`, and changed ratio `0.380260 -> 0.244479`. The fixture
 remains a blocker, but the remaining delta is much narrower and no 0183 fixture
 changed status.
+
+## Bright Half-Step Color Quantization
+
+DeviceColor channel quantization now preserves the existing round-to-nearest
+behavior for dark and midpoint colors but rounds bright exact half-step values
+down. This keeps alpha quantization unchanged and avoids the broad fixture
+regressions from global floor quantization while matching Poppler's output for
+synthetic bright map/background colors such as `0.90 * 255 = 229.5`.
+
+Full 0183 Poppler follow-up result remains 8 total, 0 exact, 5 accepted drift,
+3 blockers, 0 native errors, 0 reference errors, 0 both errors.
+
+| Fixture | Status | MAE | P95 delta | Changed ratio | Max delta |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `browser-print-raster-vector-mix.pdf` | accepted drift | 0.396 | 0 | 0.018945 | 202 |
+| `high-dpi-preview-fidelity.pdf` | blocker | 7.315 | 40 | 0.231563 | 225 |
+| `image-heavy-rotated-mask-sheet.pdf` | accepted drift | 3.266 | 5 | 0.392134 | 222 |
+| `map-transparent-zoning-overlay.pdf` | blocker | 5.062 | 31 | 0.279186 | 142 |
+| `office-vector-clipped-transparency-group.pdf` | accepted drift | 0.613 | 2 | 0.231989 | 118 |
+| `office-vector-repeated-effects.pdf` | blocker | 7.258 | 49 | 0.292407 | 225 |
+| `slide-layered-image-shadow.pdf` | accepted drift | 2.881 | 4 | 0.310069 | 216 |
+| `soft-mask-image.pdf` | accepted drift | 0.829 | 0 | 0.011181 | 255 |
+
+The targeted improvement is `map-transparent-zoning-overlay.pdf`: changed ratio
+`0.968521 -> 0.279186`, MAE `5.345 -> 5.062`, and max delta `143 -> 142`.
+The 0182 tagged Poppler sanity slice stayed at 3 accepted drift and 4 blockers
+with unchanged p95 values, while `tagged-accessibility-metadata.pdf` MAE
+improved from `1.228 -> 1.178`.

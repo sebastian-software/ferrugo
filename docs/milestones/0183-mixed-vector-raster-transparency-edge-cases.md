@@ -122,6 +122,13 @@ Native baseline slice started on 2026-06-28.
   summary remains 5 accepted drift and 3 blockers, but
   `high-dpi-preview-fidelity.pdf` improves from MAE 20.803, p95 105, changed
   ratio 0.380260 to MAE 7.320, p95 40, changed ratio 0.244479.
+- Quantized bright half-step DeviceColor channels down while preserving the
+  existing alpha and mid/dark color rounding policy. This reduces broad
+  map/background color drift without reintroducing the rejected global floor
+  behavior: `map-transparent-zoning-overlay.pdf` improves from MAE 5.345,
+  changed ratio 0.968521, max delta 143 to MAE 5.062, changed ratio 0.279186,
+  max delta 142, with the 0183 and 0182 summary/status/p95 distributions
+  unchanged.
 
 ## Completion Notes
 
