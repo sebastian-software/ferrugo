@@ -1,6 +1,6 @@
 # 0176: WASM Viewer Integration Performance Gate
 
-Status: todo
+Status: done
 Phase: 33
 Size: medium
 Depends on: 0175
@@ -52,4 +52,17 @@ behavior for typical documents.
 
 ## Completion Notes
 
-Empty until done.
+- Completed on 2026-06-28 as a secondary WASM viewer-profile gate.
+- Reused the PDFium-free `pdfrust-wasm-smoke` package from 0132 as the current
+  viewer integration boundary. It exports `pdfrust_wasm_smoke_status` and
+  renders a supported low-memory thumbnail without depending on PDFium,
+  native plugins, or `pdfrust-cli`.
+- Fresh gate run passed with artifact size 723687 bytes, compile 2.231 ms,
+  instantiate 0.096 ms, smoke render 5.970 ms, and 96x51 output.
+- 0176 report copy: `target/wasm-0176-smoke.json` measured compile 1.028 ms,
+  instantiate 0.076 ms, smoke render 5.687 ms, and 96x51 output.
+- Unsupported WASM surface remains explicit: production browser viewer
+  bindings, browser-only APIs, and further size optimization are follow-up
+  profile work unless they expose shared renderer correctness or safety
+  defects.
+- Report: `docs/reports/wasm-viewer-integration-performance-2026-06-28.md`.
