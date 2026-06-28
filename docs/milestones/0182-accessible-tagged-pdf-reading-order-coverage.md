@@ -78,6 +78,9 @@ Native slice committed toward 0182 on 2026-06-28.
 - Added coverage-aware antialiasing for standard text fallback rectangles. The
   tagged reading-order warning fixture now classifies as accepted Poppler drift,
   reducing the strict tagged visual blockers from 7 to 6.
+- Scaled the standard-base-font fallback cell to better approximate Helvetica
+  cap height. This reduces several text-heavy drift metrics, but the strict
+  tagged visual gate still has 6 blockers.
 
 ## Completion Notes
 

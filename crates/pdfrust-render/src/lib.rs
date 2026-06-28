@@ -59,6 +59,8 @@ pub const DEFAULT_CHARSTRING_SUBROUTINE_DEPTH_LIMIT: usize = 10;
 /// Default maximum cached fallback glyph bitmaps per rasterization pass.
 pub const DEFAULT_GLYPH_BITMAP_CACHE_LIMIT: usize = 256;
 
+const STANDARD_BASE_FONT_CELL_SCALE: f64 = 0.75;
+
 const DEFAULT_TEXT_RASTER_SCRATCH_RETAINED_ATOMS: usize = 4_096;
 
 /// Default maximum cached deterministic font fallback resolutions.
@@ -2471,6 +2473,16 @@ enum TextRasterAtomKind {
 
 fn fallback_glyph_advance(cell: f64) -> f64 {
     cell * 6.0
+}
+
+fn fallback_text_cell(font_size: f64, fallback: FontFallback) -> f64 {
+    let scale = match fallback.source {
+        FontFallbackSource::StandardBase => STANDARD_BASE_FONT_CELL_SCALE,
+        FontFallbackSource::EmbeddedProgram
+        | FontFallbackSource::MissingEmbeddedProgram
+        | FontFallbackSource::Unspecified => 1.0,
+    };
+    font_size * scale / 7.0
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -10372,7 +10384,11 @@ fn draw_text_run(
     if text.font.type3.is_some() {
         return draw_type3_text_run(device, text, page_transform, options);
     }
-    let cell = text.font_size / 7.0;
+    let fallback = text.font.fallback.unwrap_or(FontFallback {
+        face: FontFallbackFace::Sans,
+        source: FontFallbackSource::Unspecified,
+    });
+    let cell = fallback_text_cell(text.font_size, fallback);
     text_scratch.prepare(text, cell);
     for atom in &text_scratch.atoms {
         let TextRasterAtomKind::Glyph(character) = atom.kind else {
@@ -10382,10 +10398,6 @@ fn draw_text_run(
         if character == ' ' || character == '\u{00a0}' {
             continue;
         }
-        let fallback = text.font.fallback.unwrap_or(FontFallback {
-            face: FontFallbackFace::Sans,
-            source: FontFallbackSource::Unspecified,
-        });
         let bitmap = glyph_cache.bitmap_for(fallback, character, cell);
         draw_ascii_glyph(
             device,
@@ -15849,6 +15861,21 @@ mod tests {
             "standard base fallback should paint a lighter mask"
         );
         assert_eq!(cache.len(), 2);
+    }
+
+    #[test]
+    fn standard_base_fallback_should_use_shorter_cap_height_cell() {
+        let standard = FontFallback {
+            face: FontFallbackFace::Sans,
+            source: FontFallbackSource::StandardBase,
+        };
+        let missing = FontFallback {
+            face: FontFallbackFace::Sans,
+            source: FontFallbackSource::MissingEmbeddedProgram,
+        };
+
+        assert!((fallback_text_cell(14.0, standard) - 1.5).abs() < f64::EPSILON);
+        assert!((fallback_text_cell(14.0, missing) - 2.0).abs() < f64::EPSILON);
     }
 
     #[test]
