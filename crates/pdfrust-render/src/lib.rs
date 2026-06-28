@@ -2485,6 +2485,16 @@ fn fallback_text_cell(font_size: f64, fallback: FontFallback) -> f64 {
     font_size * scale / 7.0
 }
 
+fn scaled_fallback_text_cell(font_size: f64, fallback: FontFallback, state: GraphicsState) -> f64 {
+    fallback_text_cell(font_size, fallback) * matrix_average_scale(state.ctm)
+}
+
+fn matrix_average_scale(matrix: Matrix) -> f64 {
+    let x_scale = matrix.a.hypot(matrix.b);
+    let y_scale = matrix.c.hypot(matrix.d);
+    ((x_scale + y_scale) / 2.0).max(f64::EPSILON)
+}
+
 fn standard_base_glyph_width(face: FontFallbackFace, unicode: &str) -> Option<f64> {
     let mut chars = unicode.chars();
     let character = chars.next()?;
@@ -10582,7 +10592,7 @@ fn draw_text_run(
         face: FontFallbackFace::Sans,
         source: FontFallbackSource::Unspecified,
     });
-    let cell = fallback_text_cell(text.font_size, fallback);
+    let cell = scaled_fallback_text_cell(text.font_size, fallback, text.state);
     text_scratch.prepare(text, cell);
     for atom in &text_scratch.atoms {
         let TextRasterAtomKind::Glyph(character) = atom.kind else {
@@ -16245,6 +16255,20 @@ mod tests {
 
         assert!((fallback_text_cell(14.0, standard) - 1.5).abs() < f64::EPSILON);
         assert!((fallback_text_cell(14.0, missing) - 2.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn standard_base_fallback_should_scale_cell_with_graphics_ctm() {
+        let standard = FontFallback {
+            face: FontFallbackFace::Sans,
+            source: FontFallbackSource::StandardBase,
+        };
+        let state = GraphicsState {
+            ctm: Matrix::scale(2.0, 2.0),
+            ..GraphicsState::default()
+        };
+
+        assert!((scaled_fallback_text_cell(14.0, standard, state) - 3.0).abs() < f64::EPSILON);
     }
 
     #[test]

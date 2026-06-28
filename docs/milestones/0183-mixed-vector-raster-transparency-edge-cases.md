@@ -78,6 +78,11 @@ Native baseline slice started on 2026-06-28.
   error dropped from 5.842 to 5.387 and p95 channel delta from 52 to 31. The
   remaining drift is dominated by diagonal dashed route antialiasing and small
   text rendering, not transparent overlay compositing.
+- Corrected fallback glyph cell sizing for scaled graphics CTMs. The
+  `high-dpi-preview-fidelity.pdf` title now appears at the expected thumbnail
+  scale, and the focused Poppler run improved from MAE 20.979/max 233 to
+  MAE 20.818/max 216. The fixture remains a blocker because image/grid fidelity
+  still dominates the p95 channel delta.
 
 ## Completion Notes
 

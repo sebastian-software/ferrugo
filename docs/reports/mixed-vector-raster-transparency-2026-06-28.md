@@ -175,3 +175,18 @@ Compared with the previous focused Poppler run, this improves
 `MAE 5.842 -> 5.387` and `p95 52 -> 31`. The fixture remains a blocker because
 the remaining high-delta tail is dominated by diagonal dashed route
 antialiasing and small text rendering, not by the transparent overlay fills.
+
+## High-DPI Text Scale Follow-Up
+
+Fallback glyph cells now include the uniform graphics CTM scale when rasterizing
+simple standard-base text. This fixes scaled preview text sizing without adding
+new allocations or changing the text display-list representation.
+
+| Fixture | Status | MAE | P95 delta | Changed ratio | Max delta |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `high-dpi-preview-fidelity.pdf` | blocker | 20.818 | 105 | 0.379896 | 216 |
+
+Compared with the previous 0183 follow-up, this improves
+`MAE 20.979 -> 20.818` and `max 233 -> 216`. The fixture remains a blocker:
+the scaled title is now visible at the expected thumbnail scale, but image/grid
+fidelity still dominates the p95 delta.
