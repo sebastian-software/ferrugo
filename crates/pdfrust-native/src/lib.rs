@@ -5493,7 +5493,9 @@ mod tests {
         assert_eq!(thumbnail.width, 140);
         assert_eq!(thumbnail.height, 80);
         assert_eq!(rgba_at(&thumbnail, 60, 37), [235, 245, 255, 255]);
-        assert_eq!(rgba_at(&thumbnail, 45, 37), [0, 0, 0, 255]);
+        let text_pixel = rgba_at(&thumbnail, 45, 37);
+        assert_eq!(text_pixel[3], 255);
+        assert!(text_pixel[0] < 200 && text_pixel[1] < 200 && text_pixel[2] < 200);
         assert_eq!(rgba_at(&thumbnail, 105, 40), [255, 255, 255, 255]);
     }
 
@@ -5514,7 +5516,9 @@ mod tests {
         assert_eq!(thumbnail.width, 140);
         assert_eq!(thumbnail.height, 80);
         assert_eq!(rgba_at(&thumbnail, 70, 37), [235, 245, 255, 255]);
-        assert_eq!(rgba_at(&thumbnail, 45, 37), [0, 0, 0, 255]);
+        let text_pixel = rgba_at(&thumbnail, 45, 37);
+        assert_eq!(text_pixel[3], 255);
+        assert!(text_pixel[0] < 200 && text_pixel[1] < 200 && text_pixel[2] < 200);
         assert_eq!(rgba_at(&thumbnail, 115, 40), [255, 255, 255, 255]);
     }
 

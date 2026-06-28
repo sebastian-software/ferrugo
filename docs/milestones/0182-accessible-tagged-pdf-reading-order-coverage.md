@@ -75,6 +75,9 @@ Native slice committed toward 0182 on 2026-06-28.
 - Added case-sensitive standard-font fallback bitmaps with lowercase x-height
   masks. This improves the text-heavy Poppler metrics, but the strict tagged
   visual gate still has 7 blockers.
+- Added coverage-aware antialiasing for standard text fallback rectangles. The
+  tagged reading-order warning fixture now classifies as accepted Poppler drift,
+  reducing the strict tagged visual blockers from 7 to 6.
 
 ## Completion Notes
 

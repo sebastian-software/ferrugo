@@ -10507,16 +10507,36 @@ fn fill_device_rect(
     color: Rgba,
 ) -> RasterResult<()> {
     let dimensions = device.dimensions();
-    let min_x = p0.x.min(p1.x).floor().max(0.0) as u32;
-    let max_x = p0.x.max(p1.x).ceil().min(f64::from(dimensions.width)) as u32;
-    let min_y = p0.y.min(p1.y).floor().max(0.0) as u32;
-    let max_y = p0.y.max(p1.y).ceil().min(f64::from(dimensions.height)) as u32;
+    let left = p0.x.min(p1.x);
+    let right = p0.x.max(p1.x);
+    let top = p0.y.min(p1.y);
+    let bottom = p0.y.max(p1.y);
+    let min_x = left.floor().max(0.0) as u32;
+    let max_x = right.ceil().min(f64::from(dimensions.width)) as u32;
+    let min_y = top.floor().max(0.0) as u32;
+    let max_y = bottom.ceil().min(f64::from(dimensions.height)) as u32;
     for y in min_y..max_y {
         for x in min_x..max_x {
-            device.set_pixel(x, y, color)?;
+            let coverage = rect_pixel_coverage(left, right, top, bottom, x, y);
+            if coverage >= 1.0 - f64::EPSILON && color.a == 255 {
+                device.set_pixel(x, y, color)?;
+            } else if coverage > f64::EPSILON {
+                let dest = device.pixel(x, y)?;
+                device.set_pixel(x, y, source_over(color, dest, coverage))?;
+            }
         }
     }
     Ok(())
+}
+
+fn rect_pixel_coverage(left: f64, right: f64, top: f64, bottom: f64, x: u32, y: u32) -> f64 {
+    let pixel_left = f64::from(x);
+    let pixel_right = pixel_left + 1.0;
+    let pixel_top = f64::from(y);
+    let pixel_bottom = pixel_top + 1.0;
+    let overlap_x = right.min(pixel_right) - left.max(pixel_left);
+    let overlap_y = bottom.min(pixel_bottom) - top.max(pixel_top);
+    (overlap_x.max(0.0) * overlap_y.max(0.0)).clamp(0.0, 1.0)
 }
 
 fn ascii_glyph(character: char) -> [&'static str; 7] {
@@ -14091,6 +14111,44 @@ mod tests {
                 a: 255,
             }
         );
+    }
+
+    #[test]
+    fn fill_device_rect_should_antialias_subpixel_edges() {
+        let mut device = RasterDevice::new(3, 3, Rgba::WHITE).expect("valid device");
+
+        fill_device_rect(
+            &mut device,
+            Point { x: 0.25, y: 0.25 },
+            Point { x: 1.75, y: 1.75 },
+            Rgba {
+                r: 0,
+                g: 0,
+                b: 0,
+                a: 255,
+            },
+        )
+        .expect("subpixel text rect should rasterize");
+
+        assert_eq!(
+            device.pixel(0, 0).expect("covered edge pixel"),
+            Rgba {
+                r: 112,
+                g: 112,
+                b: 112,
+                a: 255,
+            }
+        );
+        assert_eq!(
+            device.pixel(1, 1).expect("covered edge pixel"),
+            Rgba {
+                r: 112,
+                g: 112,
+                b: 112,
+                a: 255,
+            }
+        );
+        assert_eq!(device.pixel(2, 2).expect("uncovered pixel"), Rgba::WHITE);
     }
 
     #[test]
