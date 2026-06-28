@@ -142,9 +142,11 @@ printable ASCII Helvetica width table is now complete for standard-base
 fallback positioning, which reduces the accepted warning fixture changed ratio
 and max channel delta. Printable ASCII fallback bitmap coverage is now complete,
 so punctuation no longer routes through the unknown-glyph mask; this slightly
-reduces the tagged invoice drift. The strict threshold report still classifies
-6 fixtures as blockers, so 0182 remains in progress for visual-fidelity work
-rather than oracle availability.
+reduces the tagged invoice drift. A follow-up run after the 0183
+StandardBase glyph-weight tuning moved metadata-baseline and tagged-form to
+accepted drift. The strict threshold report still classifies 4 fixtures as
+blockers, so 0182 remains in progress for visual-fidelity work rather than
+oracle availability.
 
 Poppler command:
 
@@ -159,27 +161,27 @@ cargo run -p pdfrust-cli --no-default-features -- visual-diff-poppler fixtures/g
   --include-family structure-heavy \
   --include-family metadata-baseline \
   --max-edge 160 \
-  --timeout 60 \
+  --timeout 20 \
   --max-mae 2.0 \
   --max-p95 16 \
   --max-changed-ratio 0.05 \
-  --output target/tagged-0182-poppler-visual-diff.json
+  --output target/tagged-0182-poppler-after-0183-text.json
 ```
 
-Result: 7 total, 0 exact, 1 accepted drift, 6 blockers, 0 native errors,
+Result: 7 total, 0 exact, 3 accepted drift, 4 blockers, 0 native errors,
 0 reference errors, 0 both errors.
 
-Blocker split:
+Fixture split:
 
 | Fixture | Status | Evidence |
 | --- | --- | --- |
-| `tagged-accessibility-metadata.pdf` | blocker | MAE 1.228, p95 1, changed ratio 0.161765, max delta 171. |
-| `tagged-form-visual-integrity.pdf` | blocker | MAE 4.552, p95 11, changed ratio 0.083762, max delta 255. |
-| `tagged-invoice-reading-order.pdf` | blocker | MAE 10.626, p95 97, changed ratio 0.128305, max delta 209. |
-| `tagged-office-alt-text.pdf` | blocker | MAE 13.294, p95 105, changed ratio 0.109579, max delta 209. |
-| `tagged-reading-order-missing-page-context.pdf` | accepted drift | MAE 1.733, p95 0, changed ratio 0.023635, max delta 200. |
-| `tagged-report-visual-integrity.pdf` | blocker | MAE 12.002, p95 100, changed ratio 0.130011, max delta 201. |
-| `tagged-structure-heavy-report.pdf` | blocker | MAE 15.311, p95 102, changed ratio 0.219267, max delta 204. |
+| `tagged-accessibility-metadata.pdf` | accepted drift | MAE 1.228, p95 1, changed ratio 0.161765, max delta 171. |
+| `tagged-form-visual-integrity.pdf` | accepted drift | MAE 2.462, p95 0, changed ratio 0.070152, max delta 255. |
+| `tagged-invoice-reading-order.pdf` | blocker | MAE 12.347, p95 175, changed ratio 0.121935, max delta 209. |
+| `tagged-office-alt-text.pdf` | blocker | MAE 14.047, p95 179, changed ratio 0.104089, max delta 209. |
+| `tagged-reading-order-missing-page-context.pdf` | accepted drift | MAE 1.727, p95 0, changed ratio 0.024282, max delta 185. |
+| `tagged-report-visual-integrity.pdf` | blocker | MAE 12.486, p95 175, changed ratio 0.123976, max delta 201. |
+| `tagged-structure-heavy-report.pdf` | blocker | MAE 15.283, p95 102, changed ratio 0.220207, max delta 204. |
 
 ## Validation
 

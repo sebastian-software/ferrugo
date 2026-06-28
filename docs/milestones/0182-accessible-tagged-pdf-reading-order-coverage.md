@@ -92,6 +92,11 @@ Native slice committed toward 0182 on 2026-06-28.
 - Completed printable ASCII fallback bitmap coverage instead of routing
   punctuation through the unknown-glyph mask. The tagged invoice fixture drift
   improved slightly, while the strict tagged visual gate still has 6 blockers.
+- Re-ran the tagged Poppler oracle after the later StandardBase glyph-weight
+  tuning from 0183. The strict tagged visual gate now reports 7 total,
+  0 exact, 3 accepted drift, and 4 blockers: metadata-baseline,
+  tagged-form, and reading-order-warning are accepted, while invoice, office
+  alt-text, report, and structure-heavy fixtures remain visual blockers.
 
 ## Completion Notes
 
