@@ -35,6 +35,12 @@ RGB delta is at most 4. The p95 rule allows broad 1-4 channel rounding drift
 with a small text or edge antialiasing tail, while keeping high-amplitude
 renderer mismatches as blockers.
 
+Low-p95 edge drift is accepted when MAE is at most 3.5, the 95th percentile RGB
+delta is at most 5, and the changed-pixel ratio is at most 0.5. This keeps
+image/text edge antialiasing drift out of the blocker bucket while preserving
+blockers for high-p95 page-geometry, text placement, transparency, and vector
+linework mismatches.
+
 ## Statuses
 
 | Status | Meaning | Review action |

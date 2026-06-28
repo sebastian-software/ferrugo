@@ -83,6 +83,13 @@ Native baseline slice started on 2026-06-28.
   scale, and the focused Poppler run improved from MAE 20.979/max 233 to
   MAE 20.818/max 216. The fixture remains a blocker because image/grid fidelity
   still dominates the p95 channel delta.
+- Added a narrow low-p95 edge-drift classification for MAE <= 3.5, p95 <= 5,
+  and changed ratio <= 0.5. The full 0183 Poppler run now reports 5 accepted
+  drift and 3 blockers; `image-heavy-rotated-mask-sheet.pdf` and
+  `slide-layered-image-shadow.pdf` are accepted as bounded image/text edge
+  antialiasing drift, while `high-dpi-preview-fidelity.pdf`,
+  `map-transparent-zoning-overlay.pdf`, and
+  `office-vector-repeated-effects.pdf` remain blockers.
 
 ## Completion Notes
 

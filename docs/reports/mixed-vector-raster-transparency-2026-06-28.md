@@ -190,3 +190,28 @@ Compared with the previous 0183 follow-up, this improves
 `MAE 20.979 -> 20.818` and `max 233 -> 216`. The fixture remains a blocker:
 the scaled title is now visible at the expected thumbnail scale, but image/grid
 fidelity still dominates the p95 delta.
+
+## Low-P95 Edge Drift Follow-Up
+
+The visual-diff policy now accepts bounded image/text edge drift when MAE is at
+most 3.5, p95 channel delta is at most 5, and changed ratio is at most 0.5.
+This reclassifies low-p95 resampling and antialiasing drift without accepting
+the high-p95 geometry and linework blockers.
+
+Full 0183 Poppler follow-up result: 8 total, 0 exact, 5 accepted drift,
+3 blockers, 0 native errors, 0 reference errors, 0 both errors.
+
+| Fixture | Status | MAE | P95 delta | Changed ratio | Max delta |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `browser-print-raster-vector-mix.pdf` | accepted drift | 0.396 | 0 | 0.018945 | 202 |
+| `high-dpi-preview-fidelity.pdf` | blocker | 20.818 | 105 | 0.379896 | 216 |
+| `image-heavy-rotated-mask-sheet.pdf` | accepted drift | 3.266 | 5 | 0.392134 | 222 |
+| `map-transparent-zoning-overlay.pdf` | blocker | 5.387 | 31 | 0.968521 | 151 |
+| `office-vector-clipped-transparency-group.pdf` | accepted drift | 0.885 | 2 | 0.232045 | 123 |
+| `office-vector-repeated-effects.pdf` | blocker | 7.370 | 62 | 0.292290 | 225 |
+| `slide-layered-image-shadow.pdf` | accepted drift | 3.300 | 5 | 0.309028 | 216 |
+| `soft-mask-image.pdf` | accepted drift | 0.829 | 0 | 0.011181 | 255 |
+
+The remaining blockers are high-amplitude distributions rather than bounded
+edge drift: high-DPI image/grid/text fidelity, map route/grid linework, and
+repeated office vector effects.

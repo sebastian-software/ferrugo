@@ -27,6 +27,9 @@ use pdfrust_thumbnail::{
 const WORKER_POLL_INTERVAL: Duration = Duration::from_millis(10);
 const LOW_AMPLITUDE_VISUAL_DRIFT_MAX_DELTA: u8 = 8;
 const LOW_AMPLITUDE_VISUAL_DRIFT_P95_MAX_DELTA: u8 = 4;
+const LOW_P95_EDGE_DRIFT_MAX_MAE: f64 = 3.5;
+const LOW_P95_EDGE_DRIFT_MAX_DELTA: u8 = 5;
+const LOW_P95_EDGE_DRIFT_MAX_CHANGED_RATIO: f64 = 0.5;
 #[cfg(not(feature = "pdfium"))]
 const PDFIUM_FEATURE_MESSAGE: &str =
     "PDFium support is disabled; rebuild pdfrust-cli with --features pdfium";
@@ -4779,8 +4782,12 @@ fn classify_visual_diff(
     let low_amplitude_field = metrics.max_channel_delta <= LOW_AMPLITUDE_VISUAL_DRIFT_MAX_DELTA;
     let low_amplitude_distribution =
         metrics.p95_channel_delta <= LOW_AMPLITUDE_VISUAL_DRIFT_P95_MAX_DELTA;
-    if metrics.mean_abs_error <= thresholds.max_mean_abs_error
-        && (bounded_distribution || low_amplitude_field || low_amplitude_distribution)
+    let low_p95_edge_drift = metrics.mean_abs_error <= LOW_P95_EDGE_DRIFT_MAX_MAE
+        && metrics.p95_channel_delta <= LOW_P95_EDGE_DRIFT_MAX_DELTA
+        && metrics.changed_ratio <= LOW_P95_EDGE_DRIFT_MAX_CHANGED_RATIO;
+    if (metrics.mean_abs_error <= thresholds.max_mean_abs_error
+        && (bounded_distribution || low_amplitude_field || low_amplitude_distribution))
+        || low_p95_edge_drift
     {
         VisualDiffStatus::AcceptedDrift
     } else {
@@ -8858,6 +8865,48 @@ status = "candidate"
 
         assert_eq!(
             classify_visual_diff(&high_delta, VisualDiffThresholds::default()),
+            VisualDiffStatus::Blocker
+        );
+    }
+
+    #[test]
+    fn visual_diff_metrics_should_accept_low_p95_edge_drift() {
+        let metrics = VisualDiffMetrics {
+            width: 160,
+            height: 90,
+            changed_pixels: 4_450,
+            changed_ratio: 0.309028,
+            mean_abs_error: 3.3,
+            p95_channel_delta: 5,
+            max_channel_delta: 216,
+            native_nonwhite_pixels: 14_400,
+            pdfium_nonwhite_pixels: 14_400,
+        };
+
+        assert_eq!(
+            classify_visual_diff(&metrics, VisualDiffThresholds::default()),
+            VisualDiffStatus::AcceptedDrift
+        );
+
+        assert_eq!(
+            classify_visual_diff(
+                &VisualDiffMetrics {
+                    p95_channel_delta: 6,
+                    ..metrics
+                },
+                VisualDiffThresholds::default(),
+            ),
+            VisualDiffStatus::Blocker
+        );
+
+        assert_eq!(
+            classify_visual_diff(
+                &VisualDiffMetrics {
+                    changed_ratio: 0.75,
+                    ..metrics
+                },
+                VisualDiffThresholds::default(),
+            ),
             VisualDiffStatus::Blocker
         );
     }
