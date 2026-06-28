@@ -1,0 +1,138 @@
+# Mixed Vector Raster Transparency Baseline 2026-06-28
+
+Milestone: 0183.
+Status: in progress.
+
+## Summary
+
+Milestone 0183 now has a focused manifest for common mixed vector, raster,
+clipping, soft-mask, and transparency pages assembled from existing generated
+fixtures:
+
+- `fixtures/mixed-vector-raster-transparency-manifest.tsv`
+
+The baseline confirms native coverage is available for the selected typical
+slice: all 8 fixtures render natively with 0 fallbacks, 0 errors, and 0
+benchmark budget failures. Strict Poppler visual comparison still reports 6
+fidelity blockers, so 0183 remains open for renderer fidelity work rather than
+coverage or oracle availability.
+
+## Fixture Slice
+
+| Fixture | Family | Coverage |
+| --- | --- | --- |
+| `browser-print-raster-vector-mix.pdf` | `browser-raster-vector` | Browser print page with raster/vector chart content. |
+| `high-dpi-preview-fidelity.pdf` | `high-dpi-preview` | Fine linework, small text, scaled image, and alpha overlay. |
+| `image-heavy-rotated-mask-sheet.pdf` | `rotated-soft-mask-image` | Rotated masked image placements. |
+| `map-transparent-zoning-overlay.pdf` | `map-overlay` | Transparent zoning overlay over grid and route vectors. |
+| `office-vector-clipped-transparency-group.pdf` | `office-clipped-transparency` | Clipped office transparency group. |
+| `office-vector-repeated-effects.pdf` | `office-repeated-effects` | Repeated decorative office vector transparency effects. |
+| `slide-layered-image-shadow.pdf` | `slide-layered-image` | Scaled image, translucent tint overlay, shadow block, and text. |
+| `soft-mask-image.pdf` | `image-soft-mask` | Image soft-mask alpha baseline. |
+
+## Native Gate
+
+Command:
+
+```sh
+cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated \
+  --manifest fixtures/mixed-vector-raster-transparency-manifest.tsv \
+  --include-family browser-raster-vector \
+  --include-family high-dpi-preview \
+  --include-family rotated-soft-mask-image \
+  --include-family map-overlay \
+  --include-family office-clipped-transparency \
+  --include-family office-repeated-effects \
+  --include-family slide-layered-image \
+  --include-family image-soft-mask \
+  --fail-on-fallback \
+  --max-edge 160 \
+  --output target/mixed-transparency-0183-supported-gate.json
+```
+
+Result: 8 total, 8 native rendered, 0 fallback required, 0 errors.
+
+## Benchmark Gate
+
+Command:
+
+```sh
+cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated \
+  --manifest fixtures/mixed-vector-raster-transparency-manifest.tsv \
+  --include-family browser-raster-vector \
+  --include-family high-dpi-preview \
+  --include-family rotated-soft-mask-image \
+  --include-family map-overlay \
+  --include-family office-clipped-transparency \
+  --include-family office-repeated-effects \
+  --include-family slide-layered-image \
+  --include-family image-soft-mask \
+  --max-edge 160 \
+  --iterations 2 \
+  --max-ms 1000 \
+  --max-output-bytes 1048576 \
+  --output target/mixed-transparency-0183-benchmark.json
+```
+
+Result: 8 total, 8 native rendered, 0 fallback required, 0 errors, 0 budget
+failures.
+
+| Family | Mean ms | Max ms | Output bytes |
+| --- | ---: | ---: | ---: |
+| `browser-raster-vector` | 22.841 | 22.841 | 102400 |
+| `high-dpi-preview` | 33.038 | 33.038 | 76800 |
+| `image-soft-mask` | 1.234 | 1.234 | 57600 |
+| `map-overlay` | 64.515 | 64.515 | 69760 |
+| `office-clipped-transparency` | 65.153 | 65.153 | 70400 |
+| `office-repeated-effects` | 105.501 | 105.501 | 68480 |
+| `rotated-soft-mask-image` | 48.081 | 48.081 | 74240 |
+| `slide-layered-image` | 18.421 | 18.421 | 57600 |
+
+## Poppler Visual Baseline
+
+Command:
+
+```sh
+cargo run -p pdfrust-cli --no-default-features -- visual-diff-poppler fixtures/generated \
+  --manifest fixtures/mixed-vector-raster-transparency-manifest.tsv \
+  --include-family browser-raster-vector \
+  --include-family high-dpi-preview \
+  --include-family rotated-soft-mask-image \
+  --include-family map-overlay \
+  --include-family office-clipped-transparency \
+  --include-family office-repeated-effects \
+  --include-family slide-layered-image \
+  --include-family image-soft-mask \
+  --max-edge 160 \
+  --timeout 60 \
+  --max-mae 2.0 \
+  --max-p95 16 \
+  --max-changed-ratio 0.05 \
+  --output target/mixed-transparency-0183-poppler-visual-diff.json
+```
+
+Result: 8 total, 0 exact, 2 accepted drift, 6 blockers, 0 native errors,
+0 reference errors, 0 both errors.
+
+| Fixture | Status | MAE | P95 delta | Changed ratio | Max delta |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `browser-print-raster-vector-mix.pdf` | accepted drift | 0.396 | 0 | 0.018945 | 202 |
+| `high-dpi-preview-fidelity.pdf` | blocker | 20.981 | 105 | 0.379583 | 233 |
+| `image-heavy-rotated-mask-sheet.pdf` | blocker | 3.676 | 8 | 0.399353 | 167 |
+| `map-transparent-zoning-overlay.pdf` | blocker | 5.842 | 52 | 0.984117 | 151 |
+| `office-vector-clipped-transparency-group.pdf` | blocker | 3.381 | 3 | 0.254091 | 177 |
+| `office-vector-repeated-effects.pdf` | blocker | 8.285 | 76 | 0.302453 | 225 |
+| `slide-layered-image-shadow.pdf` | blocker | 3.300 | 5 | 0.309028 | 216 |
+| `soft-mask-image.pdf` | accepted drift | 0.829 | 0 | 0.011181 | 255 |
+
+## Current Interpretation
+
+The slice proves native coverage and bounded output budgets for common mixed
+vector/raster/transparency pages. The blocker pattern is visual fidelity:
+high-DPI small text and linework, map overlay coverage, clipped transparency
+group edges, repeated vector effects, and layered image/color differences.
+
+Next 0183 work should prioritize blocker reduction by subsystem rather than
+adding more fixtures: start with the `transparency` row
+`office-vector-clipped-transparency-group.pdf`, then the high changed-ratio
+`map-overlay` row.
