@@ -138,6 +138,30 @@ cargo run -p pdfrust-cli -- summarize-fallbacks fixtures/generated \
   --fail-on-fallback
 ```
 
+## Annotation Popup Stamp FreeText Manifest
+
+`fixtures/annotation-popup-stamp-freetext-manifest.tsv` is the focused gate for
+review annotations, explicit FreeText appearances, stamp appearances, popup
+metadata boundaries, synthesized markup, inert links, and print-preview state.
+The `unsupported-synthesis` family keeps appearance-free FreeText visible as the
+typed `annotation.appearance` boundary.
+
+Use supported families as a native-only gate:
+
+```sh
+cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks \
+  fixtures/generated \
+  --manifest fixtures/annotation-popup-stamp-freetext-manifest.tsv \
+  --include-family appearance-stream \
+  --include-family stamp-appearance \
+  --include-family print-state \
+  --include-family synthesized-markup \
+  --include-family popup-boundary \
+  --include-family nonvisual-link \
+  --fail-on-fallback \
+  --max-edge 160
+```
+
 ## Form Appearance Mutation Manifest
 
 `fixtures/form-appearance-mutation-manifest.tsv` is the focused gate for

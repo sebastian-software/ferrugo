@@ -2940,6 +2940,117 @@ def freetext_annotation_without_appearance_pdf() -> bytes:
     return pdf.render(catalog)
 
 
+def freetext_annotation_appearance_pdf() -> bytes:
+    pdf = Pdf()
+    content = b"BT /F1 8 Tf 16 96 Td (Review comment) Tj ET"
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    font = pdf.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    appearance = (
+        b"1 0.96 0.72 rg 0 0 92 30 re f "
+        b"0.45 0.30 0.05 RG 1 w 0.5 0.5 91 29 re S "
+        b"0.18 0.12 0.02 rg BT /F1 8 Tf 6 12 Td (Check total) Tj ET"
+    )
+    appearance_object = pdf.add(
+        f"<< /Type /XObject /Subtype /Form /BBox [0 0 92 30] "
+        f"/Resources << /Font << /F1 {font} 0 R >> >> "
+        f"/Length {len(appearance)} >>\nstream\n".encode("ascii")
+        + appearance
+        + b"\nendstream"
+    )
+    annotation = pdf.add(
+        "<< /Type /Annot /Subtype /FreeText /Rect [20 48 112 78] "
+        "/Contents (Check total) /DA (/F1 8 Tf 0 g) "
+        f"/AP << /N {appearance_object} 0 R >> >>"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 6 0 R /MediaBox [0 0 140 110] "
+        f"/Resources << /Font << /F1 {font} 0 R >> >> "
+        f"/Contents {contents} 0 R /Annots [{annotation} 0 R] >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert annotation == 4
+    assert page == 5
+    assert pages == 6
+    return pdf.render(catalog)
+
+
+def stamp_annotation_rotated_appearance_pdf() -> bytes:
+    pdf = Pdf()
+    content = b"BT /F1 8 Tf 18 96 Td (Approval stamp) Tj ET"
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    font = pdf.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    appearance = (
+        b"q 0.966 0.259 -0.259 0.966 8 2 cm "
+        b"0.98 0.88 0.86 rg 0 0 70 24 re f "
+        b"0.70 0.10 0.08 RG 2 w 1 1 68 22 re S "
+        b"0.55 0.04 0.04 rg BT /F1 10 Tf 9 8 Td (APPROVED) Tj ET Q"
+    )
+    appearance_object = pdf.add(
+        f"<< /Type /XObject /Subtype /Form /BBox [0 0 86 44] "
+        f"/Resources << /Font << /F1 {font} 0 R >> >> "
+        f"/Length {len(appearance)} >>\nstream\n".encode("ascii")
+        + appearance
+        + b"\nendstream"
+    )
+    annotation = pdf.add(
+        "<< /Type /Annot /Subtype /Stamp /Name /Approved /F 4 "
+        "/Rect [28 30 114 74] "
+        f"/AP << /N {appearance_object} 0 R >> >>"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 6 0 R /MediaBox [0 0 140 110] "
+        f"/Resources << /Font << /F1 {font} 0 R >> >> "
+        f"/Contents {contents} 0 R /Annots [{annotation} 0 R] >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert annotation == 4
+    assert page == 5
+    assert pages == 6
+    return pdf.render(catalog)
+
+
+def popup_annotation_inert_state_pdf() -> bytes:
+    pdf = Pdf()
+    content = b"BT /F1 8 Tf 14 92 Td (Popup metadata stays inert) Tj ET"
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    font = pdf.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    popup = pdf.add(
+        "<< /Type /Annot /Subtype /Popup /Rect [58 42 128 84] "
+        "/Open true /Contents (Do not render popup UI) >>"
+    )
+    parent = pdf.add(
+        "<< /Type /Annot /Subtype /Text /Rect [24 48 46 70] "
+        "/C [1 0.85 0] /Contents (Review note) "
+        f"/Popup {popup} 0 R >>"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 6 0 R /MediaBox [0 0 140 110] "
+        f"/Resources << /Font << /F1 {font} 0 R >> >> "
+        f"/Contents {contents} 0 R /Annots [{parent} 0 R {popup} 0 R] >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert popup == 3
+    assert parent == 4
+    assert page == 5
+    assert pages == 6
+    return pdf.render(catalog)
+
+
 def widget_annotation_appearance_pdf() -> bytes:
     pdf = Pdf()
     content = b""
@@ -7766,6 +7877,12 @@ def main() -> None:
         "freetext-annotation-without-appearance.pdf",
         freetext_annotation_without_appearance_pdf(),
     )
+    write("freetext-annotation-appearance.pdf", freetext_annotation_appearance_pdf())
+    write(
+        "stamp-annotation-rotated-appearance.pdf",
+        stamp_annotation_rotated_appearance_pdf(),
+    )
+    write("popup-annotation-inert-state.pdf", popup_annotation_inert_state_pdf())
     write(
         "markup-annotations-without-appearance.pdf",
         markup_annotations_without_appearance_pdf(),

@@ -1,11 +1,17 @@
 # Annotation Fallback Policy
 
-Status: accepted for 0091, updated for 0193.
+Status: accepted for 0091, updated for 0193 and 0207.
 Date: 2026-06-29.
 
 The native renderer may synthesize static thumbnail appearances for common page
 annotations that do not provide a usable normal appearance stream. Existing
 `/AP /N` appearance streams remain authoritative.
+
+FreeText annotations with an existing normal appearance stream are rendered as
+static appearance content. FreeText annotations without a usable appearance
+remain a typed unsupported boundary because deriving layout from `/DA`,
+contents, rich text, border style, rotation, and popup state would be viewer
+behavior rather than read-only thumbnail rendering.
 
 ## Supported Fallbacks
 
@@ -25,6 +31,9 @@ annotations that do not provide a usable normal appearance stream. Existing
   `annotation.appearance` unsupported instead of guessing text layout.
 - URI, action, destination, popup, and contents metadata are not executed or
   displayed by thumbnail rendering.
+- `/Popup` annotations are inert metadata for thumbnail rendering. The parent
+  annotation may render if it has an appearance stream or supported fallback,
+  but the popup UI state is not opened or painted.
 - Unknown annotation subtypes without appearances are skipped.
 
 ## Preview Visibility
