@@ -222,6 +222,39 @@ cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks \
   --max-edge 160
 ```
 
+## Office Chart Vector Effects Manifest
+
+`fixtures/office-chart-vector-effects-manifest.tsv` is the focused gate for
+office chart, diagram, slide, and SmartArt-style vector-effect reductions. It
+combines chart legends, spreadsheet chart overlays, rotated slide callouts,
+gradient-heavy slides, grouped vector shapes, nested clipping, clipped
+transparency groups, and repeated vector effects.
+
+The manifest uses families `chart-legend`, `chart-table-overlay`,
+`slide-chart-callout`, `gradient-slide`, `grouped-vector`,
+`nested-vector-clips`, and `repeated-vector-effects`. It is a visual and runtime
+renderer gate; it does not attempt to reconstruct editable chart or SmartArt
+semantics.
+
+Use this manifest when a change may affect chart fills, legends, connector-like
+linework, nested Form XObject clipping, transparency groups, gradients, or
+repeated office vector effects:
+
+```sh
+cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks \
+  fixtures/generated \
+  --manifest fixtures/office-chart-vector-effects-manifest.tsv \
+  --include-family chart-legend \
+  --include-family chart-table-overlay \
+  --include-family slide-chart-callout \
+  --include-family gradient-slide \
+  --include-family grouped-vector \
+  --include-family nested-vector-clips \
+  --include-family repeated-vector-effects \
+  --fail-on-fallback \
+  --max-edge 160
+```
+
 ## Scientific Report Manifest
 
 `fixtures/scientific-report-manifest.tsv` is the focused gate for scientific

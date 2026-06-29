@@ -35,7 +35,6 @@ when the server renderer is already correct and bounded.
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
 | 0196 | [WASM Low Memory Mobile Browser Gate](0196-wasm-low-memory-mobile-browser-gate.md) | 37 | medium | 0195 |
-| 0204 | [Office Chart SmartArt And Vector Effect Fidelity](0204-office-chart-smartart-and-vector-effect-fidelity.md) | 38 | medium | 0203 |
 | 0205 | [PDFium-Free 1.3 Typical Document Gate](0205-pdfium-free-1-3-typical-document-gate.md) | 38 | medium | 0204 |
 | 0206 | [Form Filling Appearance Update And Flattening Coverage](0206-form-filling-appearance-update-and-flattening-coverage.md) | 39 | medium | 0205 |
 | 0207 | [Annotation Popup Stamp And FreeText Fidelity](0207-annotation-popup-stamp-and-freetext-fidelity.md) | 39 | medium | 0206 |
@@ -63,6 +62,7 @@ when the server renderer is already correct and bounded.
 
 | ID | Milestone | Phase | Size | Completed |
 | --- | --- | --- | --- | --- |
+| 0204 | [Office Chart SmartArt And Vector Effect Fidelity](0204-office-chart-smartart-and-vector-effect-fidelity.md) | 38 | medium | 2026-06-29 |
 | 0203 | [Dense Office Table And Spreadsheet Refinement](0203-dense-office-table-and-spreadsheet-refinement.md) | 38 | medium | 2026-06-29 |
 | 0202 | [Text Selection Geometry And Search Highlight Parity](0202-text-selection-geometry-and-search-highlight-parity.md) | 38 | medium | 2026-06-29 |
 | 0201 | [Native Renderer 1.3 Coverage Scorecard Baseline](0201-native-renderer-1-3-coverage-scorecard-baseline.md) | 38 | medium | 2026-06-29 |
