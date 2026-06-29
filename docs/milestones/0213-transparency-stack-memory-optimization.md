@@ -1,6 +1,6 @@
 # 0213: Transparency Stack Memory Optimization
 
-Status: todo
+Status: done
 Phase: 40
 Size: medium
 Depends on: 0212
@@ -50,4 +50,16 @@ desktop, server, WASM, and low-memory budgets.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-29.
+
+- Added a pass-local `TransparencyGroupScratch` so same-sized transparency group
+  intermediate rasters reuse one cleared `RasterDevice` within a render pass.
+- Kept nested transparency groups isolated by giving recursive rasterization its
+  own scratch context.
+- Preserved the existing `max_transparency_group_pixels` allocation guard and
+  typed `TransparencyGroupPixelsOverflow` diagnostic.
+- Added `fixtures/transparency-stack-memory-manifest.tsv` covering supported
+  alpha, group, soft-mask, office, presentation, and chart transparency
+  workloads.
+- Documented the scratch lifetime and non-sharing policy in
+  `docs/backend/native.md`.

@@ -35,7 +35,6 @@ when the server renderer is already correct and bounded.
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
 | 0196 | [WASM Low Memory Mobile Browser Gate](0196-wasm-low-memory-mobile-browser-gate.md) | 37 | medium | 0195 |
-| 0213 | [Transparency Stack Memory Optimization](0213-transparency-stack-memory-optimization.md) | 40 | medium | 0212 |
 | 0214 | [Incremental Parser And Object Cache Fusion](0214-incremental-parser-and-object-cache-fusion.md) | 40 | medium | 0213 |
 | 0215 | [PDFium Comparison Tool Removal Decision Gate](0215-pdfium-comparison-tool-removal-decision-gate.md) | 40 | medium | 0214 |
 | 0216 | [Cross-Producer Typical Document Fusion Corpus](0216-cross-producer-typical-document-fusion-corpus.md) | 41 | medium | 0215 |
@@ -54,6 +53,7 @@ when the server renderer is already correct and bounded.
 
 | ID | Milestone | Phase | Size | Completed |
 | --- | --- | --- | --- | --- |
+| 0213 | [Transparency Stack Memory Optimization](0213-transparency-stack-memory-optimization.md) | 40 | medium | 2026-06-29 |
 | 0212 | [Rust-Native Font Cache Compaction](0212-rust-native-font-cache-compaction.md) | 40 | medium | 2026-06-29 |
 | 0211 | [PDF Operator Semantic Snapshot Suite](0211-pdf-operator-semantic-snapshot-suite.md) | 40 | medium | 2026-06-29 |
 | 0210 | [Native Renderer 1.3 Hardening Gate](0210-native-renderer-1-3-hardening-gate.md) | 39 | medium | 2026-06-29 |

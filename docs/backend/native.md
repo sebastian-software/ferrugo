@@ -122,6 +122,16 @@ existing entry, byte, or retained-capacity limits. Native memory diagnostics
 report the default and low-memory font budgets without exposing document text,
 font names, glyph strings, or decoded program bytes.
 
+## Transparency Scratch Policy
+
+Transparency groups are rasterized through bounded intermediate surfaces clipped
+to the group device bounds. The renderer enforces `max_transparency_group_pixels`
+before allocation. Within one rasterization pass, same-sized transparency group
+intermediates reuse a pass-local scratch `RasterDevice`; the scratch is cleared
+before reuse and is never shared across documents, pages, or concurrent render
+jobs. Nested transparency groups use their own rasterization context so parent
+and child intermediate surfaces cannot alias.
+
 The current repeated-render gate does not show enough improvement to justify
 shared persistent page artifacts as a default: the 0134 benchmark rendered four
 fixtures three times each with 0 fallbacks and 0 budget failures, while repeated

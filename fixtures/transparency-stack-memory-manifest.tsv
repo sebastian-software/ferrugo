@@ -1,0 +1,10 @@
+path	family	source	license	page_count	features	notes
+fixtures/generated/transparency-alpha.pdf	alpha-stack	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	transparency,alpha,extgstate,expected:native	Alpha ExtGState baseline for stack-independent transparency.
+fixtures/generated/transparency-group.pdf	group-stack	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	transparency,form-xobject,isolated,expected:native	Path-only isolated transparency group baseline.
+fixtures/generated/transparency-knockout-group.pdf	group-stack	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	transparency,form-xobject,knockout,expected:native	Knockout transparency group baseline.
+fixtures/generated/transparency-isolated-alpha-group.pdf	group-stack	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	transparency,form-xobject,isolated,alpha,expected:native	Isolated transparency group with overlapping alpha content.
+fixtures/generated/soft-mask-image.pdf	soft-mask-stack	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,soft-mask,alpha,expected:native	Image soft-mask alpha baseline.
+fixtures/generated/office-vector-clipped-transparency-group.pdf	office-transparency-stack	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	office-export,vector,clipping,transparency-group,expected:native	Office-style clipped transparency group.
+fixtures/generated/office-vector-repeated-effects.pdf	office-transparency-stack	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	office-export,vector,repeated-effects,transparency,expected:native	Repeated decorative vector transparency effects.
+fixtures/generated/slide-layered-image-shadow.pdf	presentation-transparency-stack	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	presentation,slide,image,shadow,transparency,text,expected:native	Presentation slide with layered image, tint overlay, and shadow.
+fixtures/generated/slide-rotated-callout.pdf	chart-transparency-stack	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	presentation,slide,chart,rotated-text,transparency,expected:native	Chart slide with translucent rotated callout.

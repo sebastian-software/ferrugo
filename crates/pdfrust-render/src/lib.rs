@@ -4905,6 +4905,7 @@ pub fn rasterize_paths_into(
     }
     let mut active_clips = Vec::new();
     let mut pattern_cache = PatternCellCache::new(options.max_pattern_cell_cache_entries);
+    let mut transparency_scratch = TransparencyGroupScratch::default();
     for item in display_list.items() {
         match item {
             DisplayItem::Path(path) => {
@@ -4952,7 +4953,14 @@ pub fn rasterize_paths_into(
                     group.state.graphics_state_depth,
                     group.state.graphics_state_scope_id,
                 );
-                rasterize_transparency_group(group, device, transform, options, &active_clips)?;
+                rasterize_transparency_group(
+                    group,
+                    device,
+                    transform,
+                    options,
+                    &active_clips,
+                    &mut transparency_scratch,
+                )?;
             }
             DisplayItem::Text(_) | DisplayItem::Image(_) => {}
         }
@@ -4973,6 +4981,23 @@ pub fn rasterize_display_list_into(
     device: &mut RasterDevice,
     transform: PageTransform,
     options: PathRasterOptions,
+) -> RasterResult<()> {
+    let mut transparency_scratch = TransparencyGroupScratch::default();
+    rasterize_display_list_into_with_scratch(
+        display_list,
+        device,
+        transform,
+        options,
+        &mut transparency_scratch,
+    )
+}
+
+fn rasterize_display_list_into_with_scratch(
+    display_list: &DisplayList,
+    device: &mut RasterDevice,
+    transform: PageTransform,
+    options: PathRasterOptions,
+    transparency_scratch: &mut TransparencyGroupScratch,
 ) -> RasterResult<()> {
     if options.supersample == 0 {
         return Err(RasterError::new(RasterErrorKind::InvalidSupersampling));
@@ -5028,7 +5053,14 @@ pub fn rasterize_display_list_into(
                     group.state.graphics_state_depth,
                     group.state.graphics_state_scope_id,
                 );
-                rasterize_transparency_group(group, device, transform, options, &active_clips)?;
+                rasterize_transparency_group(
+                    group,
+                    device,
+                    transform,
+                    options,
+                    &active_clips,
+                    transparency_scratch,
+                )?;
             }
             DisplayItem::Image(image) => draw_image(device, image, transform)?,
             DisplayItem::Text(text) => {
@@ -5390,6 +5422,7 @@ fn rasterize_transparency_group(
     transform: PageTransform,
     options: PathRasterOptions,
     clips: &[ActiveClip],
+    scratch: &mut TransparencyGroupScratch,
 ) -> RasterResult<()> {
     let Some(bounds) = transparency_group_device_bounds(group.bounds, transform) else {
         return Ok(());
@@ -5415,7 +5448,7 @@ fn rasterize_transparency_group(
         dimensions: group_dimensions,
         matrix: group_matrix,
     };
-    let mut group_device = RasterDevice::new(
+    let group_device = scratch.device_for(
         bounds.width,
         bounds.height,
         Rgba {
@@ -5425,7 +5458,7 @@ fn rasterize_transparency_group(
             a: 0,
         },
     )?;
-    rasterize_display_list_into(&group.items, &mut group_device, group_transform, options)?;
+    rasterize_display_list_into(&group.items, group_device, group_transform, options)?;
     for y in 0..bounds.height {
         for x in 0..bounds.width {
             let source = group_device.pixel(x, y)?;
@@ -5449,6 +5482,46 @@ fn rasterize_transparency_group(
         }
     }
     Ok(())
+}
+
+#[derive(Debug, Default)]
+struct TransparencyGroupScratch {
+    device: Option<RasterDevice>,
+    allocations: usize,
+}
+
+impl TransparencyGroupScratch {
+    fn device_for(
+        &mut self,
+        width: u32,
+        height: u32,
+        background: Rgba,
+    ) -> RasterResult<&mut RasterDevice> {
+        if self.device.as_ref().is_some_and(|device| {
+            device.dimensions().width == width && device.dimensions().height == height
+        }) {
+            let device = self.device.as_mut().expect("device presence was checked");
+            clear_raster_device(device, background);
+            return Ok(device);
+        }
+        self.device = Some(RasterDevice::new(width, height, background)?);
+        self.allocations += 1;
+        Ok(self.device.as_mut().expect("device was just allocated"))
+    }
+
+    #[cfg(test)]
+    fn allocations(&self) -> usize {
+        self.allocations
+    }
+}
+
+fn clear_raster_device(device: &mut RasterDevice, background: Rgba) {
+    for pixel in device
+        .pixels_mut()
+        .chunks_exact_mut(PixelFormat::Rgba8.bytes_per_pixel())
+    {
+        pixel.copy_from_slice(&[background.r, background.g, background.b, background.a]);
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -18849,6 +18922,70 @@ mod tests {
 
         assert_eq!(
             device.pixel(20, 100).expect("group fill pixel"),
+            Rgba {
+                r: 255,
+                g: 0,
+                b: 0,
+                a: 255,
+            }
+        );
+    }
+
+    #[test]
+    fn form_transparency_group_should_reuse_same_sized_scratch_surface() {
+        let document = load_form_xobject_pdf(
+            b"q 1 0 0 1 10 10 cm /Fm1 Do Q q 1 0 0 1 40 10 cm /Fm1 Do Q",
+            b"1 0 0 rg 0 0 20 20 re f",
+            b"<< /Type /XObject /Subtype /Form /BBox [0 0 20 20] /Group << /S /Transparency /I true >> /Length 23 >>",
+            None,
+        );
+        let resources =
+            form_resources_from_document(&document, &[("Fm1", 4)]).expect("valid form resources");
+        let content = content_stream_from_document(&document);
+        let list = build_form_display_list(
+            tokenize_content(PdfBytes::new(&content)),
+            &resources,
+            DisplayListOptions::default(),
+        )
+        .expect("valid transparency group form invocations");
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 120.0,
+                    max_y: 120.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            120,
+        )
+        .expect("group transform");
+        let mut device = transform.create_device(Rgba::WHITE).expect("raster device");
+        let mut scratch = TransparencyGroupScratch::default();
+
+        rasterize_display_list_into_with_scratch(
+            &list,
+            &mut device,
+            transform,
+            PathRasterOptions::default(),
+            &mut scratch,
+        )
+        .expect("transparency groups should rasterize");
+
+        assert_eq!(scratch.allocations(), 1);
+        assert_eq!(
+            device.pixel(20, 100).expect("first group fill pixel"),
+            Rgba {
+                r: 255,
+                g: 0,
+                b: 0,
+                a: 255,
+            }
+        );
+        assert_eq!(
+            device.pixel(50, 100).expect("second group fill pixel"),
             Rgba {
                 r: 255,
                 g: 0,
