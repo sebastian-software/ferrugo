@@ -7265,14 +7265,15 @@ fn metadata_outcome_json(outcome: &MetadataOutcome) -> String {
                 .collect::<Vec<_>>()
                 .join(",");
             format!(
-                "{{\"status\":\"success\",\"page_count\":{},\"pages\":[{}],\"info\":{},\"structure\":{},\"outlines\":{},\"page_labels\":{},\"accessibility\":{}}}",
+                "{{\"status\":\"success\",\"page_count\":{},\"pages\":[{}],\"info\":{},\"structure\":{},\"outlines\":{},\"page_labels\":{},\"accessibility\":{},\"archival\":{}}}",
                 metadata.page_count(),
                 pages,
                 document_info_json(&metadata.info),
                 document_structure_json(&metadata.structure),
                 outline_metadata_json(&metadata.outlines),
                 page_labels_metadata_json(&metadata.page_labels),
-                accessibility_metadata_json(&metadata.accessibility)
+                accessibility_metadata_json(&metadata.accessibility),
+                archival_metadata_json(&metadata.archival)
             )
         }
         MetadataOutcome::Error { class, message } => format!(
@@ -7351,6 +7352,16 @@ fn accessibility_metadata_json(accessibility: &pdfrust_thumbnail::AccessibilityM
         accessibility.alt_text_count,
         accessibility.reading_order_warning_count,
         accessibility.truncated
+    )
+}
+
+fn archival_metadata_json(archival: &pdfrust_thumbnail::ArchivalMetadata) -> String {
+    format!(
+        "{{\"pdfa_part\":{},\"pdfa_conformance\":{},\"has_output_intents\":{},\"conformance_validation_performed\":{}}}",
+        optional_json_string(archival.pdfa_part.as_deref()),
+        optional_json_string(archival.pdfa_conformance.as_deref()),
+        archival.has_output_intents,
+        archival.conformance_validation_performed
     )
 }
 

@@ -264,6 +264,33 @@ cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks \
   --max-edge 160
 ```
 
+## PDF/A Archival Manifest
+
+`fixtures/archival-pdfa-manifest.tsv` is the focused gate for archival records
+and PDF/A-style metadata boundaries. It covers PDF/A marker extraction,
+OutputIntent metadata context, embedded-file archive packets, embedded fonts,
+and general XMP/document-info baselines.
+
+The manifest uses supported families `pdfa-profile`, `embedded-font`,
+`output-intent`, and `metadata`. It is a rendering and metadata-classification
+gate, not a PDF/A validator or archival compliance suite.
+
+Use this manifest when a change may affect metadata extraction, OutputIntent
+classification, embedded-file presence signals, embedded font rendering, or
+archive-record thumbnail behavior:
+
+```sh
+cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks \
+  fixtures/generated \
+  --manifest fixtures/archival-pdfa-manifest.tsv \
+  --include-family pdfa-profile \
+  --include-family embedded-font \
+  --include-family output-intent \
+  --include-family metadata \
+  --fail-on-fallback \
+  --max-edge 160
+```
+
 ## Mobile Scan Manifest
 
 `fixtures/mobile-scan-manifest.tsv` is the focused gate for PDFs produced by

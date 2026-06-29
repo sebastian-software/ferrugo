@@ -1,6 +1,6 @@
 # 0185: PDF/A And Archival Document Conformance Boundary
 
-Status: todo
+Status: done
 Phase: 34
 Size: medium
 Depends on: 0184
@@ -46,4 +46,18 @@ validation.
 
 ## Completion Notes
 
-Empty until done.
+Completed 2026-06-29.
+
+- Added bounded PDF/A marker metadata via `DocumentMetadata.archival`.
+- Added `pdfa-2b-archival-record.pdf` and `pdfa-3u-embedded-record.pdf`.
+- Added `fixtures/archival-pdfa-manifest.tsv` with PDF/A, embedded-font,
+  OutputIntent, and metadata baselines.
+- Added `docs/policies/pdfa-archival-boundary.md`.
+- Native supported gate: 5/5 native rendered, 0 fallbacks, 0 errors.
+- Metadata extraction: `pdfa-2b-archival-record.pdf` reports `2/B`,
+  `pdfa-3u-embedded-record.pdf` reports `3/U`, and both report
+  `conformance_validation_performed = false`.
+- Benchmark gate: 5/5 native rendered, 0 errors, 0 budget failures.
+- Poppler visual gate for the two new fixtures: 2 accepted drift, 0 blockers,
+  0 native/reference errors.
+- Report: `docs/reports/pdfa-archival-boundary-2026-06-29.md`.

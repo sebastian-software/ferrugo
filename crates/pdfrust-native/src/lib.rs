@@ -12,7 +12,7 @@ use pdfrust_content::{tokenize_content, ContentToken};
 use pdfrust_object::{
     load_classic_document, load_linearized_first_page_document, load_modern_document,
     ClassicDocument, GenerationNumber, ObjectError, ObjectId, ObjectNumber, ObjectValue, PageBox,
-    PageMetadata as ObjectPageMetadata, PageTree, Reference,
+    PageMetadata as ObjectPageMetadata, PageTree, Reference, StreamDecodeOptions,
 };
 use pdfrust_render::{
     build_form_display_list_with_graphics_resources, build_image_display_list,
@@ -25,10 +25,10 @@ use pdfrust_render::{
 };
 use pdfrust_syntax::{PdfBytes, PdfName, PdfNumber, PdfPrimitive, PdfReference, PdfString};
 use pdfrust_thumbnail::{
-    unsupported_feature_buckets as buckets, AccessibilityMetadata, DocumentInfo, DocumentMetadata,
-    DocumentMetadataBackend, DocumentStructure, OutlineMetadata, PageLabel, PageLabelsMetadata,
-    PageMetadata as ThumbnailPageMetadata, PageSize, PdfSource, Thumbnail, ThumbnailBackend,
-    ThumbnailError, ThumbnailOptions,
+    unsupported_feature_buckets as buckets, AccessibilityMetadata, ArchivalMetadata, DocumentInfo,
+    DocumentMetadata, DocumentMetadataBackend, DocumentStructure, OutlineMetadata, PageLabel,
+    PageLabelsMetadata, PageMetadata as ThumbnailPageMetadata, PageSize, PdfSource, Thumbnail,
+    ThumbnailBackend, ThumbnailError, ThumbnailOptions,
 };
 
 /// Stable crate role used by architecture smoke tests and documentation.
@@ -56,6 +56,7 @@ const MAX_METADATA_PAGE_LABELS: usize = 4096;
 const MAX_METADATA_SIGNATURE_FIELDS: usize = 4096;
 const MAX_METADATA_ATTACHMENT_ANNOTATIONS: usize = 4096;
 const MAX_METADATA_STRUCTURE_ITEMS: usize = 4096;
+const MAX_METADATA_XMP_BYTES: usize = 64 * 1024;
 const DEFAULT_SPOOL_BYTES_LIMIT: usize = 0;
 
 /// Rust-native thumbnail backend.
@@ -3033,6 +3034,7 @@ fn metadata_from_classic_document(
     metadata.outlines = outline_metadata(document, catalog)?;
     metadata.page_labels = page_labels_metadata(document, catalog, page_tree.page_count())?;
     metadata.accessibility = accessibility_metadata(document, catalog)?;
+    metadata.archival = archival_metadata(document, catalog)?;
     Ok(metadata)
 }
 
@@ -3094,6 +3096,87 @@ fn document_structure(
         has_portfolio_collection: dictionary_value(catalog, b"Collection").is_some(),
         has_file_attachment_annotations: has_file_attachment_annotations(document, page_tree)?,
     })
+}
+
+fn archival_metadata(
+    document: &ClassicDocument<'_>,
+    catalog: &[(PdfName<'_>, PdfPrimitive<'_>)],
+) -> Result<ArchivalMetadata, ThumbnailError> {
+    let xmp = catalog_metadata_stream_bytes(document, catalog)?;
+    Ok(ArchivalMetadata {
+        pdfa_part: xmp
+            .as_deref()
+            .and_then(|metadata| xmp_marker_value(metadata, b"pdfaid:part")),
+        pdfa_conformance: xmp
+            .as_deref()
+            .and_then(|metadata| xmp_marker_value(metadata, b"pdfaid:conformance")),
+        has_output_intents: dictionary_value(catalog, b"OutputIntents").is_some(),
+        conformance_validation_performed: false,
+    })
+}
+
+fn catalog_metadata_stream_bytes(
+    document: &ClassicDocument<'_>,
+    catalog: &[(PdfName<'_>, PdfPrimitive<'_>)],
+) -> Result<Option<Vec<u8>>, ThumbnailError> {
+    let Some(PdfPrimitive::Reference(reference)) = dictionary_value(catalog, b"Metadata") else {
+        return Ok(None);
+    };
+    let reference = object_reference(*reference)?;
+    let object = document
+        .objects
+        .get(reference.id)
+        .ok_or(ThumbnailError::Malformed)?;
+    let ObjectValue::Stream(stream) = &object.value else {
+        return Err(ThumbnailError::Malformed);
+    };
+    stream
+        .decode_with_options(StreamDecodeOptions {
+            max_decoded_len: MAX_METADATA_XMP_BYTES,
+        })
+        .map(Some)
+        .map_err(|_| ThumbnailError::Malformed)
+}
+
+fn xmp_marker_value(metadata: &[u8], marker: &[u8]) -> Option<String> {
+    xmp_element_value(metadata, marker)
+        .or_else(|| xmp_attribute_value(metadata, marker, b'"'))
+        .or_else(|| xmp_attribute_value(metadata, marker, b'\''))
+        .and_then(|value| std::str::from_utf8(value).ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn xmp_element_value<'a>(metadata: &'a [u8], marker: &[u8]) -> Option<&'a [u8]> {
+    let mut open = Vec::with_capacity(marker.len() + 2);
+    open.push(b'<');
+    open.extend_from_slice(marker);
+    open.push(b'>');
+    let start = find_subslice(metadata, &open)? + open.len();
+
+    let mut close = Vec::with_capacity(marker.len() + 3);
+    close.extend_from_slice(b"</");
+    close.extend_from_slice(marker);
+    close.push(b'>');
+    let end = find_subslice(&metadata[start..], &close)? + start;
+    Some(&metadata[start..end])
+}
+
+fn xmp_attribute_value<'a>(metadata: &'a [u8], marker: &[u8], quote: u8) -> Option<&'a [u8]> {
+    let mut prefix = Vec::with_capacity(marker.len() + 2);
+    prefix.extend_from_slice(marker);
+    prefix.push(b'=');
+    prefix.push(quote);
+    let start = find_subslice(metadata, &prefix)? + prefix.len();
+    let end = metadata[start..].iter().position(|byte| *byte == quote)? + start;
+    Some(&metadata[start..end])
+}
+
+fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack
+        .windows(needle.len())
+        .position(|window| window == needle)
 }
 
 fn has_embedded_files(
@@ -8461,6 +8544,88 @@ mod tests {
         assert!(metadata.structure.has_named_destinations);
         assert_eq!(metadata.outlines.item_count, 2);
         assert_eq!(metadata.page_labels.labels[0].label, "A-1");
+    }
+
+    #[test]
+    fn native_backend_should_report_generated_pdfa_archival_metadata() {
+        let archive =
+            include_bytes!("../../../fixtures/generated/pdfa-2b-archival-record.pdf") as &[u8];
+        let packet =
+            include_bytes!("../../../fixtures/generated/pdfa-3u-embedded-record.pdf") as &[u8];
+
+        let archive_metadata =
+            DocumentMetadataBackend::inspect(&NativeBackend::new(), PdfSource::from_bytes(archive))
+                .expect("PDF/A-2B archive fixture should inspect");
+        assert_eq!(archive_metadata.archival.pdfa_part.as_deref(), Some("2"));
+        assert_eq!(
+            archive_metadata.archival.pdfa_conformance.as_deref(),
+            Some("B")
+        );
+        assert!(archive_metadata.archival.has_output_intents);
+        assert!(!archive_metadata.archival.conformance_validation_performed);
+
+        let packet_metadata =
+            DocumentMetadataBackend::inspect(&NativeBackend::new(), PdfSource::from_bytes(packet))
+                .expect("PDF/A-3U embedded record fixture should inspect");
+        assert_eq!(packet_metadata.archival.pdfa_part.as_deref(), Some("3"));
+        assert_eq!(
+            packet_metadata.archival.pdfa_conformance.as_deref(),
+            Some("U")
+        );
+        assert!(packet_metadata.structure.has_embedded_files);
+        assert!(!packet_metadata.archival.conformance_validation_performed);
+    }
+
+    #[test]
+    fn native_backend_should_render_generated_pdfa_archival_fixtures() {
+        type ArchivalFixture = (&'static [u8], u32, u32, u32, &'static str, usize);
+
+        let fixtures: &[ArchivalFixture] = &[
+            (
+                include_bytes!("../../../fixtures/generated/pdfa-2b-archival-record.pdf")
+                    as &[u8],
+                260,
+                180,
+                260,
+                "PDF/A-2B archive record",
+                8_000,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/pdfa-3u-embedded-record.pdf")
+                    as &[u8],
+                280,
+                190,
+                280,
+                "PDF/A-3U embedded record",
+                10_000,
+            ),
+        ];
+
+        for &(bytes, expected_width, expected_height, max_edge, label, min_visible_pixels) in
+            fixtures
+        {
+            let thumbnail = ThumbnailBackend::render(
+                &NativeBackend::new(),
+                PdfSource::from_bytes(bytes),
+                &ThumbnailOptions {
+                    max_edge,
+                    ..ThumbnailOptions::default()
+                },
+            )
+            .unwrap_or_else(|error| panic!("{label} fixture should render: {error}"));
+
+            assert_eq!(thumbnail.width, expected_width);
+            assert_eq!(thumbnail.height, expected_height);
+            let visible_pixels = thumbnail
+                .bytes
+                .chunks_exact(4)
+                .filter(|pixel| *pixel != [255, 255, 255, 255])
+                .count();
+            assert!(
+                visible_pixels >= min_visible_pixels,
+                "{label} fixture should preserve archival record layout"
+            );
+        }
     }
 
     #[test]

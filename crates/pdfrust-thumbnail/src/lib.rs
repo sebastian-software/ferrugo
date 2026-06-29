@@ -203,6 +203,8 @@ pub struct DocumentMetadata {
     pub page_labels: PageLabelsMetadata,
     /// Tagged-PDF and accessibility-related metadata.
     pub accessibility: AccessibilityMetadata,
+    /// Archival profile metadata signals such as PDF/A markers.
+    pub archival: ArchivalMetadata,
 }
 
 impl DocumentMetadata {
@@ -216,6 +218,7 @@ impl DocumentMetadata {
             outlines: OutlineMetadata::default(),
             page_labels: PageLabelsMetadata::default(),
             accessibility: AccessibilityMetadata::default(),
+            archival: ArchivalMetadata::default(),
         }
     }
 
@@ -230,6 +233,19 @@ impl DocumentMetadata {
     pub fn first_page_size(&self) -> Option<PageSize> {
         self.pages.first().map(|page| page.size)
     }
+}
+
+/// Archival and long-lived document profile metadata signals.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct ArchivalMetadata {
+    /// Catalog XMP packet declares a `pdfaid:part` value.
+    pub pdfa_part: Option<String>,
+    /// Catalog XMP packet declares a `pdfaid:conformance` value.
+    pub pdfa_conformance: Option<String>,
+    /// Catalog contains at least one OutputIntent dictionary.
+    pub has_output_intents: bool,
+    /// Metadata inspection saw PDF/A markers but did not validate conformance.
+    pub conformance_validation_performed: bool,
 }
 
 /// Common PDF document information fields.

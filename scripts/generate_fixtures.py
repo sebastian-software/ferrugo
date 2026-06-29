@@ -290,6 +290,120 @@ def metadata_outline_page_labels_pdf() -> bytes:
     return pdf.render(catalog, trailer_entries=f"/Info {info} 0 R ")
 
 
+def pdfa_2b_archival_record_pdf() -> bytes:
+    pdf = Pdf()
+    content = (
+        b"q 0.98 0.98 0.96 rg 0 0 260 180 re f Q "
+        b"q 0.14 0.20 0.32 rg 24 130 212 24 re f Q "
+        b"q 0.78 0.80 0.76 rg 36 86 188 4 re f 36 68 168 4 re f 36 50 192 4 re f Q "
+        b"BT /F1 12 Tf 34 138 Td (PDF/A-2B Archive Record) Tj "
+        b"/F1 8 Tf 36 108 Td (OutputIntent and XMP markers) Tj ET"
+    )
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 260 180] "
+        f"/Resources << /Font << /F1 4 0 R >> >> /Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    font = pdf.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    xmp = (
+        b"<?xpacket begin=''?>"
+        b"<x:xmpmeta xmlns:x='adobe:ns:meta/'>"
+        b"<rdf:RDF xmlns:rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#'>"
+        b"<rdf:Description xmlns:pdfaid='http://www.aiim.org/pdfa/ns/id/' "
+        b"pdfaid:part='2' pdfaid:conformance='B'>"
+        b"<dc:title xmlns:dc='http://purl.org/dc/elements/1.1/'>Archive Record</dc:title>"
+        b"</rdf:Description></rdf:RDF></x:xmpmeta>"
+        b"<?xpacket end='w'?>"
+    )
+    metadata = pdf.add(
+        b"<< /Type /Metadata /Subtype /XML /Length "
+        + str(len(xmp)).encode("ascii")
+        + b" >>\nstream\n"
+        + xmp
+        + b"\nendstream"
+    )
+    profile = b"synthetic-srgb-archive-profile"
+    profile_object = pdf.add(
+        b"<< /N 3 /Length "
+        + str(len(profile)).encode("ascii")
+        + b" >>\nstream\n"
+        + profile
+        + b"\nendstream"
+    )
+    output_intent = pdf.add(
+        f"<< /Type /OutputIntent /S /GTS_PDFA1 /OutputConditionIdentifier (sRGB archive) /DestOutputProfile {profile_object} 0 R >>"
+    )
+    info = pdf.add(
+        "<< /Title (PDF/A-2B Archive Record) /Creator (pdfrust fixture generator) "
+        "/Producer (pdfrust) /CreationDate (D:20200101000000Z) /ModDate (D:20200101000000Z) >>"
+    )
+    catalog = pdf.add(
+        f"<< /Type /Catalog /Pages {pages} 0 R /Metadata {metadata} 0 R "
+        f"/OutputIntents [{output_intent} 0 R] >>"
+    )
+    assert font == 4
+    return pdf.render(catalog, trailer_entries=f"/Info {info} 0 R ")
+
+
+def pdfa_3u_embedded_record_pdf() -> bytes:
+    pdf = Pdf()
+    content = (
+        b"q 0.99 0.99 0.98 rg 0 0 280 190 re f Q "
+        b"q 0.16 0.24 0.36 rg 22 144 236 24 re f Q "
+        b"q 0.90 0.93 0.88 rg 34 78 88 48 re f 0.94 0.90 0.84 rg 146 78 88 48 re f Q "
+        b"BT /F1 12 Tf 34 152 Td (PDF/A-3U Record Packet) Tj "
+        b"/F1 8 Tf 36 116 Td (Embedded source file is metadata context) Tj ET"
+    )
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 280 190] "
+        f"/Resources << /Font << /F1 4 0 R >> >> /Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    font = pdf.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    xmp = (
+        b"<x:xmpmeta xmlns:x='adobe:ns:meta/'>"
+        b"<rdf:RDF xmlns:rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#'>"
+        b"<rdf:Description xmlns:pdfaid='http://www.aiim.org/pdfa/ns/id/'>"
+        b"<pdfaid:part>3</pdfaid:part><pdfaid:conformance>U</pdfaid:conformance>"
+        b"</rdf:Description></rdf:RDF></x:xmpmeta>"
+    )
+    metadata = pdf.add(
+        b"<< /Type /Metadata /Subtype /XML /Length "
+        + str(len(xmp)).encode("ascii")
+        + b" >>\nstream\n"
+        + xmp
+        + b"\nendstream"
+    )
+    embedded_payload = b"source,amount\nrecord,42\n"
+    embedded_stream = pdf.add(
+        b"<< /Type /EmbeddedFile /Subtype /text#2Fcsv /Length "
+        + str(len(embedded_payload)).encode("ascii")
+        + b" >>\nstream\n"
+        + embedded_payload
+        + b"\nendstream"
+    )
+    file_spec = pdf.add(
+        f"<< /Type /Filespec /F (record.csv) /UF (record.csv) /AFRelationship /Data /EF << /F {embedded_stream} 0 R >> >>"
+    )
+    names = f"<< /EmbeddedFiles << /Names [(record.csv) {file_spec} 0 R] >> >>"
+    catalog = pdf.add(
+        f"<< /Type /Catalog /Pages {pages} 0 R /Metadata {metadata} 0 R "
+        f"/Names {names} /AF [{file_spec} 0 R] >>"
+    )
+    assert font == 4
+    return pdf.render(catalog)
+
+
 def tagged_accessibility_metadata_pdf() -> bytes:
     pdf = Pdf()
     content = b"/Figure << /MCID 0 >> BDC 0.1 0.3 0.7 rg 20 40 120 40 re f EMC"
@@ -7100,6 +7214,8 @@ def main() -> None:
     write("cropped-scan-page.pdf", cropped_scan_page_pdf())
     write("user-unit-page.pdf", user_unit_page_pdf())
     write("metadata-outline-page-labels.pdf", metadata_outline_page_labels_pdf())
+    write("pdfa-2b-archival-record.pdf", pdfa_2b_archival_record_pdf())
+    write("pdfa-3u-embedded-record.pdf", pdfa_3u_embedded_record_pdf())
     write("tagged-accessibility-metadata.pdf", tagged_accessibility_metadata_pdf())
     write("tagged-report-visual-integrity.pdf", tagged_report_visual_integrity_pdf())
     write("tagged-form-visual-integrity.pdf", tagged_form_visual_integrity_pdf())

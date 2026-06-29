@@ -398,6 +398,20 @@ semantically, perform trapping, run preflight validation, or provide
 color-managed proofing. See
 `docs/reports/print-imposition-booklet-coverage-2026-06-29.md`.
 
+## PDF/A And Archival Metadata
+
+The native metadata path exposes archival profile signals without validating
+compliance. `DocumentMetadata.archival` reports bounded XMP `pdfaid:part` and
+`pdfaid:conformance` markers, catalog OutputIntent presence, and the stable
+fact that conformance validation was not performed.
+
+PDF/A markers do not change rasterization by themselves. Archive records render
+natively when their page content uses supported graphics, image, text, font,
+and page-geometry features. Embedded files remain inert metadata context and
+OutputIntents remain thumbnail context rather than color-managed proofing. See
+`docs/policies/pdfa-archival-boundary.md` and
+`docs/reports/pdfa-archival-boundary-2026-06-29.md`.
+
 ## Digital Signature Boundary
 
 Visible signature widgets use the same static AcroForm appearance rendering as

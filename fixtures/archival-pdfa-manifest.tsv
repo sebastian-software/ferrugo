@@ -1,0 +1,6 @@
+path	family	source	license	page_count	features	notes
+fixtures/generated/pdfa-2b-archival-record.pdf	pdfa-profile	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	pdfa,pdfa-2b,xmp,output-intent,document-info,expected:native	Generated PDF/A-2B-style archive record with XMP pdfaid attributes, OutputIntent metadata, and stable document-info dates.
+fixtures/generated/pdfa-3u-embedded-record.pdf	pdfa-profile	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	pdfa,pdfa-3u,xmp,embedded-file,associated-file,expected:native	Generated PDF/A-3U-style archive packet with XMP pdfaid elements plus EmbeddedFiles and AF context.
+fixtures/generated/embedded-font.pdf	embedded-font	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,font,embedded-font,expected:native	Existing embedded Type1 font fixture used as an archival font-program baseline.
+fixtures/generated/output-intent-rgb.pdf	output-intent	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	color,output-intent,devicergb,expected:native	Existing OutputIntent fixture used as an archival color-profile metadata baseline.
+fixtures/generated/metadata-outline-page-labels.pdf	metadata	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	metadata,xmp,outline,page-labels,expected:native	Existing XMP/document-info fixture used as a metadata extraction baseline.
