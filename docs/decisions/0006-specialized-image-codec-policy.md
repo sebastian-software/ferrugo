@@ -36,6 +36,23 @@ Keep the native renderer explicit and deterministic:
 Unsupported specialized codecs must return `UnsupportedImageFilter` in the
 render layer and map to the stable native feature bucket `image.filter`.
 
+## Deployment Matrix
+
+| PDF image path | Desktop/server profile | WASM/low-memory profile | Policy |
+| --- | --- | --- | --- |
+| Raw Image XObject and inline images | Built in | Built in | Supported with existing raster and page pixel budgets. |
+| `FlateDecode` image streams and PNG predictors | Built in | Built in | Supported through safe Rust stream decoding and predictor handling. |
+| `DCTDecode`/`DCT` JPEG | Built in | Built in when the package includes the safe Rust JPEG decoder | Supported as the only specialized codec on the default native path. |
+| Image masks and soft masks | Built in | Built in | Supported with image-byte and soft-mask depth budgets. |
+| `CCITTFaxDecode`/`CCF` | Not bundled by default | Not bundled | Typed `image.filter` unsupported until a safe decoder slice is accepted. |
+| `JPXDecode` | Not bundled by default | Not bundled | Typed `image.filter` unsupported until a budgeted pure-Rust or isolated decoder is selected. |
+| `JBIG2Decode` | Not bundled by default | Not bundled | Typed `image.filter` unsupported; direct unsafe decoder bindings require separate security review. |
+
+Server deployments should not reintroduce PDFium solely for specialized image
+decoding. If a product needs CCITT, JPX, or JBIG2 before native support lands,
+route that decision through an explicit out-of-process or sandboxed conversion
+service with per-document policy, telemetry, and tenant-visible diagnostics.
+
 ## Rationale
 
 This keeps native-default behavior honest. Valid PDFs that need unsupported
@@ -58,6 +75,11 @@ The 0089 fallback summary reports 64 generated fixtures total, 59 native
 renders, 4 fallbacks, and 1 encrypted error. Three fallbacks are the new
 `image.filter` codec fixtures; the remaining fallback is the existing optional
 content policy fixture.
+
+Milestone 0209 promotes this into a deployment gate with
+`fixtures/image-codec-deployment-manifest.tsv`: eight supported built-in image
+paths must render natively, while CCITT, JBIG2, and JPX remain typed
+`image.filter` boundaries.
 
 ## Follow-Up Criteria
 

@@ -4861,6 +4861,84 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_enforce_image_codec_deployment_policy() {
+        let supported_fixtures: &[(&[u8], &str, usize)] = &[
+            (
+                include_bytes!("../../../fixtures/generated/image-xobject.pdf") as &[u8],
+                "raw image xobject",
+                1_000,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/inline-image.pdf") as &[u8],
+                "raw inline image",
+                1_000,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/predictor-image.pdf") as &[u8],
+                "flate predictor image",
+                1_000,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/mobile-mixed-compression-scan.pdf")
+                    as &[u8],
+                "mixed flate dct mobile scan",
+                10_000,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/dct-image.pdf") as &[u8],
+                "dct jpeg image",
+                1_000,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/image-mask-logo.pdf") as &[u8],
+                "flate image mask",
+                1_000,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/soft-mask-image.pdf") as &[u8],
+                "soft mask image",
+                1_000,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/scanner-large-image-budget.pdf")
+                    as &[u8],
+                "large scanner image budget",
+                10_000,
+            ),
+        ];
+
+        for &(bytes, label, min_visible_pixels) in supported_fixtures {
+            let thumbnail = ThumbnailBackend::render(
+                &NativeBackend::new(),
+                PdfSource::from_bytes(bytes),
+                &ThumbnailOptions {
+                    max_edge: 180,
+                    ..ThumbnailOptions::default()
+                },
+            )
+            .unwrap_or_else(|error| panic!("{label} should render natively: {error}"));
+
+            let visible_pixels = thumbnail
+                .bytes
+                .chunks_exact(4)
+                .filter(|pixel| *pixel != [255, 255, 255, 255])
+                .count();
+            assert!(
+                visible_pixels >= min_visible_pixels,
+                "{label} should preserve visible image content"
+            );
+        }
+
+        for bytes in [
+            include_bytes!("../../../fixtures/generated/unsupported-ccitt-image.pdf") as &[u8],
+            include_bytes!("../../../fixtures/generated/unsupported-jbig2-image.pdf") as &[u8],
+            include_bytes!("../../../fixtures/generated/unsupported-jpx-image.pdf") as &[u8],
+        ] {
+            assert_unsupported_image_filter_fixture(bytes);
+        }
+    }
+
+    #[test]
     fn native_backend_should_freeze_typed_unsupported_boundary_buckets() {
         let fixtures: &[(&[u8], &'static str, &str)] = &[
             (

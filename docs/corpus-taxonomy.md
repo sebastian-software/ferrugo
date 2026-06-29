@@ -580,6 +580,34 @@ cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks \
   --max-edge 160
 ```
 
+## Image Codec Deployment Manifest
+
+`fixtures/image-codec-deployment-manifest.tsv` is the focused gate for
+Rust-native image codec deployment policy. Supported families cover raw Image
+XObjects, inline images, Flate+predictor images, mixed Flate/DCT mobile scans,
+DCT/JPEG, image masks, soft masks, and large Flate scan memory budgets. The
+`unsupported-specialized` family keeps CCITT, JBIG2, and JPX in the corpus as
+typed `image.filter` boundaries.
+
+Use supported families as a native-only gate:
+
+```sh
+cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks \
+  fixtures/generated \
+  --manifest fixtures/image-codec-deployment-manifest.tsv \
+  --include-family builtin-raster \
+  --include-family flate-predictor \
+  --include-family mixed-compression \
+  --include-family jpeg \
+  --include-family mask-alpha \
+  --include-family image-heavy \
+  --fail-on-fallback \
+  --max-edge 180
+```
+
+Use `unsupported-specialized` separately when checking that deferred codecs
+still report `image.filter`.
+
 ## Legal Document Manifest
 
 `fixtures/legal-document-manifest.tsv` is the focused gate for contracts,

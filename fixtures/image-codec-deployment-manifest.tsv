@@ -1,0 +1,12 @@
+path	family	source	license	page_count	features	notes
+fixtures/generated/image-xobject.pdf	builtin-raster	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,xobject,raw,devicergb,expected:native	Baseline unfiltered Image XObject path.
+fixtures/generated/inline-image.pdf	builtin-raster	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,inline,raw,devicergb,expected:native	Baseline inline image path.
+fixtures/generated/predictor-image.pdf	flate-predictor	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,flate,predictor,expected:native	FlateDecode image with PNG predictor.
+fixtures/generated/mobile-mixed-compression-scan.pdf	mixed-compression	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	mobile-scan,image,flate,dct,jpeg,mixed-compression,expected:native	Mobile scan fixture combining Flate and DCT image XObjects.
+fixtures/generated/dct-image.pdf	jpeg	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,dct,jpeg,expected:native	DCTDecode JPEG Image XObject path.
+fixtures/generated/image-mask-logo.pdf	mask-alpha	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,image-mask,flate,stencil,expected:native	Flate-compressed ImageMask stencil path.
+fixtures/generated/soft-mask-image.pdf	mask-alpha	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,soft-mask,alpha,expected:native	Image soft-mask alpha path.
+fixtures/generated/scanner-large-image-budget.pdf	image-heavy	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	scanner,large-image,memory-budget,image,flate,expected:native	Large compressed scan image budget path.
+fixtures/generated/unsupported-ccitt-image.pdf	unsupported-specialized	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,codec,ccitt,unsupported,expected:native-unsupported	CCITTFaxDecode remains a typed image.filter boundary.
+fixtures/generated/unsupported-jbig2-image.pdf	unsupported-specialized	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,codec,jbig2,unsupported,expected:native-unsupported	JBIG2Decode remains a typed image.filter boundary.
+fixtures/generated/unsupported-jpx-image.pdf	unsupported-specialized	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,codec,jpx,unsupported,expected:native-unsupported	JPXDecode remains a typed image.filter boundary.
