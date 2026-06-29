@@ -615,6 +615,33 @@ Rejected candidate from 2026-06-29:
   Keep culling after flattening for now; revisit pre-flatten culling only with
   fixtures that contain many fully offscreen paths.
 
+Rejected candidate from 2026-06-30:
+
+- Change tested locally but not kept: cache `FlattenedPath` bounds while
+  flattening so `flattened_bounds` and rectangle-fill detection can avoid
+  scanning subpath points later.
+- Rationale: this targeted repeated path-bound scans in raster hot paths, but
+  it also increased every flattened path value by one optional bounds payload.
+- Baselines:
+  `target/performance-matrix-flattened-bounds-baseline.json` and
+  `target/performance-matrix-flattened-bounds-spreadsheet-baseline.json`,
+  native hot-render, `--max-edge 160`, 100 measured iterations after 10 warmups.
+- Candidate:
+  `target/performance-matrix-flattened-bounds-after.json` and
+  `target/performance-matrix-flattened-bounds-spreadsheet-after.json`, same
+  command shape and host.
+- Result: chart/dashboard/map/vector fixtures mostly regressed, including
+  `chart-combo-legend.pdf` p95 `0.840 ms` -> `0.900 ms` (~7.1% slower),
+  `clipped-paths.pdf` p95 `0.589 ms` -> `0.630 ms` (~7.0% slower), and
+  `vector-stress.pdf` p95 `6.690 ms` -> `6.911 ms` (~3.3% slower). Some
+  spreadsheet fixtures improved, for example `office-table.pdf` p95
+  `0.348 ms` -> `0.319 ms` (~8.3% faster), but the focused protection set was
+  not neutral.
+- Decision: reverted. The candidate trades repeated scans for a larger hot
+  struct and is not protection-set-neutral. Revisit only with a narrower bounds
+  cache that does not bloat all flattened paths, or with profile evidence that
+  path-bound scans dominate a specific family.
+
 Rejected allocation candidate from 2026-06-29:
 
 - Change tested locally but not kept: reuse one `Vec<PreparedStrokeJoin>` scratch
