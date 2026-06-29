@@ -10811,6 +10811,9 @@ fn blend_pixel(
     if coverage <= f64::EPSILON {
         return Ok(());
     }
+    if matches!(blend_mode, BlendMode::Normal) && source.a == 255 && coverage >= 1.0 {
+        return device.set_pixel(x, y, source);
+    }
     let dest = device.pixel(x, y)?;
     let blended = blend_source_with_backdrop(source, dest, blend_mode);
     device.set_pixel(
@@ -15344,6 +15347,32 @@ mod tests {
                 a: 255,
             }
         );
+    }
+
+    #[test]
+    fn blend_pixel_should_write_opaque_normal_full_coverage_directly() {
+        let mut device = RasterDevice::new(
+            1,
+            1,
+            Rgba {
+                r: 1,
+                g: 2,
+                b: 3,
+                a: 128,
+            },
+        )
+        .expect("valid device");
+        let source = Rgba {
+            r: 9,
+            g: 8,
+            b: 7,
+            a: 255,
+        };
+
+        blend_pixel(&mut device, 0, 0, source, BlendMode::Normal, 1.0)
+            .expect("opaque blend should write");
+
+        assert_eq!(device.pixel(0, 0), Ok(source));
     }
 
     #[test]

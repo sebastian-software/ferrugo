@@ -723,6 +723,69 @@ Current profile after accepted vector optimizations:
   The next broad track should include Phase 3 allocation/clone evidence and a
   later revisit of larger raster algorithms, not more sub-5% micro-fast-paths.
 
+Raster compositing fast-path result from 2026-06-30:
+
+- Fresh baselines:
+  `target/performance-matrix-current-hot-native.json`,
+  `target/performance-matrix-current-technical-native.json`, and
+  `target/performance-matrix-current-image-native.json`.
+- Phase evidence:
+  `target/native-trace-current-vector-stress.json`,
+  `target/native-trace-current-engineering-floorplan.json`,
+  `target/native-trace-current-technical-hatch.json`, and
+  `target/native-trace-current-repeated-xobject.json` again showed path
+  rasterization as the dominant phase. `vector-stress` spent `6.481 ms` of
+  `7.414 ms` in `raster_paths`; `engineering-floorplan-precision` spent
+  `2.980 ms` of `3.937 ms` in `raster_paths`; `technical-hatch-clipping` spent
+  `2.690 ms` of `3.680 ms` in `raster_paths`.
+- CPU profile evidence:
+  `target/sample-current-report-vector.txt` showed `stroke_path` as the
+  largest sampled path, but also a meaningful `fill_path -> blend_pixel ->
+  source_over` component. Flattening was negligible in this profile, so the
+  accepted change targets compositing work, not another flattening cache.
+- Change: `blend_pixel` now directly writes fully opaque `BlendMode::Normal`
+  pixels when coverage is `1.0`, avoiding the destination read, backdrop blend,
+  and source-over calculation.
+- Correctness rationale: for normal source-over compositing with source alpha
+  `255` and full coverage, the result is exactly the source pixel independent
+  of the destination pixel. The implementation stays dependency-free and uses
+  only the existing checked raster-device API.
+- Results on the starter matrix:
+  `browser-chromium-article-print.pdf` p95 `0.713 ms` -> `0.311 ms`
+  (~56.4%), `office-report-header-footer-link.pdf` `0.816 ms` -> `0.550 ms`
+  (~32.6%), `slide-title-gradient.pdf` `0.963 ms` -> `0.584 ms` (~39.4%),
+  `prepress-trim-bleed-marks.pdf` `1.082 ms` -> `0.812 ms` (~25.0%),
+  `technical-linework-dimensions.pdf` `0.931 ms` -> `0.744 ms` (~20.1%),
+  `technical-hatch-clipping.pdf` `2.893 ms` -> `2.695 ms` (~6.8%), and
+  `vector-stress.pdf` `6.638 ms` -> `6.462 ms` (~2.7%).
+- Results on the technical matrix:
+  `clipped-paths.pdf` p95 improved `0.632 ms` -> `0.407 ms` (~35.6%),
+  `schematic-symbol-grid.pdf` `0.507 ms` -> `0.321 ms` (~36.7%),
+  `technical-linework-dimensions.pdf` `0.929 ms` -> `0.741 ms` (~20.2%),
+  `technical-repeated-symbols.pdf` `0.999 ms` -> `0.823 ms` (~17.6%),
+  `engineering-large-transform-detail.pdf` `2.545 ms` -> `2.275 ms`
+  (~10.6%), and `technical-large-coordinate-plan.pdf` `2.147 ms` ->
+  `1.984 ms` (~7.6%).
+- Repeat protection runs:
+  `target/performance-matrix-blend-fastpath-image-repeat-after.json` kept the
+  image-heavy set neutral to better, with `image-heavy-repeated-xobject-report`
+  improving about 33.4% p95 and `image-mask-logo` about 56.2% p95.
+  `target/performance-matrix-blend-fastpath-mobile-repeat-after.json` kept the
+  same expected three unsupported image-codec fallback records and no errors.
+  The only notable watch item was `mobile-rotated-camera-scan.pdf`, which was
+  about 4-6% slower in that repeat; it does not exercise the accepted opaque
+  normal-blend branch directly, so keep it as a noise/watch fixture in the next
+  mobile run instead of treating it as proof of an image-path regression.
+- Decision: accept. This is a profile-backed scalar fast path with broad wins
+  across path-heavy, text-overlay, and mixed fixtures. It also demonstrates why
+  the plan should allow cumulative 5% wins when they are well isolated and
+  protection-set-clean.
+- Validation:
+  `cargo fmt --all --check`, `cargo check --workspace --no-default-features`,
+  `cargo test --workspace --no-default-features`, and
+  `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+  passed.
+
 Hairline/clip regression guard from 2026-06-29:
 
 - Change: added `rasterize_paths_should_clip_snapped_axis_aligned_hairlines`
