@@ -1031,22 +1031,21 @@ fn render_pages_parallel_partial_with_limits(
         let batch = thread::scope(|scope| {
             let document_ref = &document;
             let page_tree_ref = &page_tree;
-            let handles = chunk
-                .iter()
-                .copied()
-                .map(|page_index| {
+            let mut handles = Vec::with_capacity(chunk.len());
+            for page_index in chunk.iter().copied() {
+                handles.push((
+                    page_index,
                     scope.spawn(move || {
                         let mut page_options = *options;
                         page_options.page_index = page_index;
                         render_loaded_document(document_ref, page_tree_ref, &page_options, limits)
-                    })
-                })
-                .collect::<Vec<_>>();
+                    }),
+                ));
+            }
 
             handles
                 .into_iter()
-                .zip(chunk.iter().copied())
-                .map(|(handle, page_index)| {
+                .map(|(page_index, handle)| {
                     let result = handle
                         .join()
                         .map_err(|_| ThumbnailError::internal("parallel render worker panicked"))?;

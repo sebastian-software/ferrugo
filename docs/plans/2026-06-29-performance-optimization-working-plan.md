@@ -830,9 +830,9 @@ allocations matter.
 - [x] Run Clippy with perf lints as part of the normal all-target/all-feature
   gate.
 - [x] Review hotpath `Vec` creation and growth.
-- [ ] Review `String`, `PathBuf`, and large enum clones inside loops.
-- [ ] Remove intermediate `.collect()` calls where the consumer can stream.
-- [ ] Inspect large enum variants if profiles show copy pressure.
+- [x] Review `String`, `PathBuf`, and large enum clones inside loops.
+- [x] Remove intermediate `.collect()` calls where the consumer can stream.
+- [x] Inspect large enum variants if profiles show copy pressure.
 - [ ] Add before/after allocation evidence where tooling is available.
 
 Acceptance:
@@ -881,6 +881,31 @@ Stream decode allocation probe from 2026-06-29:
   shape is not a useful optimization. Any future stream-decode work should use
   a more precise allocation counter or a decoder-level benchmark before touching
   the shared object model.
+
+Clone/collect/large-enum audit from 2026-06-30:
+
+- Command:
+  `cargo clippy --workspace --all-targets --all-features -- -D warnings -W clippy::redundant_clone -W clippy::needless_collect -W clippy::large_enum_variant`.
+- Finding: Clippy reported one `needless_collect` in
+  `render_pages_parallel_partial_with_limits`. The naive streaming rewrite
+  would join each scoped worker as it is spawned and risk serializing the
+  batch, so the code now uses an explicit `Vec::with_capacity(chunk.len())`
+  containing `(page_index, handle)` pairs. This keeps all workers spawned
+  before join while removing the misleading collect/zip shape.
+- Follow-up Clippy result: the same clone/collect/large-enum command completed
+  without warnings after the refactor.
+- Focused tests:
+  `native_parallel_renderer_should_preserve_requested_page_order`,
+  `native_parallel_renderer_should_match_sequential_page_outputs`, and
+  `native_parallel_partial_renderer_should_preserve_mixed_page_status`.
+- Scheduler smoke:
+  `target/benchmark-batch-native-phase3-handle-audit-smoke-clean.json`,
+  `benchmark-batch-native`, performance-matrix `office-export`,
+  `--pages-per-input 1`, `--max-workers 2`, `--max-edge 120`,
+  `--fail-on-budget`: 2/2 native rendered, no fallback, no errors, no budget
+  failures.
+- Performance claim: none. This is a Phase 3 lint/audit cleanup that preserves
+  scheduler semantics and removes one misleading intermediate collect pattern.
 
 ## Phase 4: Image And Scan Track
 
