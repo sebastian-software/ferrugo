@@ -1,6 +1,6 @@
 # 0190: Cross-Producer Regression Bisect Workflow
 
-Status: todo
+Status: done
 Phase: 35
 Size: medium
 Depends on: 0189
@@ -44,4 +44,22 @@ change so native renderer coverage can improve without manual guesswork.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-29.
+
+- Added `producer-regression-report` to `pdfrust-cli`.
+- The report groups native render outcomes by manifest producer tags,
+  manifest family, and feature flags.
+- Private or local-only fixture paths are redacted to local fixture IDs.
+- Added milestone routing for common regression buckets such as optional
+  content, image codecs, forms, annotations, color management, dense tables,
+  and PDF 2.0.
+- Added `docs/policies/producer-regression-bisect-workflow.md` as the local
+  workflow for bisecting producer-scoped regressions without committing
+  private artifacts.
+- Recorded validation evidence in
+  `docs/reports/cross-producer-regression-bisect-2026-06-29.md`.
+
+The current producer compatibility manifest reports 15 manifest-mapped
+fixtures: 13 native rendered, 2 typed fallback boundaries, and 0 errors. The
+two fallback producer groups route to 0192 optional-content policy and 0209
+native image codec deployment.

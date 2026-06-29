@@ -64,6 +64,7 @@ fn run(args: Vec<OsString>) -> Result<(), CliError> {
         Some("trace-native") => trace_native_command(&args[1..]),
         Some("replay-operators") => replay_operators_command(&args[1..]),
         Some("extract-corpus-metadata") => extract_corpus_metadata_command(&args[1..]),
+        Some("producer-regression-report") => producer_regression_report_command(&args[1..]),
         Some("classify-pdf20-usage") => classify_pdf20_usage_command(&args[1..]),
         Some("validate-local-corpus") => validate_local_corpus_command(&args[1..]),
         Some("benchmark-native") => benchmark_native_command(&args[1..]),
@@ -428,6 +429,35 @@ fn extract_corpus_metadata_command(args: &[OsString]) -> Result<(), CliError> {
     };
     let records = extract_native_corpus_metadata(&fixtures, manifest.as_ref());
     let json = corpus_metadata_json(&records);
+
+    if let Some(output) = config.output {
+        fs::write(&output, &json).map_err(|source| CliError::Io {
+            path: output,
+            source,
+        })?;
+    } else {
+        println!("{json}");
+    }
+
+    Ok(())
+}
+
+fn producer_regression_report_command(args: &[OsString]) -> Result<(), CliError> {
+    let config = ProducerRegressionConfig::parse(args)?;
+    let options = ThumbnailOptions {
+        page_index: config.page_index,
+        max_edge: config.max_edge,
+        background: config.background,
+        output_format: pdfrust_thumbnail::OutputFormat::Png,
+        timeout: config.timeout,
+    };
+    let fixtures = pdf_inputs(&config.input)?;
+    let manifest = read_corpus_manifest(&config.manifest)?;
+    let fixtures = filter_fixtures_by_manifest(&fixtures, &manifest)?;
+    let fixtures = filter_fixtures_by_family(&fixtures, Some(&manifest), &config.include_families)?;
+    let native = config.native_profile.backend();
+    let report = build_producer_regression_report(&native, &fixtures, &options, &manifest);
+    let json = producer_regression_report_json(&report);
 
     if let Some(output) = config.output {
         fs::write(&output, &json).map_err(|source| CliError::Io {
@@ -1029,6 +1059,19 @@ struct OperatorCoverageConfig {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+struct ProducerRegressionConfig {
+    input: PathBuf,
+    manifest: PathBuf,
+    include_families: Vec<String>,
+    output: Option<PathBuf>,
+    page_index: u32,
+    max_edge: u32,
+    background: Rgba,
+    timeout: Duration,
+    native_profile: NativeProfile,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct TraceNativeConfig {
     input: PathBuf,
     output: Option<PathBuf>,
@@ -1198,6 +1241,94 @@ impl OperatorCoverageConfig {
             output,
             page_index,
             include_annotations,
+        })
+    }
+}
+
+impl ProducerRegressionConfig {
+    fn parse(args: &[OsString]) -> Result<Self, CliError> {
+        let mut input = None;
+        let mut manifest = None;
+        let mut include_families = Vec::new();
+        let mut output = None;
+        let mut page_index = DEFAULT_PAGE_INDEX;
+        let mut max_edge = DEFAULT_MAX_EDGE;
+        let mut background = Rgba::WHITE;
+        let mut timeout = DEFAULT_TIMEOUT;
+        let mut native_profile = NativeProfile::Default;
+
+        let mut index = 0;
+        while index < args.len() {
+            let arg = args[index]
+                .to_str()
+                .ok_or_else(|| CliError::Usage("arguments must be valid UTF-8".to_string()))?;
+            match arg {
+                "--output" | "-o" => {
+                    index += 1;
+                    output = Some(required_path(args, index, "--output")?);
+                }
+                "--manifest" => {
+                    index += 1;
+                    manifest = Some(required_path(args, index, "--manifest")?);
+                }
+                "--include-family" => {
+                    index += 1;
+                    include_families
+                        .push(required_str(args, index, "--include-family")?.to_string());
+                }
+                "--page-index" => {
+                    index += 1;
+                    page_index = parse_u32(args, index, "--page-index")?;
+                }
+                "--max-edge" => {
+                    index += 1;
+                    max_edge = parse_u32(args, index, "--max-edge")?;
+                }
+                "--background" => {
+                    index += 1;
+                    background = parse_background(required_str(args, index, "--background")?)?;
+                }
+                "--timeout" => {
+                    index += 1;
+                    timeout = Duration::from_secs(parse_u64(args, index, "--timeout")?);
+                }
+                "--native-profile" => {
+                    index += 1;
+                    native_profile =
+                        parse_native_profile(required_str(args, index, "--native-profile")?)?;
+                }
+                value if value.starts_with('-') => {
+                    return Err(CliError::Usage(format!("unknown option `{value}`")));
+                }
+                value => {
+                    if input.replace(PathBuf::from(value)).is_some() {
+                        return Err(CliError::Usage(
+                            "only one input path is supported".to_string(),
+                        ));
+                    }
+                }
+            }
+            index += 1;
+        }
+
+        if max_edge == 0 {
+            return Err(CliError::Usage(
+                "--max-edge must be greater than zero".to_string(),
+            ));
+        }
+
+        Ok(Self {
+            input: input.ok_or_else(|| CliError::Usage("missing input path".to_string()))?,
+            manifest: manifest.ok_or_else(|| {
+                CliError::Usage("--manifest is required for producer-regression-report".to_string())
+            })?,
+            include_families,
+            output,
+            page_index,
+            max_edge,
+            background,
+            timeout,
+            native_profile,
         })
     }
 }
@@ -2219,6 +2350,100 @@ enum CorpusOutcome {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+struct ProducerRegressionReport {
+    total: usize,
+    native_rendered: usize,
+    fallback_required: usize,
+    errors: usize,
+    producer_groups: BTreeMap<String, ProducerRegressionGroup>,
+    family_groups: BTreeMap<String, ProducerRegressionGroup>,
+    feature_groups: BTreeMap<String, ProducerRegressionGroup>,
+    records: Vec<ProducerRegressionRecord>,
+}
+
+impl ProducerRegressionReport {
+    fn new(total: usize) -> Self {
+        Self {
+            total,
+            native_rendered: 0,
+            fallback_required: 0,
+            errors: 0,
+            producer_groups: BTreeMap::new(),
+            family_groups: BTreeMap::new(),
+            feature_groups: BTreeMap::new(),
+            records: Vec::with_capacity(total),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct ProducerRegressionGroup {
+    total: usize,
+    native_rendered: usize,
+    fallback_required: usize,
+    errors: BTreeMap<&'static str, usize>,
+    fallback_categories: BTreeMap<&'static str, usize>,
+    affected_features: BTreeMap<String, usize>,
+    milestone_routes: BTreeMap<String, usize>,
+}
+
+impl ProducerRegressionGroup {
+    fn record(
+        &mut self,
+        outcome: &ProducerRegressionOutcome,
+        features: &[String],
+        milestone_routes: &[String],
+    ) {
+        self.total += 1;
+        match outcome {
+            ProducerRegressionOutcome::NativeRendered => {
+                self.native_rendered += 1;
+            }
+            ProducerRegressionOutcome::FallbackRequired { category, .. } => {
+                self.fallback_required += 1;
+                *self.fallback_categories.entry(category).or_insert(0) += 1;
+                for feature in features {
+                    *self.affected_features.entry(feature.clone()).or_insert(0) += 1;
+                }
+            }
+            ProducerRegressionOutcome::Error { class, .. } => {
+                *self.errors.entry(class).or_insert(0) += 1;
+                for feature in features {
+                    *self.affected_features.entry(feature.clone()).or_insert(0) += 1;
+                }
+            }
+        }
+        for route in milestone_routes {
+            *self.milestone_routes.entry(route.clone()).or_insert(0) += 1;
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ProducerRegressionRecord {
+    fixture_id: String,
+    path_redacted: bool,
+    family: String,
+    producer: String,
+    features: Vec<String>,
+    milestone_routes: Vec<String>,
+    outcome: ProducerRegressionOutcome,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ProducerRegressionOutcome {
+    NativeRendered,
+    FallbackRequired {
+        reason: String,
+        category: &'static str,
+    },
+    Error {
+        class: &'static str,
+        message: String,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct CorpusManifest {
     entries_by_path: BTreeMap<String, CorpusManifestEntry>,
 }
@@ -3035,6 +3260,26 @@ fn filter_fixtures_by_family(
     Ok(filtered)
 }
 
+fn filter_fixtures_by_manifest(
+    paths: &[PathBuf],
+    manifest: &CorpusManifest,
+) -> Result<Vec<PathBuf>, CliError> {
+    let filtered = paths
+        .iter()
+        .filter(|path| {
+            let path_key = normalize_manifest_path(path);
+            manifest.entry_for_path(&path_key).is_some()
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    if filtered.is_empty() {
+        return Err(CliError::Usage(
+            "manifest matched no input fixtures".to_string(),
+        ));
+    }
+    Ok(filtered)
+}
+
 fn summarize_native_fallbacks(
     native: &NativeBackend,
     paths: &[PathBuf],
@@ -3076,6 +3321,179 @@ fn summarize_native_fallbacks(
     }
 
     summary
+}
+
+fn build_producer_regression_report(
+    native: &NativeBackend,
+    paths: &[PathBuf],
+    options: &ThumbnailOptions,
+    manifest: &CorpusManifest,
+) -> ProducerRegressionReport {
+    let mut report = ProducerRegressionReport::new(paths.len());
+
+    for (index, path) in paths.iter().enumerate() {
+        let path_key = normalize_manifest_path(path);
+        let manifest_entry = manifest.entry_for_path(&path_key);
+        let family = manifest_entry
+            .map(|entry| entry.family.clone())
+            .unwrap_or_else(|| "unclassified".to_string());
+        let producer = manifest_entry
+            .map(producer_key)
+            .unwrap_or_else(|| "unclassified".to_string());
+        let features = manifest_entry.map(feature_flags).unwrap_or_default();
+        let outcome = match native.render(PdfSource::from_path(path), options) {
+            Ok(_) => {
+                report.native_rendered += 1;
+                ProducerRegressionOutcome::NativeRendered
+            }
+            Err(error) if error.class() == pdfrust_thumbnail::ThumbnailErrorClass::Unsupported => {
+                report.fallback_required += 1;
+                let reason = FallbackReason::from_native_error(&error);
+                ProducerRegressionOutcome::FallbackRequired {
+                    reason: reason.as_str().to_string(),
+                    category: reason.category(),
+                }
+            }
+            Err(error) => {
+                report.errors += 1;
+                ProducerRegressionOutcome::Error {
+                    class: error.class().as_str(),
+                    message: error.to_string(),
+                }
+            }
+        };
+        let milestone_routes = producer_milestone_routes(manifest_entry, &outcome);
+        let fixture_id = producer_fixture_id(index, path, manifest_entry);
+        let path_redacted = manifest_entry.is_some_and(|entry| is_sensitive_fixture(path, entry));
+
+        report
+            .producer_groups
+            .entry(producer.clone())
+            .or_default()
+            .record(&outcome, &features, &milestone_routes);
+        report
+            .family_groups
+            .entry(family.clone())
+            .or_default()
+            .record(&outcome, &features, &milestone_routes);
+        for feature in &features {
+            report
+                .feature_groups
+                .entry(feature.clone())
+                .or_default()
+                .record(&outcome, &features, &milestone_routes);
+        }
+
+        report.records.push(ProducerRegressionRecord {
+            fixture_id,
+            path_redacted,
+            family,
+            producer,
+            features,
+            milestone_routes,
+            outcome,
+        });
+    }
+
+    report
+}
+
+fn producer_key(entry: &CorpusManifestEntry) -> String {
+    entry
+        .features
+        .iter()
+        .find_map(|feature| feature.strip_prefix("producer:"))
+        .unwrap_or("unclassified")
+        .to_string()
+}
+
+fn feature_flags(entry: &CorpusManifestEntry) -> Vec<String> {
+    entry
+        .features
+        .iter()
+        .filter(|feature| {
+            !feature.starts_with("producer:")
+                && !feature.starts_with("expected:")
+                && !feature.starts_with("privacy:")
+        })
+        .cloned()
+        .collect()
+}
+
+fn producer_fixture_id(
+    index: usize,
+    path: &Path,
+    manifest_entry: Option<&CorpusManifestEntry>,
+) -> String {
+    match manifest_entry {
+        Some(entry) if is_sensitive_fixture(path, entry) => format!("local-only-{index:04}"),
+        _ => normalize_manifest_path(path),
+    }
+}
+
+fn is_sensitive_fixture(path: &Path, entry: &CorpusManifestEntry) -> bool {
+    let path_key = normalize_manifest_path(path);
+    path_key.contains("fixtures/local-corpus/")
+        || entry.source.contains("local-corpus")
+        || entry.license.contains("local-review")
+        || entry.license.contains("reference-only")
+        || entry
+            .features
+            .iter()
+            .any(|feature| matches!(feature.as_str(), "privacy:private" | "privacy:local-only"))
+}
+
+fn producer_milestone_routes(
+    manifest_entry: Option<&CorpusManifestEntry>,
+    outcome: &ProducerRegressionOutcome,
+) -> Vec<String> {
+    if matches!(outcome, ProducerRegressionOutcome::NativeRendered) {
+        return Vec::new();
+    }
+
+    let mut routes = BTreeMap::<String, ()>::new();
+    if let Some(entry) = manifest_entry {
+        for feature in &entry.features {
+            if let Some(route) = feature_milestone_route(feature) {
+                routes.insert(route.to_string(), ());
+            }
+        }
+    }
+    if let ProducerRegressionOutcome::FallbackRequired { category, .. } = outcome {
+        if let Some(route) = fallback_category_milestone_route(category) {
+            routes.insert(route.to_string(), ());
+        }
+    }
+    if routes.is_empty() {
+        routes.insert("0190 manual regression triage".to_string(), ());
+    }
+    routes.into_keys().collect()
+}
+
+fn feature_milestone_route(feature: &str) -> Option<&'static str> {
+    match feature {
+        "optional-content" | "ocmd" => Some("0192 optional-content-ui-state"),
+        "ccitt" | "jbig2" | "jpx" | "codec" => Some("0209 rust-native-image-codec"),
+        "table" | "dense-table" | "dense-totals" | "ledger" | "spreadsheet" | "thin-strokes"
+        | "small-text" => Some("0203 dense-office-table"),
+        "chart" | "smartart" | "vector-effects" => {
+            Some("0204 office-chart-smartart-vector-effects")
+        }
+        "acroform" | "checkbox" | "form" => Some("0206 form-appearance-update"),
+        "annotation" | "comments" | "hyperlink" => Some("0207 annotation-fidelity"),
+        "pdf-2.0" | "catalog-version" => Some("0181 pdf-2-0-feature-usage"),
+        _ => None,
+    }
+}
+
+fn fallback_category_milestone_route(category: &str) -> Option<&'static str> {
+    match category {
+        "graphics.optional-content" => Some("0192 optional-content-ui-state"),
+        "image.filter" => Some("0209 rust-native-image-codec"),
+        "annotations.forms" | "annotations.appearance" => Some("0206 form-appearance-update"),
+        "graphics.color-management" => Some("0208 color-managed-print-preview"),
+        _ => None,
+    }
 }
 
 fn write_native_diagnostic_bundles(
@@ -7250,6 +7668,126 @@ fn family_summary_json(summary: &FamilyFallbackSummary) -> String {
     )
 }
 
+fn producer_regression_report_json(report: &ProducerRegressionReport) -> String {
+    let producer_groups = producer_regression_group_map_json(&report.producer_groups);
+    let family_groups = producer_regression_group_map_json(&report.family_groups);
+    let feature_groups = producer_regression_group_map_json(&report.feature_groups);
+    let records = report
+        .records
+        .iter()
+        .map(producer_regression_record_json)
+        .collect::<Vec<_>>()
+        .join(",");
+    format!(
+        concat!(
+            "{{\n",
+            "  \"schema_version\": 1,\n",
+            "  \"report_kind\": \"producer-regression-report\",\n",
+            "  \"privacy\": \"no PDF bytes, rendered pixels, extracted text, private filenames, or document hashes\",\n",
+            "  \"summary\": {{\"total\":{},\"native_rendered\":{},\"fallback_required\":{},\"errors\":{}}},\n",
+            "  \"producer_groups\": {},\n",
+            "  \"family_groups\": {},\n",
+            "  \"feature_groups\": {},\n",
+            "  \"records\": [{}]\n",
+            "}}\n"
+        ),
+        report.total,
+        report.native_rendered,
+        report.fallback_required,
+        report.errors,
+        producer_groups,
+        family_groups,
+        feature_groups,
+        records
+    )
+}
+
+fn producer_regression_group_map_json(
+    groups: &BTreeMap<String, ProducerRegressionGroup>,
+) -> String {
+    let values = groups
+        .iter()
+        .map(|(key, group)| {
+            format!(
+                "{}:{}",
+                json_string(key),
+                producer_regression_group_json(group)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    format!("{{{values}}}")
+}
+
+fn producer_regression_group_json(group: &ProducerRegressionGroup) -> String {
+    let pass_rate = if group.total == 0 {
+        0.0
+    } else {
+        group.native_rendered as f64 / group.total as f64
+    };
+    format!(
+        concat!(
+            "{{",
+            "\"total\":{},",
+            "\"native_rendered\":{},",
+            "\"native_pass_rate\":{:.3},",
+            "\"fallback_required\":{},",
+            "\"fallback_categories\":{},",
+            "\"errors\":{},",
+            "\"affected_features\":{},",
+            "\"milestone_routes\":{}",
+            "}}"
+        ),
+        group.total,
+        group.native_rendered,
+        pass_rate,
+        group.fallback_required,
+        count_map_json(&group.fallback_categories),
+        count_map_json(&group.errors),
+        string_count_map_json(&group.affected_features),
+        string_count_map_json(&group.milestone_routes)
+    )
+}
+
+fn producer_regression_record_json(record: &ProducerRegressionRecord) -> String {
+    format!(
+        concat!(
+            "{{",
+            "\"fixture_id\":{},",
+            "\"path_redacted\":{},",
+            "\"family\":{},",
+            "\"producer\":{},",
+            "\"features\":{},",
+            "\"milestone_routes\":{},",
+            "\"outcome\":{}",
+            "}}"
+        ),
+        json_string(&record.fixture_id),
+        record.path_redacted,
+        json_string(&record.family),
+        json_string(&record.producer),
+        json_string_array(&record.features),
+        json_string_array(&record.milestone_routes),
+        producer_regression_outcome_json(&record.outcome)
+    )
+}
+
+fn producer_regression_outcome_json(outcome: &ProducerRegressionOutcome) -> String {
+    match outcome {
+        ProducerRegressionOutcome::NativeRendered => "{\"status\":\"native_rendered\"}".to_string(),
+        ProducerRegressionOutcome::FallbackRequired { reason, category } => format!(
+            "{{\"status\":\"fallback_required\",\"reason\":{},\"category\":{}}}",
+            json_string(reason),
+            json_string(category)
+        ),
+        ProducerRegressionOutcome::Error { class, message } => format!(
+            "{{\"status\":\"error\",\"class\":{},\"message\":{}}}",
+            json_string(class),
+            json_string(message)
+        ),
+    }
+}
+
 fn metadata_outcome_json(outcome: &MetadataOutcome) -> String {
     match outcome {
         MetadataOutcome::Success(metadata) => {
@@ -7510,7 +8048,7 @@ fn crc32(bytes: impl IntoIterator<Item = u8>) -> u32 {
 
 fn print_usage() {
     println!(
-        "Usage: pdfrust-cli <render|render-auto|render-native|render-pdfium|render-isolated|compare-metadata|summarize-fallbacks|operator-coverage|trace-native|replay-operators|extract-corpus-metadata|classify-pdf20-usage|validate-local-corpus|benchmark-native|benchmark-batch-native|benchmark-repeat-native|benchmark-pdfium|visual-diff|visual-diff-poppler> <input.pdf> \
+        "Usage: pdfrust-cli <render|render-auto|render-native|render-pdfium|render-isolated|compare-metadata|summarize-fallbacks|operator-coverage|trace-native|replay-operators|extract-corpus-metadata|producer-regression-report|classify-pdf20-usage|validate-local-corpus|benchmark-native|benchmark-batch-native|benchmark-repeat-native|benchmark-pdfium|visual-diff|visual-diff-poppler> <input.pdf> \
          [--output PATH] [--page-index N] [--max-edge N] [--background #RRGGBB] \
          [--timeout SECONDS] [--iterations N] [--repetitions N] [--max-events N] [--max-workers N] [--max-in-flight-pixels N] [--cancel-after-jobs N] [--max-ms N] [--max-p95-ms N] [--max-first-ms N] [--max-repeat-mean-ms N] [--max-output-bytes N] \
          [--native-only] [--manifest PATH] [--include-family FAMILY] \
@@ -7803,6 +8341,138 @@ mod tests {
         assert!(json.contains("\"status_counts\""));
         assert!(json.contains("\"BI\""));
         assert!(json.contains("\"implemented\""));
+    }
+
+    #[test]
+    fn producer_regression_config_should_require_manifest_and_accept_filters() {
+        let missing_manifest = ProducerRegressionConfig::parse(&[
+            OsString::from("fixtures/generated"),
+            OsString::from("--include-family"),
+            OsString::from("unsupported-boundary"),
+        ])
+        .expect_err("producer regression reports require manifest metadata");
+
+        assert_eq!(
+            missing_manifest.to_string(),
+            "usage error: --manifest is required for producer-regression-report"
+        );
+
+        let config = ProducerRegressionConfig::parse(&[
+            OsString::from("fixtures/generated"),
+            OsString::from("--manifest"),
+            OsString::from("fixtures/producer-compatibility-manifest.tsv"),
+            OsString::from("--include-family"),
+            OsString::from("unsupported-boundary"),
+            OsString::from("--max-edge"),
+            OsString::from("120"),
+            OsString::from("--output"),
+            OsString::from("target/producer-regression.json"),
+        ])
+        .expect("valid producer regression config");
+
+        assert_eq!(
+            config.manifest,
+            PathBuf::from("fixtures/producer-compatibility-manifest.tsv")
+        );
+        assert_eq!(
+            config.include_families,
+            vec!["unsupported-boundary".to_string()]
+        );
+        assert_eq!(config.max_edge, 120);
+        assert_eq!(
+            config.output,
+            Some(PathBuf::from("target/producer-regression.json"))
+        );
+    }
+
+    #[test]
+    fn producer_regression_report_should_group_failures_by_producer_and_route() {
+        let fixture_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let manifest_path = fixture_root.join("fixtures/producer-compatibility-manifest.tsv");
+        let manifest = read_corpus_manifest(&manifest_path).expect("manifest should parse");
+        let paths = vec![
+            fixture_root.join("fixtures/generated/optional-content-ocmd.pdf"),
+            fixture_root.join("fixtures/generated/unsupported-ccitt-image.pdf"),
+        ];
+        let options = ThumbnailOptions {
+            page_index: 0,
+            max_edge: 120,
+            background: Rgba::WHITE,
+            output_format: pdfrust_thumbnail::OutputFormat::Png,
+            timeout: Duration::from_secs(5),
+        };
+
+        let report =
+            build_producer_regression_report(&NativeBackend::new(), &paths, &options, &manifest);
+        let json = producer_regression_report_json(&report);
+
+        assert_eq!(report.total, 2);
+        assert_eq!(report.native_rendered, 0);
+        assert_eq!(report.fallback_required, 2);
+        assert_eq!(
+            report
+                .producer_groups
+                .get("layered-presentation-export")
+                .and_then(|group| group.fallback_categories.get("graphics.optional-content")),
+            Some(&1)
+        );
+        assert_eq!(
+            report
+                .producer_groups
+                .get("fax-scanner-export")
+                .and_then(|group| group.fallback_categories.get("image.filter")),
+            Some(&1)
+        );
+        assert!(json.contains("\"report_kind\": \"producer-regression-report\""));
+        assert!(json.contains("\"0192 optional-content-ui-state\""));
+        assert!(json.contains("\"0209 rust-native-image-codec\""));
+        assert!(json.contains(
+            "\"privacy\": \"no PDF bytes, rendered pixels, extracted text, private filenames, or document hashes\""
+        ));
+        assert!(!json.contains("%PDF"));
+    }
+
+    #[test]
+    fn producer_regression_manifest_filter_should_drop_unlisted_fixtures() {
+        let fixture_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let manifest_path = fixture_root.join("fixtures/producer-compatibility-manifest.tsv");
+        let manifest = read_corpus_manifest(&manifest_path).expect("manifest should parse");
+        let paths = vec![
+            fixture_root.join("fixtures/generated/text-page.pdf"),
+            fixture_root.join("fixtures/generated/optional-content-ocmd.pdf"),
+        ];
+
+        let filtered =
+            filter_fixtures_by_manifest(&paths, &manifest).expect("manifest row should match");
+
+        assert_eq!(
+            filtered,
+            vec![fixture_root.join("fixtures/generated/optional-content-ocmd.pdf")]
+        );
+    }
+
+    #[test]
+    fn producer_regression_fixture_id_should_redact_private_paths() {
+        let entry = CorpusManifestEntry {
+            path: "fixtures/local-corpus/customer-statement.pdf".to_string(),
+            family: "statement".to_string(),
+            source: "fixtures/local-corpus/metadata.toml".to_string(),
+            license: "local-review-only".to_string(),
+            page_count: 1,
+            features: vec![
+                "producer:private-accounting-export".to_string(),
+                "privacy:private".to_string(),
+                "table".to_string(),
+            ],
+            notes: "private aggregate sample".to_string(),
+        };
+        let path = PathBuf::from("fixtures/local-corpus/customer-statement.pdf");
+
+        assert!(is_sensitive_fixture(&path, &entry));
+        assert_eq!(
+            producer_fixture_id(7, &path, Some(&entry)),
+            "local-only-0007"
+        );
     }
 
     #[test]

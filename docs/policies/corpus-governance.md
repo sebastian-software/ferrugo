@@ -68,6 +68,21 @@ point. It writes only to `target/corpus-dashboard/` by default and produces:
 The dashboard is not a committed source of truth. It is a generated decision
 artifact for release and milestone reviews.
 
+## Producer Regression Flow
+
+`pdfrust-cli producer-regression-report` is the native-only local report for
+producer-scoped regression triage. It requires a manifest and groups render
+outcomes by `producer:*` feature tags, manifest family, and feature flags.
+
+The report is allowed to include committed generated fixture paths so maintainers
+can reproduce failures locally. Private or local-only fixtures must remain
+redacted to local fixture IDs and must not publish original filenames, hashes,
+text, screenshots, or rendered pixels.
+
+Use producer regression reports when a gate changes native outcome status and
+the maintainer needs to identify whether the break is producer-specific,
+feature-specific, or a broader renderer regression.
+
 ## Privacy Boundary
 
 Private local corpus reporting must stay aggregate-only. Do not publish private
