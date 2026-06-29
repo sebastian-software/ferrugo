@@ -24,7 +24,8 @@ profiles, and regressions teach us where the real bottlenecks are.
 - [x] The starter manifest covers `small-text`, `office-export`, `scan`,
   `browser-print`, `form`, `presentation`, `report/vector`, and
   `mixed-layout`.
-- [ ] No renderer optimization has happened from this plan yet.
+- [x] First renderer optimization landed: stroke join geometry is prepared once
+  per stroke instead of recomputed inside every pixel/sample test.
 
 ## Operating Rules
 
@@ -261,24 +262,46 @@ Candidate fixtures:
 
 Work items:
 
-- [ ] Profile top vector fixtures with `sample`, Instruments, or Samply.
-- [ ] Confirm whether time is in display-list construction, path flattening,
+- [x] Profile top vector fixtures with `sample`, Instruments, or Samply.
+- [x] Confirm whether time is in display-list construction, path flattening,
   clipping, stroke rasterization, or pixel loops.
 - [ ] Add device-bounds culling before expensive raster work.
 - [ ] Add fast paths for axis-aligned filled rectangles.
 - [ ] Add fast paths for axis-aligned hairlines and simple strokes.
 - [ ] Flatten reusable paths once per display item instead of per raster pass.
 - [ ] Apply clip/intersection checks before entering expensive pixel loops.
+- [x] Precompute bevel/miter stroke join geometry once per stroke instead of
+  normalizing join segments for every candidate pixel/sample.
 - [ ] Add regression fixtures or targeted tests around clipping and hairline
   correctness.
-- [ ] Re-run matrix before and after each block.
+- [x] Add targeted tests for prepared stroke join geometry and degenerate join
+  segments.
+- [x] Re-run matrix before and after each block.
 
 Acceptance:
 
-- [ ] At least 10% improvement on the selected vector fixtures or a documented
+- [x] At least 10% improvement on the selected vector fixtures or a documented
   reason why the profile disproved the candidate.
-- [ ] No new fallback categories.
-- [ ] No unacceptable Poppler/PDFium visual drift on the touched fixture set.
+- [x] No new fallback categories.
+- [x] No unacceptable Poppler/PDFium visual drift on the touched fixture set.
+
+First vector optimization result from 2026-06-29:
+
+- Change: prepared bevel/miter stroke join triangles once in `stroke_path`.
+- Profile evidence: previous `sample` run showed `stroke_path` dominating
+  `vector-stress`, with visible time under `point_in_join_side` and `hypot`.
+- Before: `target/benchmark-native-vector-stress-profile.json` mean
+  `10.956 ms` over 5000 iterations.
+- After: `target/benchmark-native-vector-stress-prepared-joins.json` mean
+  `9.554 ms` over 5000 iterations, about 12.8% faster.
+- Hot matrix after: `target/performance-matrix-vector-stress-prepared-joins.json`
+  p95 `9.900 ms` over 30 measured iterations after 3 warmups.
+- Baseline hot matrix p95: `10.929-11.012 ms`, so the p95 improvement is about
+  9.4-10.1% depending on the baseline run.
+- Visual/fallback check: current native PNG
+  `target/native-vector-stress-prepared-joins.png` is byte-identical to
+  `target/performance-matrix-baseline-starter-artifacts-1/native-cold-process-vector-stress.png`;
+  focused matrix status remained `rendered` with no fallback bucket or error.
 
 ## Hardware-Aware Rust Notes
 

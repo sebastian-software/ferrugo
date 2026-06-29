@@ -6505,6 +6505,24 @@ struct StrokeJoin {
     point: Point,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct JoinTriangle {
+    a: Point,
+    b: Point,
+    c: Point,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct PreparedJoinSide {
+    bevel: JoinTriangle,
+    miter: Option<JoinTriangle>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct PreparedStrokeJoin {
+    sides: [PreparedJoinSide; 2],
+}
+
 #[derive(Debug, Clone, PartialEq)]
 struct ActiveClip {
     path: FlattenedPath,
@@ -9954,6 +9972,7 @@ fn stroke_path(
     let Some(bounds) = stroke_pixel_bounds(stroke_lines, joins, radius, dimensions) else {
         return Ok(());
     };
+    let prepared_joins = prepare_stroke_joins(joins, radius, state.line_join, state.miter_limit);
     for y in bounds.min_y..bounds.max_y {
         for x in bounds.min_x..bounds.max_x {
             let mut covered = 0;
@@ -9965,9 +9984,9 @@ fn stroke_path(
                             || point_in_join(
                                 point,
                                 joins,
+                                &prepared_joins,
                                 radius,
                                 state.line_join,
-                                state.miter_limit,
                             ))
                     {
                         covered += 1;
@@ -10303,38 +10322,88 @@ fn point_in_stroke(point: Point, lines: &[LineSegment], radius: f64, line_cap: L
 fn point_in_join(
     point: Point,
     joins: &[StrokeJoin],
+    prepared_joins: &[PreparedStrokeJoin],
+    radius: f64,
+    line_join: LineJoin,
+) -> bool {
+    let radius_squared = radius * radius;
+    match line_join {
+        LineJoin::Round => joins
+            .iter()
+            .any(|join| distance_squared(point, join.point) <= radius_squared),
+        LineJoin::Bevel => prepared_joins.iter().any(|join| {
+            join.sides
+                .iter()
+                .any(|side| point_in_join_triangle(point, side.bevel))
+        }),
+        LineJoin::Miter => prepared_joins.iter().any(|join| {
+            join.sides
+                .iter()
+                .any(|side| point_in_join_triangle(point, side.miter.unwrap_or(side.bevel)))
+        }),
+    }
+}
+
+fn prepare_stroke_joins(
+    joins: &[StrokeJoin],
     radius: f64,
     line_join: LineJoin,
     miter_limit: f64,
-) -> bool {
-    let radius_squared = radius * radius;
-    joins.iter().any(|join| match line_join {
-        LineJoin::Round => distance_squared(point, join.point) <= radius_squared,
-        LineJoin::Bevel => {
-            point_in_join_side(point, *join, radius, LineJoin::Bevel, miter_limit, 1.0)
-                || point_in_join_side(point, *join, radius, LineJoin::Bevel, miter_limit, -1.0)
+) -> Vec<PreparedStrokeJoin> {
+    if matches!(line_join, LineJoin::Round) || joins.is_empty() {
+        return Vec::new();
+    }
+    let mut prepared = Vec::with_capacity(joins.len());
+    let miter_limit_squared = (radius * miter_limit).powi(2);
+    for join in joins {
+        if let Some(join) = prepare_stroke_join(*join, radius, line_join, miter_limit_squared) {
+            prepared.push(join);
         }
-        LineJoin::Miter => {
-            point_in_join_side(point, *join, radius, LineJoin::Miter, miter_limit, 1.0)
-                || point_in_join_side(point, *join, radius, LineJoin::Miter, miter_limit, -1.0)
-        }
-    })
+    }
+    prepared
 }
 
-fn point_in_join_side(
-    point: Point,
+fn prepare_stroke_join(
     join: StrokeJoin,
     radius: f64,
     line_join: LineJoin,
-    miter_limit: f64,
+    miter_limit_squared: f64,
+) -> Option<PreparedStrokeJoin> {
+    let previous_direction = unit_line_direction(join.previous)?;
+    let next_direction = unit_line_direction(join.next)?;
+    Some(PreparedStrokeJoin {
+        sides: [
+            prepare_join_side(
+                join,
+                previous_direction,
+                next_direction,
+                radius,
+                line_join,
+                miter_limit_squared,
+                1.0,
+            ),
+            prepare_join_side(
+                join,
+                previous_direction,
+                next_direction,
+                radius,
+                line_join,
+                miter_limit_squared,
+                -1.0,
+            ),
+        ],
+    })
+}
+
+fn prepare_join_side(
+    join: StrokeJoin,
+    previous_direction: Point,
+    next_direction: Point,
+    radius: f64,
+    line_join: LineJoin,
+    miter_limit_squared: f64,
     side: f64,
-) -> bool {
-    let Some(previous_direction) = unit_line_direction(join.previous) else {
-        return false;
-    };
-    let Some(next_direction) = unit_line_direction(join.next) else {
-        return false;
-    };
+) -> PreparedJoinSide {
     let previous_normal = signed_left_normal(previous_direction, side);
     let next_normal = signed_left_normal(next_direction, side);
     let previous_outer = Point {
@@ -10346,21 +10415,32 @@ fn point_in_join_side(
         y: next_normal.y.mul_add(radius, join.point.y),
     };
 
-    if matches!(line_join, LineJoin::Miter) {
-        let miter = line_intersection(
+    let bevel = JoinTriangle {
+        a: join.point,
+        b: previous_outer,
+        c: next_outer,
+    };
+    let miter = if matches!(line_join, LineJoin::Miter) {
+        line_intersection(
             previous_outer,
             previous_direction,
             next_outer,
             next_direction,
-        );
-        if let Some(miter) = miter {
-            if distance_squared(join.point, miter) <= (radius * miter_limit).powi(2) {
-                return point_in_triangle(point, previous_outer, miter, next_outer);
-            }
-        }
-    }
+        )
+        .filter(|miter| distance_squared(join.point, *miter) <= miter_limit_squared)
+        .map(|miter| JoinTriangle {
+            a: previous_outer,
+            b: miter,
+            c: next_outer,
+        })
+    } else {
+        None
+    };
+    PreparedJoinSide { bevel, miter }
+}
 
-    point_in_triangle(point, join.point, previous_outer, next_outer)
+fn point_in_join_triangle(point: Point, triangle: JoinTriangle) -> bool {
+    point_in_triangle(point, triangle.a, triangle.b, triangle.c)
 }
 
 fn unit_line_direction(line: LineSegment) -> Option<Point> {
@@ -15903,6 +15983,50 @@ mod tests {
             Rgba::WHITE
         );
         assert_eq!(round.pixel(12, 11).expect("round outside corner"), black);
+    }
+
+    #[test]
+    fn prepare_stroke_joins_should_precompute_miter_triangles() {
+        let joins = [StrokeJoin {
+            previous: LineSegment {
+                from: Point { x: 0.0, y: 0.0 },
+                to: Point { x: 10.0, y: 0.0 },
+            },
+            next: LineSegment {
+                from: Point { x: 10.0, y: 0.0 },
+                to: Point { x: 10.0, y: 10.0 },
+            },
+            point: Point { x: 10.0, y: 0.0 },
+        }];
+
+        let prepared = prepare_stroke_joins(&joins, 2.0, LineJoin::Miter, 10.0);
+
+        assert!(point_in_join(
+            Point { x: 8.5, y: 1.5 },
+            &joins,
+            &prepared,
+            2.0,
+            LineJoin::Miter,
+        ));
+    }
+
+    #[test]
+    fn prepare_stroke_joins_should_skip_degenerate_segments() {
+        let joins = [StrokeJoin {
+            previous: LineSegment {
+                from: Point { x: 10.0, y: 0.0 },
+                to: Point { x: 10.0, y: 0.0 },
+            },
+            next: LineSegment {
+                from: Point { x: 10.0, y: 0.0 },
+                to: Point { x: 10.0, y: 10.0 },
+            },
+            point: Point { x: 10.0, y: 0.0 },
+        }];
+
+        let prepared = prepare_stroke_joins(&joins, 2.0, LineJoin::Bevel, 10.0);
+
+        assert!(prepared.is_empty());
     }
 
     #[test]
