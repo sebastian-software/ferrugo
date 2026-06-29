@@ -63,7 +63,8 @@ Poppler is now included in the same cold-process matrix through `pdftoppm`.
 MuPDF remains v2 backlog because setup, licensing, and tooling would slow the
 first repeatable benchmark slice. A fair MuPDF claim still needs the same
 first-page latency, output-size, and RSS fields across the same fixture
-families.
+families. Public speed or memory copy must follow the
+[performance claims policy](policies/performance-claims.md).
 
 ## Performance Matrix
 

@@ -1187,10 +1187,10 @@ Goal: turn stable evidence into guardrails, not premature marketing.
 
 - [ ] Promote stable fixture subsets into budgeted CI gates only after variance
   is understood.
-- [ ] Keep the full matrix as a local maintainer tool until tool availability is
+- [x] Keep the full matrix as a local maintainer tool until tool availability is
   reliable on CI.
-- [ ] Add a "performance claim update" checklist before changing README copy.
-- [ ] Keep MuPDF as v2 comparison backlog, not a blocker for the first
+- [x] Add a "performance claim update" checklist before changing README copy.
+- [x] Keep MuPDF as v2 comparison backlog, not a blocker for the first
   optimization wave.
 
 Claim checklist:
@@ -1263,6 +1263,19 @@ Matrix timing reliability flags from 2026-06-30:
 - Acceptance impact: 5-10% wins can now be judged against explicit report
   caveats instead of relying on local memory of which reference tools or RSS
   fields were available.
+
+Performance claim guardrail from 2026-06-30:
+
+- Change: added `docs/policies/performance-claims.md` and
+  `scripts/check_performance_claims.sh`.
+- Checklist: public speed or memory copy now requires two stable matrix runs,
+  host/tool/version context, timing reliability review, named workload family,
+  named metric, local artifacts, and wording that avoids broad renderer parity.
+- CI stance: the full matrix remains local maintainer tooling until variance and
+  tool availability are understood; only focused subsets should become CI gates
+  after budgets are documented.
+- MuPDF stance: MuPDF remains v2 comparison backlog and must not block the
+  first optimization wave.
 
 ## Remaining Questions
 

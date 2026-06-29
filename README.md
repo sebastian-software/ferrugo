@@ -139,7 +139,9 @@ on simple text and scan-style thumbnails. The next performance work uses the
 new `benchmark-matrix` harness to compare Ferrugo, PDFium, and Poppler across
 cold-process time, hot-render distributions, output size, and RSS where the host
 can expose it. See [Renderer benchmarks](docs/benchmarks.md) for the current
-comparison state and the data-first optimization loop.
+comparison state, the data-first optimization loop, and the
+[performance claims policy](docs/policies/performance-claims.md) that applies
+before README or release copy strengthens speed or memory statements.
 
 ## Reference renderers
 
@@ -202,6 +204,7 @@ Useful project gates:
 
 ```sh
 bash scripts/check_pdfium_quarantine.sh
+bash scripts/check_performance_claims.sh
 bash scripts/check_plugin_free_distribution.sh
 bash scripts/check_native_only_release.sh
 bash scripts/check_wasm_smoke.sh
