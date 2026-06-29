@@ -683,13 +683,15 @@ Goal: make scan/image-heavy documents fast without increasing peak memory.
   target raster.
 - [ ] Avoid full RGBA expansion when the target raster is smaller and direct
   sampling is possible.
+- [x] Avoid full inverse-matrix work per pixel for axis-aligned image
+  placements.
 - [ ] Reuse SoftMask/alpha scratch buffers within a render request.
 - [ ] Investigate cropped decode when the CTM/clip excludes large image areas.
 
 Acceptance:
 
-- [ ] Clear time or memory reduction on scan/image fixtures.
-- [ ] No regression on masks, ICC conversions, predictor images, or transparent
+- [x] Clear time or memory reduction on scan/image fixtures.
+- [x] No regression on masks, ICC conversions, predictor images, or transparent
   image fixtures.
 
 Image-heavy baseline and attribution update from 2026-06-29:
@@ -745,6 +747,57 @@ Longer sample on `mobile-mixed-compression-scan.pdf` from 2026-06-29:
   dominant work is still path stroke overlay. The next code candidate should be
   a profile-backed simple stroke/rect overlay optimization, or the target
   should switch to a fixture where `RasterImages` dominates after attribution.
+
+Rejected vector candidate from 2026-06-29:
+
+- Change tested locally but not kept: a semantically tight axis-aligned
+  rectangle stroke fast path for butt-cap, miter-join rectangle outlines.
+- First broad variant was fast on `mobile-mixed-compression-scan.pdf`, but was
+  rejected because it could change corner semantics compared with the generic
+  stroke hit test.
+- Tightened variant result:
+  `target/performance-matrix-mobile-mixed-rect-stroke-fast-path-final.json`
+  p95 `0.995 ms` vs
+  `target/performance-matrix-image-heavy-phase-attribution.json` p95
+  `1.056 ms`, about 5.8% faster on the mixed-compression target.
+- Protection result:
+  `target/performance-matrix-report-vector-rect-stroke-fast-path-final.json`
+  showed `vector-stress` p95 `6.689 ms` and
+  `technical-hatch-clipping` p95 `3.072 ms`, worse than the accepted
+  clip-bounds vector protection set.
+- Decision: reverted. The target win was in the repeatable 5-10% range, but it
+  was not protection-set-neutral.
+
+First image raster optimization result from 2026-06-29:
+
+- Change: axis-aligned image placement now uses a dedicated raster loop. It
+  computes Y coverage and source Y once per row, avoids a full inverse-matrix
+  point transform per pixel, and fast-paths fully covered pixels to coverage
+  `1.0` while preserving the existing edge-overlap calculation.
+- Profile evidence: phase attribution and focused traces showed true image
+  raster work on pure image fixtures, while the larger mixed target remained
+  stroke-overlay dominated. The change targets the measured `raster_images`
+  component without adding dependencies or `unsafe`.
+- A/B baseline:
+  `target/performance-matrix-image-heavy-axis-ab-baseline.json`, native
+  hot-render, `fixtures/image-heavy-memory-manifest.tsv`, `--max-edge 160`,
+  300 measured iterations after 20 warmups.
+- After:
+  `target/performance-matrix-image-heavy-axis-final.json`, same command shape
+  and host after the final Clippy cleanup.
+- Results: `soft-mask-image.pdf` p95 `0.101 ms` -> `0.085 ms` (~15.8%),
+  `dct-image.pdf` p95 `0.087 ms` -> `0.079 ms` (~9.2%), and
+  `predictor-image.pdf` p95 `0.069 ms` -> `0.063 ms` (~8.7%).
+  `scanner-large-image-budget.pdf` p95 `0.629 ms` -> `0.604 ms` (~4.0%).
+  Larger mixed pages improved less: `mobile-mixed-compression-scan.pdf` p95
+  `1.070 ms` -> `1.046 ms` (~2.2%) because path strokes still dominate.
+- Protection result:
+  `target/performance-matrix-report-vector-axis-image-protection.json` stayed
+  neutral to better on the report/vector set, with no fallback or error
+  records.
+- Visual check: current renders in `target/axis-image-visual-current/` are
+  byte-identical to existing native baseline PNGs for `dct-image`,
+  `predictor-image`, `scanner-large-image-budget`, and `soft-mask-image`.
 
 ## Phase 5: Session Cache, But Bounded
 

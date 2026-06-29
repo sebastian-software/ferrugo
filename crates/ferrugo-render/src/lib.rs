@@ -10881,33 +10881,71 @@ fn draw_image(
     let min_y = bounds.min_y.floor().max(0.0) as u32;
     let max_x = bounds.max_x.ceil().min(f64::from(dimensions.width)) as u32;
     let max_y = bounds.max_y.ceil().min(f64::from(dimensions.height)) as u32;
-    let mut sample_cache = ImageSampleCache::default();
+    let window = ImageRasterWindow {
+        bounds,
+        min_x,
+        min_y,
+        max_x,
+        max_y,
+    };
     let axis_aligned = image_transform_is_axis_aligned(image_to_device);
 
-    for y in min_y..max_y {
-        for x in min_x..max_x {
-            let coverage = if axis_aligned {
-                axis_aligned_image_pixel_coverage(bounds, x, y)
-            } else {
-                1.0
-            };
-            if coverage <= f64::EPSILON {
-                continue;
-            }
+    if axis_aligned {
+        return draw_axis_aligned_image(device, image, inverse, window);
+    }
+
+    let mut sample_cache = ImageSampleCache::default();
+    for y in window.min_y..window.max_y {
+        for x in window.min_x..window.max_x {
             let sample = inverse.transform_point(f64::from(x) + 0.5, f64::from(y) + 0.5);
-            if axis_aligned {
-                let sample_x = sample.x.clamp(0.0, 1.0);
-                let sample_y = sample.y.clamp(0.0, 1.0);
-                let (sample_x, sample_y) = image_sample_coords(&image.image, sample_x, sample_y);
-                let pixel =
-                    sample_cache.sample(&image.image, sample_x, sample_y, image.state.fill_color);
-                composite_image_pixel(device, x, y, pixel, coverage)?;
-                continue;
-            }
             if !(0.0..1.0).contains(&sample.x) || !(0.0..1.0).contains(&sample.y) {
                 continue;
             }
             let (sample_x, sample_y) = image_sample_coords(&image.image, sample.x, sample.y);
+            let pixel =
+                sample_cache.sample(&image.image, sample_x, sample_y, image.state.fill_color);
+            composite_image_pixel(device, x, y, pixel, 1.0)?;
+        }
+    }
+    Ok(())
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ImageRasterWindow {
+    bounds: PathBounds,
+    min_x: u32,
+    min_y: u32,
+    max_x: u32,
+    max_y: u32,
+}
+
+fn draw_axis_aligned_image(
+    device: &mut RasterDevice,
+    image: &ImageDisplayItem,
+    inverse: Matrix,
+    window: ImageRasterWindow,
+) -> RasterResult<()> {
+    let mut sample_cache = ImageSampleCache::default();
+    for y in window.min_y..window.max_y {
+        let y_coverage = pixel_coverage_1d(y, window.bounds.min_y, window.bounds.max_y);
+        if y_coverage <= f64::EPSILON {
+            continue;
+        }
+        let sample_y = inverse
+            .d
+            .mul_add(f64::from(y) + 0.5, inverse.f)
+            .clamp(0.0, 1.0);
+        for x in window.min_x..window.max_x {
+            let coverage =
+                pixel_coverage_1d(x, window.bounds.min_x, window.bounds.max_x) * y_coverage;
+            if coverage <= f64::EPSILON {
+                continue;
+            }
+            let sample_x = inverse
+                .a
+                .mul_add(f64::from(x) + 0.5, inverse.e)
+                .clamp(0.0, 1.0);
+            let (sample_x, sample_y) = image_sample_coords(&image.image, sample_x, sample_y);
             let pixel =
                 sample_cache.sample(&image.image, sample_x, sample_y, image.state.fill_color);
             composite_image_pixel(device, x, y, pixel, coverage)?;
@@ -10916,16 +10954,17 @@ fn draw_image(
     Ok(())
 }
 
-fn image_transform_is_axis_aligned(transform: Matrix) -> bool {
-    transform.b.abs() <= f64::EPSILON && transform.c.abs() <= f64::EPSILON
+fn pixel_coverage_1d(pixel: u32, min: f64, max: f64) -> f64 {
+    let pixel_min = f64::from(pixel);
+    let pixel_max = pixel_min + 1.0;
+    if pixel_min >= min && pixel_max <= max {
+        return 1.0;
+    }
+    overlap_1d(pixel_min, pixel_max, min, max)
 }
 
-fn axis_aligned_image_pixel_coverage(bounds: PathBounds, x: u32, y: u32) -> f64 {
-    let min_x = f64::from(x);
-    let min_y = f64::from(y);
-    let x_coverage = overlap_1d(min_x, min_x + 1.0, bounds.min_x, bounds.max_x);
-    let y_coverage = overlap_1d(min_y, min_y + 1.0, bounds.min_y, bounds.max_y);
-    x_coverage * y_coverage
+fn image_transform_is_axis_aligned(transform: Matrix) -> bool {
+    transform.b.abs() <= f64::EPSILON && transform.c.abs() <= f64::EPSILON
 }
 
 fn overlap_1d(pixel_min: f64, pixel_max: f64, min: f64, max: f64) -> f64 {
@@ -18806,6 +18845,13 @@ mod tests {
         assert_eq!(cached.x, 0);
         assert_eq!(cached.y, 0);
         assert_eq!(cached.color, first);
+    }
+
+    #[test]
+    fn pixel_coverage_1d_should_match_full_partial_and_outside_pixels() {
+        assert_eq!(pixel_coverage_1d(2, 2.0, 5.0), 1.0);
+        assert_eq!(pixel_coverage_1d(1, 1.5, 4.0), 0.5);
+        assert_eq!(pixel_coverage_1d(5, 1.5, 4.0), 0.0);
     }
 
     #[test]
