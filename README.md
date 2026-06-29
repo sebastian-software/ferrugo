@@ -130,6 +130,14 @@ of about 1.0 MB for the native CLI binary, with first-render p95 under 6 ms for
 the small text fixture. Treat these as local gate numbers, not universal
 hardware-independent benchmarks.
 
+Against mature native renderers, the honest picture is mixed. Ferrugo is already
+attractive for small, bounded, server-side preview jobs because the supported
+runtime is compact, Rust-native, and explicitly budgeted. It is not generally
+faster than PDFium today: archived same-corpus smoke runs show PDFium ahead on
+many vector, form, presentation, and report cases, while Ferrugo is competitive
+on simple text and scan-style thumbnails. See [Renderer benchmarks](docs/benchmarks.md)
+for the current comparison state and the missing MuPDF/Poppler measurement work.
+
 ## Reference renderers
 
 External renderers are treated as behavior oracles, not as the architecture to

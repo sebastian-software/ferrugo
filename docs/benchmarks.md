@@ -31,6 +31,43 @@ binary around 1.0 MB and first-render p95 below 6 ms for the small text fixture.
 These numbers are useful for direction and regression checks, not as universal
 hardware-independent guarantees.
 
+## Comparison Against Existing Renderers
+
+The best hard comparison currently available is the archived 0078
+Rust-native/PDFium smoke run. It used the same generated fixture corpus,
+`max_edge=160`, one iteration, and the shared thumbnail facade.
+
+| Family | Ferrugo mean ms | PDFium mean ms | Read |
+| --- | ---: | ---: | --- |
+| `browser-print` | 38.607 | 0.665 | PDFium much faster |
+| `form` | 19.343 | 7.912 | PDFium faster |
+| `mixed-layout` | 17.910 | 2.338 | PDFium much faster |
+| `office-export` | 15.449 | 30.339 | Ferrugo faster on this early slice |
+| `presentation` | 15.452 | 0.382 | PDFium much faster |
+| `report` | 267.832 | 0.581 | PDFium much faster; Ferrugo had a vector-stress tail |
+| `scan` | 1.293 | 1.166 | roughly comparable |
+
+The same run reported 50/52 Ferrugo-native renders, 1 typed fallback, and 1
+encrypted error. PDFium rendered 51/52 with the same encrypted error. This is
+why the project should not claim broad renderer performance parity yet.
+
+Memory comparison is less complete. The Phase 0 PDFium release-CLI smoke
+measured roughly 24 MiB max RSS for `text-page.pdf` at 256-1024 max edge with
+0.03-0.04s wall time. Ferrugo's native gates currently enforce deterministic
+pixel, decoded-image, display-list, font, transparency, cache, and output-byte
+budgets, but the generic benchmark harness does not yet capture peak RSS for
+every backend. Server-batch runs can sample RSS when the host allows it; one
+unsandboxed native batch run recorded 2.8 MiB start RSS and 5.5 MiB high-water
+RSS for the focused 16-job thumbnail gate.
+
+MuPDF and Poppler have not yet been measured in the same speed/RSS matrix.
+They remain qualitative comparison engines and visual oracles in the current
+docs: MuPDF is expected to be very fast but brings AGPL/commercial licensing
+constraints, while Poppler is useful as an independent Linux/desktop rendering
+baseline. A fair claim against either needs a dedicated harness that records
+first-page latency, throughput, output size, and peak RSS on the same fixture
+families.
+
 ## Commands
 
 Run the Rust-native benchmark against the generated fixture corpus:
