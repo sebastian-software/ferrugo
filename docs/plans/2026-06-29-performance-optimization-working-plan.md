@@ -36,10 +36,12 @@ profiles, and regressions teach us where the real bottlenecks are.
   `max_edge`, same backend set, and same iteration count.
 - [ ] Keep optimization PRs small enough to explain with one primary profile
   finding.
-- [ ] Treat 10% as the default acceptance target for an optimization block, not
-  for every individual commit.
+- [ ] Treat 10% as the default acceptance target for an optimization block or a
+  standalone performance claim, not for every individual commit.
 - [ ] Accept a 5-10% commit when repeated runs confirm it and the change is part
   of a clear cumulative optimization track.
+- [ ] Let multiple confirmed 5% wins compound when they attack the same
+  bottleneck class and keep the protection set neutral.
 - [ ] Allow correctness guards, instrumentation, and documentation commits
   without speed claims when they reduce risk for the next optimization.
 - [ ] Accept a clear memory reduction under the same repeatability rule, with no
@@ -62,8 +64,8 @@ keep the work decisive without pretending the first numbers are public claims.
 | Question | Working answer | Acceptance impact |
 | --- | --- | --- |
 | What is the first workload target? | `report/vector`, starting with `vector-stress`. | Phase 2 work must improve the focused vector set before moving to image-heavy or text-heavy work. |
-| What counts as a meaningful speed win? | At least 10% on p95 or wall time for the target fixtures as a standalone win; 5-10% can land when repeated and clearly cumulative. | No commit should claim a performance win from a single noisy run. Small wins need stronger repeat evidence and no protection-set regression. |
-| What counts as a meaningful memory win? | At least 10% lower peak RSS, allocation count, allocation bytes, or renderer-owned scratch memory as a standalone win; 5-10% can land when repeated and clearly cumulative. | Memory claims need a named metric, not just intuition from code review. Small wins need a named cumulative track. |
+| What counts as a meaningful speed win? | At least 10% on p95 or wall time for the target fixtures as a standalone win; repeated 5-10% wins can land and compound when they stay on the same bottleneck track. | No commit should claim a performance win from a single noisy run. Small wins need stronger repeat evidence, no protection-set regression, and a named cumulative track. |
+| What counts as a meaningful memory win? | At least 10% lower peak RSS, allocation count, allocation bytes, or renderer-owned scratch memory as a standalone win; repeated 5-10% wins can land and compound when they stay on the same memory track. | Memory claims need a named metric, not just intuition from code review. Small wins need a named cumulative track. |
 | Which references matter first? | PDFium for in-process comparison when available; Poppler as cold-process and visual reference. | Native-only work may proceed, but public comparison claims wait for PDFium evidence. |
 | How strict is visual fidelity during speed work? | No new fallback bucket, error class, crash, timeout, or obvious visual drift on the touched fixture set. | Fast paths must prove they preserve clipping, transforms, alpha, and stroke semantics for their supported shape. |
 | Are WASM and low-memory primary constraints now? | No. Server-side rendering is the primary model; low-memory remains a bounded-cache discipline, not a WASM-first architecture driver. | Avoid optimizing for WASM-specific constraints unless a later product requirement reopens this. |
@@ -133,7 +135,9 @@ Definition of done for one optimization commit:
   target fixtures, or at least 10% lower peak RSS/allocation volume/scratch
   high-water as a standalone win. A 5-10% result can be accepted when repeated
   runs confirm it, the protection set does not regress, and the commit is
-  explicitly part of a cumulative track.
+  explicitly part of a cumulative track. Several confirmed 5-10% commits can
+  close one optimization block together; each commit just needs honest evidence
+  and a clear relationship to the same bottleneck.
 - Correctness guards, benchmark instrumentation, and planning commits do not
   need a speed threshold, but must avoid claiming a performance win.
 - The focused fixture set has no new crash, timeout, fallback bucket, error
