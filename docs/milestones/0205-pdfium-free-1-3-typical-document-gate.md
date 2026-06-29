@@ -1,6 +1,6 @@
 # 0205: PDFium-Free 1.3 Typical Document Gate
 
-Status: todo
+Status: done
 Phase: 38
 Size: medium
 Depends on: 0204
@@ -52,4 +52,27 @@ native renderer scorecard, and memory/performance evidence from phase 38.
 
 ## Completion Notes
 
-Empty until done.
+- Produced `docs/reports/pdfium-free-1-3-readiness-2026-06-29.md`.
+- Decision: stabilize the scoped PDFium-free server/runtime path for 1.3, but
+  defer a broad PDFium-replacement claim.
+- Fresh 1.3 scorecard artifact: `target/readiness-0205-scorecard/scorecard.json`.
+  Weighted score is `94.04`, but `presentation` remains below the `88.00`
+  per-family threshold at `86.09`.
+- Primary corpus support remains 203 total, 190 native rendered, 12 typed
+  unsupported, and 1 encrypted policy error.
+- Native-only release, fuzz smoke, serverless profile, server batch, all-features
+  Clippy, and WASM smoke gates passed.
+- Poppler visual review produced no native errors, but still shows blockers in
+  office chart/vector effects, dense spreadsheet grids, and layout-stress
+  fixtures.
+
+Validation run:
+
+- `scripts/generate_coverage_scorecard.sh target/readiness-0205-scorecard`
+- `bash scripts/check_native_only_release.sh`
+- `bash scripts/check_fuzz_smoke.sh`
+- `env PDFRUST_SERVERLESS_OUTPUT=target/serverless-profile-0205.json PDFRUST_SERVERLESS_PACKAGE_LIST=target/serverless-profile-0205-pdfrust-cli-package-files.txt scripts/measure_serverless_profile.sh`
+- `bash scripts/check_wasm_smoke.sh`
+- `cargo run -p pdfrust-cli --no-default-features -- visual-diff-poppler fixtures/generated --manifest fixtures/office-chart-vector-effects-manifest.tsv --include-family chart-legend --include-family chart-table-overlay --include-family slide-chart-callout --include-family gradient-slide --include-family grouped-vector --include-family nested-vector-clips --include-family repeated-vector-effects --max-edge 120 --max-mae 8 --max-p95 64 --max-changed-ratio 0.20 --output target/readiness-0205-office-chart-poppler.json`
+- `cargo run -p pdfrust-cli --no-default-features -- visual-diff-poppler fixtures/generated --manifest fixtures/spreadsheet-grid-manifest.tsv --include-family frozen-header --include-family dense-grid --include-family clipped-cells --include-family stress-grid --max-edge 120 --max-mae 8 --max-p95 64 --max-changed-ratio 0.20 --output target/readiness-0205-spreadsheet-poppler.json`
+- `cargo run -p pdfrust-cli --no-default-features -- visual-diff-poppler fixtures/generated --manifest fixtures/layout-stress-manifest.tsv --include-family layout-stress --include-family dense-business-table --include-family spreadsheet-grid --include-family two-column --include-family footnotes --include-family page-furniture --max-edge 120 --max-mae 8 --max-p95 64 --max-changed-ratio 0.20 --output target/readiness-0205-layout-poppler.json`
