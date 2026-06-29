@@ -448,6 +448,18 @@ Rejected candidate from 2026-06-29:
   mean `0.897 ms`, only a small improvement on the linework fixture.
 - Decision: below the 5% noise threshold, so the code change was reverted.
 
+Current profile after accepted vector optimizations:
+
+- `target/sample-vector-stress-current.txt` still shows `stroke_path` as the
+  dominant top-of-stack entry on `vector-stress`, with `fill_path`, blending,
+  flattening, tokenization, and allocation work far smaller.
+- `target/native-trace-vector-stress-current.json` reports total `6.491 ms`,
+  with `raster_paths` at `6.304 ms`; load, decode, tokenization, display-list
+  build, resource decode, text, and image phases are not the current target.
+- Decision: continue path-raster work only for profile-backed algorithmic wins.
+  The next broad track should include Phase 3 allocation/clone evidence and a
+  later revisit of larger raster algorithms, not more sub-5% micro-fast-paths.
+
 ## Hardware-Aware Rust Notes
 
 Goal: use Rust's memory model and the host CPU well without prematurely
@@ -570,7 +582,7 @@ SIMD and concurrency rules:
 Goal: reduce avoidable work in hot paths after phase attribution exposes where
 allocations matter.
 
-- [ ] Run Clippy with perf lints as part of the normal all-target/all-feature
+- [x] Run Clippy with perf lints as part of the normal all-target/all-feature
   gate.
 - [ ] Review hotpath `Vec` creation and growth.
 - [ ] Review `String`, `PathBuf`, and large enum clones inside loops.
@@ -583,6 +595,13 @@ Acceptance:
 - [ ] Matrix timing improves or memory high-water drops on a target fixture set.
 - [ ] Code remains simpler or equally readable; no clever allocation trick
   without a measured win.
+
+Clippy perf audit from 2026-06-29:
+
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings -W clippy::perf`
+  completed without warnings.
+- No code change was made from Clippy alone; further allocation work needs
+  targeted profile or allocation evidence.
 
 ## Phase 4: Image And Scan Track
 
