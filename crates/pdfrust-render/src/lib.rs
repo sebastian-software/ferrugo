@@ -9712,15 +9712,16 @@ fn stroke_path(
     let snapped_joins;
     let (stroke_lines, joins): (&[LineSegment], &[StrokeJoin]) =
         if should_snap_axis_aligned_hairline(state.line_width, state.ctm_scale) {
+            let snap_mode = hairline_snap_mode(state.line_width, state.ctm_scale);
             snapped_lines = base_lines
                 .iter()
                 .copied()
-                .map(snap_axis_aligned_hairline_line)
+                .map(|line| snap_axis_aligned_hairline_line(line, snap_mode))
                 .collect::<Vec<_>>();
             snapped_joins = base_joins
                 .iter()
                 .copied()
-                .map(snap_axis_aligned_hairline_join)
+                .map(|join| snap_axis_aligned_hairline_join(join, snap_mode))
                 .collect::<Vec<_>>();
             (snapped_lines.as_slice(), snapped_joins.as_slice())
         } else {
@@ -9783,15 +9784,29 @@ fn should_snap_axis_aligned_hairline(line_width: f64, ctm_scale: f64) -> bool {
         || (ctm_scale > 1.0 + f64::EPSILON && (0.15..0.25).contains(&line_width))
 }
 
-fn snap_axis_aligned_hairline_line(line: LineSegment) -> LineSegment {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HairlineSnapMode {
+    NearestPixelCenter,
+    RoundedDeviceCoordinate,
+}
+
+fn hairline_snap_mode(line_width: f64, ctm_scale: f64) -> HairlineSnapMode {
+    if ctm_scale > 1.0 + f64::EPSILON && (0.15..0.25).contains(&line_width) {
+        HairlineSnapMode::RoundedDeviceCoordinate
+    } else {
+        HairlineSnapMode::NearestPixelCenter
+    }
+}
+
+fn snap_axis_aligned_hairline_line(line: LineSegment, mode: HairlineSnapMode) -> LineSegment {
     if (line.from.x - line.to.x).abs() <= f64::EPSILON {
-        let x = snap_hairline_coordinate(line.from.x);
+        let x = snap_hairline_coordinate(line.from.x, mode);
         LineSegment {
             from: Point { x, ..line.from },
             to: Point { x, ..line.to },
         }
     } else if (line.from.y - line.to.y).abs() <= f64::EPSILON {
-        let y = snap_hairline_coordinate(line.from.y);
+        let y = snap_hairline_coordinate(line.from.y, mode);
         LineSegment {
             from: Point { y, ..line.from },
             to: Point { y, ..line.to },
@@ -9801,9 +9816,9 @@ fn snap_axis_aligned_hairline_line(line: LineSegment) -> LineSegment {
     }
 }
 
-fn snap_axis_aligned_hairline_join(join: StrokeJoin) -> StrokeJoin {
-    let previous = snap_axis_aligned_hairline_line(join.previous);
-    let next = snap_axis_aligned_hairline_line(join.next);
+fn snap_axis_aligned_hairline_join(join: StrokeJoin, mode: HairlineSnapMode) -> StrokeJoin {
+    let previous = snap_axis_aligned_hairline_line(join.previous, mode);
+    let next = snap_axis_aligned_hairline_line(join.next, mode);
     StrokeJoin {
         previous,
         next,
@@ -9841,10 +9856,13 @@ fn snapped_join_coordinate(
     original
 }
 
-fn snap_hairline_coordinate(value: f64) -> f64 {
+fn snap_hairline_coordinate(value: f64, mode: HairlineSnapMode) -> f64 {
     // Device coordinates can land just below an integer after CTM/page scaling;
     // keep those near-ties on the forward pixel center instead of the previous one.
-    (value - 0.5 + 1e-9).round() + 0.5
+    match mode {
+        HairlineSnapMode::NearestPixelCenter => (value - 0.5 + 1e-9).round() + 0.5,
+        HairlineSnapMode::RoundedDeviceCoordinate => (value + 1e-9).round() + 0.5,
+    }
 }
 
 fn is_pixel_center(value: f64) -> bool {
@@ -15337,6 +15355,14 @@ mod tests {
     fn hairline_snap_policy_should_limit_ultrathin_band_to_scaled_ctm() {
         assert!(!should_snap_axis_aligned_hairline(0.177, 1.0));
         assert!(should_snap_axis_aligned_hairline(0.233, 2.0));
+        assert_eq!(
+            hairline_snap_mode(0.233, 2.0),
+            HairlineSnapMode::RoundedDeviceCoordinate
+        );
+        assert_eq!(
+            hairline_snap_mode(0.355, 1.0),
+            HairlineSnapMode::NearestPixelCenter
+        );
     }
 
     #[test]
@@ -15380,9 +15406,26 @@ mod tests {
 
     #[test]
     fn hairline_snap_should_stabilize_near_integer_coordinates() {
-        assert_eq!(snap_hairline_coordinate(31.9999999999), 32.5);
-        assert_eq!(snap_hairline_coordinate(32.0), 32.5);
-        assert_eq!(snap_hairline_coordinate(32.25), 32.5);
+        assert_eq!(
+            snap_hairline_coordinate(31.9999999999, HairlineSnapMode::NearestPixelCenter),
+            32.5
+        );
+        assert_eq!(
+            snap_hairline_coordinate(32.0, HairlineSnapMode::NearestPixelCenter),
+            32.5
+        );
+        assert_eq!(
+            snap_hairline_coordinate(32.25, HairlineSnapMode::NearestPixelCenter),
+            32.5
+        );
+        assert_eq!(
+            snap_hairline_coordinate(30.6666666667, HairlineSnapMode::NearestPixelCenter),
+            30.5
+        );
+        assert_eq!(
+            snap_hairline_coordinate(30.6666666667, HairlineSnapMode::RoundedDeviceCoordinate),
+            31.5
+        );
     }
 
     #[test]

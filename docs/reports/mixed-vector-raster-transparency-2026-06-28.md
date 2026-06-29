@@ -453,3 +453,32 @@ and 4 blockers; `tagged-invoice.pdf` and `tagged-report.pdf` both improved
 their p95 tails from `175` to `20` and `34` respectively, while
 `tagged-office.pdf` and `tagged-structure-heavy.pdf` remain the larger tagged
 blockers.
+
+## Scaled Ultrathin Hairline Device Snap
+
+Hairline snapping now keeps the previous nearest-pixel-center policy for
+unscaled hairlines, but uses rounded device coordinates for ultrathin strokes
+under a scaled graphics CTM. This targets high-DPI preview grids whose authored
+coordinates land at two-thirds device pixels without moving office rectangles or
+map linework that already matched Poppler better with the existing policy.
+
+Full 0183 Poppler follow-up result remains 8 total, 0 exact, 6 accepted drift,
+2 blockers, 0 native errors, 0 reference errors, 0 both errors.
+
+| Fixture | Status | MAE | P95 delta | Changed ratio | Max delta |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `browser-print-raster-vector-mix.pdf` | accepted drift | 0.396 | 0 | 0.018945 | 202 |
+| `high-dpi-preview-fidelity.pdf` | blocker | 2.003 | 7 | 0.087760 | 196 |
+| `image-heavy-rotated-mask-sheet.pdf` | accepted drift | 0.849 | 4 | 0.358728 | 111 |
+| `map-transparent-zoning-overlay.pdf` | blocker | 4.986 | 31 | 0.285608 | 142 |
+| `office-vector-clipped-transparency-group.pdf` | accepted drift | 0.553 | 1 | 0.232045 | 118 |
+| `office-vector-repeated-effects.pdf` | accepted drift | 1.707 | 4 | 0.094334 | 123 |
+| `slide-layered-image-shadow.pdf` | accepted drift | 2.744 | 4 | 0.139861 | 216 |
+| `soft-mask-image.pdf` | accepted drift | 0.829 | 0 | 0.011181 | 255 |
+
+The targeted improvement is `high-dpi-preview-fidelity.pdf`: MAE
+`7.229 -> 2.003`, p95 `40 -> 7`, changed ratio `0.112604 -> 0.087760`, and
+max delta `225 -> 196`. It remains just outside the strict gate, so the next
+work should focus on the remaining preview text/image edge tail rather than
+broad stroke snapping. The 0182 tagged sanity slice stayed at 3 accepted drift
+and 4 blockers with unchanged fixture metrics.

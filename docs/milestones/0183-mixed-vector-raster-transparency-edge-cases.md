@@ -160,6 +160,12 @@ Native baseline slice started on 2026-06-28.
   drift at MAE 1.707, p95 4, changed ratio 0.094334, max delta 123, while
   `map-transparent-zoning-overlay.pdf` remains unchanged at MAE 4.986, p95 31,
   changed ratio 0.285608, max delta 142.
+- Scoped rounded-device hairline snapping to ultrathin strokes under a scaled
+  graphics CTM. This aligns the high-DPI preview grid columns without moving
+  unscaled office rectangles or map grid strokes: the 0183 summary remains
+  6 accepted drift and 2 blockers, while `high-dpi-preview-fidelity.pdf`
+  improves from MAE 7.229, p95 40, changed ratio 0.112604 to MAE 2.003,
+  p95 7, changed ratio 0.087760.
 
 ## Completion Notes
 
