@@ -76,3 +76,21 @@ For CI-sized server gates, start with:
 
 Production deployments should tune worker and pixel budgets from host memory,
 expected thumbnail size, and queue concurrency rather than CPU count alone.
+
+## Constrained Profile Sweep
+
+The 0217 low-end reliability sweep adds a stricter CI-sized batch profile for
+constrained hosts:
+
+- `--max-edge 120`;
+- `--max-workers 2`;
+- `--max-in-flight-pixels 51200`;
+- `--native-profile low-memory`;
+- `--pages-per-input 12` for high-page-count scheduler coverage;
+- `--max-p95-ms 1000`;
+- `--max-errors 0`;
+- `--fail-on-budget`.
+
+This profile is a reliability guard, not the throughput target. A failure is a
+server-side blocker only when it indicates an unbounded allocation, panic,
+untyped error, or regression in a supported server workflow.

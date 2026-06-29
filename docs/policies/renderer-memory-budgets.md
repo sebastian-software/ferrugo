@@ -60,3 +60,21 @@ when a fixture fails due to a budget limit.
 - Global process memory limits.
 - Resident-set-size reporting.
 - Silent best-effort downgrade after budget exhaustion.
+
+## Low-End Reliability Profiles
+
+Milestone 0217 records low-end reliability profiles in
+`fixtures/low-end-reliability-profile-matrix.tsv`. These profiles are explicit
+checks around existing renderer limits rather than new hidden defaults:
+
+| Profile | Primary limit | Gate |
+| --- | --- | --- |
+| Low-memory typical workflows | `--native-profile low-memory`, `--max-edge 120` | 20/20 cross-producer supported rows render natively. |
+| Low-memory repeated renders | `--native-profile low-memory`, isolated render cache policy | 20/20 repeated rows render with 0 budget failures. |
+| Server-constrained batch | `--max-workers 2`, `--max-in-flight-pixels 51200`, `--native-profile low-memory` | 50/50 page jobs render with 0 budget failures. |
+| WASM smoke | 4 MiB artifact, 250 ms compile/smoke gates | Secondary browser-profile signal only. |
+| Reduced-canvas deterministic render | `--max-edge 96` | Two single-render outputs are byte-identical. |
+
+The low-memory profile remains thumbnail-oriented. Low-end profile failures
+should be promoted to the server backlog only when they reveal shared renderer
+correctness, safety, or unbounded-resource behavior.
