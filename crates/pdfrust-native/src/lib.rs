@@ -27,7 +27,8 @@ use pdfrust_syntax::{PdfBytes, PdfName, PdfNumber, PdfPrimitive, PdfReference, P
 use pdfrust_thumbnail::{
     unsupported_feature_buckets as buckets, AccessibilityMetadata, ArchivalMetadata, DocumentInfo,
     DocumentMetadata, DocumentMetadataBackend, DocumentStructure, OutlineMetadata, PageLabel,
-    PageLabelsMetadata, PageMetadata as ThumbnailPageMetadata, PageSize, PdfSource, Thumbnail,
+    PageLabelsMetadata, PageMetadata as ThumbnailPageMetadata, PageSize, PageText, PdfSource,
+    PositionedGlyph, TextExtractionBackend, TextExtractionOptions, TextPoint, TextRun, Thumbnail,
     ThumbnailBackend, ThumbnailError, ThumbnailOptions,
 };
 
@@ -786,6 +787,21 @@ impl DocumentMetadataBackend for NativeBackend {
     }
 }
 
+impl TextExtractionBackend for NativeBackend {
+    fn backend_name(&self) -> &'static str {
+        Self::backend_name(self)
+    }
+
+    fn extract_text(
+        &self,
+        source: PdfSource<'_>,
+        options: &TextExtractionOptions,
+    ) -> Result<PageText, ThumbnailError> {
+        let bytes = load_source(source)?;
+        extract_text_bytes(&bytes, options, self.limits)
+    }
+}
+
 fn load_source(source: PdfSource<'_>) -> Result<Cow<'_, [u8]>, ThumbnailError> {
     match source {
         PdfSource::Bytes(bytes) => Ok(Cow::Borrowed(bytes)),
@@ -793,6 +809,87 @@ fn load_source(source: PdfSource<'_>) -> Result<Cow<'_, [u8]>, ThumbnailError> {
             .map(Cow::Owned)
             .map_err(|_| ThumbnailError::Malformed),
     }
+}
+
+fn extract_text_bytes(
+    bytes: &[u8],
+    options: &TextExtractionOptions,
+    limits: NativeRenderLimits,
+) -> Result<PageText, ThumbnailError> {
+    let input = PdfBytes::new(bytes);
+    let (document, page_tree) = load_render_document(input, options.page_index)?;
+    enforce_xfa_render_policy(&document)?;
+    let page = page_tree
+        .pages()
+        .get(options.page_index as usize)
+        .ok_or_else(|| unsupported_feature(BUCKET_RENDERER_UNSUPPORTED))?;
+    let content = page_content_stream(&document, page)?;
+    let optional_content = page_optional_content_properties(&document, page)?;
+    let optional_content_state = document_optional_content_state(&document)?;
+    let content = filter_optional_content(&content, &optional_content, &optional_content_state)?;
+    let font_resources = page_font_resources(&document, page, limits.display_options())?;
+    let text_list = build_text_display_list(
+        tokenize_content(PdfBytes::new(&content)),
+        &font_resources,
+        limits.display_options(),
+    )
+    .map_err(map_graphics_error)?;
+
+    let mut runs = Vec::new();
+    let mut glyph_count = 0usize;
+    let mut truncated = false;
+
+    for item in text_list.items() {
+        let DisplayItem::Text(text) = item else {
+            continue;
+        };
+        if runs.len() >= options.max_runs {
+            truncated = true;
+            break;
+        }
+
+        let visible = text.rendering_mode.paints_pixels();
+        let remaining_glyphs = options.max_glyphs.saturating_sub(glyph_count);
+        let glyphs = text
+            .glyphs
+            .iter()
+            .zip(text.glyph_origins.iter())
+            .take(remaining_glyphs)
+            .map(|(glyph, origin)| PositionedGlyph {
+                text: glyph.unicode.clone(),
+                origin: TextPoint {
+                    x: origin.x,
+                    y: origin.y,
+                },
+                visible,
+            })
+            .collect::<Vec<_>>();
+
+        if glyphs.len() < text.glyphs.len() {
+            truncated = true;
+        }
+        glyph_count += glyphs.len();
+        runs.push(TextRun {
+            text: text.text.clone(),
+            glyphs,
+            origin: TextPoint {
+                x: text.origin.x,
+                y: text.origin.y,
+            },
+            font_size: text.font_size,
+            visible,
+        });
+
+        if truncated {
+            break;
+        }
+    }
+
+    Ok(PageText {
+        page_index: options.page_index,
+        runs,
+        truncated,
+    })
 }
 
 fn inspect_bytes(bytes: &[u8]) -> Result<DocumentMetadata, ThumbnailError> {
@@ -8528,6 +8625,63 @@ mod tests {
                 height: 160.0,
             })
         );
+    }
+
+    #[test]
+    fn native_backend_should_extract_visible_text_runs() {
+        let bytes = include_bytes!("../../../fixtures/generated/text-page.pdf");
+        let text = TextExtractionBackend::extract_text(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &TextExtractionOptions::default(),
+        )
+        .expect("generated text fixture should extract text");
+
+        assert_eq!(text.page_index, 0);
+        assert!(!text.truncated);
+        assert_eq!(text.runs.len(), 1);
+        assert_eq!(text.runs[0].text, "pdfrust thumbnail fixture");
+        assert!(text.runs[0].visible);
+        assert_eq!(text.runs[0].glyphs.len(), 25);
+    }
+
+    #[test]
+    fn native_backend_should_extract_invisible_ocr_text_runs() {
+        let bytes = include_bytes!("../../../fixtures/generated/ocr-invisible-text-layer.pdf");
+        let text = TextExtractionBackend::extract_text(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &TextExtractionOptions::default(),
+        )
+        .expect("generated OCR fixture should extract invisible text");
+
+        assert_eq!(text.runs.len(), 2);
+        assert_eq!(text.runs[0].text, "Invisible OCR text line one");
+        assert_eq!(text.runs[1].text, "Invisible OCR text line two");
+        assert!(text.runs.iter().all(|run| !run.visible));
+        assert!(text
+            .runs
+            .iter()
+            .flat_map(|run| &run.glyphs)
+            .all(|glyph| !glyph.visible));
+    }
+
+    #[test]
+    fn native_backend_should_bound_extracted_text_glyphs() {
+        let bytes = include_bytes!("../../../fixtures/generated/text-page.pdf");
+        let text = TextExtractionBackend::extract_text(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &TextExtractionOptions {
+                max_glyphs: 3,
+                ..TextExtractionOptions::default()
+            },
+        )
+        .expect("generated text fixture should extract bounded text");
+
+        assert!(text.truncated);
+        assert_eq!(text.runs.len(), 1);
+        assert_eq!(text.runs[0].glyphs.len(), 3);
     }
 
     #[test]

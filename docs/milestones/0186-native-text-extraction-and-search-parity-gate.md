@@ -1,6 +1,6 @@
 # 0186: Native Text Extraction And Search Parity Gate
 
-Status: todo
+Status: done
 Phase: 35
 Size: medium
 Depends on: 0185
@@ -45,4 +45,14 @@ viewer workflows while staying separate from visual rasterization correctness.
 
 ## Completion Notes
 
-Empty until done.
+Completed 2026-06-29.
+
+- Added backend-neutral `TextExtractionBackend`, `TextExtractionOptions`,
+  `PageText`, `TextRun`, `PositionedGlyph`, and `TextPoint`.
+- Implemented native page text extraction through the existing text display
+  list path.
+- Added `fixtures/text-extraction-search-manifest.tsv` for visible text,
+  office, browser, OCR, and tagged-search baselines.
+- Added focused tests for visible text extraction, invisible OCR text
+  extraction, and bounded glyph truncation.
+- Report: `docs/reports/native-text-extraction-search-boundary-2026-06-29.md`.

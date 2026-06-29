@@ -291,6 +291,17 @@ cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks \
   --max-edge 160
 ```
 
+## Text Extraction Search Manifest
+
+`fixtures/text-extraction-search-manifest.tsv` is the focused gate for native
+text extraction and search-boundary behavior. It covers visible text, typical
+office and browser print text, invisible OCR text layers, and tagged-PDF search
+baselines.
+
+The manifest uses families `visible-text`, `office-search`, `browser-search`,
+`ocr-layer`, and `tagged-search`. It is an extraction/search boundary set, not
+a semantic reading-order or selection-highlighting conformance suite.
+
 ## Mobile Scan Manifest
 
 `fixtures/mobile-scan-manifest.tsv` is the focused gate for PDFs produced by

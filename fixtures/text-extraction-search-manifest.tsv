@@ -1,0 +1,6 @@
+path	family	source	license	page_count	features	notes
+fixtures/generated/text-page.pdf	visible-text	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,visible,standard-base,expected:native	Existing simple visible text fixture used as the stable extraction baseline.
+fixtures/generated/office-table.pdf	office-search	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,table,office-export,expected:native	Existing office table fixture used as a typical office-search baseline.
+fixtures/generated/browser-chromium-article-print.pdf	browser-search	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	browser-print,text,article,expected:native	Existing browser print fixture used as a web/article search baseline.
+fixtures/generated/ocr-invisible-text-layer.pdf	ocr-layer	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	ocr,invisible-text,text-rendering-mode,expected:native	Existing invisible OCR layer fixture used to prove searchable hidden text does not paint.
+fixtures/generated/tagged-invoice-reading-order.pdf	tagged-search	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	tagged-pdf,reading-order,text,expected:native	Existing tagged invoice fixture used as a tagged-PDF search boundary baseline.

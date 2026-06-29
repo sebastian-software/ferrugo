@@ -188,6 +188,91 @@ pub trait DocumentMetadataBackend {
     fn inspect(&self, source: PdfSource<'_>) -> ThumbnailResult<DocumentMetadata>;
 }
 
+/// Backend abstraction for bounded page text extraction.
+pub trait TextExtractionBackend {
+    /// Stable backend name used in diagnostics and baseline metadata.
+    fn backend_name(&self) -> &'static str;
+
+    /// Extracts text runs for one page without rendering pixels.
+    ///
+    /// # Errors
+    ///
+    /// Implementations return [`ThumbnailError`] for stable caller-facing
+    /// failure classes.
+    fn extract_text(
+        &self,
+        source: PdfSource<'_>,
+        options: &TextExtractionOptions,
+    ) -> ThumbnailResult<PageText>;
+}
+
+/// Bounded options for extracting text from one page.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TextExtractionOptions {
+    /// Zero-based page index.
+    pub page_index: u32,
+    /// Maximum text runs returned for one page.
+    pub max_runs: usize,
+    /// Maximum positioned glyph records returned for one page.
+    pub max_glyphs: usize,
+}
+
+impl Default for TextExtractionOptions {
+    fn default() -> Self {
+        Self {
+            page_index: DEFAULT_PAGE_INDEX,
+            max_runs: 1024,
+            max_glyphs: 16_384,
+        }
+    }
+}
+
+/// Extracted text for one page.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PageText {
+    /// Zero-based page index.
+    pub page_index: u32,
+    /// Text runs in content-stream order.
+    pub runs: Vec<TextRun>,
+    /// Extraction stopped because a run or glyph limit was reached.
+    pub truncated: bool,
+}
+
+/// One extracted text run.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TextRun {
+    /// Unicode text decoded for the run.
+    pub text: String,
+    /// Positioned glyphs for search/selection geometry.
+    pub glyphs: Vec<PositionedGlyph>,
+    /// Text origin in page coordinate space before output raster scaling.
+    pub origin: TextPoint,
+    /// Font size selected when the run was emitted.
+    pub font_size: f64,
+    /// Whether the PDF text rendering mode can paint pixels.
+    pub visible: bool,
+}
+
+/// One positioned glyph or mapped character chunk.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PositionedGlyph {
+    /// Unicode text mapped from the PDF character code.
+    pub text: String,
+    /// Glyph origin in page coordinate space before output raster scaling.
+    pub origin: TextPoint,
+    /// Whether this glyph belongs to a visible text run.
+    pub visible: bool,
+}
+
+/// A point in page coordinate space.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TextPoint {
+    /// X coordinate.
+    pub x: f64,
+    /// Y coordinate.
+    pub y: f64,
+}
+
 /// Document metadata shared by backend comparison harnesses.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DocumentMetadata {

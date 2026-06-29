@@ -206,10 +206,23 @@ expansion, and pixel compositing for modes that cannot paint pixels.
 
 This keeps searchable scan-style PDFs visually faithful: hidden OCR text does
 not appear in thumbnails, while the visible scan artwork still renders through
-the normal image and path paths. The current slice does not expose a text search
-API or run OCR; it only preserves the visual boundary and avoids unnecessary
-raster work. See
+the normal image and path paths. The raster path does not run OCR; it preserves
+the visual boundary and avoids unnecessary raster work. See
 `docs/reports/ocr-invisible-text-layer-2026-06-25.md`.
+
+## Text Extraction
+
+The native backend exposes a bounded `TextExtractionBackend` implementation for
+one-page search use cases. It returns text runs in content-stream order with
+decoded Unicode, per-glyph page-space origins, font size, and a `visible` flag
+derived from the PDF text rendering mode.
+
+Invisible OCR layers are searchable through this API while remaining invisible
+to raster output. Extraction has explicit run and glyph limits and reports
+`truncated = true` when those limits are reached. It does not perform semantic
+document understanding, producer repair, exact tagged reading-order recovery,
+selection highlighting, or OCR. See
+`docs/reports/native-text-extraction-search-boundary-2026-06-29.md`.
 
 ## Tagged PDF Accessibility Metadata
 
