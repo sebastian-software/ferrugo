@@ -3852,6 +3852,8 @@ struct RepeatFamilySummary {
     budget_failures: usize,
     first_mean_ms: f64,
     repeat_mean_ms: f64,
+    phase_timing_count: usize,
+    phase_timings: Option<RepeatPhaseTimings>,
 }
 
 impl RepeatFamilySummary {
@@ -3867,6 +3869,14 @@ impl RepeatFamilySummary {
                 self.native_rendered += 1;
                 self.first_mean_ms += first_ms;
                 self.repeat_mean_ms += repeat_mean_ms;
+                if let Some(phase_timings) = record.phase_timings.as_ref() {
+                    self.phase_timing_count += 1;
+                    let sums = self
+                        .phase_timings
+                        .get_or_insert_with(RepeatPhaseTimings::default);
+                    add_phase_timings(&mut sums.first, phase_timings.first);
+                    add_phase_timings(&mut sums.repeat_mean, phase_timings.repeat_mean);
+                }
             }
             RepeatBenchmarkOutcome::FallbackRequired { .. } => self.fallback_required += 1,
             RepeatBenchmarkOutcome::Error { .. } => self.errors += 1,
@@ -3877,6 +3887,11 @@ impl RepeatFamilySummary {
         if self.native_rendered > 0 {
             self.first_mean_ms /= self.native_rendered as f64;
             self.repeat_mean_ms /= self.native_rendered as f64;
+        }
+        if let Some(phase_timings) = self.phase_timings.as_mut() {
+            phase_timings.first = scale_phase_timings(phase_timings.first, self.phase_timing_count);
+            phase_timings.repeat_mean =
+                scale_phase_timings(phase_timings.repeat_mean, self.phase_timing_count);
         }
     }
 }
@@ -3894,7 +3909,7 @@ struct RepeatBenchmarkRecord {
     outcome: RepeatBenchmarkOutcome,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 struct RepeatPhaseTimings {
     first: NativeRenderPhaseTimings,
     repeat_mean: NativeRenderPhaseTimings,
@@ -5433,18 +5448,22 @@ fn repeat_error_outcome(error: ThumbnailError) -> RepeatBenchmarkOutcome {
 fn mean_phase_timings(values: &[NativeRenderPhaseTimings]) -> NativeRenderPhaseTimings {
     let mut sum = NativeRenderPhaseTimings::default();
     for timings in values {
-        sum.load_xref_object += timings.load_xref_object;
-        sum.stream_decode += timings.stream_decode;
-        sum.content_tokenize += timings.content_tokenize;
-        sum.display_list_build += timings.display_list_build;
-        sum.resource_decode += timings.resource_decode;
-        sum.raster_paths += timings.raster_paths;
-        sum.raster_text += timings.raster_text;
-        sum.raster_images += timings.raster_images;
-        sum.output += timings.output;
-        sum.total += timings.total;
+        add_phase_timings(&mut sum, *timings);
     }
     scale_phase_timings(sum, values.len())
+}
+
+fn add_phase_timings(target: &mut NativeRenderPhaseTimings, addend: NativeRenderPhaseTimings) {
+    target.load_xref_object += addend.load_xref_object;
+    target.stream_decode += addend.stream_decode;
+    target.content_tokenize += addend.content_tokenize;
+    target.display_list_build += addend.display_list_build;
+    target.resource_decode += addend.resource_decode;
+    target.raster_paths += addend.raster_paths;
+    target.raster_text += addend.raster_text;
+    target.raster_images += addend.raster_images;
+    target.output += addend.output;
+    target.total += addend.total;
 }
 
 fn scale_phase_timings(
@@ -9444,7 +9463,8 @@ fn repeat_family_summary_json(summary: &RepeatFamilySummary) -> String {
             "\"errors\":{},",
             "\"budget_failures\":{},",
             "\"first_mean_ms\":{:.3},",
-            "\"repeat_mean_ms\":{:.3}",
+            "\"repeat_mean_ms\":{:.3},",
+            "\"phase_timings_ms\":{}",
             "}}"
         ),
         summary.total,
@@ -9453,7 +9473,19 @@ fn repeat_family_summary_json(summary: &RepeatFamilySummary) -> String {
         summary.errors,
         summary.budget_failures,
         summary.first_mean_ms,
-        summary.repeat_mean_ms
+        summary.repeat_mean_ms,
+        repeat_family_phase_timings_json(summary.phase_timings.as_ref())
+    )
+}
+
+fn repeat_family_phase_timings_json(phase_timings: Option<&RepeatPhaseTimings>) -> String {
+    let Some(phase_timings) = phase_timings else {
+        return "null".to_string();
+    };
+    format!(
+        "{{\"first_mean\":{},\"repeat_mean\":{}}}",
+        trace_phase_timings_json(Ok(&phase_timings.first)),
+        trace_phase_timings_json(Ok(&phase_timings.repeat_mean))
     )
 }
 
@@ -11992,6 +12024,7 @@ status = "candidate"
         assert!(json.contains("\"loaded_objects\""));
         assert!(json.contains("\"cache_key\""));
         assert!(json.contains("\"phase_timings_ms\""));
+        assert!(json.contains("\"phase_timings_ms\":{\"first_mean\""));
         assert!(json.contains("\"resource_decode\""));
         assert!(json.contains("\"repeat_mean_ms\""));
     }

@@ -1054,6 +1054,34 @@ Repeat benchmark phase-timing instrumentation from 2026-06-30:
   `cargo clippy --workspace --all-targets --all-features -- -D warnings`
   passed.
 
+Focused shared-resource phase evidence from 2026-06-30:
+
+- Artifact:
+  `target/benchmark-repeat-shared-phase-timings-current.json`,
+  `benchmark-repeat-native`, `fixtures/generated`,
+  `fixtures/shared-resource-cache-manifest.tsv`, five shared-resource
+  families, `--max-edge 160`, 30 repetitions.
+- Result: repeat-time `resource_decode` is not the dominant shared-resource
+  cost in the focused set. `icc-rgb-image.pdf`, `subset-type3-repeated-charprocs.pdf`,
+  and `longform-repeated-resources.pdf` show near-zero repeat `resource_decode`;
+  `long-document-navigation-deck.pdf` and `longform-repeated-resources.pdf`
+  are dominated by `raster_paths`; `image-heavy-repeated-xobject-report.pdf`
+  is also dominated by `raster_paths` on repeat (`0.726 ms` of `1.046 ms`
+  total).
+- Decision: do not add another content/session cache from this evidence. The
+  next cache step still needs a fixture where decoded shared resources are a
+  named repeat bottleneck, or the work should return to path rasterization.
+
+Repeat family phase-summary instrumentation from 2026-06-30:
+
+- Change: `benchmark-repeat-native` now aggregates record-level
+  `phase_timings_ms` into each family summary as `first_mean` and
+  `repeat_mean`.
+- Purpose: future cache and image/vector decisions can compare phase dominance
+  directly from the family summary instead of requiring ad-hoc JSON inspection.
+- Performance claim: none. This is benchmark instrumentation and should not be
+  counted as a renderer speed win.
+
 ## Phase 6: Benchmark Gates And Claims
 
 Goal: turn stable evidence into guardrails, not premature marketing.
