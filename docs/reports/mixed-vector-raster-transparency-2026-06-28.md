@@ -543,3 +543,30 @@ ratio thresholds, but the high-amplitude gridline tail is now inside the p95
 threshold. A scoped 0182 tagged sanity run improved to 7 total, 0 exact,
 4 accepted drift, and 3 blockers, with `tagged-office-alt-text.pdf` moving to
 accepted drift.
+
+## Vertical-Only Forward-Fraction Hairline Snap
+
+The first forward-fraction snap probe also moved horizontal 0.7pt map borders,
+leaving a one-row top-border swap. The policy is now vertical-only for
+0.25-0.32 device-pixel hairlines: vertical map grid columns keep the Poppler
+forward placement, while horizontal lines stay on the existing nearest
+pixel-center path.
+
+Full 0183 Poppler follow-up result improves to 8 total, 0 exact, 7 accepted
+drift, 1 blocker, 0 native errors, 0 reference errors, 0 both errors.
+
+| Fixture | Status | MAE | P95 delta | Changed ratio | Max delta |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `browser-print-raster-vector-mix.pdf` | accepted drift | 0.396 | 0 | 0.018945 | 202 |
+| `high-dpi-preview-fidelity.pdf` | blocker | 1.881 | 7 | 0.087760 | 196 |
+| `image-heavy-rotated-mask-sheet.pdf` | accepted drift | 0.849 | 4 | 0.358728 | 111 |
+| `map-transparent-zoning-overlay.pdf` | accepted drift | 1.225 | 1 | 0.258372 | 136 |
+| `office-vector-clipped-transparency-group.pdf` | accepted drift | 0.553 | 1 | 0.232045 | 118 |
+| `office-vector-repeated-effects.pdf` | accepted drift | 1.707 | 4 | 0.094334 | 123 |
+| `slide-layered-image-shadow.pdf` | accepted drift | 2.744 | 4 | 0.139861 | 216 |
+| `soft-mask-image.pdf` | accepted drift | 0.829 | 0 | 0.011181 | 255 |
+
+The targeted improvement is `map-transparent-zoning-overlay.pdf`: MAE
+`3.207 -> 1.225`, p95 `6 -> 1`, changed ratio `0.273394 -> 0.258372`, and
+max delta `142 -> 136`. Only `high-dpi-preview-fidelity.pdf` remains a strict
+0183 visual blocker.

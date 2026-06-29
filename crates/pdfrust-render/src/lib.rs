@@ -9811,6 +9811,11 @@ fn snap_axis_aligned_hairline_line(line: LineSegment, mode: HairlineSnapMode) ->
             to: Point { x, ..line.to },
         }
     } else if (line.from.y - line.to.y).abs() <= f64::EPSILON {
+        let mode = if mode == HairlineSnapMode::ForwardHighFraction {
+            HairlineSnapMode::NearestPixelCenter
+        } else {
+            mode
+        };
         let y = snap_hairline_coordinate(line.from.y, mode);
         LineSegment {
             from: Point { y, ..line.from },
@@ -15486,6 +15491,41 @@ mod tests {
             snap_hairline_coordinate(30.6666666667, HairlineSnapMode::RoundedDeviceCoordinate),
             31.5
         );
+    }
+
+    #[test]
+    fn forward_fraction_snap_should_only_move_vertical_hairlines() {
+        let vertical = snap_axis_aligned_hairline_line(
+            LineSegment {
+                from: Point {
+                    x: 134.7368421053,
+                    y: 0.0,
+                },
+                to: Point {
+                    x: 134.7368421053,
+                    y: 10.0,
+                },
+            },
+            HairlineSnapMode::ForwardHighFraction,
+        );
+        let horizontal = snap_axis_aligned_hairline_line(
+            LineSegment {
+                from: Point {
+                    x: 0.0,
+                    y: 17.6842105263,
+                },
+                to: Point {
+                    x: 10.0,
+                    y: 17.6842105263,
+                },
+            },
+            HairlineSnapMode::ForwardHighFraction,
+        );
+
+        assert_eq!(vertical.from.x, 135.5);
+        assert_eq!(vertical.to.x, 135.5);
+        assert_eq!(horizontal.from.y, 17.5);
+        assert_eq!(horizontal.to.y, 17.5);
     }
 
     #[test]

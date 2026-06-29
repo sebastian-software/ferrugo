@@ -200,6 +200,24 @@ drift, 3 blockers, 0 native errors, 0 reference errors, and 0 both errors.
 | `tagged-report-visual-integrity.pdf` | blocker | MAE 5.074, p95 23, changed ratio 0.111422, max delta 201. |
 | `tagged-structure-heavy-report.pdf` | blocker | MAE 15.294, p95 102, changed ratio 0.220536, max delta 204. |
 
+## Follow-up After Vertical-Only 0183 Hairline Snap
+
+After the 0183 map snap was narrowed to vertical hairlines only, the tagged
+visual slice returned to 7 total, 0 exact, 3 accepted drift, 4 blockers,
+0 native errors, 0 reference errors, and 0 both errors. This removes the
+temporary tagged office alt-text acceptance from the broader snap probe, while
+still reducing tagged report drift compared with the earlier text-tuning run.
+
+| Fixture | Status | Evidence |
+| --- | --- | --- |
+| `tagged-accessibility-metadata.pdf` | accepted drift | MAE 0.319, p95 1, changed ratio 0.156373, max delta 172. |
+| `tagged-form-visual-integrity.pdf` | accepted drift | MAE 2.341, p95 1, changed ratio 0.090245, max delta 209. |
+| `tagged-invoice-reading-order.pdf` | blocker | MAE 5.281, p95 20, changed ratio 0.119231, max delta 209. |
+| `tagged-office-alt-text.pdf` | blocker | MAE 6.794, p95 9, changed ratio 0.092231, max delta 209. |
+| `tagged-reading-order-missing-page-context.pdf` | accepted drift | MAE 1.793, p95 0, changed ratio 0.024425, max delta 178. |
+| `tagged-report-visual-integrity.pdf` | blocker | MAE 2.647, p95 7, changed ratio 0.105011, max delta 150. |
+| `tagged-structure-heavy-report.pdf` | blocker | MAE 15.294, p95 102, changed ratio 0.220536, max delta 204. |
+
 ## Validation
 
 Commands run:

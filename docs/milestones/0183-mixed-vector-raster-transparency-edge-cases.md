@@ -178,6 +178,11 @@ Native baseline slice started on 2026-06-28.
   summary remains 6 accepted drift and 2 blockers, while
   `map-transparent-zoning-overlay.pdf` improves from MAE 4.986, p95 31,
   changed ratio 0.285608 to MAE 3.207, p95 6, changed ratio 0.273394.
+- Limited that forward-fraction snap to vertical hairlines. This preserves the
+  map grid-column alignment while keeping the horizontal top border on
+  Poppler's row: the 0183 summary improves to 7 accepted drift and 1 blocker,
+  and `map-transparent-zoning-overlay.pdf` is now accepted drift at MAE 1.225,
+  p95 1, changed ratio 0.258372, max delta 136.
 
 ## Completion Notes
 

@@ -102,6 +102,11 @@ Native slice committed toward 0182 on 2026-06-28.
   0 exact, 4 accepted drift, and 3 blockers: tagged office alt-text moved to
   accepted drift, while invoice, report, and structure-heavy fixtures remain
   visual blockers.
+- Re-ran the tagged Poppler oracle after limiting the later 0183
+  forward-fraction snap to vertical hairlines only. The strict tagged visual
+  gate returns to 7 total, 0 exact, 3 accepted drift, and 4 blockers, but
+  `tagged-report-visual-integrity.pdf` improves to MAE 2.647, p95 7,
+  changed ratio 0.105011, max delta 150.
 
 ## Completion Notes
 
