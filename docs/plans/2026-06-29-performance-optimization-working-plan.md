@@ -714,6 +714,30 @@ Image-heavy baseline and attribution update from 2026-06-29:
   sampling, soft-mask alpha, DCT decode, or path overlays dominate the target
   fixture.
 
+Longer sample on `mobile-mixed-compression-scan.pdf` from 2026-06-29:
+
+- Command artifact:
+  `target/performance-matrix-mobile-mixed-profile-run.json`, native hot-render,
+  `--include-family mixed-compression`, `--max-edge 160`, 50,000 measured
+  iterations after 10 warmups.
+- Sample artifact:
+  `target/sample-mobile-mixed-compression-phase-attribution.txt`, 10-second
+  macOS `sample` run against the long benchmark process.
+- p95 for the focused long run was `1.114 ms`; the fixture remained rendered
+  with no fallback or error records.
+- Top profile entries:
+  `stroke_path` `5596` samples, `ImageSampleCache::sample` `480` samples,
+  `draw_image` `262` samples, `source_over` `65` samples, `blend_pixel`
+  `19` samples.
+- Resource decode also showed image decode work, especially Flate/miniz and a
+  smaller JPEG header/decode component, but it was not the dominant total stack
+  for this focused run.
+- Decision: do not start Phase 4 with DCT, SoftMask, or RGBA-expansion
+  micro-optimizations. For the current slowest image-heavy fixture, the
+  dominant work is still path stroke overlay. The next code candidate should be
+  a profile-backed simple stroke/rect overlay optimization, or the target
+  should switch to a fixture where `RasterImages` dominates after attribution.
+
 ## Phase 5: Session Cache, But Bounded
 
 Goal: improve batch and multi-page workloads without introducing hidden global
