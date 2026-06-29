@@ -1003,6 +1003,35 @@ Session budget result from 2026-06-29:
 - Decision: this completes the bounded-cache part of the initial session
   contract. It is a low-memory/safety improvement, not a speed claim.
 
+Rejected session cache candidate from 2026-06-30:
+
+- Change tested locally but not kept: eagerly cache filtered page content and
+  XObject invocation names inside `NativeDocumentSession`, with a new
+  request-local page-content byte budget and JSON-visible session stats.
+- Rationale: this was the smallest possible Phase 5 cache step before decoded
+  image/font/form resource maps. It avoids repeated stream decode and repeated
+  XObject invocation scans while keeping the cache request-local, bounded, and
+  independent of output size/background options.
+- Baseline:
+  `target/benchmark-repeat-shared-session-prep-before.json`,
+  `benchmark-repeat-native`, `fixtures/generated`,
+  `fixtures/shared-resource-cache-manifest.tsv`, `--max-edge 160`, 30
+  repetitions.
+- Focused candidate:
+  `target/benchmark-repeat-shared-session-prep-focused-after.json`, same
+  command shape with explicit shared-resource family filters.
+- Result: no accepted repeat/batch win. `repeated-image-xobject` repeat mean
+  regressed `0.722 ms` -> `0.770 ms` (~6.6% slower), `long-document-shared`
+  repeat mean regressed `0.383 ms` -> `0.386 ms`, and first render became
+  slower for all five focused fixtures because eager prep moved content decode
+  into session creation. Small wins on `repeated-font-image` and
+  `repeated-font-program` were below the threshold and did not offset the
+  protection regression.
+- Decision: reverted. The next Phase 5 cache candidate should skip eager
+  content-only caching and target decoded shared resources directly, or first
+  add phase timing to `benchmark-repeat-native` so repeat-time resource decode
+  can be isolated per fixture.
+
 ## Phase 6: Benchmark Gates And Claims
 
 Goal: turn stable evidence into guardrails, not premature marketing.
