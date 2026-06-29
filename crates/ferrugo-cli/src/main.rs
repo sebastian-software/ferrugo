@@ -3666,6 +3666,18 @@ struct BenchmarkMatrixReport {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+struct BenchmarkMatrixTimingReliability {
+    rss_available: bool,
+    pdfium_requested: bool,
+    pdfium_available: bool,
+    poppler_requested: bool,
+    poppler_available: bool,
+    hot_pdfium_comparison_available: bool,
+    cold_reference_available: bool,
+    caveats: Vec<&'static str>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct BenchmarkMatrixReportConfig {
     input: String,
     manifest: Option<String>,
@@ -8793,6 +8805,7 @@ fn benchmark_matrix_report_json(report: &BenchmarkMatrixReport) -> String {
             "  \"command\": {},\n",
             "  \"platform\": {},\n",
             "  \"config\": {},\n",
+            "  \"timing_reliability\": {},\n",
             "  \"summary\": {},\n",
             "  \"families\": {},\n",
             "  \"records\": [{}]\n",
@@ -8801,6 +8814,7 @@ fn benchmark_matrix_report_json(report: &BenchmarkMatrixReport) -> String {
         json_string(&report.command),
         platform_metadata_json(&report.platform),
         benchmark_matrix_config_json(&report.config),
+        benchmark_matrix_timing_reliability_json(&benchmark_matrix_timing_reliability(report)),
         benchmark_matrix_summary_json(&report.summary),
         benchmark_matrix_families_json(&report.families),
         records
@@ -8868,6 +8882,113 @@ fn benchmark_matrix_summary_json(summary: &BenchmarkMatrixSummary) -> String {
         summary.missing_tool,
         summary.not_applicable,
         summary.errors
+    )
+}
+
+fn benchmark_matrix_timing_reliability(
+    report: &BenchmarkMatrixReport,
+) -> BenchmarkMatrixTimingReliability {
+    let pdfium_requested = report.config.backends.contains(&MatrixBackend::Pdfium);
+    let poppler_requested = report.config.backends.contains(&MatrixBackend::Poppler);
+    let hot_requested = report.config.modes.contains(&MatrixMode::HotRender);
+    let cold_requested = report.config.modes.contains(&MatrixMode::ColdProcess);
+
+    let rss_available = report.records.iter().any(|record| {
+        record.memory.rss_start_bytes.is_some()
+            || record.memory.rss_peak_bytes.is_some()
+            || record.memory.rss_end_bytes.is_some()
+    });
+    let pdfium_available = report.records.iter().any(|record| {
+        record.backend == MatrixBackend::Pdfium
+            && !matches!(
+                record.status,
+                MatrixStatus::MissingTool | MatrixStatus::NotApplicable
+            )
+    });
+    let poppler_available = report.records.iter().any(|record| {
+        record.backend == MatrixBackend::Poppler
+            && !matches!(
+                record.status,
+                MatrixStatus::MissingTool | MatrixStatus::NotApplicable
+            )
+    });
+    let native_hot_available = report.records.iter().any(|record| {
+        record.backend == MatrixBackend::Native
+            && record.mode == MatrixMode::HotRender
+            && record.status == MatrixStatus::Rendered
+    });
+    let pdfium_hot_available = report.records.iter().any(|record| {
+        record.backend == MatrixBackend::Pdfium
+            && record.mode == MatrixMode::HotRender
+            && record.status == MatrixStatus::Rendered
+    });
+    let cold_reference_available = report.records.iter().any(|record| {
+        matches!(
+            record.backend,
+            MatrixBackend::Pdfium | MatrixBackend::Poppler
+        ) && record.mode == MatrixMode::ColdProcess
+            && record.status == MatrixStatus::Rendered
+    });
+
+    let hot_pdfium_comparison_available = native_hot_available && pdfium_hot_available;
+    let mut caveats = Vec::new();
+    if !rss_available {
+        caveats.push("rss-unavailable");
+    }
+    if pdfium_requested && !pdfium_available {
+        caveats.push("pdfium-missing-tool");
+    }
+    if poppler_requested && cold_requested && !poppler_available {
+        caveats.push("poppler-missing-tool");
+    }
+    if poppler_requested && hot_requested {
+        caveats.push("poppler-hot-render-external-only");
+    }
+    if hot_requested && pdfium_requested && !hot_pdfium_comparison_available {
+        caveats.push("pdfium-hot-reference-unavailable");
+    } else if hot_requested && !pdfium_requested {
+        caveats.push("pdfium-hot-reference-not-requested");
+    }
+    if cold_requested && !cold_reference_available {
+        caveats.push("cold-reference-unavailable");
+    }
+
+    BenchmarkMatrixTimingReliability {
+        rss_available,
+        pdfium_requested,
+        pdfium_available,
+        poppler_requested,
+        poppler_available,
+        hot_pdfium_comparison_available,
+        cold_reference_available,
+        caveats,
+    }
+}
+
+fn benchmark_matrix_timing_reliability_json(
+    reliability: &BenchmarkMatrixTimingReliability,
+) -> String {
+    format!(
+        concat!(
+            "{{",
+            "\"rss_available\":{},",
+            "\"pdfium_requested\":{},",
+            "\"pdfium_available\":{},",
+            "\"poppler_requested\":{},",
+            "\"poppler_available\":{},",
+            "\"hot_pdfium_comparison_available\":{},",
+            "\"cold_reference_available\":{},",
+            "\"caveats\":{}",
+            "}}"
+        ),
+        reliability.rss_available,
+        reliability.pdfium_requested,
+        reliability.pdfium_available,
+        reliability.poppler_requested,
+        reliability.poppler_available,
+        reliability.hot_pdfium_comparison_available,
+        reliability.cold_reference_available,
+        json_str_array(&reliability.caveats)
     )
 }
 
@@ -9017,8 +9138,32 @@ fn matrix_memory_json(memory: &MatrixMemory) -> String {
 
 fn benchmark_matrix_markdown_report(report: &BenchmarkMatrixReport) -> String {
     let mut markdown = String::new();
+    let timing_reliability = benchmark_matrix_timing_reliability(report);
     markdown.push_str("# Ferrugo Renderer Performance Matrix\n\n");
     markdown.push_str("Generated by `ferrugo-cli benchmark-matrix`.\n\n");
+    markdown.push_str("## Timing Reliability\n\n");
+    markdown.push_str("| Signal | Value |\n| --- | --- |\n");
+    markdown.push_str(&format!(
+        "| RSS samples available | {} |\n| PDFium requested | {} |\n| PDFium available | {} |\n| Poppler requested | {} |\n| Poppler available | {} |\n| Hot PDFium comparison available | {} |\n| Cold reference available | {} |\n\n",
+        markdown_bool(timing_reliability.rss_available),
+        markdown_bool(timing_reliability.pdfium_requested),
+        markdown_bool(timing_reliability.pdfium_available),
+        markdown_bool(timing_reliability.poppler_requested),
+        markdown_bool(timing_reliability.poppler_available),
+        markdown_bool(timing_reliability.hot_pdfium_comparison_available),
+        markdown_bool(timing_reliability.cold_reference_available)
+    ));
+    if timing_reliability.caveats.is_empty() {
+        markdown.push_str("Caveats: none.\n\n");
+    } else {
+        let caveats = timing_reliability
+            .caveats
+            .iter()
+            .map(|caveat| format!("`{caveat}`"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        markdown.push_str(&format!("Caveats: {caveats}.\n\n"));
+    }
     markdown.push_str("## Summary\n\n");
     markdown.push_str("| Metric | Count |\n| --- | ---: |\n");
     markdown.push_str(&format!(
@@ -9219,6 +9364,14 @@ fn markdown_optional_ms(value: Option<f64>) -> String {
 
 fn markdown_optional_ratio(value: Option<f64>) -> String {
     value.map_or_else(|| "-".to_string(), |value| format!("{value:.2}x"))
+}
+
+fn markdown_bool(value: bool) -> &'static str {
+    if value {
+        "yes"
+    } else {
+        "no"
+    }
 }
 
 fn benchmark_report_json(report: &BenchmarkReport) -> String {
@@ -11019,10 +11172,32 @@ mod tests {
         };
 
         let json = benchmark_matrix_report_json(&report);
+        let reliability = benchmark_matrix_timing_reliability(&report);
+        let markdown = benchmark_matrix_markdown_report(&report);
 
+        assert!(!reliability.rss_available);
+        assert!(reliability.pdfium_requested);
+        assert!(!reliability.pdfium_available);
+        assert!(reliability.poppler_requested);
+        assert!(!reliability.poppler_available);
+        assert!(!reliability.hot_pdfium_comparison_available);
+        assert_eq!(
+            reliability.caveats,
+            vec![
+                "rss-unavailable",
+                "pdfium-missing-tool",
+                "poppler-hot-render-external-only",
+                "pdfium-hot-reference-unavailable",
+            ]
+        );
+        assert!(json.contains("\"timing_reliability\""));
+        assert!(json.contains("\"pdfium_available\":false"));
+        assert!(json.contains("\"poppler-hot-render-external-only\""));
         assert!(json.contains("\"status\":\"missing-tool\""));
         assert!(json.contains("\"status\":\"not-applicable\""));
         assert!(json.contains("\"report_kind\": \"renderer-performance-matrix\""));
+        assert!(markdown.contains("## Timing Reliability"));
+        assert!(markdown.contains("Hot PDFium comparison available"));
     }
 
     #[test]

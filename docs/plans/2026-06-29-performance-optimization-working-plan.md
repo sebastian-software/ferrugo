@@ -152,7 +152,7 @@ Baseline acceptance:
   PDFium is required before publishing comparison claims.
 - [ ] Poppler timing is treated as a cold-process reference, not as an
   in-process renderer peer.
-- [ ] Any host/tool caveat that affects trust in the numbers is written into
+- [x] Any host/tool caveat that affects trust in the numbers is written into
   the report or the working-plan notes.
 
 Optimization-block acceptance:
@@ -1250,6 +1250,19 @@ Benchmark report platform metadata from 2026-06-30:
   `small-text`, `--max-edge 120`, 3 measured iterations after one warmup.
   The smoke reported `rustc 1.95.0-nightly`, 20 logical CPUs, and `null`
   CPU/memory fields in this sandbox.
+
+Matrix timing reliability flags from 2026-06-30:
+
+- Change: `benchmark-matrix` now emits a top-level `timing_reliability` object
+  in JSON and a matching Markdown section.
+- Signals: RSS sample availability, PDFium/Poppler request and availability,
+  hot PDFium comparison availability, cold reference availability, and caveats.
+- Caveat policy: `not-applicable`, `not-requested`, and `missing-tool` are
+  distinct. Poppler hot-render records stay `not-applicable` because Poppler is
+  an external process reference, not an in-process hot renderer.
+- Acceptance impact: 5-10% wins can now be judged against explicit report
+  caveats instead of relying on local memory of which reference tools or RSS
+  fields were available.
 
 ## Remaining Questions
 
