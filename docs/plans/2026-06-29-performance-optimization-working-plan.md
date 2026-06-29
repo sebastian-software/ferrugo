@@ -524,6 +524,29 @@ Rejected candidate from 2026-06-29:
 - Decision: below the 5% noise threshold and not enough evidence for a
   cumulative track, so the code change was reverted.
 
+Rejected candidate from 2026-06-29:
+
+- Change tested locally but not kept: cull path display items before
+  `flatten_path_segments` by transforming approximate `PathDisplayItem` bounds
+  into device space and intersecting them with active clip pixel bounds.
+- Rationale: this implements the intended "device-bounds culling before
+  expensive raster work" shape for fully offscreen path items, but it adds an
+  extra segment-bounds scan for every visible path.
+- Baseline:
+  `target/performance-matrix-report-vector-clip-point-bounds-before.json`,
+  native hot-render, `report/vector`, `--max-edge 160`, 200 measured
+  iterations after 10 warmups.
+- Candidate:
+  `target/performance-matrix-report-vector-preflatten-cull-after.json`, same
+  command and host.
+- Result: `technical-linework-dimensions.pdf` p95 improved `0.944 ms` ->
+  `0.920 ms` (~2.5%), `vector-stress.pdf` was effectively neutral
+  (`6.488 ms` -> `6.467 ms`), and `technical-hatch-clipping.pdf` regressed
+  slightly (`2.896 ms` -> `2.924 ms`).
+- Decision: below the 5% noise threshold and mixed across the protection set.
+  Keep culling after flattening for now; revisit pre-flatten culling only with
+  fixtures that contain many fully offscreen paths.
+
 Current profile after accepted vector optimizations:
 
 - `target/sample-vector-stress-current.txt` still shows `stroke_path` as the
