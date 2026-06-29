@@ -396,3 +396,31 @@ The fixture remains a blocker by one p95 channel step, so the next work should
 focus on the remaining dashed line/text tail rather than broad stroke
 supersampling. The 0182 tagged sanity slice stayed at 3 accepted drift and 4
 blockers with unchanged p95 status distribution.
+
+## Dash Subpath Phase Reset
+
+Dashed stroke generation now restarts the dash phase for each stroked subpath
+instead of carrying the consumed phase across independent `m ... l` subpaths in
+one stroke operation. This aligns the separate repeated office divider lines
+with Poppler and avoids adding more sampling work.
+
+Full 0183 Poppler follow-up result remains 8 total, 0 exact, 5 accepted drift,
+3 blockers, 0 native errors, 0 reference errors, 0 both errors.
+
+| Fixture | Status | MAE | P95 delta | Changed ratio | Max delta |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `browser-print-raster-vector-mix.pdf` | accepted drift | 0.396 | 0 | 0.018945 | 202 |
+| `high-dpi-preview-fidelity.pdf` | blocker | 7.229 | 40 | 0.112604 | 225 |
+| `image-heavy-rotated-mask-sheet.pdf` | accepted drift | 3.191 | 5 | 0.376994 | 222 |
+| `map-transparent-zoning-overlay.pdf` | blocker | 4.986 | 31 | 0.285608 | 142 |
+| `office-vector-clipped-transparency-group.pdf` | accepted drift | 0.553 | 1 | 0.232045 | 118 |
+| `office-vector-repeated-effects.pdf` | blocker | 4.556 | 15 | 0.105374 | 184 |
+| `slide-layered-image-shadow.pdf` | accepted drift | 2.744 | 4 | 0.139861 | 216 |
+| `soft-mask-image.pdf` | accepted drift | 0.829 | 0 | 0.011181 | 255 |
+
+The targeted improvement is `office-vector-repeated-effects.pdf`: MAE
+`5.674 -> 4.556`, p95 `17 -> 15`, changed ratio `0.107126 -> 0.105374`, and
+max delta `225 -> 184`. The fixture still remains a blocker because MAE and
+changed ratio are above the strict gate, but its p95 tail is no longer the
+dominant failure. The 0182 tagged sanity slice stayed at 3 accepted drift and 4
+blockers with unchanged p95 status distribution.

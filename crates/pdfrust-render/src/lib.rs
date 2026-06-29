@@ -9701,8 +9701,8 @@ fn stroke_path(
     {
         (path.lines.as_slice(), path.joins.as_slice())
     } else {
-        dashed_lines = dashed_line_segments(
-            &path.lines,
+        dashed_lines = dashed_subpath_line_segments(
+            &path.subpaths,
             state.dash_pattern.scaled(state.dash_scale),
             context.options.max_flattened_segments,
         )?;
@@ -9851,18 +9851,38 @@ fn is_pixel_center(value: f64) -> bool {
     ((value - 0.5).fract()).abs() <= f64::EPSILON
 }
 
-fn dashed_line_segments(
-    lines: &[LineSegment],
+fn dashed_subpath_line_segments(
+    subpaths: &[Vec<Point>],
     pattern: StrokeDashPattern,
     limit: usize,
 ) -> RasterResult<Vec<LineSegment>> {
+    let mut output = Vec::new();
+    for subpath in subpaths {
+        append_dashed_line_segments(
+            subpath.windows(2).map(|points| LineSegment {
+                from: points[0],
+                to: points[1],
+            }),
+            pattern,
+            limit,
+            &mut output,
+        )?;
+    }
+    Ok(output)
+}
+
+fn append_dashed_line_segments(
+    lines: impl Iterator<Item = LineSegment>,
+    pattern: StrokeDashPattern,
+    limit: usize,
+    output: &mut Vec<LineSegment>,
+) -> RasterResult<()> {
     let len = pattern.active_len();
     let total: f64 = pattern.segments[..len].iter().sum();
     if total <= f64::EPSILON {
-        return Ok(Vec::new());
+        return Ok(());
     }
 
-    let mut output = Vec::new();
     let mut distance = pattern.phase.rem_euclid(total);
     let mut pattern_index = 0;
     while distance >= pattern.segments[pattern_index] && pattern.segments[pattern_index] > 0.0 {
@@ -9911,7 +9931,7 @@ fn dashed_line_segments(
             remaining_in_pattern -= step;
         }
     }
-    Ok(output)
+    Ok(())
 }
 
 fn sample_point(x: u32, y: u32, sample_x: u32, sample_y: u32, samples: u32) -> Point {
@@ -15161,6 +15181,48 @@ mod tests {
         assert_eq!(raster.pixel(5, 4).expect("first gap"), Rgba::WHITE);
         assert_eq!(raster.pixel(9, 4).expect("second dash"), black);
         assert_eq!(raster.pixel(13, 4).expect("second gap"), Rgba::WHITE);
+    }
+
+    #[test]
+    fn rasterize_paths_should_restart_dash_phase_for_each_subpath() {
+        let list = build_path_display_list(
+            tokenize_content(PdfBytes::new(b"[4 4] 0 d 2 w 0 3 m 4 3 l 0 7 m 4 7 l S")),
+            DisplayListOptions::default(),
+        )
+        .expect("valid multi-subpath dashed stroke stream");
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 10.0,
+                    max_y: 10.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            10,
+        )
+        .expect("dash transform");
+        let raster = rasterize_paths(
+            &list,
+            transform,
+            Rgba::WHITE,
+            PathRasterOptions {
+                supersample: 1,
+                ..PathRasterOptions::default()
+            },
+        )
+        .expect("dashed stroke should rasterize");
+
+        let black = Rgba {
+            r: 0,
+            g: 0,
+            b: 0,
+            a: 255,
+        };
+
+        assert_eq!(raster.pixel(1, 6).expect("second subpath dash"), black);
     }
 
     #[test]

@@ -146,6 +146,12 @@ Native baseline slice started on 2026-06-28.
   remains 5 accepted drift and 3 blockers, while
   `office-vector-repeated-effects.pdf` improves from MAE 7.140, p95 49,
   changed ratio 0.113143 to MAE 5.674, p95 17, changed ratio 0.107126.
+- Reset dash phase independently for each stroked subpath. This matches Poppler
+  for independent dashed office divider lines in a single stroke operation: the
+  0183 summary remains 5 accepted drift and 3 blockers, while
+  `office-vector-repeated-effects.pdf` improves further from MAE 5.674, p95 17,
+  changed ratio 0.107126, max delta 225 to MAE 4.556, p95 15, changed ratio
+  0.105374, max delta 184.
 
 ## Completion Notes
 
