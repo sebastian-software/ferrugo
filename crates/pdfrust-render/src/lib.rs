@@ -9842,7 +9842,9 @@ fn snapped_join_coordinate(
 }
 
 fn snap_hairline_coordinate(value: f64) -> f64 {
-    (value - 0.5).round() + 0.5
+    // Device coordinates can land just below an integer after CTM/page scaling;
+    // keep those near-ties on the forward pixel center instead of the previous one.
+    (value - 0.5 + 1e-9).round() + 0.5
 }
 
 fn is_pixel_center(value: f64) -> bool {
@@ -15270,6 +15272,13 @@ mod tests {
             raster.pixel(10, 5).expect("snapped ultrathin hairline"),
             black
         );
+    }
+
+    #[test]
+    fn hairline_snap_should_stabilize_near_integer_coordinates() {
+        assert_eq!(snap_hairline_coordinate(31.9999999999), 32.5);
+        assert_eq!(snap_hairline_coordinate(32.0), 32.5);
+        assert_eq!(snap_hairline_coordinate(32.25), 32.5);
     }
 
     #[test]

@@ -140,6 +140,12 @@ Native baseline slice started on 2026-06-28.
   map p95 from 31 to 22 but regressed repeated office effects p95 from 49 to
   54, while selective diagonal dashed-stroke 3x/4x supersampling only moved map
   p95 to 30 and did not justify the extra sampling work.
+- Stabilized axis-aligned hairline snapping for coordinates that land just
+  below an integer after page/CTM scaling. This keeps closed rectangle
+  hairlines on the Poppler-aligned forward pixel center: the 0183 summary
+  remains 5 accepted drift and 3 blockers, while
+  `office-vector-repeated-effects.pdf` improves from MAE 7.140, p95 49,
+  changed ratio 0.113143 to MAE 5.674, p95 17, changed ratio 0.107126.
 
 ## Completion Notes
 

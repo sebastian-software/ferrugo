@@ -368,3 +368,31 @@ The targeted improvement is `office-vector-repeated-effects.pdf`: changed ratio
 `0.292407 -> 0.113143` and MAE `7.258 -> 7.140`, with p95 unchanged at `49`.
 The 0182 tagged sanity slice stayed at 3 accepted drift and 4 blockers with all
 p95 values unchanged.
+
+## Hairline Snap Near-Integer Stabilization
+
+Axis-aligned hairline snapping now nudges coordinates that land just below an
+integer device coordinate after page/CTM scaling onto the forward pixel center.
+This fixes closed rectangle stroke edges in repeated office vector effects
+without changing summary status.
+
+Full 0183 Poppler follow-up result remains 8 total, 0 exact, 5 accepted drift,
+3 blockers, 0 native errors, 0 reference errors, 0 both errors.
+
+| Fixture | Status | MAE | P95 delta | Changed ratio | Max delta |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `browser-print-raster-vector-mix.pdf` | accepted drift | 0.396 | 0 | 0.018945 | 202 |
+| `high-dpi-preview-fidelity.pdf` | blocker | 7.229 | 40 | 0.112604 | 225 |
+| `image-heavy-rotated-mask-sheet.pdf` | accepted drift | 3.191 | 5 | 0.376994 | 222 |
+| `map-transparent-zoning-overlay.pdf` | blocker | 4.986 | 31 | 0.285608 | 142 |
+| `office-vector-clipped-transparency-group.pdf` | accepted drift | 0.553 | 1 | 0.232045 | 118 |
+| `office-vector-repeated-effects.pdf` | blocker | 5.674 | 17 | 0.107126 | 225 |
+| `slide-layered-image-shadow.pdf` | accepted drift | 2.744 | 4 | 0.139861 | 216 |
+| `soft-mask-image.pdf` | accepted drift | 0.829 | 0 | 0.011181 | 255 |
+
+The targeted improvement is `office-vector-repeated-effects.pdf`: MAE
+`7.140 -> 5.674`, p95 `49 -> 17`, and changed ratio `0.113143 -> 0.107126`.
+The fixture remains a blocker by one p95 channel step, so the next work should
+focus on the remaining dashed line/text tail rather than broad stroke
+supersampling. The 0182 tagged sanity slice stayed at 3 accepted drift and 4
+blockers with unchanged p95 status distribution.
