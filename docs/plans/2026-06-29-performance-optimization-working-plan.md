@@ -145,7 +145,7 @@ Baseline acceptance:
 
 - [ ] Two release-mode matrix runs on the same host have comparable top-10
   Ferrugo fixture rankings.
-- [ ] Report artifacts include backend versions/commands, OS, CPU, Rust
+- [x] Report artifacts include backend versions/commands, OS, CPU, Rust
   version, available core count, memory size when practical, fixture manifest,
   `max_edge`, iterations, warmup, timeout, and RSS availability.
 - [ ] Missing PDFium is acceptable only when the report records `missing-tool`;
@@ -1230,6 +1230,26 @@ section should be edited before code changes start.
   do not block the first optimization block on that field.
 - [x] First optimization block is `report/vector` path rasterization, starting
   with `fixtures/generated/vector-stress.pdf`.
+
+Benchmark report platform metadata from 2026-06-30:
+
+- Change: `PlatformMetadata` now records `rustc_version`, `logical_cpus`,
+  `cpu_brand`, and `memory_bytes` in addition to OS, architecture, family,
+  endian, and pointer width.
+- Scope: all reports that already serialize `platform` get the expanded fields,
+  including native benchmark, batch benchmark, repeat benchmark, matrix, visual
+  diff, and comparison reports.
+- Privacy: the added fields are host/tool descriptors only. They do not include
+  PDF bytes, rendered pixels, private file paths, environment variables, or
+  PDFium library paths.
+- Best-effort policy: CPU brand and memory size are `null` when the host or
+  sandbox does not expose them. The field presence is stable even when values
+  are unavailable.
+- Smoke artifact:
+  `target/performance-matrix-platform-metadata-smoke.json`, native hot-render,
+  `small-text`, `--max-edge 120`, 3 measured iterations after one warmup.
+  The smoke reported `rustc 1.95.0-nightly`, 20 logical CPUs, and `null`
+  CPU/memory fields in this sandbox.
 
 ## Remaining Questions
 

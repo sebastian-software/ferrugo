@@ -3983,13 +3983,17 @@ struct VisualDiffReport {
     fixtures: Vec<VisualDiffRecord>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct PlatformMetadata {
     os: &'static str,
     arch: &'static str,
     family: &'static str,
     endian: &'static str,
     pointer_width_bits: usize,
+    rustc_version: Option<String>,
+    logical_cpus: Option<usize>,
+    cpu_brand: Option<String>,
+    memory_bytes: Option<u64>,
 }
 
 impl PlatformMetadata {
@@ -4005,7 +4009,67 @@ impl PlatformMetadata {
             family: std::env::consts::FAMILY,
             endian,
             pointer_width_bits: std::mem::size_of::<usize>() * 8,
+            rustc_version: command_stdout("rustc", &["--version"]),
+            logical_cpus: thread::available_parallelism()
+                .ok()
+                .map(std::num::NonZeroUsize::get),
+            cpu_brand: host_cpu_brand(),
+            memory_bytes: host_memory_bytes(),
         }
+    }
+}
+
+fn command_stdout(program: &str, args: &[&str]) -> Option<String> {
+    let output = Command::new(program).args(args).output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let value = String::from_utf8(output.stdout).ok()?;
+    let value = value.trim();
+    (!value.is_empty()).then(|| value.to_string())
+}
+
+fn host_cpu_brand() -> Option<String> {
+    #[cfg(target_os = "macos")]
+    {
+        command_stdout("sysctl", &["-n", "machdep.cpu.brand_string"])
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let cpuinfo = fs::read_to_string("/proc/cpuinfo").ok()?;
+        cpuinfo.lines().find_map(|line| {
+            let (key, value) = line.split_once(':')?;
+            (key.trim() == "model name")
+                .then(|| value.trim())
+                .filter(|value| !value.is_empty())
+                .map(ToOwned::to_owned)
+        })
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    {
+        None
+    }
+}
+
+fn host_memory_bytes() -> Option<u64> {
+    #[cfg(target_os = "macos")]
+    {
+        command_stdout("sysctl", &["-n", "hw.memsize"])?
+            .parse()
+            .ok()
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let meminfo = fs::read_to_string("/proc/meminfo").ok()?;
+        meminfo.lines().find_map(|line| {
+            let value = line.strip_prefix("MemTotal:")?.trim();
+            let kib = value.split_whitespace().next()?.parse::<u64>().ok()?;
+            kib.checked_mul(1024)
+        })
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    {
+        None
     }
 }
 
@@ -9657,14 +9721,22 @@ fn platform_metadata_json(platform: &PlatformMetadata) -> String {
             "\"arch\":{},",
             "\"family\":{},",
             "\"endian\":{},",
-            "\"pointer_width_bits\":{}",
+            "\"pointer_width_bits\":{},",
+            "\"rustc_version\":{},",
+            "\"logical_cpus\":{},",
+            "\"cpu_brand\":{},",
+            "\"memory_bytes\":{}",
             "}}"
         ),
         json_string(platform.os),
         json_string(platform.arch),
         json_string(platform.family),
         json_string(platform.endian),
-        platform.pointer_width_bits
+        platform.pointer_width_bits,
+        optional_json_string(platform.rustc_version.as_deref()),
+        optional_json_usize(platform.logical_cpus),
+        optional_json_string(platform.cpu_brand.as_deref()),
+        optional_json_u64(platform.memory_bytes)
     )
 }
 
@@ -12083,6 +12155,10 @@ status = "candidate"
         assert!(json.contains("\"backend\": \"rust-native\""));
         assert!(json.contains("\"platform\": {"));
         assert!(json.contains("\"pointer_width_bits\":"));
+        assert!(json.contains("\"rustc_version\":"));
+        assert!(json.contains("\"logical_cpus\":"));
+        assert!(json.contains("\"cpu_brand\":"));
+        assert!(json.contains("\"memory_bytes\":"));
         assert!(json.contains("\"family\":\"browser-print\""));
         assert!(json.contains("\"family\":\"presentation\""));
         assert!(json.contains("\"output_bytes\""));
