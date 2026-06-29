@@ -36,8 +36,11 @@ profiles, and regressions teach us where the real bottlenecks are.
   `max_edge`, same backend set, and same iteration count.
 - [ ] Keep optimization PRs small enough to explain with one primary profile
   finding.
-- [ ] Accept a block only with at least 10% improvement on target fixtures or a
-  clear memory reduction, with no new fallback or visual-regression evidence.
+- [ ] Accept a block with at least 10% improvement on target fixtures, or accept
+  a 5-10% improvement when repeated runs confirm it and the change is part of a
+  clear cumulative optimization track.
+- [ ] Accept a clear memory reduction under the same repeatability rule, with no
+  new fallback or visual-regression evidence.
 - [ ] Treat changes below 5% as noise unless repeated runs prove otherwise.
 - [ ] Repeat and inspect any 5-10% change before calling it meaningful.
 - [ ] Add no performance dependency without profile evidence and a short
@@ -56,8 +59,8 @@ keep the work decisive without pretending the first numbers are public claims.
 | Question | Working answer | Acceptance impact |
 | --- | --- | --- |
 | What is the first workload target? | `report/vector`, starting with `vector-stress`. | Phase 2 work must improve the focused vector set before moving to image-heavy or text-heavy work. |
-| What counts as a meaningful speed win? | At least 10% on p95 or wall time for the target fixtures; 5-10% needs repeated confirmation. | No commit should claim a performance win from a single noisy run. |
-| What counts as a meaningful memory win? | At least 10% lower peak RSS, allocation count, allocation bytes, or renderer-owned scratch memory on the target set. | Memory claims need a named metric, not just intuition from code review. |
+| What counts as a meaningful speed win? | At least 10% on p95 or wall time for the target fixtures as a standalone win; 5-10% can land when repeated and clearly cumulative. | No commit should claim a performance win from a single noisy run. Small wins need stronger repeat evidence and no protection-set regression. |
+| What counts as a meaningful memory win? | At least 10% lower peak RSS, allocation count, allocation bytes, or renderer-owned scratch memory as a standalone win; 5-10% can land when repeated and clearly cumulative. | Memory claims need a named metric, not just intuition from code review. Small wins need a named cumulative track. |
 | Which references matter first? | PDFium for in-process comparison when available; Poppler as cold-process and visual reference. | Native-only work may proceed, but public comparison claims wait for PDFium evidence. |
 | How strict is visual fidelity during speed work? | No new fallback bucket, error class, crash, timeout, or obvious visual drift on the touched fixture set. | Fast paths must prove they preserve clipping, transforms, alpha, and stroke semantics for their supported shape. |
 | Are WASM and low-memory primary constraints now? | No. Server-side rendering is the primary model; low-memory remains a bounded-cache discipline, not a WASM-first architecture driver. | Avoid optimizing for WASM-specific constraints unless a later product requirement reopens this. |
@@ -102,6 +105,9 @@ wave. Reopen them only when benchmark evidence or product requirements change.
 - [x] Should sub-5% benchmark wins be committed? No, not as performance wins.
   Record them as rejected or inconclusive unless repeated runs show a larger
   effect.
+- [x] Should repeated 5-10% wins be allowed? Yes. They can land when they are
+  stable across repeated runs, have no protection-set regression, and fit a
+  cumulative optimization track.
 - [x] Should we optimize for average latency or tail latency first? Tail first.
   Use p95 for acceptance, with mean as supporting evidence.
 - [x] Should memory improvements be accepted without speed wins? Yes, when the
@@ -121,8 +127,9 @@ Definition of done for one optimization commit:
   metric, and the before/after result.
 - The result clears the threshold: at least 10% p95 or wall-time improvement on
   target fixtures, or at least 10% lower peak RSS/allocation volume/scratch
-  high-water. A 5-10% result needs repeated confirmation and must be described
-  as marginal until then.
+  high-water as a standalone win. A 5-10% result can be accepted when repeated
+  runs confirm it, the protection set does not regress, and the commit is
+  explicitly part of a cumulative track.
 - The focused fixture set has no new crash, timeout, fallback bucket, error
   class, output-dimension change, or obvious visual drift.
 - The validation commands relevant to the touched surface pass before the next
@@ -146,7 +153,8 @@ Optimization-block acceptance:
 
 - [ ] The block targets one fixture family and one profile-backed bottleneck.
 - [ ] Target fixtures improve by at least 10% in p95/wall time, or peak RSS /
-  allocation volume drops by at least 10%.
+  allocation volume drops by at least 10%; alternatively, a 5-10% improvement
+  is repeated, protection-set-neutral, and recorded as cumulative.
 - [ ] No new fallback bucket, error class, timeout, or crash appears on the
   focused fixture set.
 - [ ] Visual output is reviewed against existing differential artifacts and,
@@ -809,8 +817,8 @@ section should be edited before code changes start.
 
 ## Remaining Questions
 
-- [ ] What family-specific thresholds should replace the global 10% rule after
-  we understand variance?
+- [ ] What family-specific standalone and cumulative thresholds should replace
+  the default 10% / repeatable 5-10% rule after we understand variance?
 - [ ] Should any focused performance subset become CI-gated, or should all
   benchmark budgets remain maintainer-local for now?
 - [ ] Which `smallvec` inline capacities are justified by real path/token/clip
