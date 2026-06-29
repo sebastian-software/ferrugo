@@ -2442,6 +2442,96 @@ def devicen_spot_color_pdf() -> bytes:
     return pdf.render(catalog)
 
 
+def spot_letterhead_separation_pdf() -> bytes:
+    pdf = Pdf()
+    font = pdf.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    content = (
+        b"1 1 1 rg 0 0 180 130 re f "
+        b"q /BrandBlue cs 1 scn 0 104 180 26 re f Q "
+        b"q /BrandBlue cs 0.28 scn 18 76 56 10 re f 18 58 94 6 re f 18 44 72 6 re f Q "
+        b"0.15 0.15 0.15 rg BT /F1 10 Tf 18 112 Td (Northwind Letterhead) Tj ET "
+        b"0.25 0.25 0.25 rg BT /F1 7 Tf 18 88 Td (Spot-color brand bar with tint rows) Tj ET "
+        b"0.75 0.75 0.75 rg 18 28 144 1 re f"
+    )
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 4 0 R /MediaBox [0 0 180 130] "
+        f"/Resources << /Font << /F1 {font} 0 R >> /ColorSpace << /BrandBlue "
+        "[/Separation /BrandBlue /DeviceRGB "
+        "<< /FunctionType 2 /Domain [0 1] /C0 [1 1 1] /C1 [0.04 0.18 0.55] /N 1 >>] "
+        ">> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    return pdf.render(catalog)
+
+
+def spot_invoice_devicen_stamp_pdf() -> bytes:
+    pdf = Pdf()
+    font = pdf.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    content = (
+        b"1 1 1 rg 0 0 190 140 re f "
+        b"0.08 0.08 0.08 rg BT /F1 11 Tf 16 120 Td (Invoice 1042) Tj ET "
+        b"0.70 0.70 0.70 RG 0.7 w 16 96 118 1 re f 16 74 118 1 re f 16 52 118 1 re f "
+        b"16 52 1 44 re f 70 52 1 44 re f 134 52 1 44 re f "
+        b"0.20 0.20 0.20 rg BT /F1 7 Tf 20 84 Td (Item) Tj 54 0 Td (Qty) Tj 62 0 Td (Total) Tj ET "
+        b"q /Stamp cs 1 0.35 scn 112 26 58 24 re f Q "
+        b"q /Stamp CS 0.35 1 SCN 3 w 108 22 66 32 re S Q "
+        b"1 1 1 rg BT /F1 9 Tf 121 36 Td (PAID) Tj ET"
+    )
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 4 0 R /MediaBox [0 0 190 140] "
+        f"/Resources << /Font << /F1 {font} 0 R >> /ColorSpace << /Stamp "
+        "[/DeviceN [/SpotRed /SpotViolet] /DeviceRGB "
+        "<< /FunctionType 2 /Domain [0 1] /C0 [1 1 1] /C1 [0.72 0.08 0.46] /N 1 >>] "
+        ">> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    return pdf.render(catalog)
+
+
+def spot_cmyk_tint_swatch_pdf() -> bytes:
+    pdf = Pdf()
+    font = pdf.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    content = (
+        b"1 1 1 rg 0 0 180 130 re f "
+        b"0.12 0.12 0.12 rg BT /F1 10 Tf 18 112 Td (Spot Tint Swatches) Tj ET "
+        b"q /BrandGreen cs 0.25 scn 18 74 38 28 re f "
+        b"/BrandGreen cs 0.55 scn 70 74 38 28 re f "
+        b"/BrandGreen cs 1 scn 122 74 38 28 re f Q "
+        b"0.25 0.25 0.25 rg BT /F1 7 Tf 24 58 Td (25%) Tj 52 0 Td (55%) Tj 52 0 Td (100%) Tj ET "
+        b"0.72 0.72 0.72 RG 0.8 w 18 40 m 160 40 l S"
+    )
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 4 0 R /MediaBox [0 0 180 130] "
+        f"/Resources << /Font << /F1 {font} 0 R >> /ColorSpace << /BrandGreen "
+        "[/Separation /BrandGreen /DeviceCMYK "
+        "<< /FunctionType 2 /Domain [0 1] /C0 [0 0 0 0] /C1 [0.85 0 0.75 0.05] /N 1 >>] "
+        ">> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    return pdf.render(catalog)
+
+
 def tiling_pattern_pdf() -> bytes:
     pdf = Pdf()
     content = b"/Pattern cs /P1 scn 0 0 120 120 re f"
@@ -7340,6 +7430,9 @@ def main() -> None:
     write("separation-spot-color.pdf", separation_spot_color_pdf())
     write("overprint-spot-approximation.pdf", overprint_spot_approximation_pdf())
     write("devicen-spot-color.pdf", devicen_spot_color_pdf())
+    write("spot-letterhead-separation.pdf", spot_letterhead_separation_pdf())
+    write("spot-invoice-devicen-stamp.pdf", spot_invoice_devicen_stamp_pdf())
+    write("spot-cmyk-tint-swatch.pdf", spot_cmyk_tint_swatch_pdf())
     write("tiling-pattern.pdf", tiling_pattern_pdf())
     write("uncolored-tiling-pattern.pdf", uncolored_tiling_pattern_pdf())
     write("dashed-stroke.pdf", dashed_stroke_pdf())

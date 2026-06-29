@@ -43,6 +43,12 @@ tint transforms may be used to derive visible RGB output, and overprint flags
 may be retained as renderer diagnostics, but the result is not a separations or
 press-overprint proof.
 
+Spot-color visual review should use
+`fixtures/spot-color-visual-review-manifest.tsv` when changes affect
+Separation, DeviceN, DeviceCMYK alternate conversion, or tint-transform
+evaluation. Review thresholds must be recorded in the milestone report because
+RGB approximation drift is expected and category-local.
+
 Prepress visual diffs may use broader thumbnail-oriented thresholds than the
 global defaults when the milestone report records the threshold values and the
 reason. Those thresholds are local evidence for this document category, not a

@@ -237,6 +237,38 @@ cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks \
   --max-edge 160
 ```
 
+## Spot Color Visual Review Manifest
+
+`fixtures/spot-color-visual-review-manifest.tsv` is the focused gate for
+Separation, DeviceN, CMYK-alternate tint transforms, overprint-adjacent spot
+content, and prepress spot-color thumbnail review.
+
+The manifest uses families `separation-business`, `devicen-business`,
+`separation-cmyk`, `separation-baseline`, `devicen-baseline`,
+`overprint-baseline`, and `prepress-boundary`. It is a visual review and
+performance gate for RGB thumbnail approximations; it does not claim
+separations, spot library matching, calibrated proofing, or press-ready color
+validation.
+
+Use this manifest when a change may affect spot-color resource parsing, Type 2
+tint-transform evaluation, DeviceCMYK alternate conversion, or overprint
+thumbnail approximation:
+
+```sh
+cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks \
+  fixtures/generated \
+  --manifest fixtures/spot-color-visual-review-manifest.tsv \
+  --include-family separation-business \
+  --include-family devicen-business \
+  --include-family separation-cmyk \
+  --include-family separation-baseline \
+  --include-family devicen-baseline \
+  --include-family overprint-baseline \
+  --include-family prepress-boundary \
+  --fail-on-fallback \
+  --max-edge 180
+```
+
 ## Print Imposition Manifest
 
 `fixtures/print-imposition-manifest.tsv` is the focused gate for typical

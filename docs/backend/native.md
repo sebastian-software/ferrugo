@@ -307,6 +307,13 @@ Overprint graphics-state flags are accepted as a separate thumbnail
 approximation path described below. See
 `docs/reports/spot-color-approximation-2026-06-25.md`.
 
+The 0191 visual-review slice adds business-style Separation and DeviceN samples
+plus a CMYK-alternate tint swatch under
+`fixtures/spot-color-visual-review-manifest.tsv`. Those samples are regression
+coverage for understandable thumbnail approximations, not color-managed
+proofing. See
+`docs/reports/devicen-spot-color-visual-review-2026-06-29.md`.
+
 ## ICCBased Image Color Spaces
 
 Image XObjects now accept `/ICCBased` color spaces with bounded decoded profile

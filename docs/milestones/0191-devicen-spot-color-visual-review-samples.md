@@ -1,6 +1,6 @@
 # 0191: DeviceN Spot Color Visual Review Samples
 
-Status: todo
+Status: done
 Phase: 36
 Size: medium
 Depends on: 0190
@@ -44,4 +44,20 @@ review samples that reflect common business and print-adjacent documents.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-29.
+
+- Added three generated visual-review samples:
+  - `fixtures/generated/spot-letterhead-separation.pdf`
+  - `fixtures/generated/spot-invoice-devicen-stamp.pdf`
+  - `fixtures/generated/spot-cmyk-tint-swatch.pdf`
+- Added `fixtures/spot-color-visual-review-manifest.tsv` for Separation,
+  DeviceN, CMYK-alternate tint, overprint, and prepress spot-color review.
+- Added native regression coverage that renders the new samples and verifies
+  visible spot-color content at stable sample points.
+- Updated approximation policy documentation and recorded evidence in
+  `docs/reports/devicen-spot-color-visual-review-2026-06-29.md`.
+
+The review suite renders 7/7 fixtures natively with 0 fallbacks and 0 errors.
+Poppler visual review reports 7 accepted drift rows and 0 blockers under
+spot-color thumbnail thresholds. This remains RGB thumbnail approximation, not
+certified print proofing or separations output.

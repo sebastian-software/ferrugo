@@ -5349,6 +5349,55 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_render_generated_spot_color_visual_review_fixtures() {
+        let fixtures = [
+            (
+                include_bytes!("../../../fixtures/generated/spot-letterhead-separation.pdf")
+                    as &[u8],
+                180,
+                130,
+                "spot letterhead separation",
+                (10, 10),
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/spot-invoice-devicen-stamp.pdf")
+                    as &[u8],
+                190,
+                140,
+                "spot invoice devicen stamp",
+                (132, 105),
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/spot-cmyk-tint-swatch.pdf") as &[u8],
+                180,
+                130,
+                "spot cmyk tint swatch",
+                (132, 45),
+            ),
+        ];
+
+        for (bytes, expected_width, expected_height, label, sample) in fixtures {
+            let thumbnail = ThumbnailBackend::render(
+                &NativeBackend::new(),
+                PdfSource::from_bytes(bytes),
+                &ThumbnailOptions {
+                    max_edge: expected_width,
+                    ..ThumbnailOptions::default()
+                },
+            )
+            .unwrap_or_else(|error| panic!("{label} should render natively: {error}"));
+
+            assert_eq!(thumbnail.width, expected_width);
+            assert_eq!(thumbnail.height, expected_height);
+            let sample = rgba_at(&thumbnail, sample.0, sample.1);
+            assert!(
+                sample[0] < 245 || sample[1] < 245 || sample[2] < 245,
+                "{label} should keep visible spot-color review content at sample point"
+            );
+        }
+    }
+
+    #[test]
     fn native_backend_should_render_generated_tiling_pattern_fixture() {
         let bytes = include_bytes!("../../../fixtures/generated/tiling-pattern.pdf");
         let thumbnail = ThumbnailBackend::render(
