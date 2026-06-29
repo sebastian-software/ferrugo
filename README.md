@@ -1,90 +1,207 @@
 # pdfrust
 
-`pdfrust` is an exploratory project for PDF thumbnail generation and, longer
-term, a Rust-native PDF rendering engine. The starting reference point is
-PDFium, the PDF library used by Chromium, with the longer-term goal of making
-high-quality PDF rendering available from Rust and Node.js through Node-API
-bindings.
+`pdfrust` is a Rust-native PDF rendering project, focused first on server-side
+thumbnails and preview images.
 
-This repository contains the Phase 0 documentation and a minimal Rust workspace
-for the thumbnail-generation probe.
+The goal is simple to say and hard to finish: render common PDFs from Rust
+without depending on PDFium at runtime. That means office exports, browser print
+PDFs, invoices, reports, scans, forms, and other documents people actually send
+around. The project is not claiming broad PDFium replacement yet. It has a
+native renderer with growing coverage, a CLI for local rendering and corpus
+work, and explicit comparison tooling for maintainers.
 
-Unless noted otherwise, repository code and documentation are licensed under
-either MIT or Apache-2.0 at the user's option. PDFium and other renderers are
-used as behavior references under the project's attribution policy; their
-source code is not vendored here.
+PDFium still matters here, but mostly as a reference. The normal runtime path is
+Rust-native. PDFium-backed commands live behind an explicit feature for oracle
+comparison and debugging.
 
-## Working Thesis
+## Current status
 
-No open-source, Rust-native renderer appears to match PDFium's rendering
-coverage today. The useful Rust ecosystem options are mostly wrappers around
-existing C or C++ engines, or libraries focused on parsing, writing, and
-manipulating PDFs rather than full-fidelity rendering.
+The native-only path is the default development and packaging target.
 
-The project should therefore be framed as a long-running engine effort, not a
-thin binding project. For short-term product use, binding to PDFium remains the
-practical baseline. For the project goal, PDFium should be used as a behavior
-oracle while the Rust implementation grows module by module.
+- `pdfrust-cli` builds without PDFium by default.
+- `render` and `render-auto` use the Rust-native backend.
+- PDFium runtime fallback has been removed from normal rendering.
+- PDFium comparison commands remain available behind `--features pdfium`.
+- The 1.4 readiness gate supports a scoped PDFium-free server/runtime path.
+- A broad "drop-in PDFium replacement" claim is still deferred.
 
-The porting philosophy is Rust-first and PDFium-guided: design the architecture,
-ownership, buffer handling, and public APIs idiomatically in Rust, while using
-PDFium as the compatibility oracle for rendering behavior and edge cases.
+The current renderer handles a useful slice of typical preview documents, but
+PDF is a large format. Some visual-fidelity gaps and typed unsupported feature
+boundaries are still tracked in the reports and milestone history.
 
-Phase 0 is deliberately narrower: build and measure a cut-down PDFium
-source-build probe for single-page thumbnail generation, expose a backend-neutral
-Rust CLI/library shape, and defer Node-API, npm prebuilds, bundled PDFium, and
-full-renderer parity until after those measurements exist.
+## What you can use it for today
 
-## Initial Goals
+Good fit:
 
-- Generate reliable PDF preview thumbnails as the first measurable product
-  target.
-- Build a safe Rust core for loading, interpreting, and rendering PDF pages.
-- Treat PDFium output as the compatibility baseline for pixel and behavior
-  tests.
-- Keep the public Rust API idiomatic, with a separate compatibility layer where
-  PDFium-like handles or naming are useful.
-- Keep the core safe by default; isolate unsafe code to narrow, audited modules
-  only when FFI, SIMD, codecs, or measured pixel-buffer hotspots require it.
-- Provide a Node.js package via Node-API once the Rust core has a stable render
-  surface.
-- Design for fuzzing, corpus testing, and malformed-input resilience from the
-  beginning.
+- Generate preview thumbnails in a Rust service or local CLI workflow.
+- Test a Rust-native renderer against a generated PDF corpus.
+- Compare native output against PDFium or Poppler as an oracle.
+- Study a staged approach to replacing a C/C++ PDF renderer with Rust modules.
+- Run bounded server-side rendering experiments with explicit memory and
+  timeout budgets.
 
-## Initial Non-Goals
+Not a good fit yet:
 
-- Shipping an npm package, prebuilt binaries, or bundled PDFium in Phase 0.
-- A line-by-line rewrite of PDFium as the first milestone.
-- Full JavaScript, XFA, signing, editing, and form-filling parity in the MVP.
-- Depending on AGPL engines in the core library.
-- Exposing PDFium's C API shape as the only native Rust API.
+- A full interactive PDF viewer.
+- PDF editing, signing, full JavaScript execution, or dynamic XFA support.
+- A guaranteed pixel-perfect replacement for every PDFium-supported document.
+- A browser-first WASM product. WASM is tested as a compatibility profile, not
+  the main runtime.
 
-## Documents
+## Quick start
+
+Requirements:
+
+- Rust 1.81 or newer.
+- A normal Cargo toolchain.
+- No PDFium library for the native-only path.
+
+Run the native test suite:
+
+```sh
+cargo test --workspace --no-default-features
+```
+
+Render a generated fixture with the native backend:
+
+```sh
+cargo run -p pdfrust-cli --no-default-features -- \
+  render fixtures/generated/text-page.pdf \
+  --max-edge 256 \
+  --output target/text-page.png
+```
+
+Force the native backend explicitly:
+
+```sh
+cargo run -p pdfrust-cli --no-default-features -- \
+  render-native fixtures/generated/text-page.pdf \
+  --max-edge 256 \
+  --output target/text-page-native.png
+```
+
+Run the local native-only release gate:
+
+```sh
+bash scripts/check_native_only_release.sh
+```
+
+That gate checks the native build, tests, plugin-free packaging boundary,
+PDFium quarantine, package file lists, and all-features Clippy.
+
+## How it works
+
+The workspace is split into small crates so each layer can be tested on its own.
+
+| Crate | Role |
+| --- | --- |
+| `pdfrust-thumbnail` | Public thumbnail facade, shared errors, options, and output types. |
+| `pdfrust-native` | Rust-native PDF backend for metadata inspection and thumbnail rendering. |
+| `pdfrust-syntax` | Low-level PDF byte parsing. |
+| `pdfrust-object` | Object graph, xref, streams, and document structure. |
+| `pdfrust-content` | Content stream tokenization and operator handling. |
+| `pdfrust-render` | Display-list and raster rendering pieces. |
+| `pdfrust-cli` | Local CLI for rendering, corpus analysis, benchmarks, and reports. |
+| `pdfrust-pdfium` | Optional PDFium backend for maintainer comparison workflows. |
+| `pdfrust-wasm-smoke` | Small WASM smoke crate for secondary compatibility checks. |
+
+The public boundary is the thumbnail facade and native backend. PDFium handles,
+fallback state, and comparison-only commands are not part of the normal runtime
+API.
+
+## PDFium's role
+
+PDFium is treated as a behavior oracle, not as the architecture to copy.
+
+That distinction matters. `pdfrust` uses Rust ownership, typed errors, explicit
+budgets, and narrow unsafe boundaries. When PDFium or Poppler are used, they are
+used to answer "what should this document look like?" or "where did the native
+renderer drift?", not to define the public Rust API.
+
+To build and run PDFium comparison commands, enable the feature explicitly:
+
+```sh
+cargo build -p pdfrust-cli --features pdfium
+cargo test -p pdfrust-cli --features pdfium
+```
+
+Then point the CLI at a local PDFium dynamic library:
+
+```sh
+export PDFRUST_PDFIUM_LIBRARY="/path/to/libpdfium.dylib"
+export DYLD_LIBRARY_PATH="/path/to/pdfium/lib"
+```
+
+See [PDFium checkout recipe](docs/build/pdfium-checkout.md) for the local
+source-build path used by maintainers.
+
+## Safety and resource limits
+
+PDF input is treated as untrusted. The native path uses typed public errors for
+malformed input, encryption boundaries, unsupported features, and budget
+exhaustion. Parser, font, image, raster, transparency, cache, and text paths all
+have explicit limits.
+
+Default thumbnail behavior is intentionally bounded:
+
+- page index: `0`;
+- max edge: `1024` pixels;
+- timeout: `5s`;
+- output: RGBA internally, PNG for CLI artifacts.
+
+The server and low-memory gates track binary size, startup time, render latency,
+in-flight pixel budgets, and cache behavior. See
+[Packaging](docs/packaging.md) and [Rust-native backend](docs/backend/native.md)
+for the details.
+
+## Development commands
+
+Common checks:
+
+```sh
+cargo fmt --check
+cargo check --workspace --no-default-features
+cargo test --workspace --no-default-features
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+```
+
+Useful project gates:
+
+```sh
+bash scripts/check_pdfium_quarantine.sh
+bash scripts/check_plugin_free_distribution.sh
+bash scripts/check_native_only_release.sh
+bash scripts/check_wasm_smoke.sh
+```
+
+Generated fixtures live in `fixtures/generated/`. Reports usually write JSON or
+PNG output under `target/` so normal runs do not dirty the repository.
+
+## Documentation map
+
+Start here:
+
+- [Documentation guide](docs/README.md) for a reader-friendly map of the docs.
+- [Rust-native backend](docs/backend/native.md) for the current renderer
+  contract and limits.
+- [Packaging](docs/packaging.md) for native-only, serverless, plugin-free, and
+  PDFium-enabled builds.
+- [Milestones](docs/milestones/README.md) for the implementation log.
+- [PDFium-free 1.4 readiness report](docs/reports/pdfium-free-1-4-readiness-2026-06-29.md)
+  for the current release decision.
+
+Historical and planning docs:
 
 - [Rendering landscape](docs/research/2026-06-24-rendering-landscape.md)
-- [Porting decision](docs/decisions/0001-rust-first-pdfium-guided-porting.md)
+- [Rust-first, PDFium-guided decision](docs/decisions/0001-rust-first-pdfium-guided-porting.md)
 - [Phase 0 decisions](docs/plans/phase-0-decisions.md)
-- [Milestones](docs/milestones/README.md)
-- [PDFium port strategy](docs/concepts/2026-06-24-pdfium-port-strategy.md)
-- [Node API surface](docs/concepts/2026-06-24-node-api-surface.md)
-- [Thumbnail generation plan](docs/plans/2026-06-24-thumbnail-generation-plan.md)
 - [Roadmap](docs/roadmap.md)
 - [Attribution policy](docs/policies/attribution.md)
-- [PDFium checkout recipe](docs/build/pdfium-checkout.md)
-- [Minimal PDFium GN args](docs/build/pdfium-gn-args.md)
-- [PDFium build measurement baseline](docs/measurements/pdfium-build-baseline.md)
-- [Fixture policy](docs/fixtures.md)
-- [Native-only packaging](docs/packaging.md)
-- [PDFium backend notes](docs/backend/pdfium.md)
-- [Thumbnail error taxonomy](docs/errors.md)
-- [Differential baseline format](docs/baselines.md)
-- [Phase 0 report](docs/reports/phase-0-report.md)
 
-## Workspace
+## Licensing
 
-- `crates/pdfrust-thumbnail`: backend-neutral thumbnail facade.
-- `crates/pdfrust-native`: Rust-native parser, interpreter, and renderer
-  backend.
-- `crates/pdfrust-pdfium`: optional local, serialized PDFium backend shell for
-  maintainer comparison workflows.
-- `crates/pdfrust-cli`: local CLI shell for fixture rendering and measurement.
+Repository code and documentation are licensed under either MIT or Apache-2.0,
+at your option.
+
+PDFium, Poppler, and other renderers may be used as behavioral references under
+the project's attribution policy. Their source code is not vendored here.
