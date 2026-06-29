@@ -669,8 +669,8 @@ Hotpath `Vec` audit from 2026-06-29:
 
 Goal: make scan/image-heavy documents fast without increasing peak memory.
 
-- [ ] Identify image-heavy fixtures from matrix and existing image reports.
-- [ ] Profile decode, color conversion, alpha/soft-mask work, and output encode.
+- [x] Identify image-heavy fixtures from matrix and existing image reports.
+- [x] Profile decode, color conversion, alpha/soft-mask work, and output encode.
 - [ ] Add downsample-aware decode where the source image is much larger than the
   target raster.
 - [ ] Avoid full RGBA expansion when the target raster is smaller and direct
@@ -683,6 +683,36 @@ Acceptance:
 - [ ] Clear time or memory reduction on scan/image fixtures.
 - [ ] No regression on masks, ICC conversions, predictor images, or transparent
   image fixtures.
+
+Image-heavy baseline and attribution update from 2026-06-29:
+
+- Focused matrix:
+  `target/performance-matrix-image-heavy-current.json`, native hot-render,
+  `fixtures/image-heavy-memory-manifest.tsv`, `--max-edge 160`,
+  30 measured iterations after 3 warmups.
+- Slowest p95 fixtures: `mobile-mixed-compression-scan.pdf` `1.061 ms`,
+  `image-heavy-repeated-xobject-report.pdf` `0.904 ms`,
+  `image-heavy-rotated-mask-sheet.pdf` `0.830 ms`,
+  `scanner-large-image-budget.pdf` `0.602 ms`.
+- Initial traces showed the top mixed image fixtures as `raster_paths`-dominant
+  with `raster_images: 0.000 ms`, because content-order rasterization was
+  measured as one path phase.
+- Added ordered-display-list phase attribution so `trace-native` records image
+  work inside mixed z-order pages without changing paint order, clip state, or
+  raster output.
+- Post-change traces now expose image work:
+  `mobile-mixed-compression-scan.pdf` `raster_images: 0.142 ms`,
+  `image-heavy-repeated-xobject-report.pdf` `raster_images: 0.125 ms`,
+  `image-heavy-rotated-mask-sheet.pdf` `raster_images: 0.107 ms`.
+- Post-change matrix remained fully rendered with no fallback/error records:
+  `target/performance-matrix-image-heavy-phase-attribution.json`. P95 stayed
+  effectively neutral for the top fixture (`1.061 ms` -> `1.056 ms`) and
+  improved on repeated-xobject/rotated-mask in this run, but this change is
+  treated as profiling infrastructure, not a speed claim.
+- Decision: the next image optimization should target actual `RasterImages`
+  work only after a deeper sample/Instruments profile shows whether image
+  sampling, soft-mask alpha, DCT decode, or path overlays dominate the target
+  fixture.
 
 ## Phase 5: Session Cache, But Bounded
 

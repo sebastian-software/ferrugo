@@ -5,6 +5,7 @@
 use std::borrow::Cow;
 use std::fmt;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use ferrugo_content::{
     tokenize_content, ContentErrorKind, ContentResult, ContentToken, InlineImage, OperatorName,
@@ -1358,6 +1359,17 @@ impl DisplayList {
         self.items.push(item);
         Ok(())
     }
+}
+
+/// Coarse raster phase for ordered mixed display-list timing attribution.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RasterDisplayPhase {
+    /// Path-like raster work, including clips, shadings, and transparency groups.
+    Paths,
+    /// Image raster work.
+    Images,
+    /// Text raster work.
+    Text,
 }
 
 /// Image XObject resource map.
@@ -4986,6 +4998,34 @@ pub fn rasterize_display_list_into(
         transform,
         options,
         &mut transparency_scratch,
+        None::<&mut fn(RasterDisplayPhase, Duration)>,
+    )
+}
+
+/// Rasterizes all supported display-list items and reports elapsed time by
+/// coarse item phase.
+///
+/// This keeps the same ordered raster loop as [`rasterize_display_list_into`],
+/// preserving clip scope, caches, transparency scratch reuse, and paint order.
+///
+/// # Errors
+///
+/// Returns [`RasterError`] when path, image, or text rasterization fails.
+pub fn rasterize_display_list_into_with_phase_timings(
+    display_list: &DisplayList,
+    device: &mut RasterDevice,
+    transform: PageTransform,
+    options: PathRasterOptions,
+    mut on_phase: impl FnMut(RasterDisplayPhase, Duration),
+) -> RasterResult<()> {
+    let mut transparency_scratch = TransparencyGroupScratch::default();
+    rasterize_display_list_into_with_scratch(
+        display_list,
+        device,
+        transform,
+        options,
+        &mut transparency_scratch,
+        Some(&mut on_phase),
     )
 }
 
@@ -4995,6 +5035,7 @@ fn rasterize_display_list_into_with_scratch(
     transform: PageTransform,
     options: PathRasterOptions,
     transparency_scratch: &mut TransparencyGroupScratch,
+    mut on_phase: Option<&mut impl FnMut(RasterDisplayPhase, Duration)>,
 ) -> RasterResult<()> {
     if options.supersample == 0 {
         return Err(RasterError::new(RasterErrorKind::InvalidSupersampling));
@@ -5006,70 +5047,102 @@ fn rasterize_display_list_into_with_scratch(
     for item in display_list.items() {
         match item {
             DisplayItem::Path(path) => {
-                truncate_clips_to_scope(
-                    &mut active_clips,
-                    path.state.graphics_state_depth,
-                    path.state.graphics_state_scope_id,
-                );
-                rasterize_path_item(
-                    path,
-                    device,
-                    PathRasterContext {
-                        transform,
-                        options,
-                        clips: &active_clips,
-                    },
-                    &mut pattern_cache,
-                )?;
+                record_raster_display_phase(&mut on_phase, RasterDisplayPhase::Paths, || {
+                    truncate_clips_to_scope(
+                        &mut active_clips,
+                        path.state.graphics_state_depth,
+                        path.state.graphics_state_scope_id,
+                    );
+                    rasterize_path_item(
+                        path,
+                        device,
+                        PathRasterContext {
+                            transform,
+                            options,
+                            clips: &active_clips,
+                        },
+                        &mut pattern_cache,
+                    )
+                })?;
             }
             DisplayItem::ClipPlaceholder {
                 segments,
                 rule,
                 state,
             } => {
-                truncate_clips_to_scope(
-                    &mut active_clips,
-                    state.graphics_state_depth,
-                    state.graphics_state_scope_id,
-                );
-                active_clips.push(active_clip_from_segments(
-                    segments,
-                    *rule,
-                    *state,
-                    transform.matrix,
-                    options.max_flattened_segments,
-                )?);
+                record_raster_display_phase(&mut on_phase, RasterDisplayPhase::Paths, || {
+                    truncate_clips_to_scope(
+                        &mut active_clips,
+                        state.graphics_state_depth,
+                        state.graphics_state_scope_id,
+                    );
+                    active_clips.push(active_clip_from_segments(
+                        segments,
+                        *rule,
+                        *state,
+                        transform.matrix,
+                        options.max_flattened_segments,
+                    )?);
+                    Ok(())
+                })?;
             }
-            DisplayItem::Shading(shading) => rasterize_shading_item(shading, device, transform)?,
+            DisplayItem::Shading(shading) => {
+                record_raster_display_phase(&mut on_phase, RasterDisplayPhase::Paths, || {
+                    rasterize_shading_item(shading, device, transform)
+                })?;
+            }
             DisplayItem::TransparencyGroup(group) => {
-                truncate_clips_to_scope(
-                    &mut active_clips,
-                    group.state.graphics_state_depth,
-                    group.state.graphics_state_scope_id,
-                );
-                rasterize_transparency_group(
-                    group,
-                    device,
-                    transform,
-                    options,
-                    &active_clips,
-                    transparency_scratch,
-                )?;
+                record_raster_display_phase(&mut on_phase, RasterDisplayPhase::Paths, || {
+                    truncate_clips_to_scope(
+                        &mut active_clips,
+                        group.state.graphics_state_depth,
+                        group.state.graphics_state_scope_id,
+                    );
+                    rasterize_transparency_group(
+                        group,
+                        device,
+                        transform,
+                        options,
+                        &active_clips,
+                        transparency_scratch,
+                    )
+                })?;
             }
-            DisplayItem::Image(image) => draw_image(device, image, transform)?,
+            DisplayItem::Image(image) => {
+                record_raster_display_phase(&mut on_phase, RasterDisplayPhase::Images, || {
+                    draw_image(device, image, transform)
+                })?;
+            }
             DisplayItem::Text(text) => {
-                draw_text_run(
-                    device,
-                    text,
-                    transform,
-                    options,
-                    &mut glyph_cache,
-                    &mut text_scratch,
-                )?;
+                record_raster_display_phase(&mut on_phase, RasterDisplayPhase::Text, || {
+                    draw_text_run(
+                        device,
+                        text,
+                        transform,
+                        options,
+                        &mut glyph_cache,
+                        &mut text_scratch,
+                    )
+                })?;
             }
         }
     }
     Ok(())
+}
+
+fn record_raster_display_phase<T>(
+    on_phase: &mut Option<&mut impl FnMut(RasterDisplayPhase, Duration)>,
+    phase: RasterDisplayPhase,
+    work: impl FnOnce() -> RasterResult<T>,
+) -> RasterResult<T> {
+    if let Some(on_phase) = on_phase.as_deref_mut() {
+        let started = Instant::now();
+        let result = work();
+        on_phase(phase, started.elapsed());
+        result
+    } else {
+        work()
+    }
 }
 
 fn rasterize_shading_item(
@@ -19227,6 +19300,7 @@ mod tests {
             transform,
             PathRasterOptions::default(),
             &mut scratch,
+            None::<&mut fn(RasterDisplayPhase, Duration)>,
         )
         .expect("transparency groups should rasterize");
 

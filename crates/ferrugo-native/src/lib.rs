@@ -19,12 +19,12 @@ use ferrugo_object::{
 use ferrugo_render::{
     build_form_display_list_with_graphics_resources, build_image_display_list,
     build_path_display_list_with_graphics_resources, build_text_display_list,
-    decode_tiling_pattern, rasterize_display_list_into, rasterize_images, rasterize_paths_into,
-    rasterize_text, ColorSpaceResources, DisplayItem, DisplayList, DisplayListOptions,
-    ExtGraphicsStateResources, FontResources, FormResources, GraphicsError, GraphicsErrorKind,
-    ImageResources, PageGeometry, PageRotation, PageTransform, PageTransformOptions, PathBounds,
-    PathRasterOptions, Point, RasterError, RasterErrorKind, ShadingResources, TextDisplayItem,
-    TextWritingMode, TilingPatternResources,
+    decode_tiling_pattern, rasterize_display_list_into_with_phase_timings, rasterize_images,
+    rasterize_paths_into, rasterize_text, ColorSpaceResources, DisplayItem, DisplayList,
+    DisplayListOptions, ExtGraphicsStateResources, FontResources, FormResources, GraphicsError,
+    GraphicsErrorKind, ImageResources, PageGeometry, PageRotation, PageTransform,
+    PageTransformOptions, PathBounds, PathRasterOptions, Point, RasterDisplayPhase, RasterError,
+    RasterErrorKind, ShadingResources, TextDisplayItem, TextWritingMode, TilingPatternResources,
 };
 use ferrugo_syntax::{PdfBytes, PdfName, PdfNumber, PdfPrimitive, PdfReference, PdfString};
 use ferrugo_thumbnail::{
@@ -1297,10 +1297,13 @@ fn render_loaded_document_inner(
             &image_list,
             &text_list,
         );
-        record_render_phase(&mut timings, NativeRenderPhase::RasterPaths, || {
-            rasterize_display_list_into(&ordered_list, &mut raster, transform, path_options)
-                .map_err(map_raster_error)
-        })?;
+        rasterize_ordered_display_list_with_phase_timings(
+            &ordered_list,
+            &mut raster,
+            transform,
+            path_options,
+            &mut timings,
+        )?;
     } else {
         record_render_phase(&mut timings, NativeRenderPhase::RasterPaths, || {
             rasterize_paths_into(&display_list, &mut raster, transform, path_options)
@@ -1394,6 +1397,35 @@ fn record_render_phase<T>(
     let result = operation();
     timings.record(phase, started.elapsed());
     result
+}
+
+fn rasterize_ordered_display_list_with_phase_timings(
+    display_list: &DisplayList,
+    raster: &mut ferrugo_render::RasterDevice,
+    transform: PageTransform,
+    path_options: PathRasterOptions,
+    timings: &mut Option<&mut NativeRenderPhaseTimings>,
+) -> Result<(), ThumbnailError> {
+    rasterize_display_list_into_with_phase_timings(
+        display_list,
+        raster,
+        transform,
+        path_options,
+        |phase, duration| {
+            if let Some(timings) = timings.as_deref_mut() {
+                timings.record(native_render_phase_from_raster_phase(phase), duration);
+            }
+        },
+    )
+    .map_err(map_raster_error)
+}
+
+const fn native_render_phase_from_raster_phase(phase: RasterDisplayPhase) -> NativeRenderPhase {
+    match phase {
+        RasterDisplayPhase::Paths => NativeRenderPhase::RasterPaths,
+        RasterDisplayPhase::Images => NativeRenderPhase::RasterImages,
+        RasterDisplayPhase::Text => NativeRenderPhase::RasterText,
+    }
 }
 
 /// Scans native renderer operator coverage for one document page.
@@ -4425,6 +4457,26 @@ mod tests {
         assert_eq!(trace.thumbnail.width, 160);
         assert!(trace.timings.total >= trace.timings.load_xref_object);
         assert!(trace.timings.display_list_build > std::time::Duration::ZERO);
+    }
+
+    #[test]
+    fn render_with_trace_should_attribute_ordered_images_to_image_phase() {
+        let bytes = include_bytes!("../../../fixtures/generated/mobile-mixed-compression-scan.pdf");
+        let options = ThumbnailOptions {
+            page_index: 0,
+            max_edge: 160,
+            background: ferrugo_thumbnail::Rgba::WHITE,
+            output_format: ferrugo_thumbnail::OutputFormat::Rgba,
+            timeout: std::time::Duration::from_secs(5),
+            annotation_mode: AnnotationMode::Screen,
+            form_appearance_mode: FormAppearanceMode::DocumentState,
+        };
+
+        let trace = NativeBackend::new()
+            .render_with_trace(PdfSource::from_bytes(bytes), &options)
+            .expect("fixture should render with phase timings");
+
+        assert!(trace.timings.raster_images > std::time::Duration::ZERO);
     }
 
     #[test]
