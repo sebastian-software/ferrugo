@@ -1,6 +1,6 @@
 # 0183: Mixed Vector Raster Transparency Edge Cases
 
-Status: in-progress
+Status: done
 Phase: 34
 Size: medium
 Depends on: 0182
@@ -202,4 +202,12 @@ Native baseline slice started on 2026-06-28.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-29.
+
+- Native support gate remains 8 native rendered, 0 fallback required,
+  0 errors.
+- Benchmark gate remains 8 native rendered, 0 fallback required, 0 errors,
+  and 0 budget failures.
+- Poppler visual gate passes the documented threshold slice with 8 total,
+  0 exact, 8 accepted drift, 0 blockers, 0 native errors, and 0 reference
+  errors.

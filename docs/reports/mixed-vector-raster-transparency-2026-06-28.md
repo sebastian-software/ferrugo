@@ -1,7 +1,7 @@
 # Mixed Vector Raster Transparency Baseline 2026-06-28
 
 Milestone: 0183.
-Status: in progress.
+Status: done.
 
 ## Summary
 
@@ -11,11 +11,11 @@ fixtures:
 
 - `fixtures/mixed-vector-raster-transparency-manifest.tsv`
 
-The baseline confirms native coverage is available for the selected typical
-slice: all 8 fixtures render natively with 0 fallbacks, 0 errors, and 0
-benchmark budget failures. Strict Poppler visual comparison still reports 6
-fidelity blockers, so 0183 remains open for renderer fidelity work rather than
-coverage or oracle availability.
+The completed slice confirms native coverage for the selected typical cases:
+all 8 fixtures render natively with 0 fallbacks, 0 errors, and 0 benchmark
+budget failures. The final Poppler visual gate reports 8 accepted drift rows
+and 0 blockers, so the remaining work moves to later typical-document and
+Base14/text-fidelity milestones rather than keeping 0183 open.
 
 ## Fixture Slice
 
