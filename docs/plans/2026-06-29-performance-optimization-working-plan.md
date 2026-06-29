@@ -310,7 +310,7 @@ Work items:
 - [ ] Add fast paths for axis-aligned filled rectangles.
 - [ ] Add fast paths for axis-aligned hairlines and simple strokes.
 - [ ] Flatten reusable paths once per display item instead of per raster pass.
-- [ ] Apply clip/intersection checks before entering expensive pixel loops.
+- [x] Apply clip/intersection checks before entering expensive pixel loops.
 - [x] Precompute bevel/miter stroke join geometry once per stroke instead of
   normalizing join segments for every candidate pixel/sample.
 - [x] Skip per-segment stroke distance checks when the candidate point is
@@ -388,6 +388,32 @@ Rejected candidate from 2026-06-29:
   mean `3.830 ms`, about 3.9% faster on `technical-hatch-clipping`.
 - Decision: mixed result with a clear regression on the primary vector target
   and a sub-5% gain on the secondary target, so the code change was reverted.
+
+Third vector optimization result from 2026-06-29:
+
+- Change: active clip paths now store device-space bounds, and fill/stroke
+  raster bounds are intersected with those clip bounds before entering
+  expensive pixel/sample loops.
+- Target fixture: `fixtures/generated/technical-hatch-clipping.pdf`.
+- Before: `target/benchmark-native-technical-hatch-profile-after-stroke-culling.json`
+  mean `3.830 ms` over 8000 iterations.
+- After: `target/benchmark-native-technical-hatch-clip-bounds.json` mean
+  `2.842 ms` over 5000 iterations, about 25.8% faster.
+- Regression guard: `target/benchmark-native-vector-stress-clip-bounds.json`
+  mean `6.595 ms` vs `target/benchmark-native-vector-stress-line-bounds.json`
+  mean `6.588 ms`, effectively neutral on `vector-stress`.
+- Hot matrix after:
+  `target/performance-matrix-report-vector-clip-bounds.json` reports
+  `technical-hatch-clipping` p95 `3.018 ms` over 30 measured iterations after
+  3 warmups.
+- Previous hot matrix:
+  `target/performance-matrix-report-vector-after-stroke-culling.json` reported
+  `technical-hatch-clipping` p95 `3.912 ms`, so the p95 improvement is about
+  22.9%.
+- Visual/fallback check: current native PNG
+  `target/native-technical-hatch-clip-bounds.png` is byte-identical to
+  `target/performance-matrix-baseline-starter-artifacts-1/native-cold-process-technical-hatch-clipping.png`;
+  focused matrix status remained `rendered` with no fallback bucket or error.
 
 ## Hardware-Aware Rust Notes
 

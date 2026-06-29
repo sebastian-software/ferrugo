@@ -4935,16 +4935,13 @@ pub fn rasterize_paths_into(
                     state.graphics_state_depth,
                     state.graphics_state_scope_id,
                 );
-                active_clips.push(ActiveClip {
-                    path: flatten_path_segments(
-                        segments,
-                        transform.matrix,
-                        options.max_flattened_segments,
-                    )?,
-                    rule: *rule,
-                    graphics_state_depth: state.graphics_state_depth,
-                    graphics_state_scope_id: state.graphics_state_scope_id,
-                });
+                active_clips.push(active_clip_from_segments(
+                    segments,
+                    *rule,
+                    *state,
+                    transform.matrix,
+                    options.max_flattened_segments,
+                )?);
             }
             DisplayItem::Shading(shading) => rasterize_shading_item(shading, device, transform)?,
             DisplayItem::TransparencyGroup(group) => {
@@ -5035,16 +5032,13 @@ fn rasterize_display_list_into_with_scratch(
                     state.graphics_state_depth,
                     state.graphics_state_scope_id,
                 );
-                active_clips.push(ActiveClip {
-                    path: flatten_path_segments(
-                        segments,
-                        transform.matrix,
-                        options.max_flattened_segments,
-                    )?,
-                    rule: *rule,
-                    graphics_state_depth: state.graphics_state_depth,
-                    graphics_state_scope_id: state.graphics_state_scope_id,
-                });
+                active_clips.push(active_clip_from_segments(
+                    segments,
+                    *rule,
+                    *state,
+                    transform.matrix,
+                    options.max_flattened_segments,
+                )?);
             }
             DisplayItem::Shading(shading) => rasterize_shading_item(shading, device, transform)?,
             DisplayItem::TransparencyGroup(group) => {
@@ -6526,6 +6520,7 @@ struct PreparedStrokeJoin {
 #[derive(Debug, Clone, PartialEq)]
 struct ActiveClip {
     path: FlattenedPath,
+    bounds: Option<PathBounds>,
     rule: FillRule,
     graphics_state_depth: usize,
     graphics_state_scope_id: u64,
@@ -6564,6 +6559,24 @@ fn truncate_clips_to_scope(
     }) {
         active_clips.pop();
     }
+}
+
+fn active_clip_from_segments(
+    segments: &[PathSegment],
+    rule: FillRule,
+    state: GraphicsState,
+    matrix: Matrix,
+    max_flattened_segments: usize,
+) -> RasterResult<ActiveClip> {
+    let path = flatten_path_segments(segments, matrix, max_flattened_segments)?;
+    let bounds = flattened_bounds(&path);
+    Ok(ActiveClip {
+        path,
+        bounds,
+        rule,
+        graphics_state_depth: state.graphics_state_depth,
+        graphics_state_scope_id: state.graphics_state_scope_id,
+    })
 }
 
 struct TextDisplayListInterpreter<'r> {
@@ -9496,8 +9509,9 @@ fn fill_path(
     }
     let samples = u32::from(context.options.supersample);
     let sample_count = samples * samples;
-    let Some(bounds) =
-        flattened_bounds(path).and_then(|bounds| device_pixel_bounds(bounds, dimensions, 0.0))
+    let Some(bounds) = flattened_bounds(path)
+        .and_then(|bounds| device_pixel_bounds(bounds, dimensions, 0.0))
+        .and_then(|bounds| intersect_active_clip_pixel_bounds(bounds, context.clips, dimensions))
     else {
         return Ok(());
     };
@@ -9538,7 +9552,9 @@ fn fill_axis_aligned_rect_path(
     context: PathRasterContext<'_>,
     dimensions: RasterDimensions,
 ) -> RasterResult<()> {
-    let Some(bounds) = device_pixel_bounds(rect, dimensions, 0.0) else {
+    let Some(bounds) = device_pixel_bounds(rect, dimensions, 0.0)
+        .and_then(|bounds| intersect_active_clip_pixel_bounds(bounds, context.clips, dimensions))
+    else {
         return Ok(());
     };
     for y in bounds.min_y..bounds.max_y {
@@ -9744,8 +9760,9 @@ fn fill_path_with_tiling_pattern(
     let samples = u32::from(context.options.supersample);
     let sample_count = samples * samples;
     let dimensions = device.dimensions();
-    let Some(bounds) =
-        flattened_bounds(path).and_then(|bounds| device_pixel_bounds(bounds, dimensions, 0.0))
+    let Some(bounds) = flattened_bounds(path)
+        .and_then(|bounds| device_pixel_bounds(bounds, dimensions, 0.0))
+        .and_then(|bounds| intersect_active_clip_pixel_bounds(bounds, context.clips, dimensions))
     else {
         return Ok(());
     };
@@ -9855,6 +9872,31 @@ fn device_pixel_bounds(
         max_x,
         max_y,
     })
+}
+
+fn intersect_pixel_bounds(left: PixelBounds, right: PixelBounds) -> Option<PixelBounds> {
+    let min_x = left.min_x.max(right.min_x);
+    let min_y = left.min_y.max(right.min_y);
+    let max_x = left.max_x.min(right.max_x);
+    let max_y = left.max_y.min(right.max_y);
+    (min_x < max_x && min_y < max_y).then_some(PixelBounds {
+        min_x,
+        min_y,
+        max_x,
+        max_y,
+    })
+}
+
+fn intersect_active_clip_pixel_bounds(
+    mut bounds: PixelBounds,
+    clips: &[ActiveClip],
+    dimensions: RasterDimensions,
+) -> Option<PixelBounds> {
+    for clip in clips {
+        let clip_bounds = device_pixel_bounds(clip.bounds?, dimensions, 0.0)?;
+        bounds = intersect_pixel_bounds(bounds, clip_bounds)?;
+    }
+    Some(bounds)
 }
 
 fn stroke_pixel_bounds(
@@ -9969,7 +10011,9 @@ fn stroke_path(
     };
     let sample_count = samples * samples;
     let dimensions = device.dimensions();
-    let Some(bounds) = stroke_pixel_bounds(stroke_lines, joins, radius, dimensions) else {
+    let Some(bounds) = stroke_pixel_bounds(stroke_lines, joins, radius, dimensions)
+        .and_then(|bounds| intersect_active_clip_pixel_bounds(bounds, context.clips, dimensions))
+    else {
         return Ok(());
     };
     let prepared_joins = prepare_stroke_joins(joins, radius, state.line_join, state.miter_limit);
@@ -14080,6 +14124,62 @@ mod tests {
                 dimensions,
                 0.0,
             ),
+            None
+        );
+    }
+
+    #[test]
+    fn intersect_active_clip_pixel_bounds_should_limit_raster_bounds() {
+        let dimensions = RasterDimensions::new(20, 10).expect("valid dimensions");
+        let paint_bounds = PixelBounds {
+            min_x: 0,
+            min_y: 0,
+            max_x: 20,
+            max_y: 10,
+        };
+        let clips = vec![ActiveClip {
+            path: FlattenedPath::default(),
+            bounds: Some(PathBounds {
+                min_x: 4.25,
+                min_y: 2.0,
+                max_x: 9.75,
+                max_y: 8.5,
+            }),
+            rule: FillRule::Nonzero,
+            graphics_state_depth: 0,
+            graphics_state_scope_id: 0,
+        }];
+
+        assert_eq!(
+            intersect_active_clip_pixel_bounds(paint_bounds, &clips, dimensions),
+            Some(PixelBounds {
+                min_x: 4,
+                min_y: 2,
+                max_x: 10,
+                max_y: 9,
+            })
+        );
+    }
+
+    #[test]
+    fn intersect_active_clip_pixel_bounds_should_skip_empty_clip() {
+        let dimensions = RasterDimensions::new(20, 10).expect("valid dimensions");
+        let paint_bounds = PixelBounds {
+            min_x: 0,
+            min_y: 0,
+            max_x: 20,
+            max_y: 10,
+        };
+        let clips = vec![ActiveClip {
+            path: FlattenedPath::default(),
+            bounds: None,
+            rule: FillRule::Nonzero,
+            graphics_state_depth: 0,
+            graphics_state_scope_id: 0,
+        }];
+
+        assert_eq!(
+            intersect_active_clip_pixel_bounds(paint_bounds, &clips, dimensions),
             None
         );
     }
