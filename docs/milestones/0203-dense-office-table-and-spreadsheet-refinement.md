@@ -1,6 +1,6 @@
 # 0203: Dense Office Table And Spreadsheet Refinement
 
-Status: todo
+Status: done
 Phase: 38
 Size: medium
 Depends on: 0202
@@ -50,4 +50,24 @@ business-document defects.
 
 ## Completion Notes
 
-Empty until done.
+- Produced `docs/reports/dense-office-table-spreadsheet-2026-06-29.md`.
+- Reused the existing focused spreadsheet and layout-stress manifests as the
+  0203 regression corpus.
+- Spreadsheet support gate: 7/7 native, 0 fallback, 0 errors.
+- Layout-stress support gate: 7/7 native, 0 fallback, 0 errors.
+- Spreadsheet benchmark: 7/7 native, 0 budget failures.
+- Layout-stress benchmark: 7/7 native, 0 budget failures.
+- Poppler visual review remains a fidelity backlog signal: spreadsheet review
+  found 1 accepted drift, 2 blockers, and 4 Poppler reference timeouts; layout
+  review found 4 blockers and 3 Poppler reference timeouts.
+- Runtime PDFium remains excluded from the supported path.
+- Validation:
+  - `cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/spreadsheet-grid-manifest.tsv --include-family frozen-header --include-family dense-grid --include-family clipped-cells --include-family stress-grid --fail-on-fallback --max-edge 160 --output target/dense-office-0203-spreadsheet-support.json`
+  - `cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/layout-stress-manifest.tsv --include-family layout-stress --include-family dense-business-table --include-family spreadsheet-grid --include-family two-column --include-family footnotes --include-family page-furniture --fail-on-fallback --max-edge 160 --output target/dense-office-0203-layout-support.json`
+  - `cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/spreadsheet-grid-manifest.tsv --include-family frozen-header --include-family dense-grid --include-family clipped-cells --include-family stress-grid --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/dense-office-0203-spreadsheet-benchmark.json`
+  - `cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/layout-stress-manifest.tsv --include-family layout-stress --include-family dense-business-table --include-family spreadsheet-grid --include-family two-column --include-family footnotes --include-family page-furniture --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/dense-office-0203-layout-benchmark.json`
+  - `cargo run -p pdfrust-cli --no-default-features -- visual-diff-poppler fixtures/generated --manifest fixtures/spreadsheet-grid-manifest.tsv --include-family frozen-header --include-family dense-grid --include-family clipped-cells --include-family stress-grid --max-edge 120 --max-mae 8 --max-p95 64 --max-changed-ratio 0.20 --output target/dense-office-0203-spreadsheet-poppler.json`
+  - `cargo run -p pdfrust-cli --no-default-features -- visual-diff-poppler fixtures/generated --manifest fixtures/layout-stress-manifest.tsv --include-family layout-stress --include-family dense-business-table --include-family spreadsheet-grid --include-family two-column --include-family footnotes --include-family page-furniture --max-edge 120 --max-mae 8 --max-p95 64 --max-changed-ratio 0.20 --output target/dense-office-0203-layout-poppler.json`
+  - `cargo check --workspace --no-default-features`
+  - `cargo test --workspace --no-default-features`
+  - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
