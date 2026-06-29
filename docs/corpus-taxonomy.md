@@ -162,6 +162,30 @@ cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks \
   --max-edge 160
 ```
 
+## Color Managed Print Preview Manifest
+
+`fixtures/color-managed-print-preview-manifest.tsv` is the focused gate for
+server-side, PDFium-free print-preview confidence. It reuses existing generated
+fixtures across OutputIntent metadata, ICCBased image color spaces,
+DeviceCMYK/process color, registration bars, spot-color approximations,
+overprint approximation, prepress page boxes, and print-visible annotations.
+
+Use all families as a native-only gate:
+
+```sh
+cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks \
+  fixtures/generated \
+  --manifest fixtures/color-managed-print-preview-manifest.tsv \
+  --include-family output-intent \
+  --include-family process-color \
+  --include-family icc-image \
+  --include-family registration \
+  --include-family spot-overprint \
+  --include-family print-state \
+  --fail-on-fallback \
+  --max-edge 180
+```
+
 ## Form Appearance Mutation Manifest
 
 `fixtures/form-appearance-mutation-manifest.tsv` is the focused gate for

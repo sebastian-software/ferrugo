@@ -8792,6 +8792,104 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_render_color_managed_print_preview_gate() {
+        type ColorPrintFixture = (&'static [u8], &'static str, usize);
+
+        let fixtures: &[ColorPrintFixture] = &[
+            (
+                include_bytes!("../../../fixtures/generated/output-intent-rgb.pdf") as &[u8],
+                "output intent rgb",
+                1_000,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/prepress-output-intent-page-boxes.pdf")
+                    as &[u8],
+                "prepress output intent page boxes",
+                10_000,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/cmyk-image.pdf") as &[u8],
+                "cmyk image",
+                1_000,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/icc-rgb-image.pdf") as &[u8],
+                "icc rgb image",
+                1_000,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/icc-gray-image.pdf") as &[u8],
+                "icc gray image",
+                1_000,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/icc-cmyk-image.pdf") as &[u8],
+                "icc cmyk image",
+                1_000,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/prepress-registration-color-bars.pdf")
+                    as &[u8],
+                "prepress registration color bars",
+                500,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/separation-spot-color.pdf") as &[u8],
+                "separation spot color",
+                1_000,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/devicen-spot-color.pdf") as &[u8],
+                "devicen spot color",
+                1_000,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/overprint-spot-approximation.pdf")
+                    as &[u8],
+                "overprint spot approximation",
+                1_000,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/prepress-spot-overprint-boundary.pdf")
+                    as &[u8],
+                "prepress spot overprint boundary",
+                10_000,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/annotation-print-preview-flags.pdf")
+                    as &[u8],
+                "annotation print preview flags",
+                500,
+            ),
+        ];
+
+        let options = ThumbnailOptions {
+            max_edge: 180,
+            annotation_mode: AnnotationMode::Print,
+            ..ThumbnailOptions::default()
+        };
+
+        for &(bytes, label, min_visible_pixels) in fixtures {
+            let thumbnail = ThumbnailBackend::render(
+                &NativeBackend::new(),
+                PdfSource::from_bytes(bytes),
+                &options,
+            )
+            .unwrap_or_else(|error| panic!("{label} fixture should render in print mode: {error}"));
+
+            let visible_pixels = thumbnail
+                .bytes
+                .chunks_exact(4)
+                .filter(|pixel| *pixel != [255, 255, 255, 255])
+                .count();
+            assert!(
+                visible_pixels >= min_visible_pixels,
+                "{label} fixture should keep visible color-managed print-preview content"
+            );
+        }
+    }
+
+    #[test]
     fn native_backend_should_inspect_generated_prepress_page_box_metadata() {
         let bytes =
             include_bytes!("../../../fixtures/generated/prepress-output-intent-page-boxes.pdf");

@@ -1,0 +1,13 @@
+path	family	source	license	page_count	features	notes
+fixtures/generated/output-intent-rgb.pdf	output-intent	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	color,output-intent,devicergb,expected:native	OutputIntent catalog baseline for color-managed print-preview metadata.
+fixtures/generated/prepress-output-intent-page-boxes.pdf	output-intent	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	prepress,output-intent,cropbox,trimbox,bleedbox,color,expected:native	Prepress page-box fixture with OutputIntent metadata.
+fixtures/generated/cmyk-image.pdf	process-color	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,cmyk,expected:native	DeviceCMYK image conversion baseline for process-color preview.
+fixtures/generated/icc-rgb-image.pdf	icc-image	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,icc,rgb,cache,expected:native	ICCBased RGB image fixture for transform-cache policy coverage.
+fixtures/generated/icc-gray-image.pdf	icc-image	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,icc,gray,cache,expected:native	ICCBased Gray image fixture for transform-cache policy coverage.
+fixtures/generated/icc-cmyk-image.pdf	icc-image	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,icc,cmyk,cache,expected:native	ICCBased CMYK image fixture for transform-cache policy coverage.
+fixtures/generated/prepress-registration-color-bars.pdf	registration	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	prepress,registration,color-bars,trim-marks,expected:native	Registration targets and process color bars for print-preview review.
+fixtures/generated/separation-spot-color.pdf	spot-overprint	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	color,spot,separation,tint-transform,expected:native	Separation spot-color thumbnail approximation baseline.
+fixtures/generated/devicen-spot-color.pdf	spot-overprint	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	color,spot,devicen,tint-transform,expected:native	DeviceN spot-color thumbnail approximation baseline.
+fixtures/generated/overprint-spot-approximation.pdf	spot-overprint	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	overprint,spot-color,separation,expected:native	Overprint-enabled spot-color approximation baseline.
+fixtures/generated/prepress-spot-overprint-boundary.pdf	spot-overprint	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	prepress,spot-color,overprint,separation,approximation,expected:native	Prepress spot-color and overprint boundary fixture.
+fixtures/generated/annotation-print-preview-flags.pdf	print-state	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	annotation,appearance,flags,print-preview,expected:native	Annotation flag fixture for print-preview visibility.
