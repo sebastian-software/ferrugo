@@ -323,6 +323,16 @@ Second vector optimization result from 2026-06-29:
   `target/performance-matrix-baseline-starter-artifacts-1/native-cold-process-vector-stress.png`;
   focused matrix status remained `rendered` with no fallback bucket or error.
 
+Rejected candidate from 2026-06-29:
+
+- Change tested locally but not kept: skip `point_in_active_clips` calls inside
+  `stroke_path` when the active clip list is empty.
+- Result: `target/benchmark-native-vector-stress-skip-empty-clips.json` mean
+  `6.490 ms` vs `target/benchmark-native-vector-stress-line-bounds.json` mean
+  `6.588 ms`, about 1.5% faster.
+- Decision: below the 5% noise threshold, so the code change was reverted and
+  should not be treated as a proven optimization.
+
 ## Hardware-Aware Rust Notes
 
 Goal: use Rust's memory model and the host CPU well without prematurely
