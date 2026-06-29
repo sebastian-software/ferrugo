@@ -263,14 +263,15 @@ decisions deterministically. See
 
 The native backend exposes a bounded `TextExtractionBackend` implementation for
 one-page search use cases. It returns text runs in content-stream order with
-decoded Unicode, per-glyph page-space origins, font size, and a `visible` flag
-derived from the PDF text rendering mode.
+decoded Unicode, per-glyph page-space origins, page-space `TextQuad` geometry
+for search or selection overlays, font size, and a `visible` flag derived from
+the PDF text rendering mode.
 
 Invisible OCR layers are searchable through this API while remaining invisible
 to raster output. Extraction has explicit run and glyph limits and reports
 `truncated = true` when those limits are reached. It does not perform semantic
 document understanding, producer repair, exact tagged reading-order recovery,
-selection highlighting, or OCR. See
+UI highlight merging, or OCR. See
 `docs/reports/native-text-extraction-search-boundary-2026-06-29.md`.
 
 ## Tagged PDF Accessibility Metadata

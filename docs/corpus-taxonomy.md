@@ -386,12 +386,14 @@ cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks \
 
 `fixtures/text-extraction-search-manifest.tsv` is the focused gate for native
 text extraction and search-boundary behavior. It covers visible text, typical
-office and browser print text, invisible OCR text layers, and tagged-PDF search
-baselines.
+office and browser print text, invisible OCR text layers, tagged-PDF search
+baselines, and focused text geometry cases for rotated, vertical, ligature, and
+mixed-script text.
 
 The manifest uses families `visible-text`, `office-search`, `browser-search`,
-`ocr-layer`, and `tagged-search`. It is an extraction/search boundary set, not
-a semantic reading-order or selection-highlighting conformance suite.
+`ocr-layer`, `tagged-search`, `rotated-geometry`, `vertical-geometry`,
+`ligature-geometry`, and `mixed-script-geometry`. It is an extraction/search
+boundary set, not a semantic reading-order conformance suite.
 
 ## Incremental Memory Budget Manifest
 

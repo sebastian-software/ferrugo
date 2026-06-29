@@ -6787,11 +6787,10 @@ impl<'r> TextDisplayListInterpreter<'r> {
     }
 
     fn advance_text(&mut self, advance: f64) {
-        let translation = match self.current_writing_mode() {
-            TextWritingMode::Horizontal => Matrix::translate(advance, 0.0),
-            TextWritingMode::Vertical => Matrix::translate(0.0, -advance),
-        };
-        self.text.text_matrix = self.text.text_matrix.multiply(translation);
+        self.text.text_matrix = self
+            .text
+            .text_matrix
+            .multiply(advance_translation(self.current_writing_mode(), advance));
     }
 
     fn current_writing_mode(&self) -> TextWritingMode {
@@ -6833,6 +6832,13 @@ impl<'r> TextDisplayListInterpreter<'r> {
                 GraphicsErrorKind::TextOutsideObject { operator },
             ))
         }
+    }
+}
+
+fn advance_translation(writing_mode: TextWritingMode, advance: f64) -> Matrix {
+    match writing_mode {
+        TextWritingMode::Horizontal => Matrix::translate(advance, 0.0),
+        TextWritingMode::Vertical => Matrix::translate(0.0, -advance),
     }
 }
 

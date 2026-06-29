@@ -317,8 +317,23 @@ pub struct PositionedGlyph {
     pub text: String,
     /// Glyph origin in page coordinate space before output raster scaling.
     pub origin: TextPoint,
+    /// Approximate glyph quad for search highlighting and selection geometry.
+    pub quad: TextQuad,
     /// Whether this glyph belongs to a visible text run.
     pub visible: bool,
+}
+
+/// Four page-space points that bound a positioned glyph or mapped character chunk.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TextQuad {
+    /// Baseline origin point.
+    pub origin: TextPoint,
+    /// Baseline advance point.
+    pub advance: TextPoint,
+    /// Advance point offset by the run ascent vector.
+    pub advance_ascent: TextPoint,
+    /// Origin point offset by the run ascent vector.
+    pub origin_ascent: TextPoint,
 }
 
 /// A point in page coordinate space.

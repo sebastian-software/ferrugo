@@ -22,7 +22,8 @@ use pdfrust_render::{
     rasterize_text, ColorSpaceResources, DisplayItem, DisplayList, DisplayListOptions,
     ExtGraphicsStateResources, FontResources, FormResources, GraphicsError, GraphicsErrorKind,
     ImageResources, PageGeometry, PageRotation, PageTransform, PageTransformOptions, PathBounds,
-    PathRasterOptions, RasterError, RasterErrorKind, ShadingResources, TilingPatternResources,
+    PathRasterOptions, Point, RasterError, RasterErrorKind, ShadingResources, TextDisplayItem,
+    TextWritingMode, TilingPatternResources,
 };
 use pdfrust_syntax::{PdfBytes, PdfName, PdfNumber, PdfPrimitive, PdfReference, PdfString};
 use pdfrust_thumbnail::{
@@ -30,8 +31,8 @@ use pdfrust_thumbnail::{
     ArchivalMetadata, DocumentInfo, DocumentMetadata, DocumentMetadataBackend, DocumentStructure,
     OptionalContentBaseState, OptionalContentMetadata, OutlineMetadata, PageLabel,
     PageLabelsMetadata, PageMetadata as ThumbnailPageMetadata, PageSize, PageText, PdfSource,
-    PositionedGlyph, TextExtractionBackend, TextExtractionOptions, TextPoint, TextRun, Thumbnail,
-    ThumbnailBackend, ThumbnailError, ThumbnailOptions,
+    PositionedGlyph, TextExtractionBackend, TextExtractionOptions, TextPoint, TextQuad, TextRun,
+    Thumbnail, ThumbnailBackend, ThumbnailError, ThumbnailOptions,
 };
 
 #[cfg(test)]
@@ -928,14 +929,12 @@ fn extract_text_bytes(
         let glyphs = text
             .glyphs
             .iter()
-            .zip(text.glyph_origins.iter())
+            .enumerate()
             .take(remaining_glyphs)
-            .map(|(glyph, origin)| PositionedGlyph {
+            .map(|(index, glyph)| PositionedGlyph {
                 text: glyph.unicode.clone(),
-                origin: TextPoint {
-                    x: origin.x,
-                    y: origin.y,
-                },
+                origin: text_point(text.glyph_origins[index]),
+                quad: text_glyph_quad(text, index),
                 visible,
             })
             .collect::<Vec<_>>();
@@ -965,6 +964,73 @@ fn extract_text_bytes(
         runs,
         truncated,
     })
+}
+
+fn text_point(point: Point) -> TextPoint {
+    TextPoint {
+        x: point.x,
+        y: point.y,
+    }
+}
+
+fn text_glyph_quad(text: &TextDisplayItem, index: usize) -> TextQuad {
+    let origin = text.glyph_origins[index];
+    let advance = text
+        .glyph_origins
+        .get(index + 1)
+        .copied()
+        .unwrap_or_else(|| {
+            index
+                .checked_sub(1)
+                .and_then(|previous_index| text.glyph_origins.get(previous_index))
+                .map_or_else(
+                    || fallback_glyph_advance_point(text, origin),
+                    |previous| Point {
+                        x: origin.x + (origin.x - previous.x),
+                        y: origin.y + (origin.y - previous.y),
+                    },
+                )
+        });
+    let ascent = text_ascent_vector(text);
+    let advance_ascent = Point {
+        x: advance.x + ascent.x,
+        y: advance.y + ascent.y,
+    };
+    let origin_ascent = Point {
+        x: origin.x + ascent.x,
+        y: origin.y + ascent.y,
+    };
+
+    TextQuad {
+        origin: text_point(origin),
+        advance: text_point(advance),
+        advance_ascent: text_point(advance_ascent),
+        origin_ascent: text_point(origin_ascent),
+    }
+}
+
+fn text_ascent_vector(text: &TextDisplayItem) -> Point {
+    let matrix = text.state.ctm.multiply(text.text_matrix);
+    let origin = matrix.transform_point(0.0, 0.0);
+    let ascent = matrix.transform_point(0.0, text.font_size);
+    Point {
+        x: ascent.x - origin.x,
+        y: ascent.y - origin.y,
+    }
+}
+
+fn fallback_glyph_advance_point(text: &TextDisplayItem, origin: Point) -> Point {
+    let matrix = text.state.ctm.multiply(text.text_matrix);
+    let baseline = matrix.transform_point(0.0, 0.0);
+    let (advance_x, advance_y) = match text.font.writing_mode {
+        TextWritingMode::Horizontal => (text.font_size * 0.5, 0.0),
+        TextWritingMode::Vertical => (0.0, -text.font_size),
+    };
+    let advance = matrix.transform_point(advance_x, advance_y);
+    Point {
+        x: origin.x + (advance.x - baseline.x),
+        y: origin.y + (advance.y - baseline.y),
+    }
 }
 
 fn inspect_bytes(bytes: &[u8]) -> Result<DocumentMetadata, ThumbnailError> {
@@ -9155,6 +9221,15 @@ mod tests {
         assert_eq!(text.runs[0].text, "pdfrust thumbnail fixture");
         assert!(text.runs[0].visible);
         assert_eq!(text.runs[0].glyphs.len(), 25);
+        let first = &text.runs[0].glyphs[0];
+        assert_eq!(first.origin, first.quad.origin);
+        assert!(first.quad.advance.x > first.quad.origin.x);
+        assert_eq!(first.quad.advance.y, first.quad.origin.y);
+        assert_eq!(first.quad.origin_ascent.x, first.quad.origin.x);
+        assert_eq!(
+            first.quad.origin_ascent.y - first.quad.origin.y,
+            text.runs[0].font_size
+        );
     }
 
     #[test]
@@ -9194,6 +9269,50 @@ mod tests {
         assert!(text.truncated);
         assert_eq!(text.runs.len(), 1);
         assert_eq!(text.runs[0].glyphs.len(), 3);
+    }
+
+    #[test]
+    fn native_backend_should_bound_repeated_text_geometry_queries() {
+        let bytes = include_bytes!("../../../fixtures/generated/text-spacing.pdf");
+        let backend = NativeBackend::new();
+        let options = TextExtractionOptions {
+            max_runs: 2,
+            max_glyphs: 4,
+            ..TextExtractionOptions::default()
+        };
+
+        for _ in 0..16 {
+            let text = TextExtractionBackend::extract_text(
+                &backend,
+                PdfSource::from_bytes(bytes),
+                &options,
+            )
+            .expect("repeated text geometry extraction should stay bounded");
+
+            assert!(text.truncated);
+            assert!(text.runs.len() <= options.max_runs);
+            assert!(text.runs.iter().map(|run| run.glyphs.len()).sum::<usize>() <= 4);
+            assert!(text.runs.iter().flat_map(|run| &run.glyphs).all(|glyph| {
+                glyph.origin == glyph.quad.origin && glyph.quad.advance != glyph.quad.origin
+            }));
+        }
+    }
+
+    #[test]
+    fn native_backend_should_extract_vertical_text_geometry_quads() {
+        let bytes = include_bytes!("../../../fixtures/generated/vertical-cjk-text.pdf");
+        let text = TextExtractionBackend::extract_text(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &TextExtractionOptions::default(),
+        )
+        .expect("vertical text fixture should extract geometry");
+
+        let first = &text.runs[0].glyphs[0];
+        assert_eq!(first.origin, first.quad.origin);
+        assert!(first.quad.advance.y < first.quad.origin.y);
+        assert_eq!(first.quad.advance.x, first.quad.origin.x);
+        assert!(first.quad.origin_ascent.y > first.quad.origin.y);
     }
 
     #[test]
