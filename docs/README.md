@@ -81,6 +81,7 @@ is scoped and tested; visual parity work still has known gaps.
 Read:
 
 - [Renderer benchmarks](benchmarks.md)
+- [Performance optimization working plan](plans/2026-06-29-performance-optimization-working-plan.md)
 - [Serverless cold start and binary size](reports/serverless-cold-start-and-binary-size-2026-06-29.md)
 - [Server batch throughput](reports/server-batch-throughput-2026-06-25.md)
 - [Low-memory renderer profile](reports/low-memory-renderer-profile-2026-06-25.md)
