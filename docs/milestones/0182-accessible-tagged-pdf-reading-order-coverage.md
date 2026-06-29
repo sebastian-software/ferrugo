@@ -120,6 +120,15 @@ Native slice committed toward 0182 on 2026-06-28.
   paired 0183 mixed vector/raster Poppler regression gate remains 8 accepted
   drift and 0 blockers. `tagged-office-alt-text.pdf` remains unchanged at MAE
   6.608, p95 2, changed ratio 0.084229.
+- Split the very thin axis-aligned hairline snap bands so 0.25-0.28px office
+  table/grid strokes use rounded device coordinates while 0.28-0.32px map grid
+  strokes keep the forward-fraction policy. The strict tagged visual gate now
+  reports 7 total, 0 exact, 6 accepted drift, and 1 blocker:
+  `tagged-office-alt-text.pdf` moves to accepted drift at MAE 3.169, p95 0,
+  changed ratio 0.075584. `tagged-structure-heavy-report.pdf` remains the only
+  blocker at MAE 6.522, p95 23, changed ratio 0.165179. The paired 0183 mixed
+  vector/raster Poppler regression gate remains 8 accepted drift and
+  0 blockers.
 
 ## Completion Notes
 

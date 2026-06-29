@@ -9889,11 +9889,11 @@ enum HairlineSnapMode {
 }
 
 fn hairline_snap_mode(line_width: f64, _ctm_scale: f64) -> HairlineSnapMode {
-    if (0.15..0.25).contains(&line_width) {
+    if (0.15..0.28).contains(&line_width) {
         HairlineSnapMode::RoundedDeviceCoordinate
-    } else if (0.25..=0.32).contains(&line_width) {
+    } else if (0.28..=0.32).contains(&line_width) {
         // Match Poppler's forward placement for very thin unscaled map/grid
-        // strokes without moving wider 0.35-0.45px decorative rectangles.
+        // strokes without moving narrower 0.25-0.28px office table borders.
         HairlineSnapMode::ForwardHighFraction
     } else {
         HairlineSnapMode::NearestPixelCenter
@@ -15582,6 +15582,10 @@ mod tests {
         );
         assert_eq!(
             hairline_snap_mode(0.233, 2.0),
+            HairlineSnapMode::RoundedDeviceCoordinate
+        );
+        assert_eq!(
+            hairline_snap_mode(0.267, 1.0),
             HairlineSnapMode::RoundedDeviceCoordinate
         );
         assert_eq!(
