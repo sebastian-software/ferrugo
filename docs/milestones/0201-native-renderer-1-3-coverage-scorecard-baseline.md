@@ -1,6 +1,6 @@
 # 0201: Native Renderer 1.3 Coverage Scorecard Baseline
 
-Status: todo
+Status: done
 Phase: 38
 Size: medium
 Depends on: 0200
@@ -49,4 +49,17 @@ runtime profiles.
 
 ## Completion Notes
 
-Empty until done.
+- Added `scripts/generate_coverage_scorecard.sh`.
+- Produced `docs/reports/native-renderer-1-3-coverage-scorecard-2026-06-29.md`.
+- Baseline weighted score: `94.04`.
+- Baseline family blocker: `presentation` scores `86.09`, below the proposed
+  `88.00` per-family threshold.
+- Top weighted gaps: `image.filter`, `graphics.optional-content`,
+  `graphics.transparency`, `graphics.color-management`, and
+  `graphics.pattern-shading`.
+- Runtime PDFium remains excluded from supported 1.3 coverage.
+- Validation:
+  - `scripts/generate_coverage_scorecard.sh target/coverage-scorecard-0201`
+  - `cargo check --workspace --no-default-features`
+  - `cargo test --workspace --no-default-features`
+  - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
