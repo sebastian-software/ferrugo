@@ -2881,6 +2881,7 @@ struct RepeatBenchmarkRecord {
 
 struct NativeDiagnosticBundle<'a> {
     path: &'a str,
+    path_redacted: bool,
     manifest: Option<&'a CorpusManifestEntry>,
     options: &'a ThumbnailOptions,
     metadata: Result<&'a DocumentMetadata, &'a ThumbnailError>,
@@ -3577,10 +3578,14 @@ fn write_native_diagnostic_bundles(
         };
 
         let path_key = normalize_manifest_path(path);
+        let manifest_entry = manifest.and_then(|manifest| manifest.entry_for_path(&path_key));
+        let path_redacted = manifest_entry.is_some_and(|entry| is_sensitive_fixture(path, entry));
+        let diagnostic_path = diagnostic_fixture_id(index, path, manifest_entry);
         let diagnostics = native.memory_diagnostics();
         let bundle = native_diagnostic_bundle_json(NativeDiagnosticBundle {
-            path: &path_key,
-            manifest: manifest.and_then(|manifest| manifest.entry_for_path(&path_key)),
+            path: &diagnostic_path,
+            path_redacted,
+            manifest: manifest_entry,
             options,
             metadata: metadata.as_ref(),
             metadata_ms,
@@ -3596,6 +3601,17 @@ fn write_native_diagnostic_bundles(
         written += 1;
     }
     Ok(written)
+}
+
+fn diagnostic_fixture_id(
+    index: usize,
+    path: &Path,
+    manifest_entry: Option<&CorpusManifestEntry>,
+) -> String {
+    match manifest_entry {
+        Some(entry) if is_sensitive_fixture(path, entry) => format!("local-only-{index:04}"),
+        _ => normalize_manifest_path(path),
+    }
 }
 
 fn scan_operator_coverage_corpus(
@@ -6008,8 +6024,10 @@ fn native_diagnostic_bundle_json(bundle: NativeDiagnosticBundle<'_>) -> String {
             "  \"schema_version\": 1,\n",
             "  \"backend\": \"rust-native\",\n",
             "  \"path\": {},\n",
+            "  \"path_redacted\": {},\n",
             "  \"manifest\": {},\n",
-            "  \"privacy\": {{\"includes_pdf_bytes\":false,\"includes_rendered_pixels\":false,\"includes_document_info\":false,\"redaction\":\"review path and manifest notes before sharing outside the trust boundary\"}},\n",
+            "  \"telemetry\": {{\"collection\":\"none\",\"controlled_by\":\"application\",\"default_enabled\":false}},\n",
+            "  \"privacy\": {{\"includes_pdf_bytes\":false,\"includes_rendered_pixels\":false,\"includes_document_info\":false,\"includes_text_samples\":false,\"includes_private_paths\":false,\"field_classes\":{{\"path\":\"sensitive\",\"manifest\":\"sensitive\",\"options\":\"safe\",\"metadata\":\"safe\",\"stages\":\"safe\",\"native_memory_diagnostics\":\"safe\"}},\"redaction\":\"share only after local review; private/local-only paths and manifest notes are redacted\"}},\n",
             "  \"options\": {},\n",
             "  \"metadata\": {},\n",
             "  \"stages\": [{{\"name\":\"metadata\",\"elapsed_ms\":{:.3},\"outcome\":{}}},{{\"name\":\"render_pipeline\",\"elapsed_ms\":{:.3},\"stage_hint\":{},\"outcome\":{}}}],\n",
@@ -6017,7 +6035,8 @@ fn native_diagnostic_bundle_json(bundle: NativeDiagnosticBundle<'_>) -> String {
             "}}\n"
         ),
         json_string(bundle.path),
-        manifest_entry_json(bundle.manifest),
+        bundle.path_redacted,
+        diagnostic_manifest_entry_json(bundle.manifest, bundle.path_redacted),
         thumbnail_options_json(bundle.options),
         safe_metadata_json(bundle.metadata),
         bundle.metadata_ms,
@@ -6027,6 +6046,14 @@ fn native_diagnostic_bundle_json(bundle: NativeDiagnosticBundle<'_>) -> String {
         thumbnail_error_json(bundle.render_error),
         native_memory_diagnostics_json(bundle.diagnostics)
     )
+}
+
+fn diagnostic_manifest_entry_json(entry: Option<&CorpusManifestEntry>, redacted: bool) -> String {
+    if redacted {
+        "{\"status\":\"redacted\",\"reason\":\"privacy-sensitive-fixture\"}".to_string()
+    } else {
+        manifest_entry_json(entry)
+    }
 }
 
 fn thumbnail_options_json(options: &ThumbnailOptions) -> String {
@@ -8855,11 +8882,43 @@ mod tests {
 
         assert_eq!(written, 1);
         assert_eq!(entries.len(), 1);
+        assert!(bundle.contains("\"telemetry\": {\"collection\":\"none\""));
         assert!(bundle.contains("\"includes_pdf_bytes\":false"));
         assert!(bundle.contains("\"includes_rendered_pixels\":false"));
+        assert!(bundle.contains("\"includes_text_samples\":false"));
+        assert!(bundle.contains("\"includes_private_paths\":false"));
+        assert!(bundle.contains("\"field_classes\""));
         assert!(bundle.contains("\"stage_hint\":\"display-list-or-raster\""));
         assert!(bundle.contains("\"category\":\"graphics.optional-content\""));
         assert!(!bundle.contains("%PDF"));
+
+        let private_entry = CorpusManifestEntry {
+            path: "fixtures/local-corpus/private/customer/invoice.pdf".to_string(),
+            family: "invoice".to_string(),
+            source: "local-corpus".to_string(),
+            license: "local-review-only".to_string(),
+            page_count: 1,
+            features: vec!["privacy:private".to_string(), "invoice".to_string()],
+            notes: "customer name and account number".to_string(),
+        };
+        let private_error = ThumbnailError::unsupported_feature("image.filter");
+        let diagnostics = NativeBackend::new().memory_diagnostics();
+        let private_bundle = native_diagnostic_bundle_json(NativeDiagnosticBundle {
+            path: "local-only-0000",
+            path_redacted: true,
+            manifest: Some(&private_entry),
+            options: &options,
+            metadata: Err(&private_error),
+            metadata_ms: 1.0,
+            render_error: &private_error,
+            render_ms: 1.0,
+            diagnostics: &diagnostics,
+        });
+        assert!(private_bundle.contains("\"path\": \"local-only-0000\""));
+        assert!(private_bundle.contains("\"path_redacted\": true"));
+        assert!(private_bundle.contains("\"status\":\"redacted\""));
+        assert!(!private_bundle.contains("customer/invoice.pdf"));
+        assert!(!private_bundle.contains("customer name"));
     }
 
     #[test]

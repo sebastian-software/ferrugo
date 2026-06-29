@@ -640,6 +640,7 @@ class/category, a coarse stage hint, and native memory diagnostics. They do not
 include PDF bytes, rendered pixels, or document-info fields such as title or
 author by default. Review the path and manifest notes before sharing a bundle
 outside the document trust boundary. See
+`docs/policies/telemetry-diagnostics-privacy.md` and
 `docs/reports/renderer-diagnostics-bundle-2026-06-25.md`.
 
 Extract committed fixture metadata with page sizes and manifest tags:

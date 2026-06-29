@@ -41,6 +41,9 @@ Errors may include high-level typed error classes, stable unsupported buckets,
 and short diagnostic messages. Maintainers must review new trace fields before
 adding them and reject fields that expose document payload data.
 
+The broader diagnostic field classification and sharing checklist lives in
+`docs/policies/telemetry-diagnostics-privacy.md`.
+
 ## Size Limits
 
 Tracing defaults to 256 operator events and rejects `--max-events` values above
