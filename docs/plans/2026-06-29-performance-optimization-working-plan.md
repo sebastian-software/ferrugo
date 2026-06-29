@@ -619,6 +619,29 @@ Rejected candidate from 2026-06-30:
   a split strategy that applies bounds selectively to sparse/simple join sets
   and proves neutrality on `vector-stress`.
 
+Rejected candidate from 2026-06-30:
+
+- Change tested locally but not kept: keep the prepared bevel/miter join
+  structure unchanged and add only the cheap square-bounds check before
+  round-join `distance_squared`.
+- Rationale: this isolated the round-join part of the previous candidate to
+  test whether the dense-vector regression came from widening
+  `PreparedStrokeJoin` or from the extra branch in join predicates.
+- Baseline:
+  `target/performance-matrix-report-vector-join-bounds-before.json`,
+  native hot-render, `report/vector`, `--max-edge 160`, 200 measured
+  iterations after 10 warmups.
+- Candidate:
+  `target/performance-matrix-report-vector-round-join-bounds-after.json`, same
+  command and host.
+- Result: rejected by the protection set. `vector-stress.pdf` p95 regressed
+  `6.658 ms` -> `8.463 ms` (~27.1% slower), `technical-linework-dimensions.pdf`
+  regressed `0.957 ms` -> `1.018 ms` (~6.4% slower), and
+  `prepress-trim-bleed-marks.pdf` regressed `1.088 ms` -> `1.149 ms` (~5.6%
+  slower). `technical-hatch-clipping.pdf` was effectively neutral.
+- Decision: reverted. Round-join bounds are not a good scalar branch tradeoff
+  for the current vector workload.
+
 Current profile after accepted vector optimizations:
 
 - `target/sample-vector-stress-current.txt` still shows `stroke_path` as the
