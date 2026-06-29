@@ -24,6 +24,16 @@ if (typeof smoke !== "function") {
   console.error("missing pdfrust_wasm_smoke_status export");
   process.exit(3);
 }
+const fixtureCount = instance.exports.pdfrust_wasm_smoke_fixture_count;
+if (typeof fixtureCount !== "function") {
+  console.error("missing pdfrust_wasm_smoke_fixture_count export");
+  process.exit(3);
+}
+const totalOutputBytes = instance.exports.pdfrust_wasm_smoke_total_output_bytes;
+if (typeof totalOutputBytes !== "function") {
+  console.error("missing pdfrust_wasm_smoke_total_output_bytes export");
+  process.exit(3);
+}
 
 const smokeStart = performance.now();
 const status = smoke();
@@ -32,6 +42,11 @@ const smokeMs = performance.now() - smokeStart;
 if (status === 0) {
   console.error("WASM smoke render returned failure status");
   process.exit(4);
+}
+const totalOutputByteCount = totalOutputBytes();
+if (totalOutputByteCount === 0) {
+  console.error("WASM smoke output byte report returned failure status");
+  process.exit(5);
 }
 
 const result = {
@@ -44,6 +59,8 @@ const result = {
   status,
   width: status >>> 16,
   height: status & 0xffff,
+  fixture_count: fixtureCount(),
+  total_output_bytes: totalOutputByteCount,
 };
 
 await writeFile(outputPath, `${JSON.stringify(result, null, 2)}\n`);

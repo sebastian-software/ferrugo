@@ -1,6 +1,6 @@
 # 0196: WASM Low Memory Mobile Browser Gate
 
-Status: todo
+Status: done
 Phase: 37
 Size: medium
 Depends on: 0195
@@ -49,4 +49,22 @@ workflows.
 
 ## Completion Notes
 
-Empty until done.
+Completed 2026-06-29.
+
+- Added a low-memory WASM preview suite covering plain text, browser print,
+  mobile scan, AcroForm, and dense invoice fixtures.
+- Extended the WASM smoke API and harness to report fixture count and total
+  RGBA output bytes.
+- Added release thresholds for artifact size, compile time, instantiate time,
+  smoke render time, minimum fixture count, and total output bytes.
+- Documented browser-only constraints and follow-up optimization backlog in
+  `docs/reports/wasm-low-memory-mobile-browser-2026-06-29.md`.
+
+Validation:
+
+- `cargo fmt --check`
+- `cargo check --workspace --no-default-features`
+- `cargo test -p pdfrust-wasm-smoke --no-default-features -- --nocapture`
+- `PDFRUST_WASM_REPORT=target/wasm-0196-mobile-smoke.json bash scripts/check_wasm_smoke.sh`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+- `cargo test --workspace --no-default-features`
