@@ -1139,6 +1139,28 @@ Second image raster optimization result from 2026-06-30:
   byte-identical to `target/axis-image-visual-current/` for `dct-image`,
   `predictor-image`, `scanner-large-image-budget`, and `soft-mask-image`.
 
+Rejected image raster candidate from 2026-06-30:
+
+- Change tested locally but not kept: apply the same row-slice compositing
+  strategy to non-axis-aligned color images, leaving stencil images on the
+  checked pixel path.
+- Rationale: this targeted rotated image placements and soft-mask sheets that
+  still used the generic per-pixel device accessor route.
+- Baselines:
+  `target/performance-matrix-generic-image-row-baseline.json` and
+  `target/performance-matrix-generic-image-row-transparency-baseline.json`.
+- Candidate:
+  `target/performance-matrix-generic-image-row-after.json` and
+  `target/performance-matrix-generic-image-row-transparency-after.json`.
+- Result: mixed and not protection-set-neutral. `image-heavy-rotated-mask-sheet.pdf`
+  improved only about 3-4% p95, but `dct-image.pdf` regressed `0.066 ms` ->
+  `0.117 ms` (~77% slower) and
+  `browser-print-raster-vector-mix.pdf` regressed `0.446 ms` -> `0.716 ms`
+  (~60% slower). All records still rendered with no fallback or error.
+- Decision: reverted. Keep row-slice compositing scoped to the axis-aligned
+  image loop until a rotated-image-specific profile shows a cleaner branch
+  shape.
+
 ## Phase 5: Session Cache, But Bounded
 
 Goal: improve batch and multi-page workloads without introducing hidden global
