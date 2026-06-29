@@ -102,6 +102,8 @@ pub struct ThumbnailOptions {
     pub output_format: OutputFormat,
     /// Per-thumbnail timeout.
     pub timeout: Duration,
+    /// Annotation visibility mode for screen or print-preview rendering.
+    pub annotation_mode: AnnotationMode,
 }
 
 impl Default for ThumbnailOptions {
@@ -112,8 +114,19 @@ impl Default for ThumbnailOptions {
             background: Rgba::WHITE,
             output_format: OutputFormat::default(),
             timeout: DEFAULT_TIMEOUT,
+            annotation_mode: AnnotationMode::default(),
         }
     }
+}
+
+/// Annotation visibility mode used by thumbnail rendering.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum AnnotationMode {
+    /// Screen-style preview: visible annotations render unless hidden or no-view.
+    #[default]
+    Screen,
+    /// Print-style preview: only printable annotations render.
+    Print,
 }
 
 /// Rendered thumbnail bytes and layout metadata.
@@ -530,6 +543,8 @@ pub mod unsupported_feature_buckets {
     pub const GRAPHICS_STROKE_CLIP: &str = "graphics.stroke-clip";
     /// Page uses unsupported transparency, soft-mask, blend, or overprint behavior.
     pub const GRAPHICS_TRANSPARENCY: &str = "graphics.transparency";
+    /// Annotation appearance is unsupported or cannot be synthesized safely.
+    pub const ANNOTATION_APPEARANCE: &str = "annotation.appearance";
     /// Image uses unsupported color-space conversion or decode behavior.
     pub const IMAGE_COLOR_SPACE: &str = "image.color-space";
     /// Image stream uses an unsupported codec or predictor.
@@ -554,6 +569,7 @@ pub const STABLE_UNSUPPORTED_FEATURE_BUCKETS: &[&str] = &[
     unsupported_feature_buckets::GRAPHICS_PATTERN_SHADING,
     unsupported_feature_buckets::GRAPHICS_STROKE_CLIP,
     unsupported_feature_buckets::GRAPHICS_TRANSPARENCY,
+    unsupported_feature_buckets::ANNOTATION_APPEARANCE,
     unsupported_feature_buckets::IMAGE_COLOR_SPACE,
     unsupported_feature_buckets::IMAGE_FILTER,
     unsupported_feature_buckets::FORM_XFA_DYNAMIC,
@@ -677,6 +693,7 @@ mod tests {
                 background: Rgba::WHITE,
                 output_format: OutputFormat::Rgba,
                 timeout: Duration::from_secs(5),
+                annotation_mode: AnnotationMode::Screen,
             }
         );
     }
@@ -721,8 +738,9 @@ mod tests {
         assert_eq!(error.unsupported_feature_bucket(), Some("image.filter"));
         assert!(STABLE_UNSUPPORTED_FEATURE_BUCKETS.contains(&buckets::IMAGE_FILTER));
         assert!(STABLE_UNSUPPORTED_FEATURE_BUCKETS.contains(&buckets::RENDERER_MEMORY_BUDGET));
+        assert!(STABLE_UNSUPPORTED_FEATURE_BUCKETS.contains(&buckets::ANNOTATION_APPEARANCE));
         assert!(STABLE_UNSUPPORTED_FEATURE_BUCKETS.contains(&buckets::FORM_XFA_DYNAMIC));
-        assert_eq!(STABLE_UNSUPPORTED_FEATURE_BUCKETS.len(), 14);
+        assert_eq!(STABLE_UNSUPPORTED_FEATURE_BUCKETS.len(), 15);
     }
 
     #[test]

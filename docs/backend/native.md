@@ -499,6 +499,22 @@ open, execute, or preview embedded payloads, and it does not implement a
 portfolio browser. The metadata scan remains bounded and reports presence
 signals only. See `docs/reports/embedded-files-portfolio-2026-06-25.md`.
 
+## Annotation Preview Modes
+
+Annotation rendering supports screen-style and print-preview-style visibility
+through `ThumbnailOptions.annotation_mode`. Screen mode renders static
+annotation appearances unless the annotation flags mark them hidden, invisible,
+or no-view. Print mode renders only annotations whose `/F` flags include
+`Print`; hidden and invisible annotations remain suppressed, while `NoView`
+does not suppress print output.
+
+Existing normal appearance streams remain authoritative. Missing appearances
+are synthesized only for the bounded markup/widget subset documented in
+`docs/policies/annotation-fallbacks.md`. Appearance-free FreeText annotations
+return typed `annotation.appearance` unsupported rather than guessing text
+layout. See
+`docs/reports/annotation-print-preview-fidelity-2026-06-29.md`.
+
 ## Linearized First-Page Loading
 
 For classic-xref PDFs that declare a valid linearization dictionary, page-zero

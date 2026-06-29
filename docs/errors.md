@@ -46,7 +46,7 @@ available as `pdfrust_thumbnail::STABLE_UNSUPPORTED_FEATURE_BUCKETS`.
 | `graphics.transparency` | Page requires unsupported soft-mask forms, transparency groups, or blend modes. | 0048-0049 |
 | `graphics.pattern-shading` | Page requires tiling patterns or shadings. | 0050 |
 | `graphics.stroke-clip` | Page depends on stroke joins, caps, dashes, or clipping fidelity. | 0051 |
-| `annotation.appearance` | Annotation appearance is missing, malformed, dynamically generated, or requires unsupported form/interaction behavior. | 0052 |
+| `annotation.appearance` | Annotation appearance is missing, malformed, dynamically generated, or requires unsupported form/interaction behavior. | 0052, 0193 |
 | `form.acroform` | AcroForm widget appearance is missing, dynamic, XFA-backed, script-backed, or requires validation/editing behavior. | 0053 |
 | `form.xfa-dynamic` | Document declares XFA without static AcroForm fields or appearances, requiring an XFA runtime to render faithfully. | 0111 |
 | `graphics.optional-content` | Optional content uses unsupported membership, usage application, intent, or viewer-state policy. | 0054 |

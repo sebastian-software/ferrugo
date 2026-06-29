@@ -26,12 +26,12 @@ use pdfrust_render::{
 };
 use pdfrust_syntax::{PdfBytes, PdfName, PdfNumber, PdfPrimitive, PdfReference, PdfString};
 use pdfrust_thumbnail::{
-    unsupported_feature_buckets as buckets, AccessibilityMetadata, ArchivalMetadata, DocumentInfo,
-    DocumentMetadata, DocumentMetadataBackend, DocumentStructure, OptionalContentBaseState,
-    OptionalContentMetadata, OutlineMetadata, PageLabel, PageLabelsMetadata,
-    PageMetadata as ThumbnailPageMetadata, PageSize, PageText, PdfSource, PositionedGlyph,
-    TextExtractionBackend, TextExtractionOptions, TextPoint, TextRun, Thumbnail, ThumbnailBackend,
-    ThumbnailError, ThumbnailOptions,
+    unsupported_feature_buckets as buckets, AccessibilityMetadata, AnnotationMode,
+    ArchivalMetadata, DocumentInfo, DocumentMetadata, DocumentMetadataBackend, DocumentStructure,
+    OptionalContentBaseState, OptionalContentMetadata, OutlineMetadata, PageLabel,
+    PageLabelsMetadata, PageMetadata as ThumbnailPageMetadata, PageSize, PageText, PdfSource,
+    PositionedGlyph, TextExtractionBackend, TextExtractionOptions, TextPoint, TextRun, Thumbnail,
+    ThumbnailBackend, ThumbnailError, ThumbnailOptions,
 };
 
 /// Stable crate role used by architecture smoke tests and documentation.
@@ -42,6 +42,7 @@ const BUCKET_GRAPHICS_COLOR_MANAGEMENT: &str = buckets::GRAPHICS_COLOR_MANAGEMEN
 const BUCKET_GRAPHICS_PATTERN_SHADING: &str = buckets::GRAPHICS_PATTERN_SHADING;
 const BUCKET_GRAPHICS_STROKE_CLIP: &str = buckets::GRAPHICS_STROKE_CLIP;
 const BUCKET_GRAPHICS_TRANSPARENCY: &str = buckets::GRAPHICS_TRANSPARENCY;
+const BUCKET_ANNOTATION_APPEARANCE: &str = buckets::ANNOTATION_APPEARANCE;
 const BUCKET_IMAGE_COLOR_SPACE: &str = buckets::IMAGE_COLOR_SPACE;
 const BUCKET_IMAGE_FILTER: &str = buckets::IMAGE_FILTER;
 const BUCKET_FORM_XFA_DYNAMIC: &str = buckets::FORM_XFA_DYNAMIC;
@@ -1065,7 +1066,7 @@ fn render_loaded_document(
         rasterize_text(&text_list, &mut raster, transform).map_err(map_raster_error)?;
     }
     let (annotation_forms, annotation_content, annotation_fallback_content) =
-        page_annotation_appearance_resources(document, page)?;
+        page_annotation_appearance_resources(document, page, options.annotation_mode)?;
     if !annotation_content.is_empty() {
         let annotation_list = build_form_display_list_with_graphics_resources(
             tokenize_content(PdfBytes::new(&annotation_content)),
@@ -1138,7 +1139,7 @@ pub fn scan_operator_coverage(
 
     if options.include_annotations {
         let (_, annotation_content, annotation_fallback_content) =
-            page_annotation_appearance_resources(&document, page)?;
+            page_annotation_appearance_resources(&document, page, AnnotationMode::Screen)?;
         if !annotation_content.is_empty() {
             scanner.scan_stream(&annotation_content)?;
         }
@@ -1769,6 +1770,7 @@ fn page_form_resources(
 fn page_annotation_appearance_resources(
     document: &ClassicDocument<'_>,
     page: &ObjectPageMetadata,
+    mode: AnnotationMode,
 ) -> Result<(FormResources, Vec<u8>, Vec<u8>), ThumbnailError> {
     let object = document
         .objects
@@ -1788,8 +1790,11 @@ fn page_annotation_appearance_resources(
         let Some(dictionary) = annotation_dictionary(document, annotation)? else {
             continue;
         };
+        if !annotation_visible_in_mode(dictionary, mode) {
+            continue;
+        }
         let Some(reference) = normal_appearance_reference(dictionary) else {
-            append_annotation_fallback(&mut fallback_content, dictionary);
+            append_annotation_fallback(&mut fallback_content, dictionary)?;
             continue;
         };
         let Some(rect) = annotation_rect(dictionary) else {
@@ -2371,6 +2376,32 @@ fn annotation_dictionary<'a>(
     }
 }
 
+const ANNOTATION_FLAG_INVISIBLE: i64 = 1 << 0;
+const ANNOTATION_FLAG_HIDDEN: i64 = 1 << 1;
+const ANNOTATION_FLAG_PRINT: i64 = 1 << 2;
+const ANNOTATION_FLAG_NO_VIEW: i64 = 1 << 5;
+
+fn annotation_visible_in_mode(
+    annotation: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    mode: AnnotationMode,
+) -> bool {
+    let flags = annotation_flags(annotation);
+    if flags & (ANNOTATION_FLAG_INVISIBLE | ANNOTATION_FLAG_HIDDEN) != 0 {
+        return false;
+    }
+    match mode {
+        AnnotationMode::Screen => flags & ANNOTATION_FLAG_NO_VIEW == 0,
+        AnnotationMode::Print => flags & ANNOTATION_FLAG_PRINT != 0,
+    }
+}
+
+fn annotation_flags(annotation: &[(PdfName<'_>, PdfPrimitive<'_>)]) -> i64 {
+    match dictionary_value(annotation, b"F") {
+        Some(PdfPrimitive::Number(PdfNumber::Integer(flags))) => *flags,
+        _ => 0,
+    }
+}
+
 fn normal_appearance_reference(
     annotation: &[(PdfName<'_>, PdfPrimitive<'_>)],
 ) -> Option<PdfReference> {
@@ -2423,12 +2454,12 @@ fn annotation_rect(annotation: &[(PdfName<'_>, PdfPrimitive<'_>)]) -> Option<Pat
 fn append_annotation_fallback(
     content: &mut Vec<u8>,
     annotation: &[(PdfName<'_>, PdfPrimitive<'_>)],
-) {
+) -> Result<(), ThumbnailError> {
     let Some(PdfPrimitive::Name(subtype)) = dictionary_value(annotation, b"Subtype") else {
-        return;
+        return Ok(());
     };
     let Some(rect) = annotation_rect(annotation).filter(valid_annotation_bounds) else {
-        return;
+        return Ok(());
     };
     match subtype.as_bytes() {
         b"Highlight" => append_highlight_annotation_fallback(content, annotation, rect),
@@ -2437,9 +2468,11 @@ fn append_annotation_fallback(
         b"Circle" => append_circle_annotation_fallback(content, annotation, rect),
         b"Text" => append_text_note_annotation_fallback(content, annotation, rect),
         b"Widget" => append_widget_annotation_fallback(content, annotation, rect),
+        b"FreeText" => return Err(unsupported_feature(BUCKET_ANNOTATION_APPEARANCE)),
         b"Link" => {}
         _ => {}
     }
+    Ok(())
 }
 
 fn valid_annotation_bounds(bounds: &PathBounds) -> bool {
@@ -4107,6 +4140,7 @@ mod tests {
             },
             output_format: pdfrust_thumbnail::OutputFormat::Rgba,
             timeout: pdfrust_thumbnail::DEFAULT_TIMEOUT,
+            annotation_mode: AnnotationMode::Screen,
         };
 
         let first = NativePageCacheKey::from_options(0x1111, &options, "default");
@@ -4237,6 +4271,7 @@ mod tests {
                         background: pdfrust_thumbnail::Rgba::WHITE,
                         output_format: pdfrust_thumbnail::OutputFormat::Rgba,
                         timeout: std::time::Duration::from_secs(5),
+                        annotation_mode: AnnotationMode::Screen,
                     },
                 )
                 .unwrap_or_else(|error| panic!("{label} should render under low memory: {error}"));
@@ -4263,6 +4298,7 @@ mod tests {
                     background: pdfrust_thumbnail::Rgba::WHITE,
                     output_format: pdfrust_thumbnail::OutputFormat::Rgba,
                     timeout: std::time::Duration::from_secs(5),
+                    annotation_mode: AnnotationMode::Screen,
                 },
             )
             .expect_err("tight page raster budget should fail deterministically");
@@ -5075,6 +5111,7 @@ mod tests {
                         background: pdfrust_thumbnail::Rgba::WHITE,
                         output_format: pdfrust_thumbnail::OutputFormat::Rgba,
                         timeout: std::time::Duration::from_secs(5),
+                        annotation_mode: AnnotationMode::Screen,
                     },
                 )
                 .unwrap_or_else(|error| panic!("{label} should render under low memory: {error}"));
@@ -5777,6 +5814,71 @@ mod tests {
         assert_eq!(rgba_at(&thumbnail, 90, 29), [255, 255, 0, 255]);
         assert_eq!(rgba_at(&thumbnail, 80, 29), [0, 0, 0, 255]);
         assert_eq!(rgba_at(&thumbnail, 105, 29), [255, 255, 255, 255]);
+    }
+
+    #[test]
+    fn native_backend_should_apply_annotation_flags_for_screen_and_print_preview() {
+        let bytes =
+            include_bytes!("../../../fixtures/generated/annotation-print-preview-flags.pdf");
+        let screen = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 180,
+                annotation_mode: AnnotationMode::Screen,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("annotation flag fixture should render in screen mode");
+        let print = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 180,
+                annotation_mode: AnnotationMode::Print,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("annotation flag fixture should render in print mode");
+
+        assert_eq!(screen.width, 180);
+        assert_eq!(screen.height, 80);
+        assert_eq!(rgba_at(&screen, 20, 60), [229, 0, 0, 255]);
+        assert_eq!(rgba_at(&screen, 55, 60), [0, 51, 229, 255]);
+        assert_eq!(rgba_at(&screen, 90, 60), [235, 235, 235, 255]);
+        assert_eq!(rgba_at(&screen, 125, 60), [235, 235, 235, 255]);
+        assert_eq!(rgba_at(&screen, 160, 60), [235, 235, 235, 255]);
+
+        assert_eq!(rgba_at(&print, 20, 60), [229, 0, 0, 255]);
+        assert_eq!(rgba_at(&print, 55, 60), [235, 235, 235, 255]);
+        assert_eq!(rgba_at(&print, 90, 60), [235, 235, 235, 255]);
+        assert_eq!(rgba_at(&print, 125, 60), [235, 235, 235, 255]);
+        assert_eq!(rgba_at(&print, 160, 60), [140, 51, 204, 255]);
+    }
+
+    #[test]
+    fn native_backend_should_report_unsupported_freetext_synthesis() {
+        let bytes = include_bytes!(
+            "../../../fixtures/generated/freetext-annotation-without-appearance.pdf"
+        );
+        let error = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 120,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect_err("FreeText without appearance should be a typed unsupported boundary");
+
+        assert_eq!(
+            error.class(),
+            pdfrust_thumbnail::ThumbnailErrorClass::Unsupported
+        );
+        assert_eq!(
+            error.unsupported_feature_bucket(),
+            Some(BUCKET_ANNOTATION_APPEARANCE)
+        );
     }
 
     #[test]
@@ -9416,6 +9518,7 @@ mod tests {
                 background: pdfrust_thumbnail::Rgba::WHITE,
                 output_format: pdfrust_thumbnail::OutputFormat::Rgba,
                 timeout: std::time::Duration::from_millis(100),
+                annotation_mode: AnnotationMode::Screen,
             },
         )
         .expect_err("huge image dimensions should fail before allocation");

@@ -1,7 +1,7 @@
 # Annotation Fallback Policy
 
-Status: accepted for 0091.
-Date: 2026-06-25.
+Status: accepted for 0091, updated for 0193.
+Date: 2026-06-29.
 
 The native renderer may synthesize static thumbnail appearances for common page
 annotations that do not provide a usable normal appearance stream. Existing
@@ -21,9 +21,24 @@ annotations that do not provide a usable normal appearance stream. Existing
 ## Non-Visual Metadata
 
 - `/Link` annotations without appearance streams remain invisible.
+- `/FreeText` annotations without a usable appearance stream return typed
+  `annotation.appearance` unsupported instead of guessing text layout.
 - URI, action, destination, popup, and contents metadata are not executed or
   displayed by thumbnail rendering.
 - Unknown annotation subtypes without appearances are skipped.
+
+## Preview Visibility
+
+`ThumbnailOptions.annotation_mode` controls static annotation visibility:
+
+- `Screen`: render annotations unless `/F` marks them `Invisible`, `Hidden`,
+  or `NoView`.
+- `Print`: render only annotations with the `/F` `Print` bit set; `NoView`
+  does not suppress print-preview output, while `Invisible` and `Hidden`
+  still do.
+
+This is a thumbnail preview policy. It does not flatten annotations into the
+source file, persist viewer state, execute actions, or open popup/comment UI.
 
 ## Bounds And Performance
 

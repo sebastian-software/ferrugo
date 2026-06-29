@@ -20,8 +20,8 @@ use pdfrust_pdfium::PdfiumBackend;
 #[cfg(any(feature = "pdfium", test))]
 use pdfrust_thumbnail::PageSize;
 use pdfrust_thumbnail::{
-    DocumentMetadata, DocumentMetadataBackend, PdfSource, Rgba, ThumbnailBackend, ThumbnailError,
-    ThumbnailOptions, DEFAULT_MAX_EDGE, DEFAULT_PAGE_INDEX, DEFAULT_TIMEOUT,
+    AnnotationMode, DocumentMetadata, DocumentMetadataBackend, PdfSource, Rgba, ThumbnailBackend,
+    ThumbnailError, ThumbnailOptions, DEFAULT_MAX_EDGE, DEFAULT_PAGE_INDEX, DEFAULT_TIMEOUT,
 };
 
 const WORKER_POLL_INTERVAL: Duration = Duration::from_millis(10);
@@ -255,6 +255,17 @@ fn thumbnail_options(config: &RenderConfig) -> ThumbnailOptions {
         background: config.background,
         output_format: pdfrust_thumbnail::OutputFormat::Png,
         timeout: config.timeout,
+        annotation_mode: config.annotation_mode,
+    }
+}
+
+fn parse_annotation_mode(value: &str) -> Result<AnnotationMode, CliError> {
+    match value {
+        "screen" => Ok(AnnotationMode::Screen),
+        "print" => Ok(AnnotationMode::Print),
+        _ => Err(CliError::Usage(format!(
+            "invalid --annotation-mode `{value}`; expected screen or print"
+        ))),
     }
 }
 
@@ -327,6 +338,7 @@ fn summarize_fallbacks_command(args: &[OsString]) -> Result<(), CliError> {
         background: config.background,
         output_format: pdfrust_thumbnail::OutputFormat::Png,
         timeout: config.timeout,
+        annotation_mode: AnnotationMode::Screen,
     };
     let fixtures = pdf_inputs(&config.input)?;
     let manifest = match &config.manifest {
@@ -450,6 +462,7 @@ fn producer_regression_report_command(args: &[OsString]) -> Result<(), CliError>
         background: config.background,
         output_format: pdfrust_thumbnail::OutputFormat::Png,
         timeout: config.timeout,
+        annotation_mode: AnnotationMode::Screen,
     };
     let fixtures = pdf_inputs(&config.input)?;
     let manifest = read_corpus_manifest(&config.manifest)?;
@@ -479,6 +492,7 @@ fn classify_pdf20_usage_command(args: &[OsString]) -> Result<(), CliError> {
         background: config.background,
         output_format: pdfrust_thumbnail::OutputFormat::Png,
         timeout: config.timeout,
+        annotation_mode: AnnotationMode::Screen,
     };
     let fixtures = pdf_inputs(&config.input)?;
     let manifest = match &config.manifest {
@@ -526,6 +540,7 @@ fn benchmark_native_command(args: &[OsString]) -> Result<(), CliError> {
         background: config.background,
         output_format: pdfrust_thumbnail::OutputFormat::Rgba,
         timeout: config.timeout,
+        annotation_mode: AnnotationMode::Screen,
     };
     let fixtures = pdf_inputs(&config.input)?;
     let manifest = match &config.manifest {
@@ -555,6 +570,7 @@ fn benchmark_batch_native_command(args: &[OsString]) -> Result<(), CliError> {
         background: config.background,
         output_format: pdfrust_thumbnail::OutputFormat::Rgba,
         timeout: config.timeout,
+        annotation_mode: AnnotationMode::Screen,
     };
     let fixtures = pdf_inputs(&config.input)?;
     let manifest = match &config.manifest {
@@ -593,6 +609,7 @@ fn benchmark_repeat_native_command(args: &[OsString]) -> Result<(), CliError> {
         background: config.background,
         output_format: pdfrust_thumbnail::OutputFormat::Rgba,
         timeout: config.timeout,
+        annotation_mode: AnnotationMode::Screen,
     };
     let fixtures = pdf_inputs(&config.input)?;
     let manifest = match &config.manifest {
@@ -645,6 +662,7 @@ fn benchmark_pdfium_command_enabled(args: &[OsString]) -> Result<(), CliError> {
         background: config.background,
         output_format: pdfrust_thumbnail::OutputFormat::Rgba,
         timeout: config.timeout,
+        annotation_mode: AnnotationMode::Screen,
     };
     let fixtures = pdf_inputs(&config.input)?;
     let manifest = match &config.manifest {
@@ -688,6 +706,7 @@ fn visual_diff_command_enabled(args: &[OsString]) -> Result<(), CliError> {
         background: config.background,
         output_format: pdfrust_thumbnail::OutputFormat::Rgba,
         timeout: config.timeout,
+        annotation_mode: AnnotationMode::Screen,
     };
     let fixtures = pdf_inputs(&config.input)?;
     let manifest = match &config.manifest {
@@ -728,6 +747,7 @@ fn visual_diff_poppler_command(args: &[OsString]) -> Result<(), CliError> {
         background: config.background,
         output_format: pdfrust_thumbnail::OutputFormat::Rgba,
         timeout: config.timeout,
+        annotation_mode: AnnotationMode::Screen,
     };
     let fixtures = pdf_inputs(&config.input)?;
     let manifest = match &config.manifest {
@@ -945,6 +965,7 @@ struct RenderConfig {
     max_edge: u32,
     background: Rgba,
     timeout: Duration,
+    annotation_mode: AnnotationMode,
 }
 
 impl RenderConfig {
@@ -955,6 +976,7 @@ impl RenderConfig {
         let mut max_edge = DEFAULT_MAX_EDGE;
         let mut background = Rgba::WHITE;
         let mut timeout = DEFAULT_TIMEOUT;
+        let mut annotation_mode = AnnotationMode::default();
 
         let mut index = 0;
         while index < args.len() {
@@ -982,6 +1004,11 @@ impl RenderConfig {
                     index += 1;
                     let seconds = parse_u64(args, index, "--timeout")?;
                     timeout = Duration::from_secs(seconds);
+                }
+                "--annotation-mode" => {
+                    index += 1;
+                    annotation_mode =
+                        parse_annotation_mode(required_str(args, index, "--annotation-mode")?)?;
                 }
                 "--allow-pdfium-fallback" => {
                     return Err(CliError::Usage(
@@ -1022,6 +1049,7 @@ impl RenderConfig {
             max_edge,
             background,
             timeout,
+            annotation_mode,
         })
     }
 }
@@ -6438,6 +6466,7 @@ fn native_render_trace_json(config: &TraceNativeConfig) -> Result<String, CliErr
         background: Rgba::WHITE,
         output_format: pdfrust_thumbnail::OutputFormat::Rgba,
         timeout: DEFAULT_TIMEOUT,
+        annotation_mode: AnnotationMode::Screen,
     };
     let metadata = DocumentMetadataBackend::inspect(&native, PdfSource::from_bytes(&bytes));
     let coverage = scan_operator_coverage(
@@ -8082,7 +8111,7 @@ fn print_usage() {
          [--output PATH] [--page-index N] [--max-edge N] [--background #RRGGBB] \
          [--timeout SECONDS] [--iterations N] [--repetitions N] [--max-events N] [--max-workers N] [--max-in-flight-pixels N] [--cancel-after-jobs N] [--max-ms N] [--max-p95-ms N] [--max-first-ms N] [--max-repeat-mean-ms N] [--max-output-bytes N] \
          [--native-only] [--manifest PATH] [--include-family FAMILY] \
-         [--diagnostics-dir PATH] [--allow-missing] [--no-annotations] [--max-mae N] [--max-p95 N] [--max-changed-ratio N]"
+         [--diagnostics-dir PATH] [--allow-missing] [--annotation-mode screen|print] [--no-annotations] [--max-mae N] [--max-p95 N] [--max-changed-ratio N]"
     );
 }
 
@@ -8104,6 +8133,21 @@ mod tests {
         assert_eq!(config.page_index, 0);
         assert_eq!(config.max_edge, 1024);
         assert_eq!(config.timeout, Duration::from_secs(5));
+        assert_eq!(config.annotation_mode, AnnotationMode::Screen);
+    }
+
+    #[test]
+    fn render_config_should_accept_print_annotation_mode() {
+        let config = RenderConfig::parse(&[
+            OsString::from("fixtures/generated/text-page.pdf"),
+            OsString::from("--output"),
+            OsString::from("target/text-page.png"),
+            OsString::from("--annotation-mode"),
+            OsString::from("print"),
+        ])
+        .expect("valid config");
+
+        assert_eq!(config.annotation_mode, AnnotationMode::Print);
     }
 
     #[test]
@@ -8212,6 +8256,7 @@ mod tests {
             max_edge: 220,
             background: Rgba::WHITE,
             timeout: Duration::from_secs(5),
+            annotation_mode: AnnotationMode::Screen,
         };
 
         let outcome = render_auto_thumbnail(&config).expect("supported fixture should render");
@@ -8232,6 +8277,7 @@ mod tests {
             max_edge: 220,
             background: Rgba::WHITE,
             timeout: Duration::from_secs(5),
+            annotation_mode: AnnotationMode::Screen,
         };
 
         let error = render_auto_thumbnail(&config)
@@ -8430,6 +8476,7 @@ mod tests {
             background: Rgba::WHITE,
             output_format: pdfrust_thumbnail::OutputFormat::Png,
             timeout: Duration::from_secs(5),
+            annotation_mode: AnnotationMode::Screen,
         };
 
         let report =
@@ -8609,6 +8656,7 @@ mod tests {
             background: Rgba::WHITE,
             output_format: pdfrust_thumbnail::OutputFormat::Png,
             timeout: Duration::from_secs(5),
+            annotation_mode: AnnotationMode::Screen,
         };
 
         let native = NativeBackend::new();
@@ -8649,6 +8697,7 @@ mod tests {
             background: Rgba::WHITE,
             output_format: pdfrust_thumbnail::OutputFormat::Png,
             timeout: Duration::from_secs(5),
+            annotation_mode: AnnotationMode::Screen,
         };
 
         let native = NativeBackend::new();
@@ -8725,6 +8774,7 @@ mod tests {
             background: Rgba::WHITE,
             output_format: pdfrust_thumbnail::OutputFormat::Png,
             timeout: Duration::from_secs(5),
+            annotation_mode: AnnotationMode::Screen,
         };
 
         let written = write_native_diagnostic_bundles(
@@ -8810,6 +8860,7 @@ mod tests {
             background: Rgba::WHITE,
             output_format: pdfrust_thumbnail::OutputFormat::Png,
             timeout: Duration::from_secs(5),
+            annotation_mode: AnnotationMode::Screen,
         };
 
         let report =
@@ -9050,6 +9101,7 @@ status = "candidate"
             background: Rgba::WHITE,
             output_format: pdfrust_thumbnail::OutputFormat::Rgba,
             timeout: Duration::from_secs(5),
+            annotation_mode: AnnotationMode::Screen,
         };
 
         assert_eq!(config.repetitions, 3);
@@ -9077,6 +9129,7 @@ status = "candidate"
             background: Rgba::WHITE,
             output_format: pdfrust_thumbnail::OutputFormat::Rgba,
             timeout: Duration::from_secs(5),
+            annotation_mode: AnnotationMode::Screen,
         };
         let config = BatchBenchmarkConfig {
             input: fixture_root.join("fixtures/generated"),
@@ -9146,6 +9199,7 @@ status = "candidate"
             background: Rgba::WHITE,
             output_format: pdfrust_thumbnail::OutputFormat::Rgba,
             timeout: Duration::from_secs(5),
+            annotation_mode: AnnotationMode::Screen,
         };
         let config = BatchBenchmarkConfig {
             input: fixture_root.join("fixtures/generated"),
@@ -9222,6 +9276,7 @@ status = "candidate"
             background: Rgba::WHITE,
             output_format: pdfrust_thumbnail::OutputFormat::Rgba,
             timeout: Duration::from_secs(5),
+            annotation_mode: AnnotationMode::Screen,
         };
         let config = RepeatBenchmarkConfig {
             input: fixture_root.join("fixtures/generated"),
@@ -9273,6 +9328,7 @@ status = "candidate"
             background: Rgba::WHITE,
             output_format: pdfrust_thumbnail::OutputFormat::Rgba,
             timeout: Duration::from_secs(5),
+            annotation_mode: AnnotationMode::Screen,
         };
         let config = BenchmarkConfig {
             input: fixture_root.join("fixtures/generated"),

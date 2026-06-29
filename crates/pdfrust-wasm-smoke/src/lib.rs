@@ -5,7 +5,9 @@
 use std::time::Duration;
 
 use pdfrust_native::NativeBackend;
-use pdfrust_thumbnail::{OutputFormat, PdfSource, Rgba, ThumbnailBackend, ThumbnailOptions};
+use pdfrust_thumbnail::{
+    AnnotationMode, OutputFormat, PdfSource, Rgba, ThumbnailBackend, ThumbnailOptions,
+};
 
 const SMOKE_PDF: &[u8] = b"%PDF-1.4\n\
 %\xE2\xE3\xCF\xD3\n\
@@ -71,6 +73,7 @@ pub fn render_low_memory_smoke() -> Result<WasmSmokeMetrics, &'static str> {
                 background: Rgba::WHITE,
                 output_format: OutputFormat::Rgba,
                 timeout: Duration::from_secs(5),
+                annotation_mode: AnnotationMode::Screen,
             },
         )
         .map_err(|_| "render")?;

@@ -117,6 +117,27 @@ cargo run -p pdfrust-cli -- summarize-fallbacks fixtures/generated \
   --fail-on-fallback
 ```
 
+## Annotation Print Preview Manifest
+
+`fixtures/annotation-print-preview-manifest.tsv` is the focused gate for
+static annotation visibility in screen and print-preview workflows. Supported
+families cover normal appearance streams, printable/non-printable flag
+behavior, synthesized review markup, and visually inert links. The
+`unsupported-synthesis` family keeps appearance-free FreeText in the corpus as
+a typed `annotation.appearance` boundary.
+
+Use supported families as a native-only gate:
+
+```sh
+cargo run -p pdfrust-cli -- summarize-fallbacks fixtures/generated \
+  --manifest fixtures/annotation-print-preview-manifest.tsv \
+  --include-family flags \
+  --include-family appearance-stream \
+  --include-family synthesized-markup \
+  --include-family nonvisual-link \
+  --fail-on-fallback
+```
+
 ## Spreadsheet Grid Manifest
 
 `fixtures/spreadsheet-grid-manifest.tsv` is the focused gate for spreadsheet

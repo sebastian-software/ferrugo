@@ -1,6 +1,6 @@
 # 0193: Annotation Print Preview Fidelity Gate
 
-Status: todo
+Status: done
 Phase: 36
 Size: medium
 Depends on: 0192
@@ -45,4 +45,21 @@ predictably.
 
 ## Completion Notes
 
-Empty until done.
+- Added `AnnotationMode` to thumbnail options and wired `render-native
+  --annotation-mode screen|print`.
+- Applied PDF annotation `/F` visibility flags for screen and print-preview
+  rendering: hidden/invisible suppress both modes, no-view suppresses screen
+  only, and print mode requires the print bit.
+- Added generated fixtures and `fixtures/annotation-print-preview-manifest.tsv`
+  for appearance streams, flags, synthesized markup, inert links, and
+  unsupported FreeText synthesis.
+- Promoted `annotation.appearance` to a public stable unsupported-feature bucket
+  and used it for appearance-free FreeText annotations.
+- Documented preview policy and validation in
+  `docs/policies/annotation-fallbacks.md`,
+  `docs/backend/native.md`, and
+  `docs/reports/annotation-print-preview-fidelity-2026-06-29.md`.
+- Validation completed on 2026-06-29: focused annotation tests, CLI
+  annotation-mode parser test, supported fallback gate, unsupported FreeText
+  gate, Poppler visual comparison for supported annotation families, and broad
+  workspace gates.

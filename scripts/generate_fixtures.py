@@ -2867,6 +2867,79 @@ def text_note_annotation_without_appearance_pdf() -> bytes:
     return pdf.render(catalog)
 
 
+def annotation_print_preview_flags_pdf() -> bytes:
+    pdf = Pdf()
+    content = b"0.92 0.92 0.92 rg 5 5 170 36 re f"
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+
+    def appearance(r: float, g: float, b: float) -> int:
+        stream = f"{r} {g} {b} rg 0 0 20 20 re f".encode("ascii")
+        return pdf.add(
+            b"<< /Type /XObject /Subtype /Form /BBox [0 0 20 20] /Length "
+            + str(len(stream)).encode("ascii")
+            + b" >>\nstream\n"
+            + stream
+            + b"\nendstream"
+        )
+
+    def annotation(rect: str, flags: int, appearance_object: int) -> int:
+        return pdf.add(
+            "<< /Type /Annot /Subtype /Stamp "
+            f"/Rect [{rect}] /F {flags} /AP << /N {appearance_object} 0 R >> >>"
+        )
+
+    printable_appearance = appearance(0.9, 0, 0)
+    non_printable_appearance = appearance(0, 0.2, 0.9)
+    hidden_appearance = appearance(0, 0.65, 0)
+    no_view_appearance = appearance(0.95, 0.55, 0)
+    no_view_printable_appearance = appearance(0.55, 0.2, 0.8)
+    printable = annotation("10 10 30 30", 4, printable_appearance)
+    non_printable = annotation("45 10 65 30", 0, non_printable_appearance)
+    hidden = annotation("80 10 100 30", 2, hidden_appearance)
+    no_view = annotation("115 10 135 30", 32, no_view_appearance)
+    no_view_printable = annotation("150 10 170 30", 36, no_view_printable_appearance)
+    page = pdf.add(
+        "<< /Type /Page /Parent 13 0 R /MediaBox [0 0 180 80] "
+        f"/Contents {contents} 0 R /Annots [{printable} 0 R {non_printable} 0 R "
+        f"{hidden} 0 R {no_view} 0 R {no_view_printable} 0 R] >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert printable_appearance == 2
+    assert no_view_printable_appearance == 6
+    assert printable == 7
+    assert no_view_printable == 11
+    assert page == 12
+    assert pages == 13
+    return pdf.render(catalog)
+
+
+def freetext_annotation_without_appearance_pdf() -> bytes:
+    pdf = Pdf()
+    content = b"0 0 0 rg 10 10 20 20 re f"
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 120 80] "
+        f"/Contents {contents} 0 R /Annots [4 0 R] >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    annotation = pdf.add(
+        "<< /Type /Annot /Subtype /FreeText /Rect [45 30 105 55] "
+        "/Contents (Unsupported FreeText synthesis) /DA (/Helv 10 Tf 0 g) >>"
+    )
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert annotation == 4
+    return pdf.render(catalog)
+
+
 def widget_annotation_appearance_pdf() -> bytes:
     pdf = Pdf()
     content = b""
@@ -7511,6 +7584,11 @@ def main() -> None:
     write(
         "highlight-annotation-without-appearance.pdf",
         highlight_annotation_without_appearance_pdf(),
+    )
+    write("annotation-print-preview-flags.pdf", annotation_print_preview_flags_pdf())
+    write(
+        "freetext-annotation-without-appearance.pdf",
+        freetext_annotation_without_appearance_pdf(),
     )
     write(
         "markup-annotations-without-appearance.pdf",
