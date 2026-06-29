@@ -35,7 +35,6 @@ when the server renderer is already correct and bounded.
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
 | 0196 | [WASM Low Memory Mobile Browser Gate](0196-wasm-low-memory-mobile-browser-gate.md) | 37 | medium | 0195 |
-| 0210 | [Native Renderer 1.3 Hardening Gate](0210-native-renderer-1-3-hardening-gate.md) | 39 | medium | 0209 |
 | 0211 | [PDF Operator Semantic Snapshot Suite](0211-pdf-operator-semantic-snapshot-suite.md) | 40 | medium | 0210 |
 | 0212 | [Rust-Native Font Cache Compaction](0212-rust-native-font-cache-compaction.md) | 40 | medium | 0211 |
 | 0213 | [Transparency Stack Memory Optimization](0213-transparency-stack-memory-optimization.md) | 40 | medium | 0212 |
@@ -57,6 +56,7 @@ when the server renderer is already correct and bounded.
 
 | ID | Milestone | Phase | Size | Completed |
 | --- | --- | --- | --- | --- |
+| 0210 | [Native Renderer 1.3 Hardening Gate](0210-native-renderer-1-3-hardening-gate.md) | 39 | medium | 2026-06-29 |
 | 0209 | [Rust-Native Image Codec Deployment Policy](0209-rust-native-image-codec-deployment-policy.md) | 39 | medium | 2026-06-29 |
 | 0208 | [Color Managed Print Preview Extended Gate](0208-color-managed-print-preview-extended-gate.md) | 39 | medium | 2026-06-29 |
 | 0207 | [Annotation Popup Stamp And FreeText Fidelity](0207-annotation-popup-stamp-and-freetext-fidelity.md) | 39 | medium | 2026-06-29 |
