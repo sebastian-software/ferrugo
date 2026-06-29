@@ -9486,6 +9486,102 @@ mod tests {
     }
 
     #[test]
+    fn operator_coverage_should_match_semantic_snapshots() {
+        type OperatorSnapshot = (
+            &'static str,
+            usize,
+            OperatorSupportStatus,
+            Option<&'static str>,
+        );
+        type FixtureSnapshot = (
+            &'static [u8],
+            &'static str,
+            usize,
+            usize,
+            &'static [OperatorSnapshot],
+        );
+
+        let fixtures: &[FixtureSnapshot] = &[
+            (
+                include_bytes!("../../../fixtures/generated/text-page.pdf") as &[u8],
+                "text page",
+                5,
+                0,
+                &[
+                    ("BT", 1, OperatorSupportStatus::Implemented, None),
+                    ("Tf", 1, OperatorSupportStatus::Implemented, None),
+                    ("Td", 1, OperatorSupportStatus::Implemented, None),
+                    ("Tj", 1, OperatorSupportStatus::Implemented, None),
+                    ("ET", 1, OperatorSupportStatus::Implemented, None),
+                ],
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/vector-paths.pdf") as &[u8],
+                "vector paths",
+                11,
+                0,
+                &[
+                    ("q", 1, OperatorSupportStatus::Implemented, None),
+                    ("RG", 1, OperatorSupportStatus::Implemented, None),
+                    ("m", 1, OperatorSupportStatus::Implemented, None),
+                    ("l", 2, OperatorSupportStatus::Implemented, None),
+                    ("S", 1, OperatorSupportStatus::Implemented, None),
+                    ("rg", 1, OperatorSupportStatus::Implemented, None),
+                    ("re", 1, OperatorSupportStatus::Implemented, None),
+                    ("f", 1, OperatorSupportStatus::Implemented, None),
+                    ("Q", 1, OperatorSupportStatus::Implemented, None),
+                ],
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/inline-image.pdf") as &[u8],
+                "inline image",
+                4,
+                1,
+                &[
+                    ("q", 1, OperatorSupportStatus::Implemented, None),
+                    ("cm", 1, OperatorSupportStatus::Implemented, None),
+                    ("BI", 1, OperatorSupportStatus::Implemented, None),
+                    ("Q", 1, OperatorSupportStatus::Implemented, None),
+                ],
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/tiling-pattern.pdf") as &[u8],
+                "tiling pattern",
+                4,
+                0,
+                &[
+                    (
+                        "cs",
+                        1,
+                        OperatorSupportStatus::Partial,
+                        Some(BUCKET_IMAGE_COLOR_SPACE),
+                    ),
+                    (
+                        "scn",
+                        1,
+                        OperatorSupportStatus::Partial,
+                        Some(BUCKET_IMAGE_COLOR_SPACE),
+                    ),
+                    ("re", 1, OperatorSupportStatus::Implemented, None),
+                    ("f", 1, OperatorSupportStatus::Implemented, None),
+                ],
+            ),
+        ];
+
+        for &(bytes, label, total_operators, inline_images, snapshots) in fixtures {
+            let report = scan_operator_coverage(bytes, OperatorCoverageOptions::default())
+                .unwrap_or_else(|error| panic!("{label} operator coverage should scan: {error}"));
+
+            assert_eq!(report.streams_scanned, 1, "{label}");
+            assert_eq!(report.total_operators, total_operators, "{label}");
+            assert_eq!(report.inline_images, inline_images, "{label}");
+            for &(operator, count, status, fallback_bucket) in snapshots {
+                assert_operator_snapshot(&report, operator, count, status, fallback_bucket);
+            }
+        }
+    }
+
+    #[test]
     fn native_backend_should_inspect_generated_fixture_metadata() {
         let bytes = include_bytes!("../../../fixtures/generated/text-page.pdf");
         let metadata =
@@ -10095,6 +10191,19 @@ mod tests {
         status: OperatorSupportStatus,
     ) {
         assert_eq!(operator_entry(report, operator).status, status);
+    }
+
+    fn assert_operator_snapshot(
+        report: &OperatorCoverageReport,
+        operator: &str,
+        count: usize,
+        status: OperatorSupportStatus,
+        fallback_bucket: Option<&'static str>,
+    ) {
+        let entry = operator_entry(report, operator);
+        assert_eq!(entry.count, count, "{operator}");
+        assert_eq!(entry.status, status, "{operator}");
+        assert_eq!(entry.fallback_bucket, fallback_bucket, "{operator}");
     }
 
     fn assert_unsupported_image_filter_fixture(bytes: &[u8]) {

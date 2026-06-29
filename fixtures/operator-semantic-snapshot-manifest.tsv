@@ -1,0 +1,5 @@
+path	family	source	license	page_count	features	notes
+fixtures/generated/text-page.pdf	text-state	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,state,operators,expected:native	Baseline text object and text positioning operator semantics.
+fixtures/generated/vector-paths.pdf	path-state	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	vector,path,stroke,fill,operators,expected:native	Baseline path construction, color, stroke, and fill operator semantics.
+fixtures/generated/inline-image.pdf	image-state	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,inline,operators,expected:native	Baseline inline image operator semantics.
+fixtures/generated/tiling-pattern.pdf	pattern-state	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	pattern,color-space,operators,partial,expected:native	Baseline pattern color-space operator semantics with partial status.

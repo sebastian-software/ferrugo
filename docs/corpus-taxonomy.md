@@ -608,6 +608,25 @@ cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks \
 Use `unsupported-specialized` separately when checking that deferred codecs
 still report `image.filter`.
 
+## Operator Semantic Snapshot Manifest
+
+`fixtures/operator-semantic-snapshot-manifest.tsv` is the focused gate for
+operator-level semantic drift checks. It covers text state, path state, inline
+image state, and pattern color-space state using reduced generated fixtures.
+
+Use all families as a native-only operator snapshot gate:
+
+```sh
+cargo run -p pdfrust-cli --no-default-features -- operator-coverage \
+  fixtures/generated \
+  --manifest fixtures/operator-semantic-snapshot-manifest.tsv \
+  --include-family text-state \
+  --include-family path-state \
+  --include-family image-state \
+  --include-family pattern-state \
+  --output target/operator-snapshot-0211-operators.json
+```
+
 ## Legal Document Manifest
 
 `fixtures/legal-document-manifest.tsv` is the focused gate for contracts,

@@ -1,6 +1,6 @@
 # 0211: PDF Operator Semantic Snapshot Suite
 
-Status: todo
+Status: done
 Phase: 40
 Size: medium
 Depends on: 0210
@@ -50,4 +50,19 @@ typical documents.
 
 ## Completion Notes
 
-Empty until done.
+- Added `fixtures/operator-semantic-snapshot-manifest.tsv` for reduced text,
+  path, inline-image, and pattern operator snapshots.
+- Added `operator_coverage_should_match_semantic_snapshots` to freeze operator
+  counts, support status, and typed fallback buckets for the selected fixtures.
+- Documented the new manifest in `docs/corpus-taxonomy.md`.
+- Produced `docs/reports/pdf-operator-semantic-snapshot-suite-2026-06-29.md`.
+
+Validation run:
+
+- `cargo fmt --check`
+- `cargo test -p pdfrust-native operator_coverage_should_match_semantic_snapshots -- --nocapture`
+- `cargo run -p pdfrust-cli --no-default-features -- operator-coverage fixtures/generated --manifest fixtures/operator-semantic-snapshot-manifest.tsv --include-family text-state --include-family path-state --include-family image-state --include-family pattern-state --output target/operator-snapshot-0211-operators.json`
+- `cargo run -p pdfrust-cli --no-default-features -- visual-diff-poppler fixtures/generated --manifest fixtures/operator-semantic-snapshot-manifest.tsv --include-family text-state --include-family path-state --include-family image-state --include-family pattern-state --max-edge 120 --max-mae 8 --max-p95 64 --max-changed-ratio 0.20 --output target/operator-snapshot-0211-poppler.json`
+- `cargo check --workspace --no-default-features`
+- `cargo test --workspace --no-default-features`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
