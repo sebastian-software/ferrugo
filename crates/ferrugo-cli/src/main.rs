@@ -712,6 +712,10 @@ fn benchmark_matrix_command(args: &[OsString]) -> Result<(), CliError> {
         Some(path) => Some(read_corpus_manifest(path)?),
         None => None,
     };
+    let fixtures = match manifest.as_ref() {
+        Some(manifest) => filter_fixtures_by_manifest(&fixtures, manifest)?,
+        None => fixtures,
+    };
     let fixtures =
         filter_fixtures_by_family(&fixtures, manifest.as_ref(), &config.include_families)?;
     fs::create_dir_all(&config.artifact_dir).map_err(|source| CliError::Io {
@@ -10606,6 +10610,26 @@ mod tests {
         assert_eq!(
             config.modes,
             vec![MatrixMode::ColdProcess, MatrixMode::HotRender]
+        );
+    }
+
+    #[test]
+    fn benchmark_matrix_manifest_filter_should_drop_unlisted_fixtures() {
+        let fixture_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let manifest =
+            read_corpus_manifest(&fixture_root.join("fixtures/performance-matrix-manifest.tsv"))
+                .expect("performance matrix manifest should parse");
+        let paths = vec![
+            fixture_root.join("fixtures/generated/text-page.pdf"),
+            fixture_root.join("fixtures/generated/vector-paths.pdf"),
+        ];
+
+        let filtered =
+            filter_fixtures_by_manifest(&paths, &manifest).expect("one fixture should match");
+
+        assert_eq!(
+            filtered,
+            vec![fixture_root.join("fixtures/generated/text-page.pdf")]
         );
     }
 
