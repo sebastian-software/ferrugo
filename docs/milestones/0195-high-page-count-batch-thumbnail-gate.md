@@ -1,6 +1,6 @@
 # 0195: High Page Count Batch Thumbnail Gate
 
-Status: todo
+Status: done
 Phase: 36
 Size: medium
 Depends on: 0194
@@ -44,4 +44,18 @@ viewer workflows using bounded memory and cancellable scheduling.
 
 ## Completion Notes
 
-Empty until done.
+- Added `benchmark-batch-native --pages-per-input N` to fan out ordered page
+  jobs per input document while preserving the default one-page behavior.
+- Batch job ordering is deterministic by repetition, input path, and page
+  index; manifest page counts bound fanout for committed fixtures.
+- Batch JSON now records `pages_per_input` in the config block.
+- Added focused manifest `fixtures/high-page-count-batch-manifest.tsv`.
+- Updated batch rendering policy and native backend docs with high-page-count
+  gate guidance.
+- Report:
+  `docs/reports/high-page-count-batch-thumbnail-gate-2026-06-29.md`.
+- Validation:
+  - `cargo test -p pdfrust-cli batch -- --nocapture`
+  - `cargo run -p pdfrust-cli --no-default-features -- benchmark-batch-native fixtures/generated --manifest fixtures/high-page-count-batch-manifest.tsv --include-family long-document --include-family book --include-family email-thread --include-family repeated-resources --include-family report-statement --repetitions 10 --pages-per-input 12 --max-workers 4 --max-in-flight-pixels 102400 --max-edge 160 --max-p95-ms 1000 --max-errors 0 --fail-on-budget --output target/high-page-count-0195-batch.json`
+  - `cargo run -p pdfrust-cli --no-default-features -- benchmark-batch-native fixtures/generated --manifest fixtures/high-page-count-batch-manifest.tsv --include-family long-document --include-family book --include-family email-thread --include-family repeated-resources --include-family report-statement --repetitions 10 --pages-per-input 12 --max-workers 4 --max-in-flight-pixels 102400 --max-edge 160 --max-p95-ms 1000 --max-errors 0 --cancel-after-jobs 25 --output target/high-page-count-0195-cancelled.json`
+  - `cargo run -p pdfrust-cli --no-default-features -- benchmark-batch-native fixtures/generated --manifest fixtures/high-page-count-batch-manifest.tsv --include-family long-document --include-family book --include-family email-thread --include-family repeated-resources --include-family report-statement --repetitions 3 --pages-per-input 12 --max-workers 2 --max-in-flight-pixels 51200 --max-edge 160 --max-p95-ms 1000 --max-errors 0 --fail-on-budget --native-profile low-memory --output target/high-page-count-0195-low-memory.json`

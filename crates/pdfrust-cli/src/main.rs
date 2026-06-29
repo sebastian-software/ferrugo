@@ -1720,6 +1720,7 @@ struct BatchBenchmarkConfig {
     background: Rgba,
     timeout: Duration,
     repetitions: usize,
+    pages_per_input: usize,
     max_workers: usize,
     max_in_flight_pixels: usize,
     max_p95_ms: u64,
@@ -1903,6 +1904,7 @@ impl BatchBenchmarkConfig {
         let mut background = Rgba::WHITE;
         let mut timeout = DEFAULT_TIMEOUT;
         let mut repetitions = 2;
+        let mut pages_per_input = 1;
         let mut max_workers = 2;
         let mut max_in_flight_pixels = 2 * 160 * 160;
         let mut max_p95_ms = 1000;
@@ -1950,6 +1952,10 @@ impl BatchBenchmarkConfig {
                 "--repetitions" => {
                     index += 1;
                     repetitions = parse_usize(args, index, "--repetitions")?;
+                }
+                "--pages-per-input" => {
+                    index += 1;
+                    pages_per_input = parse_usize(args, index, "--pages-per-input")?;
                 }
                 "--max-workers" => {
                     index += 1;
@@ -2003,6 +2009,16 @@ impl BatchBenchmarkConfig {
                 "--repetitions must be greater than zero".to_string(),
             ));
         }
+        if pages_per_input == 0 {
+            return Err(CliError::Usage(
+                "--pages-per-input must be greater than zero".to_string(),
+            ));
+        }
+        if pages_per_input > u32::MAX as usize {
+            return Err(CliError::Usage(
+                "--pages-per-input must fit in u32 page indices".to_string(),
+            ));
+        }
         if max_workers == 0 {
             return Err(CliError::Usage(
                 "--max-workers must be greater than zero".to_string(),
@@ -2024,6 +2040,7 @@ impl BatchBenchmarkConfig {
             background,
             timeout,
             repetitions,
+            pages_per_input,
             max_workers,
             max_in_flight_pixels,
             max_p95_ms,
@@ -2716,6 +2733,7 @@ struct BatchBenchmarkReport {
     budget_failures: usize,
     workers: usize,
     repetitions: usize,
+    pages_per_input: usize,
     elapsed_ms: f64,
     throughput_per_sec: f64,
     max_p95_ms: u64,
@@ -3958,6 +3976,7 @@ struct BatchJob {
     path_key: String,
     family: String,
     repetition: usize,
+    page_index: u32,
 }
 
 fn benchmark_native_batch(
@@ -3967,7 +3986,13 @@ fn benchmark_native_batch(
     config: &BatchBenchmarkConfig,
 ) -> Result<BatchBenchmarkReport, CliError> {
     let workers = effective_batch_workers(config, options)?;
-    let mut jobs = batch_jobs(paths, manifest, config.repetitions);
+    let mut jobs = batch_jobs(
+        paths,
+        manifest,
+        config.repetitions,
+        config.page_index,
+        config.pages_per_input,
+    );
     let requested_jobs = jobs.len();
     let scheduled_jobs = config.cancel_after_jobs.map_or(requested_jobs, |limit| {
         let scheduled = requested_jobs.min(limit);
@@ -3993,12 +4018,7 @@ fn benchmark_native_batch(
                 .iter()
                 .map(|job| {
                     scope.spawn(move || {
-                        benchmark_batch_job(
-                            config.native_profile.backend(),
-                            job,
-                            options,
-                            config.page_index,
-                        )
+                        benchmark_batch_job(config.native_profile.backend(), job, options)
                     })
                 })
                 .collect::<Vec<_>>()
@@ -4066,34 +4086,59 @@ fn batch_jobs(
     paths: &[PathBuf],
     manifest: Option<&CorpusManifest>,
     repetitions: usize,
+    start_page_index: u32,
+    pages_per_input: usize,
 ) -> Vec<BatchJob> {
-    let mut jobs = Vec::with_capacity(paths.len() * repetitions);
+    let mut jobs = Vec::new();
     for repetition in 0..repetitions {
         for path in paths {
             let path_key = normalize_manifest_path(path);
-            let family = manifest
-                .and_then(|manifest| manifest.family_for_path(path))
+            let manifest_entry = manifest.and_then(|manifest| manifest.entry_for_path(&path_key));
+            let family = manifest_entry
+                .map(|entry| entry.family.as_str())
                 .unwrap_or("unclassified")
                 .to_string();
-            jobs.push(BatchJob {
-                path: path.clone(),
-                path_key,
-                family,
-                repetition,
-            });
+            let page_indices =
+                batch_page_indices(start_page_index, pages_per_input, manifest_entry);
+            for page_index in page_indices {
+                jobs.push(BatchJob {
+                    path: path.clone(),
+                    path_key: path_key.clone(),
+                    family: family.clone(),
+                    repetition,
+                    page_index,
+                });
+            }
         }
     }
     jobs
+}
+
+fn batch_page_indices(
+    start_page_index: u32,
+    pages_per_input: usize,
+    manifest_entry: Option<&CorpusManifestEntry>,
+) -> std::ops::Range<u32> {
+    let requested_end = start_page_index.saturating_add(pages_per_input as u32);
+    let Some(entry) = manifest_entry else {
+        return start_page_index..requested_end;
+    };
+    let page_count = entry.page_count.min(u32::MAX as usize) as u32;
+    if start_page_index >= page_count {
+        return start_page_index..start_page_index.saturating_add(1);
+    }
+    start_page_index..requested_end.min(page_count)
 }
 
 fn benchmark_batch_job(
     native: NativeBackend,
     job: &BatchJob,
     options: &ThumbnailOptions,
-    page_index: u32,
 ) -> BatchBenchmarkRecord {
     let started = Instant::now();
-    let outcome = match native.render(PdfSource::from_path(&job.path), options) {
+    let mut options = *options;
+    options.page_index = job.page_index;
+    let outcome = match native.render(PdfSource::from_path(&job.path), &options) {
         Ok(thumbnail) => BatchBenchmarkOutcome::NativeRendered {
             width: thumbnail.width,
             height: thumbnail.height,
@@ -4115,7 +4160,7 @@ fn benchmark_batch_job(
         path: job.path_key.clone(),
         family: job.family.clone(),
         repetition: job.repetition,
-        page_index,
+        page_index: job.page_index,
         elapsed_ms: elapsed_ms(started.elapsed()),
         outcome,
     }
@@ -4169,6 +4214,7 @@ fn batch_report_from_records(
         budget_failures,
         workers,
         repetitions: config.repetitions,
+        pages_per_input: config.pages_per_input,
         elapsed_ms,
         throughput_per_sec: total_jobs as f64 / elapsed_secs,
         max_p95_ms: config.max_p95_ms,
@@ -6855,7 +6901,7 @@ fn batch_benchmark_report_json(report: &BatchBenchmarkReport) -> String {
             "  \"schema_version\": 1,\n",
             "  \"backend\": \"rust-native\",\n",
             "  \"platform\": {},\n",
-            "  \"config\": {{\"repetitions\":{},\"workers\":{},\"max_p95_ms\":{},\"max_errors\":{},\"max_in_flight_pixels\":{},\"cancel_after_jobs\":{}}},\n",
+            "  \"config\": {{\"repetitions\":{},\"pages_per_input\":{},\"workers\":{},\"max_p95_ms\":{},\"max_errors\":{},\"max_in_flight_pixels\":{},\"cancel_after_jobs\":{}}},\n",
             "  \"summary\": {{\"total_inputs\":{},\"total_jobs\":{},\"native_rendered\":{},\"fallback_required\":{},\"errors\":{},\"budget_failures\":{},\"elapsed_ms\":{:.3},\"throughput_per_sec\":{:.3}}},\n",
             "  \"isolation\": {},\n",
             "  \"latency\": {},\n",
@@ -6866,6 +6912,7 @@ fn batch_benchmark_report_json(report: &BatchBenchmarkReport) -> String {
         ),
         platform_metadata_json(&report.platform),
         report.repetitions,
+        report.pages_per_input,
         report.workers,
         report.max_p95_ms,
         report.max_errors,
@@ -8120,7 +8167,7 @@ fn print_usage() {
     println!(
         "Usage: pdfrust-cli <render|render-auto|render-native|render-pdfium|render-isolated|compare-metadata|summarize-fallbacks|operator-coverage|trace-native|replay-operators|extract-corpus-metadata|producer-regression-report|classify-pdf20-usage|validate-local-corpus|benchmark-native|benchmark-batch-native|benchmark-repeat-native|benchmark-pdfium|visual-diff|visual-diff-poppler> <input.pdf> \
          [--output PATH] [--page-index N] [--max-edge N] [--background #RRGGBB] \
-         [--timeout SECONDS] [--iterations N] [--repetitions N] [--max-events N] [--max-workers N] [--max-in-flight-pixels N] [--cancel-after-jobs N] [--max-ms N] [--max-p95-ms N] [--max-first-ms N] [--max-repeat-mean-ms N] [--max-output-bytes N] \
+         [--timeout SECONDS] [--iterations N] [--repetitions N] [--pages-per-input N] [--max-events N] [--max-workers N] [--max-in-flight-pixels N] [--cancel-after-jobs N] [--max-ms N] [--max-p95-ms N] [--max-first-ms N] [--max-repeat-mean-ms N] [--max-output-bytes N] \
          [--native-only] [--manifest PATH] [--include-family FAMILY] \
          [--diagnostics-dir PATH] [--allow-missing] [--annotation-mode screen|print] [--no-annotations] [--max-mae N] [--max-p95 N] [--max-changed-ratio N]"
     );
@@ -9103,6 +9150,8 @@ status = "candidate"
             OsString::from("fixtures/corpus-manifest.tsv"),
             OsString::from("--repetitions"),
             OsString::from("3"),
+            OsString::from("--pages-per-input"),
+            OsString::from("4"),
             OsString::from("--max-workers"),
             OsString::from("4"),
             OsString::from("--max-in-flight-pixels"),
@@ -9122,6 +9171,7 @@ status = "candidate"
         };
 
         assert_eq!(config.repetitions, 3);
+        assert_eq!(config.pages_per_input, 4);
         assert_eq!(config.max_workers, 4);
         assert_eq!(config.cancel_after_jobs, Some(2));
         assert_eq!(
@@ -9129,6 +9179,32 @@ status = "candidate"
             1
         );
         assert_eq!(config.native_profile, NativeProfile::Default);
+    }
+
+    #[test]
+    fn batch_jobs_should_expand_pages_in_stable_order_with_manifest_bounds() {
+        let fixture_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let manifest_path = fixture_root.join("fixtures/shared-resource-cache-manifest.tsv");
+        let manifest = read_corpus_manifest(&manifest_path).expect("manifest should parse");
+        let paths = vec![fixture_root.join("fixtures/generated/long-document-navigation-deck.pdf")];
+
+        let jobs = batch_jobs(&paths, Some(&manifest), 2, 1, 3);
+
+        let observed = jobs
+            .iter()
+            .map(|job| (job.repetition, job.page_index, job.family.as_str()))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            observed,
+            vec![
+                (0, 1, "long-document-shared"),
+                (0, 2, "long-document-shared"),
+                (0, 3, "long-document-shared"),
+                (1, 1, "long-document-shared"),
+                (1, 2, "long-document-shared"),
+                (1, 3, "long-document-shared"),
+            ]
+        );
     }
 
     #[test]
@@ -9159,6 +9235,7 @@ status = "candidate"
             background: Rgba::WHITE,
             timeout: Duration::from_secs(5),
             repetitions: 2,
+            pages_per_input: 1,
             max_workers: 2,
             max_in_flight_pixels: 120 * 120 * 2,
             max_p95_ms: 60_000,
@@ -9174,6 +9251,7 @@ status = "candidate"
 
         assert_eq!(report.total_inputs, 2);
         assert_eq!(report.total_jobs, 4);
+        assert_eq!(report.pages_per_input, 1);
         assert_eq!(report.native_rendered, 2);
         assert_eq!(report.fallback_required, 2);
         assert_eq!(report.errors, 0);
@@ -9193,6 +9271,7 @@ status = "candidate"
         assert!(report.latency.p95_ms >= report.latency.p50_ms);
         assert!(report.memory.max_output_bytes > 0);
         assert!(json.contains("\"throughput_per_sec\""));
+        assert!(json.contains("\"pages_per_input\":1"));
         assert!(json.contains("\"isolation\""));
         assert!(json.contains("\"backend_scope\":\"per-job\""));
         assert!(json.contains("\"latency\""));
@@ -9205,12 +9284,9 @@ status = "candidate"
     #[test]
     fn batch_benchmark_should_report_cooperative_cancellation_boundary() {
         let fixture_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let manifest_path = fixture_root.join("fixtures/corpus-manifest.tsv");
+        let manifest_path = fixture_root.join("fixtures/shared-resource-cache-manifest.tsv");
         let manifest = read_corpus_manifest(&manifest_path).expect("manifest should parse");
-        let paths = vec![
-            fixture_root.join("fixtures/generated/text-page.pdf"),
-            fixture_root.join("fixtures/generated/office-table.pdf"),
-        ];
+        let paths = vec![fixture_root.join("fixtures/generated/long-document-navigation-deck.pdf")];
         let options = ThumbnailOptions {
             page_index: 0,
             max_edge: 120,
@@ -9229,7 +9305,8 @@ status = "candidate"
             max_edge: 120,
             background: Rgba::WHITE,
             timeout: Duration::from_secs(5),
-            repetitions: 3,
+            repetitions: 1,
+            pages_per_input: 6,
             max_workers: 2,
             max_in_flight_pixels: 120 * 120 * 2,
             max_p95_ms: 60_000,
@@ -9249,7 +9326,14 @@ status = "candidate"
         assert_eq!(report.isolation.skipped_jobs, 3);
         assert!(report.isolation.cancelled);
         assert_eq!(report.isolation.cancel_after_jobs, Some(3));
-        assert!(report.records.iter().all(|record| record.repetition < 2));
+        assert_eq!(
+            report
+                .records
+                .iter()
+                .map(|record| (record.repetition, record.page_index))
+                .collect::<Vec<_>>(),
+            vec![(0, 0), (0, 1), (0, 2)]
+        );
         assert!(json.contains("\"cancel_after_jobs\":3"));
         assert!(json.contains("\"skipped_jobs\":3"));
         assert!(json.contains("\"cancelled\":true"));

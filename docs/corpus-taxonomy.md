@@ -557,6 +557,36 @@ cargo run -p pdfrust-cli --no-default-features -- benchmark-batch-native \
   --fail-on-budget
 ```
 
+## High Page Count Batch Manifest
+
+`fixtures/high-page-count-batch-manifest.tsv` is the focused gate for
+multi-page thumbnail fanout. It reuses generated long-document, book, email,
+repeated-resource, and report fixtures, then relies on
+`benchmark-batch-native --pages-per-input` and repetitions to exercise hundreds
+of ordered page jobs without committing very large PDFs.
+
+Use this manifest when a change may affect page ordering, cancellation,
+high-count scheduler behavior, or memory reporting:
+
+```sh
+cargo run -p pdfrust-cli --no-default-features -- benchmark-batch-native \
+  fixtures/generated \
+  --manifest fixtures/high-page-count-batch-manifest.tsv \
+  --include-family long-document \
+  --include-family book \
+  --include-family email-thread \
+  --include-family repeated-resources \
+  --include-family report-statement \
+  --repetitions 10 \
+  --pages-per-input 12 \
+  --max-workers 4 \
+  --max-in-flight-pixels 102400 \
+  --max-edge 160 \
+  --max-p95-ms 1000 \
+  --max-errors 0 \
+  --fail-on-budget
+```
+
 ## Private Local Corpora
 
 Private or third-party PDFs stay outside Git under `fixtures/local-corpus/`.

@@ -1,0 +1,6 @@
+path	family	source	license	page_count	features	notes
+fixtures/generated/long-document-navigation-deck.pdf	long-document	scripts/generate_fixtures.py	MIT OR Apache-2.0	12	long-document,navigation,repeated-image,repeated-font,shared-resource,expected:native	Twelve-page generated navigation deck for high-page-count batch fanout.
+fixtures/generated/book-frontmatter-page-labels.pdf	book	scripts/generate_fixtures.py	MIT OR Apache-2.0	5	book,longform,page-labels,outlines,multipage,expected:native	Book-like multi-page document for ordered thumbnail batches.
+fixtures/generated/email-client-thread.pdf	email-thread	scripts/generate_fixtures.py	MIT OR Apache-2.0	3	email-client,thread,long-thread,multipage,expected:native	Generated email thread with multiple pages for mixed local/server batch work.
+fixtures/generated/longform-repeated-resources.pdf	repeated-resources	scripts/generate_fixtures.py	MIT OR Apache-2.0	3	longform,multipage,repeated-font,repeated-image,shared-resource,expected:native	Repeated-resource longform fixture for cache and memory observation.
+fixtures/generated/multi-page-report.pdf	report-statement	scripts/generate_fixtures.py	MIT OR Apache-2.0	2	statement,multipage,table,text,expected:native	Multi-page report/statement baseline for mixed page complexity.

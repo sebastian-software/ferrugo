@@ -552,6 +552,12 @@ finish and release their temporary buffers normally. The scheduler does not
 require an async runtime. See
 `docs/reports/multi-page-scheduler-cancellation-2026-06-25.md`.
 
+The CLI batch benchmark can fan out multiple page jobs per input with
+`--pages-per-input`. When a manifest is supplied, the benchmark bounds that
+fanout by each fixture's declared page count, preserving deterministic
+repetition, input, and page-index ordering while keeping worker and
+in-flight-pixel limits explicit.
+
 ## Fallback Policy
 
 PDFium remains the oracle and explicit fallback until the visual GA gate says

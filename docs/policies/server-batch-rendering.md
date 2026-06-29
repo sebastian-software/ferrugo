@@ -29,6 +29,12 @@ by the maximum page raster size.
 If the pixel budget cannot schedule one job, the batch must fail with a typed
 budget error instead of silently overcommitting memory.
 
+High-page-count gates should fan out multiple pages per input with an explicit
+page limit rather than creating huge committed PDFs. When manifest metadata is
+available, the batch benchmark bounds page jobs by each fixture's declared page
+count. Without manifest metadata, `--pages-per-input` is treated as an explicit
+request from `--page-index`.
+
 ## Cancellation
 
 Batch cancellation is cooperative. Already-started jobs may finish, but no new
@@ -62,6 +68,8 @@ For CI-sized server gates, start with:
 - `--max-workers 4`;
 - `--max-in-flight-pixels 102400`;
 - `--repetitions 3`;
+- `--pages-per-input 1` for many-document throughput gates;
+- `--pages-per-input 12` for high-page-count scheduler gates;
 - `--max-p95-ms 1000`;
 - `--max-errors 0`;
 - `--fail-on-budget`.

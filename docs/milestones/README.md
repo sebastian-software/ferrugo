@@ -34,7 +34,6 @@ when the server renderer is already correct and bounded.
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
-| 0195 | [High Page Count Batch Thumbnail Gate](0195-high-page-count-batch-thumbnail-gate.md) | 36 | medium | 0194 |
 | 0196 | [WASM Low Memory Mobile Browser Gate](0196-wasm-low-memory-mobile-browser-gate.md) | 37 | medium | 0195 |
 | 0197 | [Serverless Cold Start And Binary Size Budget](0197-serverless-cold-start-and-binary-size-budget.md) | 37 | medium | 0195 |
 | 0198 | [Native Renderer Telemetry Privacy And Diagnostics Policy](0198-native-renderer-telemetry-privacy-and-diagnostics-policy.md) | 37 | small | 0197 |
@@ -71,6 +70,7 @@ when the server renderer is already correct and bounded.
 
 | ID | Milestone | Phase | Size | Completed |
 | --- | --- | --- | --- | --- |
+| 0195 | [High Page Count Batch Thumbnail Gate](0195-high-page-count-batch-thumbnail-gate.md) | 36 | medium | 2026-06-29 |
 | 0194 | [Forms Appearance State Mutation Boundary](0194-forms-appearance-state-mutation-boundary.md) | 36 | medium | 2026-06-29 |
 | 0193 | [Annotation Print Preview Fidelity Gate](0193-annotation-print-preview-fidelity-gate.md) | 36 | medium | 2026-06-29 |
 | 0192 | [Optional Content UI State And Layer Flattening Policy](0192-optional-content-ui-state-and-layer-flattening-policy.md) | 36 | medium | 2026-06-29 |
