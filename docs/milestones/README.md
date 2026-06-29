@@ -34,7 +34,6 @@ when the server renderer is already correct and bounded.
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
-| 0194 | [Forms Appearance State Mutation Boundary](0194-forms-appearance-state-mutation-boundary.md) | 36 | medium | 0193 |
 | 0195 | [High Page Count Batch Thumbnail Gate](0195-high-page-count-batch-thumbnail-gate.md) | 36 | medium | 0194 |
 | 0196 | [WASM Low Memory Mobile Browser Gate](0196-wasm-low-memory-mobile-browser-gate.md) | 37 | medium | 0195 |
 | 0197 | [Serverless Cold Start And Binary Size Budget](0197-serverless-cold-start-and-binary-size-budget.md) | 37 | medium | 0195 |
@@ -72,6 +71,7 @@ when the server renderer is already correct and bounded.
 
 | ID | Milestone | Phase | Size | Completed |
 | --- | --- | --- | --- | --- |
+| 0194 | [Forms Appearance State Mutation Boundary](0194-forms-appearance-state-mutation-boundary.md) | 36 | medium | 2026-06-29 |
 | 0193 | [Annotation Print Preview Fidelity Gate](0193-annotation-print-preview-fidelity-gate.md) | 36 | medium | 2026-06-29 |
 | 0192 | [Optional Content UI State And Layer Flattening Policy](0192-optional-content-ui-state-and-layer-flattening-policy.md) | 36 | medium | 2026-06-29 |
 | 0191 | [DeviceN Spot Color Visual Review Samples](0191-devicen-spot-color-visual-review-samples.md) | 36 | medium | 2026-06-29 |

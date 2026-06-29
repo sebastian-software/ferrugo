@@ -57,7 +57,9 @@ The initial seed set covers:
 - text-markup highlight annotation appearance streams
 - widget annotation appearance streams
 - AcroForm text-field widget appearance streams
+- AcroForm stale widget appearances where `/V` differs from existing `/AP`
 - AcroForm checkbox widget appearance state dictionaries
+- AcroForm stale checkbox states where `/V` differs from selected `/AS`
 - AcroForm radio widget appearance state dictionaries
 - AcroForm signature placeholder widget appearance streams
 - Type0 CID font with Identity-H and ToUnicode mapping

@@ -1,7 +1,7 @@
 # AcroForm Appearance Policy
 
-Status: accepted for 0053, updated for 0092.
-Date: 2026-06-24. Updated: 2026-06-25.
+Status: accepted for 0053, updated for 0194.
+Date: 2026-06-24. Updated: 2026-06-29.
 
 The native renderer treats AcroForm widgets as static page annotations for
 thumbnail rendering. It may render an existing normal appearance stream, but it
@@ -67,6 +67,25 @@ Malformed appearance streams follow the same policy as other annotation
 appearances: they must not execute interactive behavior, and they should not
 abort unrelated page content unless the malformed object also breaks required
 page parsing.
+
+## Mutation And Preview Boundary
+
+The default render mode is document-state rendering: existing `/AP /N`
+appearance streams and `/AP /N` appearance-state dictionaries selected by `/AS`
+are authoritative, even when field values such as `/V` look newer than the
+embedded appearance. This keeps thumbnail rendering read-only and matches the
+source bytes rather than acting as a viewer-side form engine.
+
+Callers that need to preview changed field values must request an explicit form
+mutation mode through the facade. The Rust-native backend currently rejects that
+mode with `unsupported` and bucket `form.appearance-mutation`; it does not
+silently update `/V`, `/AS`, `/AP`, widget dictionaries, incremental revisions,
+or flattened page content.
+
+Later form-editing or flattening support must live behind an explicit API that
+owns generated appearance data and save semantics. Thumbnail rendering may reuse
+already-mutated or flattened source PDFs, but it must not persist synthetic
+appearances back into the input document.
 
 ## Synthesis Limits
 

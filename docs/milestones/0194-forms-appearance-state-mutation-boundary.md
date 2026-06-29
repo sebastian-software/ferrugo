@@ -1,6 +1,6 @@
 # 0194: Forms Appearance State Mutation Boundary
 
-Status: todo
+Status: done
 Phase: 36
 Size: medium
 Depends on: 0193
@@ -46,4 +46,22 @@ viewer-side form preview without becoming a PDF form editor.
 
 ## Completion Notes
 
-Empty until done.
+- Commit adds `ThumbnailOptions::form_appearance_mode` with default
+  `DocumentState` and explicit `RequestedMutation` rejection.
+- Rust-native requested form mutation preview now returns `unsupported` with
+  bucket `form.appearance-mutation` before rendering.
+- Added stale AcroForm fixtures:
+  - `fixtures/generated/acroform-text-field-stale-appearance.pdf`
+  - `fixtures/generated/acroform-checkbox-stale-appearance-state.pdf`
+- Added focused gate manifest
+  `fixtures/form-appearance-mutation-manifest.tsv`.
+- Existing `/AP /N` and `/AS` document state remains authoritative over stale
+  `/V`; bounded missing-appearance synthesis stays read-only and non-persistent.
+- Report:
+  `docs/reports/form-appearance-mutation-boundary-2026-06-29.md`.
+- Validation:
+  - `cargo test -p pdfrust-native acroform -- --nocapture`
+  - `cargo test -p pdfrust-native appearance -- --nocapture`
+  - `cargo test -p pdfrust-native mutation -- --nocapture`
+  - `cargo run -p pdfrust-cli -- summarize-fallbacks fixtures/generated --manifest fixtures/form-appearance-mutation-manifest.tsv --include-family existing-appearance --include-family stale-appearance --include-family synthesized-static --fail-on-fallback --output target/form-appearance-0194-supported-gate.json`
+  - `cargo run -p pdfrust-cli -- visual-diff-poppler fixtures/generated --manifest fixtures/form-appearance-mutation-manifest.tsv --include-family existing-appearance --include-family stale-appearance --max-mae 8 --max-p95 32 --max-changed-ratio 0.15 --output target/form-appearance-0194-document-state-poppler-diff.json`

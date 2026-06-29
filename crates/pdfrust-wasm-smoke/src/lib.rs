@@ -74,6 +74,7 @@ pub fn render_low_memory_smoke() -> Result<WasmSmokeMetrics, &'static str> {
                 output_format: OutputFormat::Rgba,
                 timeout: Duration::from_secs(5),
                 annotation_mode: AnnotationMode::Screen,
+                form_appearance_mode: pdfrust_thumbnail::FormAppearanceMode::DocumentState,
             },
         )
         .map_err(|_| "render")?;

@@ -104,6 +104,8 @@ pub struct ThumbnailOptions {
     pub timeout: Duration,
     /// Annotation visibility mode for screen or print-preview rendering.
     pub annotation_mode: AnnotationMode,
+    /// AcroForm appearance-state handling for thumbnail rendering.
+    pub form_appearance_mode: FormAppearanceMode,
 }
 
 impl Default for ThumbnailOptions {
@@ -115,6 +117,7 @@ impl Default for ThumbnailOptions {
             output_format: OutputFormat::default(),
             timeout: DEFAULT_TIMEOUT,
             annotation_mode: AnnotationMode::default(),
+            form_appearance_mode: FormAppearanceMode::default(),
         }
     }
 }
@@ -127,6 +130,47 @@ pub enum AnnotationMode {
     Screen,
     /// Print-style preview: only printable annotations render.
     Print,
+}
+
+impl AnnotationMode {
+    /// Stable lowercase identifier for cache keys and diagnostics.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Screen => "screen",
+            Self::Print => "print",
+        }
+    }
+}
+
+/// AcroForm appearance-state handling used by thumbnail rendering.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum FormAppearanceMode {
+    /// Render the appearance state embedded in the source PDF without mutation.
+    #[default]
+    DocumentState,
+    /// A caller requested viewer-side field state changes for preview.
+    ///
+    /// The native renderer currently rejects this mode with a typed
+    /// unsupported error instead of acting as a form editor.
+    RequestedMutation,
+}
+
+impl FormAppearanceMode {
+    /// Returns true when rendering would need viewer-side form mutation.
+    #[must_use]
+    pub const fn requires_mutation(self) -> bool {
+        matches!(self, Self::RequestedMutation)
+    }
+
+    /// Stable lowercase identifier for cache keys and diagnostics.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::DocumentState => "document-state",
+            Self::RequestedMutation => "requested-mutation",
+        }
+    }
 }
 
 /// Rendered thumbnail bytes and layout metadata.
@@ -551,6 +595,8 @@ pub mod unsupported_feature_buckets {
     pub const IMAGE_FILTER: &str = "image.filter";
     /// Document requires dynamic XFA processing for faithful rendering.
     pub const FORM_XFA_DYNAMIC: &str = "form.xfa-dynamic";
+    /// Requested AcroForm value or appearance-state mutation is unsupported.
+    pub const FORM_APPEARANCE_MUTATION: &str = "form.appearance-mutation";
     /// Text requires unsupported CMap or ToUnicode behavior.
     pub const TEXT_CMAP_TOUNICODE: &str = "text.cmap-tounicode";
     /// Text requires unsupported font program or encoding behavior.
@@ -573,6 +619,7 @@ pub const STABLE_UNSUPPORTED_FEATURE_BUCKETS: &[&str] = &[
     unsupported_feature_buckets::IMAGE_COLOR_SPACE,
     unsupported_feature_buckets::IMAGE_FILTER,
     unsupported_feature_buckets::FORM_XFA_DYNAMIC,
+    unsupported_feature_buckets::FORM_APPEARANCE_MUTATION,
     unsupported_feature_buckets::TEXT_CMAP_TOUNICODE,
     unsupported_feature_buckets::TEXT_FONT_PROGRAM,
     unsupported_feature_buckets::TEXT_GLYPH_OUTLINE,
@@ -694,6 +741,7 @@ mod tests {
                 output_format: OutputFormat::Rgba,
                 timeout: Duration::from_secs(5),
                 annotation_mode: AnnotationMode::Screen,
+                form_appearance_mode: FormAppearanceMode::DocumentState,
             }
         );
     }
@@ -740,7 +788,8 @@ mod tests {
         assert!(STABLE_UNSUPPORTED_FEATURE_BUCKETS.contains(&buckets::RENDERER_MEMORY_BUDGET));
         assert!(STABLE_UNSUPPORTED_FEATURE_BUCKETS.contains(&buckets::ANNOTATION_APPEARANCE));
         assert!(STABLE_UNSUPPORTED_FEATURE_BUCKETS.contains(&buckets::FORM_XFA_DYNAMIC));
-        assert_eq!(STABLE_UNSUPPORTED_FEATURE_BUCKETS.len(), 15);
+        assert!(STABLE_UNSUPPORTED_FEATURE_BUCKETS.contains(&buckets::FORM_APPEARANCE_MUTATION));
+        assert_eq!(STABLE_UNSUPPORTED_FEATURE_BUCKETS.len(), 16);
     }
 
     #[test]

@@ -1,5 +1,6 @@
 path	family	source	license	page_count	features	notes
 fixtures/generated/acroform-checkbox.pdf	form	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	acroform,widget,appearance	Generated AcroForm checkbox appearance-state fixture.
+fixtures/generated/acroform-checkbox-stale-appearance-state.pdf	form	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	acroform,widget,appearance,stale-state,expected:native	Generated AcroForm checkbox with `/V /Yes` but `/AS /Off`; native renders the existing appearance state.
 fixtures/generated/acroform-checkbox-missing-appearance.pdf	form	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	acroform,widget,checkbox,missing-appearance	Generated AcroForm checkbox widget fallback fixture without appearance stream.
 fixtures/generated/acroform-choice-missing-appearance.pdf	form	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	acroform,widget,choice,missing-appearance	Generated AcroForm choice widget fallback fixture without appearance stream.
 fixtures/generated/acroform-radio-off.pdf	form	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	acroform,radio,widget,appearance,off-state	Generated AcroForm radio widget Off appearance-state fixture.
@@ -7,6 +8,7 @@ fixtures/generated/acroform-radio.pdf	form	scripts/generate_fixtures.py	MIT OR A
 fixtures/generated/acroform-radio-missing-appearance.pdf	form	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	acroform,widget,radio,missing-appearance	Generated AcroForm radio widget fallback fixture without appearance stream.
 fixtures/generated/acroform-signature-placeholder.pdf	form	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	acroform,signature,appearance	Generated signature placeholder widget appearance fixture.
 fixtures/generated/acroform-text-field.pdf	form	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	acroform,text-field,appearance	Generated text field widget appearance fixture.
+fixtures/generated/acroform-text-field-stale-appearance.pdf	form	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	acroform,text-field,appearance,stale-value,expected:native	Generated AcroForm text field where `/V` differs from the existing normal appearance stream.
 fixtures/generated/acroform-text-field-missing-appearance.pdf	form	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	acroform,widget,text-field,missing-appearance	Generated AcroForm text field fallback fixture without appearance stream.
 fixtures/generated/xfa-dynamic-no-static-appearance.pdf	mixed-layout	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	xfa,dynamic,unsupported	Generated dynamic XFA fixture without static AcroForm appearances.
 fixtures/generated/xfa-static-appearance.pdf	form	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	xfa,acroform,appearance	Generated XFA hybrid fixture with static AcroForm appearance.

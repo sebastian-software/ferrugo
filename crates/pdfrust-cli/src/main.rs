@@ -256,6 +256,7 @@ fn thumbnail_options(config: &RenderConfig) -> ThumbnailOptions {
         output_format: pdfrust_thumbnail::OutputFormat::Png,
         timeout: config.timeout,
         annotation_mode: config.annotation_mode,
+        form_appearance_mode: pdfrust_thumbnail::FormAppearanceMode::DocumentState,
     }
 }
 
@@ -339,6 +340,7 @@ fn summarize_fallbacks_command(args: &[OsString]) -> Result<(), CliError> {
         output_format: pdfrust_thumbnail::OutputFormat::Png,
         timeout: config.timeout,
         annotation_mode: AnnotationMode::Screen,
+        form_appearance_mode: pdfrust_thumbnail::FormAppearanceMode::DocumentState,
     };
     let fixtures = pdf_inputs(&config.input)?;
     let manifest = match &config.manifest {
@@ -463,6 +465,7 @@ fn producer_regression_report_command(args: &[OsString]) -> Result<(), CliError>
         output_format: pdfrust_thumbnail::OutputFormat::Png,
         timeout: config.timeout,
         annotation_mode: AnnotationMode::Screen,
+        form_appearance_mode: pdfrust_thumbnail::FormAppearanceMode::DocumentState,
     };
     let fixtures = pdf_inputs(&config.input)?;
     let manifest = read_corpus_manifest(&config.manifest)?;
@@ -493,6 +496,7 @@ fn classify_pdf20_usage_command(args: &[OsString]) -> Result<(), CliError> {
         output_format: pdfrust_thumbnail::OutputFormat::Png,
         timeout: config.timeout,
         annotation_mode: AnnotationMode::Screen,
+        form_appearance_mode: pdfrust_thumbnail::FormAppearanceMode::DocumentState,
     };
     let fixtures = pdf_inputs(&config.input)?;
     let manifest = match &config.manifest {
@@ -541,6 +545,7 @@ fn benchmark_native_command(args: &[OsString]) -> Result<(), CliError> {
         output_format: pdfrust_thumbnail::OutputFormat::Rgba,
         timeout: config.timeout,
         annotation_mode: AnnotationMode::Screen,
+        form_appearance_mode: pdfrust_thumbnail::FormAppearanceMode::DocumentState,
     };
     let fixtures = pdf_inputs(&config.input)?;
     let manifest = match &config.manifest {
@@ -571,6 +576,7 @@ fn benchmark_batch_native_command(args: &[OsString]) -> Result<(), CliError> {
         output_format: pdfrust_thumbnail::OutputFormat::Rgba,
         timeout: config.timeout,
         annotation_mode: AnnotationMode::Screen,
+        form_appearance_mode: pdfrust_thumbnail::FormAppearanceMode::DocumentState,
     };
     let fixtures = pdf_inputs(&config.input)?;
     let manifest = match &config.manifest {
@@ -610,6 +616,7 @@ fn benchmark_repeat_native_command(args: &[OsString]) -> Result<(), CliError> {
         output_format: pdfrust_thumbnail::OutputFormat::Rgba,
         timeout: config.timeout,
         annotation_mode: AnnotationMode::Screen,
+        form_appearance_mode: pdfrust_thumbnail::FormAppearanceMode::DocumentState,
     };
     let fixtures = pdf_inputs(&config.input)?;
     let manifest = match &config.manifest {
@@ -663,6 +670,7 @@ fn benchmark_pdfium_command_enabled(args: &[OsString]) -> Result<(), CliError> {
         output_format: pdfrust_thumbnail::OutputFormat::Rgba,
         timeout: config.timeout,
         annotation_mode: AnnotationMode::Screen,
+        form_appearance_mode: pdfrust_thumbnail::FormAppearanceMode::DocumentState,
     };
     let fixtures = pdf_inputs(&config.input)?;
     let manifest = match &config.manifest {
@@ -707,6 +715,7 @@ fn visual_diff_command_enabled(args: &[OsString]) -> Result<(), CliError> {
         output_format: pdfrust_thumbnail::OutputFormat::Rgba,
         timeout: config.timeout,
         annotation_mode: AnnotationMode::Screen,
+        form_appearance_mode: pdfrust_thumbnail::FormAppearanceMode::DocumentState,
     };
     let fixtures = pdf_inputs(&config.input)?;
     let manifest = match &config.manifest {
@@ -748,6 +757,7 @@ fn visual_diff_poppler_command(args: &[OsString]) -> Result<(), CliError> {
         output_format: pdfrust_thumbnail::OutputFormat::Rgba,
         timeout: config.timeout,
         annotation_mode: AnnotationMode::Screen,
+        form_appearance_mode: pdfrust_thumbnail::FormAppearanceMode::DocumentState,
     };
     let fixtures = pdf_inputs(&config.input)?;
     let manifest = match &config.manifest {
@@ -6467,6 +6477,7 @@ fn native_render_trace_json(config: &TraceNativeConfig) -> Result<String, CliErr
         output_format: pdfrust_thumbnail::OutputFormat::Rgba,
         timeout: DEFAULT_TIMEOUT,
         annotation_mode: AnnotationMode::Screen,
+        form_appearance_mode: pdfrust_thumbnail::FormAppearanceMode::DocumentState,
     };
     let metadata = DocumentMetadataBackend::inspect(&native, PdfSource::from_bytes(&bytes));
     let coverage = scan_operator_coverage(
@@ -8477,6 +8488,7 @@ mod tests {
             output_format: pdfrust_thumbnail::OutputFormat::Png,
             timeout: Duration::from_secs(5),
             annotation_mode: AnnotationMode::Screen,
+            form_appearance_mode: pdfrust_thumbnail::FormAppearanceMode::DocumentState,
         };
 
         let report =
@@ -8657,6 +8669,7 @@ mod tests {
             output_format: pdfrust_thumbnail::OutputFormat::Png,
             timeout: Duration::from_secs(5),
             annotation_mode: AnnotationMode::Screen,
+            form_appearance_mode: pdfrust_thumbnail::FormAppearanceMode::DocumentState,
         };
 
         let native = NativeBackend::new();
@@ -8698,6 +8711,7 @@ mod tests {
             output_format: pdfrust_thumbnail::OutputFormat::Png,
             timeout: Duration::from_secs(5),
             annotation_mode: AnnotationMode::Screen,
+            form_appearance_mode: pdfrust_thumbnail::FormAppearanceMode::DocumentState,
         };
 
         let native = NativeBackend::new();
@@ -8775,6 +8789,7 @@ mod tests {
             output_format: pdfrust_thumbnail::OutputFormat::Png,
             timeout: Duration::from_secs(5),
             annotation_mode: AnnotationMode::Screen,
+            form_appearance_mode: pdfrust_thumbnail::FormAppearanceMode::DocumentState,
         };
 
         let written = write_native_diagnostic_bundles(
@@ -8861,6 +8876,7 @@ mod tests {
             output_format: pdfrust_thumbnail::OutputFormat::Png,
             timeout: Duration::from_secs(5),
             annotation_mode: AnnotationMode::Screen,
+            form_appearance_mode: pdfrust_thumbnail::FormAppearanceMode::DocumentState,
         };
 
         let report =
@@ -9102,6 +9118,7 @@ status = "candidate"
             output_format: pdfrust_thumbnail::OutputFormat::Rgba,
             timeout: Duration::from_secs(5),
             annotation_mode: AnnotationMode::Screen,
+            form_appearance_mode: pdfrust_thumbnail::FormAppearanceMode::DocumentState,
         };
 
         assert_eq!(config.repetitions, 3);
@@ -9130,6 +9147,7 @@ status = "candidate"
             output_format: pdfrust_thumbnail::OutputFormat::Rgba,
             timeout: Duration::from_secs(5),
             annotation_mode: AnnotationMode::Screen,
+            form_appearance_mode: pdfrust_thumbnail::FormAppearanceMode::DocumentState,
         };
         let config = BatchBenchmarkConfig {
             input: fixture_root.join("fixtures/generated"),
@@ -9200,6 +9218,7 @@ status = "candidate"
             output_format: pdfrust_thumbnail::OutputFormat::Rgba,
             timeout: Duration::from_secs(5),
             annotation_mode: AnnotationMode::Screen,
+            form_appearance_mode: pdfrust_thumbnail::FormAppearanceMode::DocumentState,
         };
         let config = BatchBenchmarkConfig {
             input: fixture_root.join("fixtures/generated"),
@@ -9277,6 +9296,7 @@ status = "candidate"
             output_format: pdfrust_thumbnail::OutputFormat::Rgba,
             timeout: Duration::from_secs(5),
             annotation_mode: AnnotationMode::Screen,
+            form_appearance_mode: pdfrust_thumbnail::FormAppearanceMode::DocumentState,
         };
         let config = RepeatBenchmarkConfig {
             input: fixture_root.join("fixtures/generated"),
@@ -9329,6 +9349,7 @@ status = "candidate"
             output_format: pdfrust_thumbnail::OutputFormat::Rgba,
             timeout: Duration::from_secs(5),
             annotation_mode: AnnotationMode::Screen,
+            form_appearance_mode: pdfrust_thumbnail::FormAppearanceMode::DocumentState,
         };
         let config = BenchmarkConfig {
             input: fixture_root.join("fixtures/generated"),

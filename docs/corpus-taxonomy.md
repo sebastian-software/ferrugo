@@ -138,6 +138,24 @@ cargo run -p pdfrust-cli -- summarize-fallbacks fixtures/generated \
   --fail-on-fallback
 ```
 
+## Form Appearance Mutation Manifest
+
+`fixtures/form-appearance-mutation-manifest.tsv` is the focused gate for
+AcroForm document-state rendering. Supported families cover existing widget
+appearances, stale `/V` versus `/AP` content, stale `/V` versus `/AS` state, and
+bounded static synthesis for missing common widget appearances.
+
+Use this manifest when a change may affect form preview behavior:
+
+```sh
+cargo run -p pdfrust-cli -- summarize-fallbacks fixtures/generated \
+  --manifest fixtures/form-appearance-mutation-manifest.tsv \
+  --include-family existing-appearance \
+  --include-family stale-appearance \
+  --include-family synthesized-static \
+  --fail-on-fallback
+```
+
 ## Spreadsheet Grid Manifest
 
 `fixtures/spreadsheet-grid-manifest.tsv` is the focused gate for spreadsheet

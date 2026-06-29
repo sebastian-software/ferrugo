@@ -34,6 +34,9 @@ use pdfrust_thumbnail::{
     ThumbnailBackend, ThumbnailError, ThumbnailOptions,
 };
 
+#[cfg(test)]
+use pdfrust_thumbnail::FormAppearanceMode;
+
 /// Stable crate role used by architecture smoke tests and documentation.
 pub const CRATE_ROLE: &str = "native-backend";
 
@@ -46,6 +49,7 @@ const BUCKET_ANNOTATION_APPEARANCE: &str = buckets::ANNOTATION_APPEARANCE;
 const BUCKET_IMAGE_COLOR_SPACE: &str = buckets::IMAGE_COLOR_SPACE;
 const BUCKET_IMAGE_FILTER: &str = buckets::IMAGE_FILTER;
 const BUCKET_FORM_XFA_DYNAMIC: &str = buckets::FORM_XFA_DYNAMIC;
+const BUCKET_FORM_APPEARANCE_MUTATION: &str = buckets::FORM_APPEARANCE_MUTATION;
 const BUCKET_RENDERER_FORM_XOBJECT: &str = buckets::RENDERER_FORM_XOBJECT_COMPOSITION;
 const BUCKET_RENDERER_MEMORY_BUDGET: &str = buckets::RENDERER_MEMORY_BUDGET;
 const BUCKET_RENDERER_UNSUPPORTED: &str = buckets::NATIVE_UNSUPPORTED;
@@ -551,6 +555,10 @@ pub struct NativePageCacheKey {
     pub renderer_version: &'static str,
     /// Native memory/profile identifier.
     pub native_profile: &'static str,
+    /// Annotation visibility mode identifier.
+    pub annotation_mode: &'static str,
+    /// AcroForm appearance-state mode identifier.
+    pub form_appearance_mode: &'static str,
 }
 
 impl NativePageCacheKey {
@@ -573,6 +581,8 @@ impl NativePageCacheKey {
             ],
             renderer_version: env!("CARGO_PKG_VERSION"),
             native_profile,
+            annotation_mode: options.annotation_mode.as_str(),
+            form_appearance_mode: options.form_appearance_mode.as_str(),
         }
     }
 }
@@ -731,6 +741,7 @@ fn render_pages_parallel_partial_with_limits(
     cancellation: &RenderCancellation,
     limits: NativeRenderLimits,
 ) -> Result<ParallelRenderPartialResult, ThumbnailError> {
+    reject_form_appearance_mutation(options)?;
     let worker_count = effective_worker_count(options, parallel_options)?;
     if cancellation.is_cancelled() {
         return Ok(ParallelRenderPartialResult {
@@ -827,9 +838,17 @@ impl ThumbnailBackend for NativeBackend {
         source: PdfSource<'_>,
         options: &ThumbnailOptions,
     ) -> Result<Thumbnail, ThumbnailError> {
+        reject_form_appearance_mutation(options)?;
         let bytes = load_source(source)?;
         render_bytes(&bytes, options, self.limits)
     }
+}
+
+fn reject_form_appearance_mutation(options: &ThumbnailOptions) -> Result<(), ThumbnailError> {
+    if options.form_appearance_mode.requires_mutation() {
+        return Err(unsupported_feature(BUCKET_FORM_APPEARANCE_MUTATION));
+    }
+    Ok(())
 }
 
 impl DocumentMetadataBackend for NativeBackend {
@@ -4141,6 +4160,7 @@ mod tests {
             output_format: pdfrust_thumbnail::OutputFormat::Rgba,
             timeout: pdfrust_thumbnail::DEFAULT_TIMEOUT,
             annotation_mode: AnnotationMode::Screen,
+            form_appearance_mode: FormAppearanceMode::DocumentState,
         };
 
         let first = NativePageCacheKey::from_options(0x1111, &options, "default");
@@ -4152,6 +4172,8 @@ mod tests {
         assert_eq!(first.page_index, 2);
         assert_eq!(first.max_edge, 160);
         assert_eq!(first.background, [12, 34, 56, 255]);
+        assert_eq!(first.annotation_mode, "screen");
+        assert_eq!(first.form_appearance_mode, "document-state");
         assert_eq!(first.renderer_version, env!("CARGO_PKG_VERSION"));
     }
 
@@ -4272,6 +4294,7 @@ mod tests {
                         output_format: pdfrust_thumbnail::OutputFormat::Rgba,
                         timeout: std::time::Duration::from_secs(5),
                         annotation_mode: AnnotationMode::Screen,
+                        form_appearance_mode: FormAppearanceMode::DocumentState,
                     },
                 )
                 .unwrap_or_else(|error| panic!("{label} should render under low memory: {error}"));
@@ -4299,6 +4322,7 @@ mod tests {
                     output_format: pdfrust_thumbnail::OutputFormat::Rgba,
                     timeout: std::time::Duration::from_secs(5),
                     annotation_mode: AnnotationMode::Screen,
+                    form_appearance_mode: FormAppearanceMode::DocumentState,
                 },
             )
             .expect_err("tight page raster budget should fail deterministically");
@@ -5112,6 +5136,7 @@ mod tests {
                         output_format: pdfrust_thumbnail::OutputFormat::Rgba,
                         timeout: std::time::Duration::from_secs(5),
                         annotation_mode: AnnotationMode::Screen,
+                        form_appearance_mode: FormAppearanceMode::DocumentState,
                     },
                 )
                 .unwrap_or_else(|error| panic!("{label} should render under low memory: {error}"));
@@ -5963,6 +5988,54 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_render_existing_text_appearance_over_stale_value() {
+        let bytes =
+            include_bytes!("../../../fixtures/generated/acroform-text-field-stale-appearance.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 140,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("stale AcroForm text appearance fixture should render");
+
+        assert_eq!(thumbnail.width, 140);
+        assert_eq!(thumbnail.height, 80);
+        assert_eq!(rgba_at(&thumbnail, 40, 40), [242, 209, 184, 255]);
+        assert_eq!(rgba_at(&thumbnail, 95, 40), [255, 255, 255, 255]);
+    }
+
+    #[test]
+    fn native_backend_should_reject_requested_form_appearance_mutation() {
+        let bytes =
+            include_bytes!("../../../fixtures/generated/acroform-text-field-stale-appearance.pdf");
+        let input = bytes.to_vec();
+        let before = input.clone();
+        let error = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(&input),
+            &ThumbnailOptions {
+                max_edge: 140,
+                form_appearance_mode: FormAppearanceMode::RequestedMutation,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect_err("form preview mutation should not render silently");
+
+        assert_eq!(
+            error.class(),
+            pdfrust_thumbnail::ThumbnailErrorClass::Unsupported
+        );
+        assert_eq!(
+            error.unsupported_feature_bucket(),
+            Some(BUCKET_FORM_APPEARANCE_MUTATION)
+        );
+        assert_eq!(input, before);
+    }
+
+    #[test]
     fn native_backend_should_render_generated_static_xfa_appearance_fixture() {
         let bytes = include_bytes!("../../../fixtures/generated/xfa-static-appearance.pdf");
         let thumbnail = ThumbnailBackend::render(
@@ -6067,6 +6140,27 @@ mod tests {
         assert_low_intensity(rgba_at(&thumbnail, 30, 40), 96);
         assert_low_intensity(rgba_at(&thumbnail, 20, 30), 96);
         assert_eq!(rgba_at(&thumbnail, 45, 40), [255, 255, 255, 255]);
+    }
+
+    #[test]
+    fn native_backend_should_use_appearance_state_over_checkbox_value() {
+        let bytes = include_bytes!(
+            "../../../fixtures/generated/acroform-checkbox-stale-appearance-state.pdf"
+        );
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 80,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("stale AcroForm checkbox appearance-state fixture should render");
+
+        assert_eq!(thumbnail.width, 80);
+        assert_eq!(thumbnail.height, 80);
+        assert_eq!(rgba_at(&thumbnail, 30, 40), [255, 255, 255, 255]);
+        assert_low_intensity(rgba_at(&thumbnail, 20, 30), 96);
     }
 
     #[test]
@@ -9519,6 +9613,7 @@ mod tests {
                 output_format: pdfrust_thumbnail::OutputFormat::Rgba,
                 timeout: std::time::Duration::from_millis(100),
                 annotation_mode: AnnotationMode::Screen,
+                form_appearance_mode: FormAppearanceMode::DocumentState,
             },
         )
         .expect_err("huge image dimensions should fail before allocation");

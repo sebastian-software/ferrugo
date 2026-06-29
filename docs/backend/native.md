@@ -95,10 +95,17 @@ bounded memory accounting and tenant lifetime boundaries.
 
 Reusable page artifacts must be keyed by `NativePageCacheKey`, which includes a
 caller-provided document identity, page index, max edge, background color,
-native renderer version, and native profile. The CLI repeated-render benchmark
-uses a streaming content hash as the document identity for fixture evidence;
-host applications may instead provide a tenant-scoped document version id or a
-strong content hash.
+native renderer version, native profile, annotation mode, and AcroForm
+appearance mode. The CLI repeated-render benchmark uses a streaming content
+hash as the document identity for fixture evidence; host applications may
+instead provide a tenant-scoped document version id or a strong content hash.
+
+The native backend renders AcroForm document state by default. Existing widget
+appearance streams and `/AS` appearance-state selection remain authoritative.
+Explicit viewer-side form mutation preview requests are rejected with
+`unsupported` bucket `form.appearance-mutation` rather than updating field
+values, appearance dictionaries, or flattened page bytes during thumbnail
+rendering.
 
 The current repeated-render gate does not show enough improvement to justify
 shared persistent page artifacts as a default: the 0134 benchmark rendered four
