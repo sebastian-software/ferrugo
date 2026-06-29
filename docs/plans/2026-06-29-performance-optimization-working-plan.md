@@ -594,6 +594,31 @@ Rejected allocation candidate from 2026-06-29:
 - Decision: reverted. The extra mutable scratch plumbing did not reduce the
   dominant runtime on the current fixtures and made the hot path slower.
 
+Rejected candidate from 2026-06-30:
+
+- Change tested locally but not kept: store conservative bounds on prepared
+  bevel/miter stroke joins and add a cheap square-bounds check for round joins
+  before running join hit tests.
+- Rationale: this targeted the remaining `stroke_path` top stack by avoiding
+  triangle/circle checks for sample points that are far from each join.
+- Baseline:
+  `target/performance-matrix-report-vector-join-bounds-before.json`,
+  native hot-render, `report/vector`, `--max-edge 160`, 200 measured
+  iterations after 10 warmups.
+- Candidate:
+  `target/performance-matrix-report-vector-join-bounds-after.json`, same
+  command and host.
+- Result: mixed and not protection-set-neutral. `prepress-trim-bleed-marks.pdf`
+  p95 improved `1.088 ms` -> `0.768 ms` (~29.4%) and
+  `technical-linework-dimensions.pdf` improved `0.957 ms` -> `0.813 ms`
+  (~15.0%), but the primary `vector-stress.pdf` protection fixture regressed
+  `6.658 ms` -> `8.061 ms` (~21.1% slower). `technical-hatch-clipping.pdf`
+  improved only ~3.8%.
+- Decision: reverted. Per-join bounds can help sparse linework, but they add
+  enough branch/struct overhead to hurt dense vector stress. Revisit only with
+  a split strategy that applies bounds selectively to sparse/simple join sets
+  and proves neutrality on `vector-stress`.
+
 Current profile after accepted vector optimizations:
 
 - `target/sample-vector-stress-current.txt` still shows `stroke_path` as the
