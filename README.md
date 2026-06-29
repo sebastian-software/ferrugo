@@ -1,29 +1,31 @@
 # ferrugo
 
-`ferrugo` is a Rust-native PDF rendering project, focused first on server-side
-thumbnails and preview images.
+`ferrugo` is a Rust-native PDF preview engine for server-side thumbnails,
+document intake, and automation workflows.
 
-The goal is simple to say and hard to finish: render common PDFs from Rust
-without depending on PDFium at runtime. That means office exports, browser print
-PDFs, invoices, reports, scans, forms, and other documents people actually send
-around. The project is not claiming broad PDFium replacement yet. It has a
-native renderer with growing coverage, a CLI for local rendering and corpus
-work, and explicit comparison tooling for maintainers.
+It is built for the practical job most applications need first: take an
+untrusted PDF, render a bounded first-page preview, and do it without shipping a
+large native renderer in the normal runtime path. The target documents are the
+ones teams actually pass around: office exports, browser print PDFs, invoices,
+reports, scans, forms, presentations, and mixed text-image documents.
 
-PDFium still matters here, but mostly as a reference. The normal runtime path is
-Rust-native. PDFium-backed commands live behind an explicit feature for oracle
-comparison and debugging.
+The project combines a native renderer, a CLI, corpus tooling, benchmark gates,
+and explicit diagnostics. It is already useful for scoped preview workloads, but
+it is intentionally honest about the boundary: broad pixel-perfect PDF
+compatibility is still a measured goal, not a claim.
 
 ## Current status
 
-The native-only path is the default development and packaging target.
+The native Rust path is the default development and packaging target.
 
 - `ferrugo-cli` builds without PDFium by default.
 - `render` and `render-auto` use the Rust-native backend.
-- PDFium runtime fallback has been removed from normal rendering.
-- PDFium comparison commands remain available behind `--features pdfium`.
-- The 1.4 readiness gate supports a scoped PDFium-free server/runtime path.
-- A broad "drop-in PDFium replacement" claim is still deferred.
+- Runtime fallback to external PDF renderers has been removed from normal
+  rendering.
+- Reference-renderer comparison commands remain available for maintainers behind
+  explicit Cargo features.
+- The 1.4 readiness gate supports a scoped native server/runtime path.
+- A broad "drop-in PDF renderer replacement" claim is still deferred.
 
 The current renderer handles a useful slice of typical preview documents, but
 PDF is a large format. Some visual-fidelity gaps and typed unsupported feature
@@ -35,7 +37,7 @@ Good fit:
 
 - Generate preview thumbnails in a Rust service or local CLI workflow.
 - Test a Rust-native renderer against a generated PDF corpus.
-- Compare native output against PDFium or Poppler as an oracle.
+- Compare native output against reference renderers during maintainer work.
 - Study a staged approach to replacing a C/C++ PDF renderer with Rust modules.
 - Run bounded server-side rendering experiments with explicit memory and
   timeout budgets.
@@ -109,14 +111,34 @@ The public boundary is the thumbnail facade and native backend. PDFium handles,
 fallback state, and comparison-only commands are not part of the normal runtime
 API.
 
-## PDFium's role
+## Performance snapshot
 
-PDFium is treated as a behavior oracle, not as the architecture to copy.
+Recent local smoke numbers on macOS/aarch64, `max_edge=160`:
+
+| Profile | Result |
+| --- | ---: |
+| Low-memory corpus | 5/5 rendered natively, 0 fallbacks, 0 errors |
+| Low-memory common docs | 4.815 ms mean |
+| Low-memory scan fixture | 41.876 ms mean |
+| Low-memory vector-stress fixture | 139.301 ms mean |
+| Server batch | 16/16 jobs rendered natively, 0 budget failures |
+| Server batch throughput | 38.025 jobs/sec |
+| Server batch latency | 28.381 ms mean, 139.118 ms p95 |
+
+The serverless profile is size-oriented and has a recent readiness measurement
+of about 1.0 MB for the native CLI binary, with first-render p95 under 6 ms for
+the small text fixture. Treat these as local gate numbers, not universal
+hardware-independent benchmarks.
+
+## Reference renderers
+
+External renderers are treated as behavior oracles, not as the architecture to
+copy.
 
 That distinction matters. `ferrugo` uses Rust ownership, typed errors, explicit
-budgets, and narrow unsafe boundaries. When PDFium or Poppler are used, they are
-used to answer "what should this document look like?" or "where did the native
-renderer drift?", not to define the public Rust API.
+budgets, and narrow unsafe boundaries. When PDFium or Poppler are used, they
+answer "what should this document look like?" or "where did the native renderer
+drift?", not "what should the runtime depend on?"
 
 To build and run PDFium comparison commands, enable the feature explicitly:
 

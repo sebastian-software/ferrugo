@@ -10,12 +10,14 @@ material.
   architectural split.
 - [Rust-native backend](backend/native.md): what the native renderer supports,
   how errors are classified, and where the current limits are.
-- [Packaging](packaging.md): native-only builds, serverless profile,
-  plugin-free installation, and explicit PDFium comparison builds.
+- [Packaging](packaging.md): native runtime builds, serverless profile,
+  plugin-free installation, and explicit reference-renderer comparison builds.
+- [Renderer benchmarks](benchmarks.md): local smoke commands and the current
+  performance snapshot for bounded preview workloads.
 - [Milestones](milestones/README.md): the implementation log. The files stay in
   place and use `Status:` plus completion notes instead of moving between
   folders.
-- [PDFium-free 1.4 readiness](reports/pdfium-free-1-4-readiness-2026-06-29.md):
+- [1.4 readiness report](reports/pdfium-free-1-4-readiness-2026-06-29.md):
   the current release decision and the clearest summary of what is ready.
 
 ## By task
@@ -50,7 +52,7 @@ The short version: the public API is Rust-first, PDFium is an oracle, and the
 native renderer grows through parser, object, content, render, font, image, and
 document-workflow slices.
 
-### I want to know whether PDFium is still required
+### I want to know what the runtime depends on
 
 Read:
 
@@ -58,8 +60,9 @@ Read:
 - [PDFium comparison tool removal decision](reports/pdfium-comparison-tool-removal-decision-2026-06-29.md)
 - [PDFium-free 1.4 readiness](reports/pdfium-free-1-4-readiness-2026-06-29.md)
 
-The normal runtime path does not package PDFium. PDFium remains available for
-maintainer comparison commands behind an explicit Cargo feature.
+The normal runtime path is Rust-native and does not package external PDF
+renderer libraries. Reference-renderer tooling remains available for maintainer
+comparison commands behind explicit Cargo features.
 
 ### I want the current compatibility picture
 
@@ -72,6 +75,19 @@ Read:
 
 The broad replacement claim is intentionally deferred. The server/runtime path
 is scoped and tested; visual parity work still has known gaps.
+
+### I want to understand performance
+
+Read:
+
+- [Renderer benchmarks](benchmarks.md)
+- [Serverless cold start and binary size](reports/serverless-cold-start-and-binary-size-2026-06-29.md)
+- [Server batch throughput](reports/server-batch-throughput-2026-06-25.md)
+- [Low-memory renderer profile](reports/low-memory-renderer-profile-2026-06-25.md)
+
+The current numbers are strongest for bounded server-side preview workloads:
+small thumbnails, controlled worker counts, explicit pixel budgets, and typed
+fallback/error reporting.
 
 ### I want to add or triage renderer work
 

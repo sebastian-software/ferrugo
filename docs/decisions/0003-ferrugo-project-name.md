@@ -34,8 +34,8 @@ Use **Ferrugo** as the public project and package name.
 
 The repository, crate, module, CLI, script, environment-variable, fixture, and
 documentation surfaces now use the `ferrugo` / `FERRUGO` naming family. GitHub
-repository metadata and registry publication are still separate operational
-steps.
+repository metadata points at `sebastian-software/ferrugo`; registry
+publication is still a separate operational step.
 
 ## Rationale
 
@@ -89,7 +89,6 @@ Tradeoffs:
 
 Remaining naming work:
 
-- Rename GitHub repository metadata when the remote is configured.
 - Keep the npm `ferrugo` reservation until the Node package surface is ready.
 - Publish Rust crates in dependency order once the registry release train is
   ready.

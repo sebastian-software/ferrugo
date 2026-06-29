@@ -25,7 +25,7 @@ default-members = [
 edition = "2021"
 description = "Rust-native PDF thumbnail and rendering components."
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/ferrugo/ferrugo"
+repository = "https://github.com/sebastian-software/ferrugo"
 rust-version = "1.81"
 
 [workspace.lints.rust]

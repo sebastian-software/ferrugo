@@ -3,10 +3,33 @@
 Status: accepted.
 Date: 2026-06-24.
 
-The renderer benchmark harness measures fixture-level render behavior for both
-the Rust-native backend and PDFium when a local PDFium library is available.
-Benchmarks use the existing thumbnail facade and emit JSON reports that group
-results by corpus family.
+The benchmark harness measures whether `ferrugo` can do its main job quickly
+and predictably: produce bounded preview images for common document families.
+It uses the public thumbnail facade and emits JSON reports grouped by corpus
+family, so timing, fallbacks, errors, and budget violations stay visible.
+
+Reference-renderer benchmark commands exist for maintainers when a local
+comparison library is available. They are not part of the normal runtime path.
+
+## Current Local Snapshot
+
+Latest local smoke run after the Ferrugo rename, on macOS/aarch64:
+
+| Gate | Result |
+| --- | ---: |
+| Low-memory corpus | 5/5 native, 0 fallbacks, 0 errors, 0 budget failures |
+| Low-memory common docs | 4.815 ms mean |
+| Low-memory scan fixture | 41.876 ms mean |
+| Low-memory vector-stress fixture | 139.301 ms mean |
+| Server batch | 16/16 jobs native, 0 fallbacks, 0 errors, 0 budget failures |
+| Server batch throughput | 38.025 jobs/sec |
+| Server batch latency | 28.381 ms mean, 8.847 ms p50, 139.118 ms p95 |
+| Server batch bounds | 2 workers, 51200 in-flight pixels, 78720 max output bytes |
+
+Older release-readiness evidence also records a size-oriented serverless CLI
+binary around 1.0 MB and first-render p95 below 6 ms for the small text fixture.
+These numbers are useful for direction and regression checks, not as universal
+hardware-independent guarantees.
 
 ## Commands
 
