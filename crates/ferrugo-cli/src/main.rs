@@ -13,7 +13,8 @@ use std::time::{Duration, Instant};
 
 use ferrugo_native::{
     scan_operator_coverage, NativeBackend, NativeMemoryDiagnostics, NativePageCacheKey,
-    NativePageCachePolicy, OperatorCoverageEntry, OperatorCoverageOptions, OperatorSupportStatus,
+    NativePageCachePolicy, NativeRenderPhaseTimings, NativeRenderTrace, OperatorCoverageEntry,
+    OperatorCoverageOptions, OperatorSupportStatus,
 };
 #[cfg(feature = "pdfium")]
 use ferrugo_pdfium::PdfiumBackend;
@@ -8190,7 +8191,7 @@ fn native_render_trace_json(config: &TraceNativeConfig) -> Result<String, CliErr
             include_annotations: config.include_annotations,
         },
     );
-    let render = native.render(PdfSource::from_bytes(&bytes), &options);
+    let render_trace = native.render_with_trace(PdfSource::from_bytes(&bytes), &options);
 
     let (coverage_json, operators, events_json, emitted_events, total_events, events_truncated) =
         match coverage {
@@ -8248,7 +8249,9 @@ fn native_render_trace_json(config: &TraceNativeConfig) -> Result<String, CliErr
         };
     let operator_summary = trace_operator_summary_json(&operators);
     let metadata_json = trace_metadata_json(metadata);
-    let render_json = trace_render_outcome_json(render);
+    let phase_timings_json =
+        trace_phase_timings_json(render_trace.as_ref().map(|trace| &trace.timings));
+    let render_json = trace_render_outcome_json(render_trace);
 
     Ok(format!(
         concat!(
@@ -8266,6 +8269,7 @@ fn native_render_trace_json(config: &TraceNativeConfig) -> Result<String, CliErr
             "  \"events_truncated\": {},\n",
             "  \"metadata\": {},\n",
             "  \"render\": {},\n",
+            "  \"phase_timings_ms\": {},\n",
             "  \"operator_coverage\": {},\n",
             "  \"operator_summary\": {},\n",
             "  \"events\": [{}]\n",
@@ -8281,6 +8285,7 @@ fn native_render_trace_json(config: &TraceNativeConfig) -> Result<String, CliErr
         events_truncated,
         metadata_json,
         render_json,
+        phase_timings_json,
         coverage_json,
         operator_summary,
         events_json
@@ -8309,11 +8314,9 @@ fn trace_metadata_json(result: Result<DocumentMetadata, ThumbnailError>) -> Stri
     }
 }
 
-fn trace_render_outcome_json(
-    result: Result<ferrugo_thumbnail::Thumbnail, ThumbnailError>,
-) -> String {
+fn trace_render_outcome_json(result: Result<NativeRenderTrace, ThumbnailError>) -> String {
     match result {
-        Ok(thumbnail) => format!(
+        Ok(trace) => format!(
             concat!(
                 "{{",
                 "\"status\":\"rendered\",",
@@ -8323,16 +8326,53 @@ fn trace_render_outcome_json(
                 "\"output_bytes\":{}",
                 "}}"
             ),
-            thumbnail.width,
-            thumbnail.height,
-            thumbnail.stride,
-            thumbnail.bytes.len()
+            trace.thumbnail.width,
+            trace.thumbnail.height,
+            trace.thumbnail.stride,
+            trace.thumbnail.bytes.len()
         ),
         Err(error) => format!(
             "{{\"status\":\"error\",\"class\":{},\"bucket\":{},\"message\":{}}}",
             json_string(error.class().as_str()),
             optional_json_string(error.unsupported_feature_bucket()),
             json_string(&error.to_string())
+        ),
+    }
+}
+
+fn trace_phase_timings_json(timings: Result<&NativeRenderPhaseTimings, &ThumbnailError>) -> String {
+    match timings {
+        Ok(timings) => format!(
+            concat!(
+                "{{",
+                "\"status\":\"measured\",",
+                "\"load_xref_object\":{:.3},",
+                "\"stream_decode\":{:.3},",
+                "\"content_tokenize\":{:.3},",
+                "\"display_list_build\":{:.3},",
+                "\"resource_decode\":{:.3},",
+                "\"raster_paths\":{:.3},",
+                "\"raster_text\":{:.3},",
+                "\"raster_images\":{:.3},",
+                "\"output\":{:.3},",
+                "\"total\":{:.3}",
+                "}}"
+            ),
+            elapsed_ms(timings.load_xref_object),
+            elapsed_ms(timings.stream_decode),
+            elapsed_ms(timings.content_tokenize),
+            elapsed_ms(timings.display_list_build),
+            elapsed_ms(timings.resource_decode),
+            elapsed_ms(timings.raster_paths),
+            elapsed_ms(timings.raster_text),
+            elapsed_ms(timings.raster_images),
+            elapsed_ms(timings.output),
+            elapsed_ms(timings.total)
+        ),
+        Err(error) => format!(
+            "{{\"status\":\"error\",\"class\":{},\"bucket\":{}}}",
+            json_string(error.class().as_str()),
+            optional_json_string(error.unsupported_feature_bucket())
         ),
     }
 }
@@ -10906,6 +10946,11 @@ mod tests {
         assert!(json.contains("\"privacy\""));
         assert!(json.contains("\"events_emitted\": 2"));
         assert!(json.contains("\"events_truncated\": true"));
+        assert!(json.contains("\"phase_timings_ms\""));
+        assert!(json.contains("\"load_xref_object\""));
+        assert!(json.contains("\"display_list_build\""));
+        assert!(json.contains("\"raster_paths\""));
+        assert!(json.contains("\"total\""));
         assert!(json.contains("\"operator_summary\""));
         assert!(!json.contains("stream\n"));
         assert!(!json.contains("ferrugo thumbnail fixture"));

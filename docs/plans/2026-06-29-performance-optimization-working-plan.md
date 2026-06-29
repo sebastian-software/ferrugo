@@ -165,7 +165,7 @@ PDFium path policy:
 
 Goal: split Ferrugo time into phases before changing hot paths.
 
-- [ ] Add opt-in native timing attribution for:
+- [x] Add opt-in native timing attribution for:
   - load, xref, object graph, and page tree;
   - stream decode;
   - content tokenization;
@@ -175,17 +175,23 @@ Goal: split Ferrugo time into phases before changing hot paths.
   - raster text;
   - raster images;
   - PNG/output encoding.
-- [ ] Include attribution in a machine-readable report without leaking PDF bytes
+- [x] Include attribution in a machine-readable report without leaking PDF bytes
   or rendered pixels.
-- [ ] Add focused tests for phase-field presence and volatile-field redaction.
+- [x] Add focused tests for phase-field presence and volatile-field redaction.
 - [ ] Run attribution on the top 5 Ferrugo slow fixtures from the matrix.
 - [ ] Pick the first optimization block from attribution, not from assumptions.
 
 Likely implementation shape:
 
-- reuse or extend `trace-native` for per-render phase timings;
-- keep attribution disabled by default;
-- avoid global state and keep measurements request-local.
+- [x] reuse or extend `trace-native` for per-render phase timings;
+- [x] keep attribution disabled by default;
+- [x] avoid global state and keep measurements request-local.
+
+Current caveat:
+
+- `content_tokenize` only covers explicit token scans outside display-list
+  construction. Builder-internal tokenization is still included in
+  `display_list_build` until the builder APIs expose a cleaner split.
 
 ## Phase 2: Vector And Report Hot Paths
 

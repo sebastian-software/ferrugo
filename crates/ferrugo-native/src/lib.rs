@@ -7,6 +7,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
+use std::time::{Duration, Instant};
 
 use ferrugo_content::{tokenize_content, ContentToken};
 use ferrugo_object::{
@@ -74,6 +75,67 @@ const DEFAULT_SPOOL_BYTES_LIMIT: usize = 0;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NativeBackend {
     limits: NativeRenderLimits,
+}
+
+/// Native renderer timing attribution for one render request.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct NativeRenderPhaseTimings {
+    /// PDF input loading, xref/object parsing, and page-tree resolution.
+    pub load_xref_object: Duration,
+    /// Decoded page, optional-content, and annotation content stream loading.
+    pub stream_decode: Duration,
+    /// Explicit content-token scans outside display-list construction.
+    pub content_tokenize: Duration,
+    /// Display-list construction for paths, forms, images, text, and annotations.
+    pub display_list_build: Duration,
+    /// Page resources, XObjects, fonts, images, shadings, patterns, and color spaces.
+    pub resource_decode: Duration,
+    /// Path-like raster work, including ordered mixed display-list rasterization.
+    pub raster_paths: Duration,
+    /// Text raster work.
+    pub raster_text: Duration,
+    /// Image raster work.
+    pub raster_images: Duration,
+    /// Output assembly inside the native backend.
+    pub output: Duration,
+    /// End-to-end native backend render time for this request.
+    pub total: Duration,
+}
+
+/// Native renderer output plus timing attribution.
+#[derive(Debug, Clone, PartialEq)]
+pub struct NativeRenderTrace {
+    /// Rendered thumbnail.
+    pub thumbnail: Thumbnail,
+    /// Request-local phase timings.
+    pub timings: NativeRenderPhaseTimings,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum NativeRenderPhase {
+    StreamDecode,
+    ContentTokenize,
+    DisplayListBuild,
+    ResourceDecode,
+    RasterPaths,
+    RasterText,
+    RasterImages,
+    Output,
+}
+
+impl NativeRenderPhaseTimings {
+    fn record(&mut self, phase: NativeRenderPhase, duration: Duration) {
+        match phase {
+            NativeRenderPhase::StreamDecode => self.stream_decode += duration,
+            NativeRenderPhase::ContentTokenize => self.content_tokenize += duration,
+            NativeRenderPhase::DisplayListBuild => self.display_list_build += duration,
+            NativeRenderPhase::ResourceDecode => self.resource_decode += duration,
+            NativeRenderPhase::RasterPaths => self.raster_paths += duration,
+            NativeRenderPhase::RasterText => self.raster_text += duration,
+            NativeRenderPhase::RasterImages => self.raster_images += duration,
+            NativeRenderPhase::Output => self.output += duration,
+        }
+    }
 }
 
 /// Native operator coverage scan options.
@@ -215,6 +277,41 @@ impl NativeBackend {
             load_mode,
             memory,
         })
+    }
+
+    /// Renders one thumbnail and returns request-local phase timings.
+    ///
+    /// This is maintainer diagnostics for performance work. It does not include
+    /// PDF bytes, rendered pixels beyond the returned thumbnail, text samples, or
+    /// private document metadata.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ThumbnailError`] when the source cannot be read or rendered.
+    pub fn render_with_trace(
+        &self,
+        source: PdfSource<'_>,
+        options: &ThumbnailOptions,
+    ) -> Result<NativeRenderTrace, ThumbnailError> {
+        reject_form_appearance_mutation(options)?;
+        let total_started = Instant::now();
+        let load_started = Instant::now();
+        let bytes = load_source(source)?;
+        let input = PdfBytes::new(bytes.as_ref());
+        let (document, page_tree) = load_render_document(input, options.page_index)?;
+        let mut timings = NativeRenderPhaseTimings {
+            load_xref_object: load_started.elapsed(),
+            ..NativeRenderPhaseTimings::default()
+        };
+        let thumbnail = render_loaded_document_with_timings(
+            &document,
+            &page_tree,
+            options,
+            self.limits,
+            &mut timings,
+        )?;
+        timings.total = total_started.elapsed();
+        Ok(NativeRenderTrace { thumbnail, timings })
     }
 
     /// Renders requested preview pages while preserving page-level outcomes.
@@ -1069,68 +1166,120 @@ fn render_loaded_document(
     options: &ThumbnailOptions,
     limits: NativeRenderLimits,
 ) -> Result<Thumbnail, ThumbnailError> {
+    render_loaded_document_inner(document, page_tree, options, limits, None)
+}
+
+fn render_loaded_document_with_timings(
+    document: &ClassicDocument<'_>,
+    page_tree: &PageTree,
+    options: &ThumbnailOptions,
+    limits: NativeRenderLimits,
+    timings: &mut NativeRenderPhaseTimings,
+) -> Result<Thumbnail, ThumbnailError> {
+    render_loaded_document_inner(document, page_tree, options, limits, Some(timings))
+}
+
+fn render_loaded_document_inner(
+    document: &ClassicDocument<'_>,
+    page_tree: &PageTree,
+    options: &ThumbnailOptions,
+    limits: NativeRenderLimits,
+    mut timings: Option<&mut NativeRenderPhaseTimings>,
+) -> Result<Thumbnail, ThumbnailError> {
     enforce_xfa_render_policy(document)?;
     let page = page_tree
         .pages()
         .get(options.page_index as usize)
         .ok_or_else(|| unsupported_feature(BUCKET_RENDERER_UNSUPPORTED))?;
-    let content = page_content_stream(document, page)?;
-    let optional_content = page_optional_content_properties(document, page)?;
-    let optional_content_state = document_optional_content_state(document)?;
-    let content = filter_optional_content(&content, &optional_content, &optional_content_state)?;
-    let xobject_invocations = xobject_invocation_names(&content)?;
+    let content = record_render_phase(&mut timings, NativeRenderPhase::StreamDecode, || {
+        let content = page_content_stream(document, page)?;
+        let optional_content = page_optional_content_properties(document, page)?;
+        let optional_content_state = document_optional_content_state(document)?;
+        filter_optional_content(&content, &optional_content, &optional_content_state)
+    })?;
+    let xobject_invocations =
+        record_render_phase(&mut timings, NativeRenderPhase::ContentTokenize, || {
+            xobject_invocation_names(&content)
+        })?;
     let display_options = limits.display_options();
     let path_options = limits.path_raster_options();
-    let ext_graphics_states = page_ext_graphics_state_resources(document, page)?;
-    let shadings = page_shading_resources(document, page, display_options)?;
-    let patterns = page_tiling_pattern_resources(document, page, display_options)?;
-    let color_spaces = page_color_space_resources(document, page)?;
-    let display_list = build_path_display_list_with_graphics_resources(
-        tokenize_content(PdfBytes::new(&content)),
-        &ext_graphics_states,
-        &shadings,
-        &patterns,
-        &color_spaces,
-        display_options,
-    )
-    .map_err(map_graphics_error)?;
+    let (ext_graphics_states, shadings, patterns, color_spaces) =
+        record_render_phase(&mut timings, NativeRenderPhase::ResourceDecode, || {
+            Ok((
+                page_ext_graphics_state_resources(document, page)?,
+                page_shading_resources(document, page, display_options)?,
+                page_tiling_pattern_resources(document, page, display_options)?,
+                page_color_space_resources(document, page)?,
+            ))
+        })?;
+    let display_list =
+        record_render_phase(&mut timings, NativeRenderPhase::DisplayListBuild, || {
+            build_path_display_list_with_graphics_resources(
+                tokenize_content(PdfBytes::new(&content)),
+                &ext_graphics_states,
+                &shadings,
+                &patterns,
+                &color_spaces,
+                display_options,
+            )
+            .map_err(map_graphics_error)
+        })?;
     let transform = PageTransform::new_with_options(
         page_geometry(*page),
         options.max_edge,
         limits.page_transform_options(),
     )
     .map_err(map_raster_error)?;
-    let form_resources = page_form_resources(document, page, &xobject_invocations)?;
-    let form_list = build_form_display_list_with_graphics_resources(
-        tokenize_content(PdfBytes::new(&content)),
-        &form_resources,
-        &ext_graphics_states,
-        &shadings,
-        &patterns,
-        &color_spaces,
-        display_options,
-    )
-    .map_err(map_graphics_error)?;
+    let form_resources =
+        record_render_phase(&mut timings, NativeRenderPhase::ResourceDecode, || {
+            page_form_resources(document, page, &xobject_invocations)
+        })?;
+    let form_list = record_render_phase(&mut timings, NativeRenderPhase::DisplayListBuild, || {
+        build_form_display_list_with_graphics_resources(
+            tokenize_content(PdfBytes::new(&content)),
+            &form_resources,
+            &ext_graphics_states,
+            &shadings,
+            &patterns,
+            &color_spaces,
+            display_options,
+        )
+        .map_err(map_graphics_error)
+    })?;
     let image_resources =
-        page_image_resources(document, page, &xobject_invocations, display_options)?;
-    let image_list = build_image_display_list(
-        tokenize_content(PdfBytes::new(&content)),
-        &image_resources,
-        display_options,
-    )
-    .map_err(map_graphics_error)?;
-    let font_resources = page_font_resources(document, page, display_options)?;
-    let text_list = build_text_display_list(
-        tokenize_content(PdfBytes::new(&content)),
-        &font_resources,
-        display_options,
-    )
-    .map_err(map_graphics_error)?;
+        record_render_phase(&mut timings, NativeRenderPhase::ResourceDecode, || {
+            page_image_resources(document, page, &xobject_invocations, display_options)
+        })?;
+    let image_list =
+        record_render_phase(&mut timings, NativeRenderPhase::DisplayListBuild, || {
+            build_image_display_list(
+                tokenize_content(PdfBytes::new(&content)),
+                &image_resources,
+                display_options,
+            )
+            .map_err(map_graphics_error)
+        })?;
+    let font_resources =
+        record_render_phase(&mut timings, NativeRenderPhase::ResourceDecode, || {
+            page_font_resources(document, page, display_options)
+        })?;
+    let text_list = record_render_phase(&mut timings, NativeRenderPhase::DisplayListBuild, || {
+        build_text_display_list(
+            tokenize_content(PdfBytes::new(&content)),
+            &font_resources,
+            display_options,
+        )
+        .map_err(map_graphics_error)
+    })?;
     let mut raster = transform
         .create_device(options.background)
         .map_err(map_raster_error)?;
     let paint_order = should_scan_content_order(&display_list, &image_list, &text_list)
-        .then(|| page_paint_order(&content, &image_resources, &form_resources))
+        .then(|| {
+            record_render_phase(&mut timings, NativeRenderPhase::ContentTokenize, || {
+                page_paint_order(&content, &image_resources, &form_resources)
+            })
+        })
         .transpose()?;
     if let Some(paint_order) = paint_order.filter(|paint_order| {
         should_rasterize_in_content_order(
@@ -1148,61 +1297,103 @@ fn render_loaded_document(
             &image_list,
             &text_list,
         );
-        rasterize_display_list_into(&ordered_list, &mut raster, transform, path_options)
-            .map_err(map_raster_error)?;
+        record_render_phase(&mut timings, NativeRenderPhase::RasterPaths, || {
+            rasterize_display_list_into(&ordered_list, &mut raster, transform, path_options)
+                .map_err(map_raster_error)
+        })?;
     } else {
-        rasterize_paths_into(&display_list, &mut raster, transform, path_options)
-            .map_err(map_raster_error)?;
-        rasterize_paths_into(&form_list, &mut raster, transform, path_options)
-            .map_err(map_raster_error)?;
-        rasterize_images(&image_list, &mut raster, transform).map_err(map_raster_error)?;
-        rasterize_text(&text_list, &mut raster, transform).map_err(map_raster_error)?;
+        record_render_phase(&mut timings, NativeRenderPhase::RasterPaths, || {
+            rasterize_paths_into(&display_list, &mut raster, transform, path_options)
+                .map_err(map_raster_error)
+        })?;
+        record_render_phase(&mut timings, NativeRenderPhase::RasterPaths, || {
+            rasterize_paths_into(&form_list, &mut raster, transform, path_options)
+                .map_err(map_raster_error)
+        })?;
+        record_render_phase(&mut timings, NativeRenderPhase::RasterImages, || {
+            rasterize_images(&image_list, &mut raster, transform).map_err(map_raster_error)
+        })?;
+        record_render_phase(&mut timings, NativeRenderPhase::RasterText, || {
+            rasterize_text(&text_list, &mut raster, transform).map_err(map_raster_error)
+        })?;
     }
     let (annotation_forms, annotation_content, annotation_fallback_content) =
-        page_annotation_appearance_resources(document, page, options.annotation_mode)?;
+        record_render_phase(&mut timings, NativeRenderPhase::StreamDecode, || {
+            page_annotation_appearance_resources(document, page, options.annotation_mode)
+        })?;
     if !annotation_content.is_empty() {
-        let annotation_list = build_form_display_list_with_graphics_resources(
-            tokenize_content(PdfBytes::new(&annotation_content)),
-            &annotation_forms,
-            &ext_graphics_states,
-            &shadings,
-            &patterns,
-            &color_spaces,
-            display_options,
-        )
-        .map_err(map_graphics_error)?;
-        rasterize_paths_into(&annotation_list, &mut raster, transform, path_options)
-            .map_err(map_raster_error)?;
+        let annotation_list =
+            record_render_phase(&mut timings, NativeRenderPhase::DisplayListBuild, || {
+                build_form_display_list_with_graphics_resources(
+                    tokenize_content(PdfBytes::new(&annotation_content)),
+                    &annotation_forms,
+                    &ext_graphics_states,
+                    &shadings,
+                    &patterns,
+                    &color_spaces,
+                    display_options,
+                )
+                .map_err(map_graphics_error)
+            })?;
+        record_render_phase(&mut timings, NativeRenderPhase::RasterPaths, || {
+            rasterize_paths_into(&annotation_list, &mut raster, transform, path_options)
+                .map_err(map_raster_error)
+        })?;
     }
     if !annotation_fallback_content.is_empty() {
         let annotation_ext_graphics_states =
-            annotation_fallback_ext_graphics_states().map_err(map_graphics_error)?;
-        let annotation_list = build_path_display_list_with_graphics_resources(
-            tokenize_content(PdfBytes::new(&annotation_fallback_content)),
-            &annotation_ext_graphics_states,
-            &ShadingResources::empty(),
-            &TilingPatternResources::empty(),
-            &ColorSpaceResources::empty(),
-            display_options,
-        )
-        .map_err(map_graphics_error)?;
-        rasterize_paths_into(&annotation_list, &mut raster, transform, path_options)
-            .map_err(map_raster_error)?;
+            record_render_phase(&mut timings, NativeRenderPhase::ResourceDecode, || {
+                annotation_fallback_ext_graphics_states().map_err(map_graphics_error)
+            })?;
+        let annotation_list =
+            record_render_phase(&mut timings, NativeRenderPhase::DisplayListBuild, || {
+                build_path_display_list_with_graphics_resources(
+                    tokenize_content(PdfBytes::new(&annotation_fallback_content)),
+                    &annotation_ext_graphics_states,
+                    &ShadingResources::empty(),
+                    &TilingPatternResources::empty(),
+                    &ColorSpaceResources::empty(),
+                    display_options,
+                )
+                .map_err(map_graphics_error)
+            })?;
+        record_render_phase(&mut timings, NativeRenderPhase::RasterPaths, || {
+            rasterize_paths_into(&annotation_list, &mut raster, transform, path_options)
+                .map_err(map_raster_error)
+        })?;
         match build_text_display_list(
             tokenize_content(PdfBytes::new(&annotation_fallback_content)),
             &font_resources,
             display_options,
         ) {
             Ok(annotation_text_list) => {
-                rasterize_text(&annotation_text_list, &mut raster, transform)
-                    .map_err(map_raster_error)?;
+                record_render_phase(&mut timings, NativeRenderPhase::RasterText, || {
+                    rasterize_text(&annotation_text_list, &mut raster, transform)
+                        .map_err(map_raster_error)
+                })?;
             }
             Err(error) if is_ignorable_annotation_fallback_text_error(&error) => {}
             Err(error) => return Err(map_graphics_error(error)),
         }
     }
-    let dimensions = raster.dimensions();
-    Thumbnail::rgba(dimensions.width, dimensions.height, raster.into_pixels())
+    record_render_phase(&mut timings, NativeRenderPhase::Output, || {
+        let dimensions = raster.dimensions();
+        Thumbnail::rgba(dimensions.width, dimensions.height, raster.into_pixels())
+    })
+}
+
+fn record_render_phase<T>(
+    timings: &mut Option<&mut NativeRenderPhaseTimings>,
+    phase: NativeRenderPhase,
+    operation: impl FnOnce() -> Result<T, ThumbnailError>,
+) -> Result<T, ThumbnailError> {
+    let Some(timings) = timings.as_deref_mut() else {
+        return operation();
+    };
+    let started = Instant::now();
+    let result = operation();
+    timings.record(phase, started.elapsed());
+    result
 }
 
 /// Scans native renderer operator coverage for one document page.
@@ -4212,6 +4403,28 @@ mod tests {
     #[test]
     fn native_backend_name_should_be_backend_neutral() {
         assert_eq!(NativeBackend::new().backend_name(), "rust-native");
+    }
+
+    #[test]
+    fn render_with_trace_should_return_phase_timings() {
+        let bytes = include_bytes!("../../../fixtures/generated/vector-paths.pdf");
+        let options = ThumbnailOptions {
+            page_index: 0,
+            max_edge: 160,
+            background: ferrugo_thumbnail::Rgba::WHITE,
+            output_format: ferrugo_thumbnail::OutputFormat::Rgba,
+            timeout: std::time::Duration::from_secs(5),
+            annotation_mode: AnnotationMode::Screen,
+            form_appearance_mode: FormAppearanceMode::DocumentState,
+        };
+
+        let trace = NativeBackend::new()
+            .render_with_trace(PdfSource::from_bytes(bytes), &options)
+            .expect("fixture should render with phase timings");
+
+        assert_eq!(trace.thumbnail.width, 160);
+        assert!(trace.timings.total >= trace.timings.load_xref_object);
+        assert!(trace.timings.display_list_build > std::time::Duration::ZERO);
     }
 
     #[test]
