@@ -129,6 +129,12 @@ Native baseline slice started on 2026-06-28.
   changed ratio 0.968521, max delta 143 to MAE 5.062, changed ratio 0.279186,
   max delta 142, with the 0183 and 0182 summary/status/p95 distributions
   unchanged.
+- Truncated source-over color-channel compositing after normalization while
+  leaving alpha quantization unchanged. This matches Poppler more closely for
+  transparent office vector effects and layered image colors: the 0183 summary
+  remains 5 accepted drift and 3 blockers, while
+  `office-vector-repeated-effects.pdf` improves from MAE 7.258 and changed
+  ratio 0.292407 to MAE 7.140 and changed ratio 0.113143 with unchanged p95.
 
 ## Completion Notes
 

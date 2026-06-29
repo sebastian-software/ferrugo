@@ -10370,9 +10370,10 @@ fn source_over_channel(
     dest_alpha: f64,
     out_alpha: f64,
 ) -> u8 {
+    // Poppler truncates source-over channel compositing after normalization.
     ((f64::from(source) * source_alpha + f64::from(dest) * dest_alpha * (1.0 - source_alpha))
         / out_alpha)
-        .round()
+        .floor()
         .clamp(0.0, 255.0) as u8
 }
 
@@ -14365,8 +14366,8 @@ mod tests {
             device.pixel(5, 5).expect("covered alpha pixel"),
             Rgba {
                 r: 255,
-                g: 128,
-                b: 128,
+                g: 127,
+                b: 127,
                 a: 255,
             }
         );
@@ -14452,7 +14453,7 @@ mod tests {
         assert_eq!(
             source_over(source, gray, 0.5),
             Rgba {
-                r: 192,
+                r: 191,
                 g: 64,
                 b: 64,
                 a: 255,
@@ -14480,18 +14481,18 @@ mod tests {
         assert_eq!(
             device.pixel(0, 0).expect("covered edge pixel"),
             Rgba {
-                r: 112,
-                g: 112,
-                b: 112,
+                r: 111,
+                g: 111,
+                b: 111,
                 a: 255,
             }
         );
         assert_eq!(
             device.pixel(1, 1).expect("covered edge pixel"),
             Rgba {
-                r: 112,
-                g: 112,
-                b: 112,
+                r: 111,
+                g: 111,
+                b: 111,
                 a: 255,
             }
         );

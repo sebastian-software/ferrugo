@@ -4873,8 +4873,8 @@ mod tests {
         assert_eq!(thumbnail.width, 120);
         assert_eq!(thumbnail.height, 120);
         assert_eq!(rgba_at(&thumbnail, 5, 5), [128, 128, 128, 255]);
-        assert_eq!(rgba_at(&thumbnail, 25, 85), [192, 64, 64, 255]);
-        assert_eq!(rgba_at(&thumbnail, 55, 55), [96, 32, 160, 255]);
+        assert_eq!(rgba_at(&thumbnail, 25, 85), [191, 63, 63, 255]);
+        assert_eq!(rgba_at(&thumbnail, 55, 55), [95, 31, 158, 255]);
     }
 
     #[test]
@@ -4893,8 +4893,8 @@ mod tests {
 
         assert_eq!(thumbnail.width, 120);
         assert_eq!(thumbnail.height, 120);
-        assert_eq!(rgba_at(&thumbnail, 25, 85), [192, 64, 64, 255]);
-        assert_eq!(rgba_at(&thumbnail, 55, 55), [96, 32, 160, 255]);
+        assert_eq!(rgba_at(&thumbnail, 25, 85), [191, 63, 63, 255]);
+        assert_eq!(rgba_at(&thumbnail, 55, 55), [95, 31, 158, 255]);
     }
 
     #[test]
@@ -4963,8 +4963,8 @@ mod tests {
 
         assert_eq!(thumbnail.width, 120);
         assert_eq!(thumbnail.height, 120);
-        assert_eq!(rgba_at(&thumbnail, 20, 100), [192, 64, 64, 255]);
-        assert_eq!(rgba_at(&thumbnail, 70, 100), [64, 64, 192, 255]);
+        assert_eq!(rgba_at(&thumbnail, 20, 100), [191, 64, 64, 255]);
+        assert_eq!(rgba_at(&thumbnail, 70, 100), [64, 64, 191, 255]);
     }
 
     #[test]
@@ -5303,7 +5303,7 @@ mod tests {
 
         assert_eq!(thumbnail.width, 120);
         assert_eq!(thumbnail.height, 120);
-        assert_eq!(rgba_at(&thumbnail, 30, 38), [255, 128, 128, 255]);
+        assert_eq!(rgba_at(&thumbnail, 30, 38), [255, 127, 127, 255]);
         assert_eq!(rgba_at(&thumbnail, 15, 85), [0, 115, 255, 255]);
         assert_eq!(rgba_at(&thumbnail, 109, 80), [0, 140, 0, 255]);
     }
