@@ -51,22 +51,79 @@ The same run reported 50/52 Ferrugo-native renders, 1 typed fallback, and 1
 encrypted error. PDFium rendered 51/52 with the same encrypted error. This is
 why the project should not claim broad renderer performance parity yet.
 
-Memory comparison is less complete. The Phase 0 PDFium release-CLI smoke
-measured roughly 24 MiB max RSS for `text-page.pdf` at 256-1024 max edge with
-0.03-0.04s wall time. Ferrugo's native gates currently enforce deterministic
-pixel, decoded-image, display-list, font, transparency, cache, and output-byte
-budgets, but the generic benchmark harness does not yet capture peak RSS for
-every backend. Server-batch runs can sample RSS when the host allows it; one
-unsandboxed native batch run recorded 2.8 MiB start RSS and 5.5 MiB high-water
-RSS for the focused 16-job thumbnail gate.
+Memory comparison is less complete, but now has a dedicated path. The Phase 0
+PDFium release-CLI smoke measured roughly 24 MiB max RSS for `text-page.pdf` at
+256-1024 max edge with 0.03-0.04s wall time. Ferrugo's native gates currently
+enforce deterministic pixel, decoded-image, display-list, font, transparency,
+cache, and output-byte budgets. The `benchmark-matrix` cold-process mode also
+captures process peak RSS when `/usr/bin/time -l` is available, while hot-render
+mode records start/end RSS samples for in-process backends.
 
-MuPDF and Poppler have not yet been measured in the same speed/RSS matrix.
-They remain qualitative comparison engines and visual oracles in the current
-docs: MuPDF is expected to be very fast but brings AGPL/commercial licensing
-constraints, while Poppler is useful as an independent Linux/desktop rendering
-baseline. A fair claim against either needs a dedicated harness that records
-first-page latency, throughput, output size, and peak RSS on the same fixture
+Poppler is now included in the same cold-process matrix through `pdftoppm`.
+MuPDF remains v2 backlog because setup, licensing, and tooling would slow the
+first repeatable benchmark slice. A fair MuPDF claim still needs the same
+first-page latency, output-size, and RSS fields across the same fixture
 families.
+
+## Performance Matrix
+
+Use `benchmark-matrix` for report-first performance work. It emits one JSON
+schema for Ferrugo native, PDFium, and Poppler, grouped by an explicit manifest.
+The default matrix covers both modes:
+
+- `cold-process`: starts a CLI/tool process per fixture and records wall time,
+  exit status, output bytes, output dimensions, and peak RSS when available.
+- `hot-render`: runs in-process repetitions with warmup for Ferrugo native and
+  PDFium, then reports mean, p50, p95, and max. Poppler is recorded as
+  `not-applicable` in this mode because it is intentionally measured as an
+  external tool.
+
+The focused starter manifest is `fixtures/performance-matrix-manifest.tsv`.
+It maps the initial families to real generated fixtures:
+
+- `small-text`
+- `office-export`
+- `scan`
+- `browser-print`
+- `form`
+- `presentation`
+- `report/vector`
+- `mixed-layout`
+
+Run the repeatable matrix:
+
+```sh
+bash scripts/generate_performance_matrix.sh
+```
+
+Or call the CLI directly:
+
+```sh
+cargo run -p ferrugo-cli --no-default-features -- benchmark-matrix fixtures/generated \
+  --manifest fixtures/performance-matrix-manifest.tsv \
+  --max-edge 160 \
+  --iterations 3 \
+  --warmup 1 \
+  --timeout 30 \
+  --output target/performance-matrix.json \
+  --report target/performance-matrix.md
+```
+
+If `FERRUGO_PDFIUM_LIBRARY` is set, the helper script enables the `pdfium`
+feature. If PDFium or Poppler are missing, the matrix records `missing-tool`
+rows instead of failing the run.
+
+The Markdown report lists:
+
+- top 25 slowest Ferrugo fixtures;
+- top 25 largest cold-process gaps against the fastest reference renderer;
+- top memory high-water records;
+- family-level Ferrugo/PDFium and Ferrugo/Poppler ratios with p95/error counts.
+
+This matrix is intentionally not a hard CI budget yet. First collect stable
+artifacts, profile the top 5 Ferrugo fixtures with `sample`, Instruments, or
+Samply on release builds, and only then open optimization PRs with before/after
+evidence.
 
 ## Commands
 
@@ -108,7 +165,7 @@ cargo run -p ferrugo-cli -- benchmark-native fixtures/generated \
   --output target/benchmark-native-deep.json
 ```
 
-## Report Schema
+## Legacy Report Schema
 
 Each report includes:
 
@@ -147,10 +204,12 @@ Budget violations are typed:
   PDFium fallback.
 - `render_error`: the selected backend returned a non-fallback render error.
 
-The harness deliberately does not report operating-system peak RSS. Memory
-expectations remain enforced through deterministic renderer budgets documented
-in `docs/policies/renderer-memory-budgets.md`; benchmark output bytes are only
-a lightweight allocation proxy.
+The legacy `benchmark-native` and `benchmark-pdfium` reports deliberately do
+not report operating-system peak RSS. Memory expectations remain enforced
+through deterministic renderer budgets documented in
+`docs/policies/renderer-memory-budgets.md`; legacy benchmark output bytes are
+only a lightweight allocation proxy. Use `benchmark-matrix` for cross-renderer
+RSS fields.
 
 ## Serverless Cold Start
 

@@ -135,8 +135,11 @@ attractive for small, bounded, server-side preview jobs because the supported
 runtime is compact, Rust-native, and explicitly budgeted. It is not generally
 faster than PDFium today: archived same-corpus smoke runs show PDFium ahead on
 many vector, form, presentation, and report cases, while Ferrugo is competitive
-on simple text and scan-style thumbnails. See [Renderer benchmarks](docs/benchmarks.md)
-for the current comparison state and the missing MuPDF/Poppler measurement work.
+on simple text and scan-style thumbnails. The next performance work uses the
+new `benchmark-matrix` harness to compare Ferrugo, PDFium, and Poppler across
+cold-process time, hot-render distributions, output size, and RSS where the host
+can expose it. See [Renderer benchmarks](docs/benchmarks.md) for the current
+comparison state and the data-first optimization loop.
 
 ## Reference renderers
 
@@ -216,6 +219,9 @@ Start here:
   contract and limits.
 - [Packaging](docs/packaging.md) for native-only, serverless, plugin-free, and
   PDFium-enabled builds.
+- [Renderer benchmarks](docs/benchmarks.md) and the
+  [initial performance matrix report](docs/reports/performance-matrix-initial-2026-06-29.md)
+  for comparative speed, memory, and reference-renderer measurement.
 - [Milestones](docs/milestones/README.md) for the implementation log.
 - [PDFium-free 1.4 readiness report](docs/reports/pdfium-free-1-4-readiness-2026-06-29.md)
   for the current release decision.
