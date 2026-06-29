@@ -10952,6 +10952,46 @@ fn draw_axis_aligned_image(
     inverse: Matrix,
     window: ImageRasterWindow,
 ) -> RasterResult<()> {
+    if matches!(image.image.kind, ImageKind::StencilMask { .. }) {
+        return draw_axis_aligned_image_with_device_pixels(device, image, inverse, window);
+    }
+
+    let mut sample_cache = ImageSampleCache::default();
+    for y in window.min_y..window.max_y {
+        let y_coverage = pixel_coverage_1d(y, window.bounds.min_y, window.bounds.max_y);
+        if y_coverage <= f64::EPSILON {
+            continue;
+        }
+        let sample_y = inverse
+            .d
+            .mul_add(f64::from(y) + 0.5, inverse.f)
+            .clamp(0.0, 1.0);
+        let row = device.row_mut(y)?;
+        for x in window.min_x..window.max_x {
+            let coverage =
+                pixel_coverage_1d(x, window.bounds.min_x, window.bounds.max_x) * y_coverage;
+            if coverage <= f64::EPSILON {
+                continue;
+            }
+            let sample_x = inverse
+                .a
+                .mul_add(f64::from(x) + 0.5, inverse.e)
+                .clamp(0.0, 1.0);
+            let (sample_x, sample_y) = image_sample_coords(&image.image, sample_x, sample_y);
+            let pixel =
+                sample_cache.sample(&image.image, sample_x, sample_y, image.state.fill_color);
+            composite_image_pixel_in_row(row, x, pixel, coverage);
+        }
+    }
+    Ok(())
+}
+
+fn draw_axis_aligned_image_with_device_pixels(
+    device: &mut RasterDevice,
+    image: &ImageDisplayItem,
+    inverse: Matrix,
+    window: ImageRasterWindow,
+) -> RasterResult<()> {
     let mut sample_cache = ImageSampleCache::default();
     for y in window.min_y..window.max_y {
         let y_coverage = pixel_coverage_1d(y, window.bounds.min_y, window.bounds.max_y);
@@ -11167,6 +11207,27 @@ fn composite_image_pixel(
     }
     let dest = device.pixel(x, y)?;
     device.set_pixel(x, y, source_over(source, dest, coverage))
+}
+
+fn composite_image_pixel_in_row(row: &mut [u8], x: u32, source: Rgba, coverage: f64) {
+    if source.a == 0 || coverage <= f64::EPSILON {
+        return;
+    }
+    let offset = x as usize * PixelFormat::Rgba8.bytes_per_pixel();
+    if source.a == 255 && coverage >= 1.0 {
+        row[offset..offset + PixelFormat::Rgba8.bytes_per_pixel()]
+            .copy_from_slice(&[source.r, source.g, source.b, source.a]);
+        return;
+    }
+    let dest = Rgba {
+        r: row[offset],
+        g: row[offset + 1],
+        b: row[offset + 2],
+        a: row[offset + 3],
+    };
+    let blended = source_over(source, dest, coverage);
+    row[offset..offset + PixelFormat::Rgba8.bytes_per_pixel()]
+        .copy_from_slice(&[blended.r, blended.g, blended.b, blended.a]);
 }
 
 fn cmyk_to_rgba(cyan: u8, magenta: u8, yellow: u8, key: u8) -> Rgba {

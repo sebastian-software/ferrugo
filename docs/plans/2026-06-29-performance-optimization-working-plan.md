@@ -1102,6 +1102,43 @@ First image raster optimization result from 2026-06-29:
   byte-identical to existing native baseline PNGs for `dct-image`,
   `predictor-image`, `scanner-large-image-budget`, and `soft-mask-image`.
 
+Second image raster optimization result from 2026-06-30:
+
+- Change: the axis-aligned color-image loop now borrows each destination row
+  once with `RasterDevice::row_mut` and composites into the row slice directly,
+  avoiding repeated per-pixel device offset checks. ImageMask/stencil images
+  stay on the existing checked pixel path because the first broader candidate
+  regressed `image-mask-logo.pdf`.
+- Rationale: this is a safe-slice, no-dependency implementation of the
+  hardware-aware rule to make contiguous row writes obvious before considering
+  lower-level copy or SIMD work.
+- Baselines:
+  `target/performance-matrix-image-row-baseline.json`, native hot-render,
+  `fixtures/image-heavy-memory-manifest.tsv`, `--max-edge 160`, 300 measured
+  iterations after 20 warmups; and
+  `target/performance-matrix-mobile-row-baseline.json`, native hot-render,
+  `fixtures/mobile-scan-manifest.tsv`, 200 measured iterations after 20
+  warmups.
+- Accepted candidate:
+  `target/performance-matrix-image-row-color-after.json` and
+  `target/performance-matrix-mobile-row-color-after.json`, same command shapes
+  and host.
+- Result on the image-heavy target set: `dct-image.pdf` p95 `0.082 ms` ->
+  `0.064 ms` (~22.0%), `predictor-image.pdf` p95 `0.077 ms` -> `0.060 ms`
+  (~22.1%), and `soft-mask-image.pdf` p95 `0.095 ms` -> `0.080 ms` (~15.8%).
+  `image-heavy-repeated-xobject-report.pdf` improved `0.883 ms` -> `0.843 ms`
+  (~4.5%), while `scanner-large-image-budget.pdf` improved `0.615 ms` ->
+  `0.593 ms` (~3.6%).
+- Protection notes: `image-mask-logo.pdf` stayed neutral after routing stencil
+  images back to the checked pixel path (`0.292 ms` -> `0.288 ms`). The
+  Mobile-scan protection matrix kept the same expected three
+  `image.filter` fallback-required records and no errors. A longer current run
+  in `target/performance-matrix-mobile-row-color-repeat.json` showed the
+  earlier small-p95 predictor and rotated-camera regressions did not reproduce.
+- Visual check: current PNGs in `target/image-row-visual-current/` are
+  byte-identical to `target/axis-image-visual-current/` for `dct-image`,
+  `predictor-image`, `scanner-large-image-budget`, and `soft-mask-image`.
+
 ## Phase 5: Session Cache, But Bounded
 
 Goal: improve batch and multi-page workloads without introducing hidden global
