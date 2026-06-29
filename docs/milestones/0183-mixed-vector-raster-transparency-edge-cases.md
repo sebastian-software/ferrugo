@@ -190,6 +190,15 @@ Native baseline slice started on 2026-06-28.
   MAE only to 1.851 while leaving p95 at 7. The remaining blocker should stay
   focused on real Base14/text fidelity or a more specific tiny-image
   compositing investigation rather than threshold relaxation.
+- Switched large axis-aligned rectangle fills to pixel-center coverage instead
+  of generic 2x path supersampling, leaving subpixel-thin filled rectangles on
+  the generic path. This matches Poppler's transparent overlay edge behavior in
+  `high-dpi-preview-fidelity.pdf`: the full 0183 Poppler run now reports
+  8 total, 0 exact, 8 accepted drift, and 0 blockers. The final High-DPI
+  blocker moved from MAE 1.881, p95 7, changed ratio 0.087760 to MAE 1.617,
+  p95 1, changed ratio 0.079062. The 0183 native support gate remains
+  8 native rendered, 0 fallback required, 0 errors; the benchmark gate remains
+  0 errors and 0 budget failures.
 
 ## Completion Notes
 

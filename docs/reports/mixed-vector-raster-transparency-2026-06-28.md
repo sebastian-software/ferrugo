@@ -595,3 +595,43 @@ The next useful work should be either a real Base14/text raster path or a more
 specific image/compositing investigation for the tiny scaled preview image. A
 broader visual-diff threshold change would hide an identified renderer gap and
 is not justified by these probes.
+
+## Axis-Aligned Rectangle Fill Center Sampling
+
+Large axis-aligned rectangle fills now use pixel-center coverage instead of
+the generic 2x path supersampling path. This matches the Poppler behavior
+observed at transparent overlay edges in `high-dpi-preview-fidelity.pdf`, where
+the prior half-covered edge pixels produced broad alpha drift. Thin filled
+rectangles below one device pixel in width or height continue through the
+generic supersampling path.
+
+Full 0183 Poppler follow-up result now passes the documented visual gate:
+8 total, 0 exact, 8 accepted drift, 0 blockers, 0 native errors,
+0 reference errors, 0 both errors.
+
+| Fixture | Status | MAE | P95 delta | Changed ratio | Max delta |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `browser-print-raster-vector-mix.pdf` | accepted drift | 0.396 | 0 | 0.018945 | 202 |
+| `high-dpi-preview-fidelity.pdf` | accepted drift | 1.617 | 1 | 0.079062 | 196 |
+| `image-heavy-rotated-mask-sheet.pdf` | accepted drift | 0.806 | 3 | 0.350108 | 111 |
+| `map-transparent-zoning-overlay.pdf` | accepted drift | 0.991 | 1 | 0.248050 | 136 |
+| `office-vector-clipped-transparency-group.pdf` | accepted drift | 0.553 | 1 | 0.232045 | 118 |
+| `office-vector-repeated-effects.pdf` | accepted drift | 1.375 | 0 | 0.084988 | 123 |
+| `slide-layered-image-shadow.pdf` | accepted drift | 2.744 | 4 | 0.139861 | 216 |
+| `soft-mask-image.pdf` | accepted drift | 0.829 | 0 | 0.011181 | 255 |
+
+Compared with the previous follow-up, the final blocker
+`high-dpi-preview-fidelity.pdf` moves from MAE `1.881`, p95 `7`, changed ratio
+`0.087760` to MAE `1.617`, p95 `1`, changed ratio `0.079062`. The map overlay
+also improves from MAE `1.225` to `0.991`, and repeated office effects improve
+from MAE `1.707` to `1.375`.
+
+The native support gate remains clean at 8 total, 8 native rendered, 0 fallback
+required, and 0 errors. The native benchmark gate remains clean at 8 total,
+8 native rendered, 0 fallback required, 0 errors, and 0 budget failures.
+
+A scoped 0182 tagged sanity run improved to 7 total, 0 exact,
+5 accepted drift, and 2 blockers. `tagged-invoice-reading-order.pdf` and
+`tagged-report-visual-integrity.pdf` moved to accepted drift; the remaining
+tagged blockers are `tagged-office-alt-text.pdf` and
+`tagged-structure-heavy-report.pdf`.

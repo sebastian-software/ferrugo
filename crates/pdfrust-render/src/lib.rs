@@ -9350,9 +9350,14 @@ fn fill_path(
     context: PathRasterContext<'_>,
 ) -> RasterResult<()> {
     let source = device_color_to_rgba(color);
+    let dimensions = device.dimensions();
+    if let Some(rect) = axis_aligned_rect_fill_bounds(path) {
+        return fill_axis_aligned_rect_path(
+            device, rect, source, blend_mode, alpha, context, dimensions,
+        );
+    }
     let samples = u32::from(context.options.supersample);
     let sample_count = samples * samples;
-    let dimensions = device.dimensions();
     let Some(bounds) =
         flattened_bounds(path).and_then(|bounds| device_pixel_bounds(bounds, dimensions, 0.0))
     else {
@@ -9384,6 +9389,98 @@ fn fill_path(
         }
     }
     Ok(())
+}
+
+fn fill_axis_aligned_rect_path(
+    device: &mut RasterDevice,
+    rect: PathBounds,
+    source: Rgba,
+    blend_mode: BlendMode,
+    alpha: f64,
+    context: PathRasterContext<'_>,
+    dimensions: RasterDimensions,
+) -> RasterResult<()> {
+    let Some(bounds) = device_pixel_bounds(rect, dimensions, 0.0) else {
+        return Ok(());
+    };
+    for y in bounds.min_y..bounds.max_y {
+        for x in bounds.min_x..bounds.max_x {
+            let point = Point {
+                x: f64::from(x) + 0.5,
+                y: f64::from(y) + 0.5,
+            };
+            if point.x >= rect.min_x
+                && point.x < rect.max_x
+                && point.y >= rect.min_y
+                && point.y < rect.max_y
+                && point_in_active_clips(point, context.clips)
+            {
+                blend_pixel(device, x, y, source, blend_mode, alpha)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn axis_aligned_rect_fill_bounds(path: &FlattenedPath) -> Option<PathBounds> {
+    if path.subpaths.len() != 1 || path.lines.len() != 4 {
+        return None;
+    }
+    let subpath = path.subpaths.first()?;
+    if subpath.len() != 4 {
+        return None;
+    }
+    let bounds = point_slice_bounds(subpath)?;
+    if bounds.max_x - bounds.min_x < 1.0 || bounds.max_y - bounds.min_y < 1.0 {
+        return None;
+    }
+    let corners = [
+        Point {
+            x: bounds.min_x,
+            y: bounds.min_y,
+        },
+        Point {
+            x: bounds.max_x,
+            y: bounds.min_y,
+        },
+        Point {
+            x: bounds.max_x,
+            y: bounds.max_y,
+        },
+        Point {
+            x: bounds.min_x,
+            y: bounds.max_y,
+        },
+    ];
+    subpath
+        .iter()
+        .all(|point| {
+            corners
+                .iter()
+                .any(|corner| points_nearly_equal(*point, *corner))
+        })
+        .then_some(bounds)
+}
+
+fn points_nearly_equal(left: Point, right: Point) -> bool {
+    (left.x - right.x).abs() <= 1e-9 && (left.y - right.y).abs() <= 1e-9
+}
+
+fn point_slice_bounds(points: &[Point]) -> Option<PathBounds> {
+    let first = *points.first()?;
+    let mut bounds = PathBounds {
+        min_x: first.x,
+        min_y: first.y,
+        max_x: first.x,
+        max_y: first.y,
+    };
+    for point in &points[1..] {
+        bounds.min_x = bounds.min_x.min(point.x);
+        bounds.min_y = bounds.min_y.min(point.y);
+        bounds.max_x = bounds.max_x.max(point.x);
+        bounds.max_y = bounds.max_y.max(point.y);
+    }
+    Some(bounds)
 }
 
 #[derive(Debug, Clone)]
@@ -14501,6 +14598,77 @@ mod tests {
             device.pixel(5, 5).expect("covered alpha pixel"),
             Rgba {
                 r: 255,
+                g: 127,
+                b: 127,
+                a: 255,
+            }
+        );
+    }
+
+    #[test]
+    fn fill_path_should_center_sample_large_axis_aligned_rectangles() {
+        let mut device = RasterDevice::new(4, 4, Rgba::WHITE).expect("valid device");
+        let path = FlattenedPath {
+            subpaths: vec![vec![
+                Point { x: 0.25, y: 0.25 },
+                Point { x: 2.25, y: 0.25 },
+                Point { x: 2.25, y: 2.25 },
+                Point { x: 0.25, y: 2.25 },
+            ]],
+            lines: vec![
+                LineSegment {
+                    from: Point { x: 0.25, y: 0.25 },
+                    to: Point { x: 2.25, y: 0.25 },
+                },
+                LineSegment {
+                    from: Point { x: 2.25, y: 0.25 },
+                    to: Point { x: 2.25, y: 2.25 },
+                },
+                LineSegment {
+                    from: Point { x: 2.25, y: 2.25 },
+                    to: Point { x: 0.25, y: 2.25 },
+                },
+                LineSegment {
+                    from: Point { x: 0.25, y: 2.25 },
+                    to: Point { x: 0.25, y: 0.25 },
+                },
+            ],
+            joins: Vec::new(),
+        };
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 4.0,
+                    max_y: 4.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            4,
+        )
+        .expect("valid transform");
+
+        fill_path(
+            &mut device,
+            &path,
+            FillRule::Nonzero,
+            DeviceColor::BLACK,
+            BlendMode::Normal,
+            0.5,
+            PathRasterContext {
+                transform,
+                options: PathRasterOptions::default(),
+                clips: &[],
+            },
+        )
+        .expect("rectangle fill should rasterize");
+
+        assert_eq!(
+            device.pixel(0, 0).expect("edge-center pixel"),
+            Rgba {
+                r: 127,
                 g: 127,
                 b: 127,
                 a: 255,

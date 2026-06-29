@@ -107,6 +107,11 @@ Native slice committed toward 0182 on 2026-06-28.
   gate returns to 7 total, 0 exact, 3 accepted drift, and 4 blockers, but
   `tagged-report-visual-integrity.pdf` improves to MAE 2.647, p95 7,
   changed ratio 0.105011, max delta 150.
+- Re-ran the tagged Poppler oracle after the later 0183 large axis-aligned
+  rectangle fill center-sampling change. The strict tagged visual gate improves
+  to 7 total, 0 exact, 5 accepted drift, and 2 blockers. The tagged invoice
+  and report fixtures moved to accepted drift; `tagged-office-alt-text.pdf` and
+  `tagged-structure-heavy-report.pdf` remain blockers.
 
 ## Completion Notes
 
