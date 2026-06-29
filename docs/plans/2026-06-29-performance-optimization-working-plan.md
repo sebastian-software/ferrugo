@@ -36,9 +36,12 @@ profiles, and regressions teach us where the real bottlenecks are.
   `max_edge`, same backend set, and same iteration count.
 - [ ] Keep optimization PRs small enough to explain with one primary profile
   finding.
-- [ ] Accept a block with at least 10% improvement on target fixtures, or accept
-  a 5-10% improvement when repeated runs confirm it and the change is part of a
-  clear cumulative optimization track.
+- [ ] Treat 10% as the default acceptance target for an optimization block, not
+  for every individual commit.
+- [ ] Accept a 5-10% commit when repeated runs confirm it and the change is part
+  of a clear cumulative optimization track.
+- [ ] Allow correctness guards, instrumentation, and documentation commits
+  without speed claims when they reduce risk for the next optimization.
 - [ ] Accept a clear memory reduction under the same repeatability rule, with no
   new fallback or visual-regression evidence.
 - [ ] Treat changes below 5% as noise unless repeated runs prove otherwise.
@@ -110,9 +113,10 @@ wave. Reopen them only when benchmark evidence or product requirements change.
   cumulative optimization track.
 - [x] Should we optimize for average latency or tail latency first? Tail first.
   Use p95 for acceptance, with mean as supporting evidence.
-- [x] Should memory improvements be accepted without speed wins? Yes, when the
-  memory metric is named before the change and improves by at least 10% without
-  visual or fallback regressions.
+- [x] Should memory improvements be accepted without speed wins? Yes. A 10%
+  reduction is a standalone memory win; repeated 5-10% reductions can land when
+  they are part of a named cumulative track and have no visual or fallback
+  regressions.
 
 ## Acceptance Criteria
 
@@ -130,6 +134,8 @@ Definition of done for one optimization commit:
   high-water as a standalone win. A 5-10% result can be accepted when repeated
   runs confirm it, the protection set does not regress, and the commit is
   explicitly part of a cumulative track.
+- Correctness guards, benchmark instrumentation, and planning commits do not
+  need a speed threshold, but must avoid claiming a performance win.
 - The focused fixture set has no new crash, timeout, fallback bucket, error
   class, output-dimension change, or obvious visual drift.
 - The validation commands relevant to the touched surface pass before the next
@@ -364,7 +370,7 @@ Work items:
   normalizing join segments for every candidate pixel/sample.
 - [x] Skip per-segment stroke distance checks when the candidate point is
   outside conservative padded segment bounds.
-- [ ] Add regression fixtures or targeted tests around clipping and hairline
+- [x] Add regression fixtures or targeted tests around clipping and hairline
   correctness.
 - [x] Add targeted tests for prepared stroke join geometry and degenerate join
   segments.
@@ -508,6 +514,16 @@ Current profile after accepted vector optimizations:
 - Decision: continue path-raster work only for profile-backed algorithmic wins.
   The next broad track should include Phase 3 allocation/clone evidence and a
   later revisit of larger raster algorithms, not more sub-5% micro-fast-paths.
+
+Hairline/clip regression guard from 2026-06-29:
+
+- Change: added `rasterize_paths_should_clip_snapped_axis_aligned_hairlines`
+  to protect the interaction between active clipping paths and snapped
+  axis-aligned hairlines.
+- Purpose: future hairline or simple-stroke fast paths must preserve clip
+  bounds and sample coverage. This is a correctness guard for Phase 2, not a
+  speed claim.
+- Validation: targeted `ferrugo-render` hairline tests passed.
 
 Rect-fill fast-path status from 2026-06-29:
 

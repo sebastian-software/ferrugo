@@ -16078,6 +16078,27 @@ mod tests {
     }
 
     #[test]
+    fn rasterize_paths_should_clip_snapped_axis_aligned_hairlines() {
+        let raster = rasterize_clip_stream(b"4 4 8 8 re W n 0.3 w 0 10 m 20 10 l S");
+        let black = Rgba {
+            r: 0,
+            g: 0,
+            b: 0,
+            a: 255,
+        };
+
+        assert_eq!(raster.pixel(6, 10).expect("inside clipped hairline"), black);
+        assert_eq!(
+            raster.pixel(2, 10).expect("left of clipped hairline"),
+            Rgba::WHITE
+        );
+        assert_eq!(
+            raster.pixel(14, 10).expect("right of clipped hairline"),
+            Rgba::WHITE
+        );
+    }
+
+    #[test]
     fn snapped_hairlines_should_use_pixel_center_sampling() {
         let list = build_path_display_list(
             tokenize_content(PdfBytes::new(b"0.3 w 0 5 m 20 5 l S")),
