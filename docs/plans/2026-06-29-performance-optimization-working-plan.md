@@ -1032,6 +1032,28 @@ Rejected session cache candidate from 2026-06-30:
   add phase timing to `benchmark-repeat-native` so repeat-time resource decode
   can be isolated per fixture.
 
+Repeat benchmark phase-timing instrumentation from 2026-06-30:
+
+- Change: `NativeDocumentSession` now exposes `render_page_with_timings`, and
+  `benchmark-repeat-native` records `phase_timings_ms.first` plus
+  `phase_timings_ms.repeat_mean` for every native-rendered record.
+- Purpose: Phase 5 cache work can now see whether repeat time is dominated by
+  stream decode, content tokenization, resource decode, display-list build, or
+  raster work before adding another cache.
+- Smoke artifact:
+  `target/benchmark-repeat-repeated-image-phase-timings.json`,
+  `repeated-image-xobject`, `--max-edge 160`, five repetitions.
+- Observed example: `image-heavy-repeated-xobject-report.pdf` repeat mean
+  reported `resource_decode: 0.070 ms`, `raster_paths: 0.512 ms`,
+  `raster_images: 0.072 ms`, and `total: 0.740 ms`. This points away from
+  content-only caching and toward either path-raster work or a more targeted
+  decoded-resource cache.
+- Validation: targeted native session test, repeat benchmark JSON test,
+  `cargo fmt --all --check`, `cargo check --workspace --no-default-features`,
+  `cargo test --workspace --no-default-features`, and
+  `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+  passed.
+
 ## Phase 6: Benchmark Gates And Claims
 
 Goal: turn stable evidence into guardrails, not premature marketing.

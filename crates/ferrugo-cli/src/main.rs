@@ -3889,8 +3889,15 @@ struct RepeatBenchmarkRecord {
     cache_key: NativePageCacheKey,
     session_stats: Option<NativeDocumentSessionStats>,
     timings_ms: Vec<f64>,
+    phase_timings: Option<RepeatPhaseTimings>,
     budget_violations: Vec<&'static str>,
     outcome: RepeatBenchmarkOutcome,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct RepeatPhaseTimings {
+    first: NativeRenderPhaseTimings,
+    repeat_mean: NativeRenderPhaseTimings,
 }
 
 struct NativeDiagnosticBundle<'a> {
@@ -5315,9 +5322,12 @@ fn benchmark_repeat_fixture(
         }
     };
     let session_stats = session.stats();
-    match session.render_page(options) {
+    let mut phase_timings = Vec::with_capacity(config.repetitions);
+    let mut first_phase_timings = NativeRenderPhaseTimings::default();
+    match session.render_page_with_timings(options, &mut first_phase_timings) {
         Ok(thumbnail) => {
             timings_ms.push(elapsed_ms(first_started.elapsed()));
+            phase_timings.push(first_phase_timings);
             last_success = thumbnail;
         }
         Err(error) => {
@@ -5336,9 +5346,11 @@ fn benchmark_repeat_fixture(
 
     for _ in 1..config.repetitions {
         let started = Instant::now();
-        match session.render_page(options) {
+        let mut repeat_phase_timings = NativeRenderPhaseTimings::default();
+        match session.render_page_with_timings(options, &mut repeat_phase_timings) {
             Ok(thumbnail) => {
                 timings_ms.push(elapsed_ms(started.elapsed()));
+                phase_timings.push(repeat_phase_timings);
                 last_success = thumbnail;
             }
             Err(error) => {
@@ -5370,6 +5382,10 @@ fn benchmark_repeat_fixture(
         .max_by(f64::total_cmp)
         .expect("repeat values are non-empty");
     let repeat_to_first_ratio = repeat_mean_ms / first_ms.max(f64::EPSILON);
+    let repeat_phase_timings = RepeatPhaseTimings {
+        first: phase_timings[0],
+        repeat_mean: mean_phase_timings(&phase_timings[1..]),
+    };
     let mut budget_violations = Vec::new();
     if first_ms > config.max_first_ms as f64 {
         budget_violations.push("first_render_time");
@@ -5385,6 +5401,7 @@ fn benchmark_repeat_fixture(
         cache_key,
         session_stats: Some(session_stats),
         timings_ms,
+        phase_timings: Some(repeat_phase_timings),
         budget_violations,
         outcome: RepeatBenchmarkOutcome::NativeRendered {
             width: last_success.width,
@@ -5411,6 +5428,46 @@ fn repeat_error_outcome(error: ThumbnailError) -> RepeatBenchmarkOutcome {
             message: error.to_string(),
         }
     }
+}
+
+fn mean_phase_timings(values: &[NativeRenderPhaseTimings]) -> NativeRenderPhaseTimings {
+    let mut sum = NativeRenderPhaseTimings::default();
+    for timings in values {
+        sum.load_xref_object += timings.load_xref_object;
+        sum.stream_decode += timings.stream_decode;
+        sum.content_tokenize += timings.content_tokenize;
+        sum.display_list_build += timings.display_list_build;
+        sum.resource_decode += timings.resource_decode;
+        sum.raster_paths += timings.raster_paths;
+        sum.raster_text += timings.raster_text;
+        sum.raster_images += timings.raster_images;
+        sum.output += timings.output;
+        sum.total += timings.total;
+    }
+    scale_phase_timings(sum, values.len())
+}
+
+fn scale_phase_timings(
+    timings: NativeRenderPhaseTimings,
+    divisor: usize,
+) -> NativeRenderPhaseTimings {
+    let divisor = divisor as f64;
+    NativeRenderPhaseTimings {
+        load_xref_object: scale_duration(timings.load_xref_object, divisor),
+        stream_decode: scale_duration(timings.stream_decode, divisor),
+        content_tokenize: scale_duration(timings.content_tokenize, divisor),
+        display_list_build: scale_duration(timings.display_list_build, divisor),
+        resource_decode: scale_duration(timings.resource_decode, divisor),
+        raster_paths: scale_duration(timings.raster_paths, divisor),
+        raster_text: scale_duration(timings.raster_text, divisor),
+        raster_images: scale_duration(timings.raster_images, divisor),
+        output: scale_duration(timings.output, divisor),
+        total: scale_duration(timings.total, divisor),
+    }
+}
+
+fn scale_duration(duration: Duration, divisor: f64) -> Duration {
+    Duration::from_secs_f64(duration.as_secs_f64() / divisor)
 }
 
 fn repeat_error_record(
@@ -5452,6 +5509,7 @@ fn repeat_error_record_with_session(
         cache_key,
         session_stats,
         timings_ms,
+        phase_timings: None,
         budget_violations,
         outcome,
     }
@@ -9409,6 +9467,7 @@ fn repeat_benchmark_record_json(record: &RepeatBenchmarkRecord) -> String {
             "\"cache_key\":{},",
             "\"session\":{},",
             "\"timings_ms\":{},",
+            "\"phase_timings_ms\":{},",
             "\"budget_violations\":{},",
             "\"outcome\":{}",
             "}}"
@@ -9419,8 +9478,20 @@ fn repeat_benchmark_record_json(record: &RepeatBenchmarkRecord) -> String {
         native_page_cache_key_json(&record.cache_key),
         native_document_session_stats_json(record.session_stats),
         float_array_json(&record.timings_ms),
+        repeat_phase_timings_json(record.phase_timings.as_ref()),
         json_str_array(record.budget_violations.as_slice()),
         repeat_benchmark_outcome_json(&record.outcome)
+    )
+}
+
+fn repeat_phase_timings_json(phase_timings: Option<&RepeatPhaseTimings>) -> String {
+    let Some(phase_timings) = phase_timings else {
+        return "null".to_string();
+    };
+    format!(
+        "{{\"first\":{},\"repeat_mean\":{}}}",
+        trace_phase_timings_json(Ok(&phase_timings.first)),
+        trace_phase_timings_json(Ok(&phase_timings.repeat_mean))
     )
 }
 
@@ -11920,6 +11991,8 @@ status = "candidate"
         assert!(json.contains("\"session\""));
         assert!(json.contains("\"loaded_objects\""));
         assert!(json.contains("\"cache_key\""));
+        assert!(json.contains("\"phase_timings_ms\""));
+        assert!(json.contains("\"resource_decode\""));
         assert!(json.contains("\"repeat_mean_ms\""));
     }
 

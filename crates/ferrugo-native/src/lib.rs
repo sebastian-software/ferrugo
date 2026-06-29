@@ -761,6 +761,29 @@ impl<'a> NativeDocumentSession<'a> {
         reject_form_appearance_mutation(options)?;
         render_loaded_document(&self.document, &self.page_tree, options, self.limits)
     }
+
+    /// Renders one page and records request-local native phase timings.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ThumbnailError`] when the requested page cannot be rendered.
+    pub fn render_page_with_timings(
+        &self,
+        options: &ThumbnailOptions,
+        timings: &mut NativeRenderPhaseTimings,
+    ) -> Result<Thumbnail, ThumbnailError> {
+        reject_form_appearance_mutation(options)?;
+        let started = Instant::now();
+        let thumbnail = render_loaded_document_with_timings(
+            &self.document,
+            &self.page_tree,
+            options,
+            self.limits,
+            timings,
+        )?;
+        timings.total += started.elapsed();
+        Ok(thumbnail)
+    }
 }
 
 fn enforce_document_session_budget(
