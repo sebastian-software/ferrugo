@@ -35,7 +35,6 @@ when the server renderer is already correct and bounded.
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
 | 0196 | [WASM Low Memory Mobile Browser Gate](0196-wasm-low-memory-mobile-browser-gate.md) | 37 | medium | 0195 |
-| 0206 | [Form Filling Appearance Update And Flattening Coverage](0206-form-filling-appearance-update-and-flattening-coverage.md) | 39 | medium | 0205 |
 | 0207 | [Annotation Popup Stamp And FreeText Fidelity](0207-annotation-popup-stamp-and-freetext-fidelity.md) | 39 | medium | 0206 |
 | 0208 | [Color Managed Print Preview Extended Gate](0208-color-managed-print-preview-extended-gate.md) | 39 | medium | 0207 |
 | 0209 | [Rust-Native Image Codec Deployment Policy](0209-rust-native-image-codec-deployment-policy.md) | 39 | medium | 0208 |
@@ -61,6 +60,7 @@ when the server renderer is already correct and bounded.
 
 | ID | Milestone | Phase | Size | Completed |
 | --- | --- | --- | --- | --- |
+| 0206 | [Form Filling Appearance Update And Flattening Coverage](0206-form-filling-appearance-update-and-flattening-coverage.md) | 39 | medium | 2026-06-29 |
 | 0205 | [PDFium-Free 1.3 Typical Document Gate](0205-pdfium-free-1-3-typical-document-gate.md) | 38 | medium | 2026-06-29 |
 | 0204 | [Office Chart SmartArt And Vector Effect Fidelity](0204-office-chart-smartart-and-vector-effect-fidelity.md) | 38 | medium | 2026-06-29 |
 | 0203 | [Dense Office Table And Spreadsheet Refinement](0203-dense-office-table-and-spreadsheet-refinement.md) | 38 | medium | 2026-06-29 |

@@ -3378,6 +3378,108 @@ def acroform_choice_missing_appearance_pdf() -> bytes:
     return pdf.render(catalog)
 
 
+def acroform_combo_box_appearance_pdf() -> bytes:
+    pdf = Pdf()
+    content = b"BT /F1 8 Tf 28 68 Td (Selected plan) Tj ET"
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    font = pdf.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    appearance = (
+        b"0.88 0.95 0.92 rg 0 0 96 24 re f "
+        b"0.08 0.20 0.16 RG 1 w 0.5 0.5 95 23 re S "
+        b"0.05 0.18 0.14 rg BT /F1 9 Tf 8 9 Td (Premium) Tj ET "
+        b"0.08 0.20 0.16 rg 82 9 m 88 15 l 94 9 l f"
+    )
+    appearance_object = pdf.add(
+        f"<< /Type /XObject /Subtype /Form /BBox [0 0 96 24] "
+        f"/Resources << /Font << /F1 {font} 0 R >> >> "
+        f"/Length {len(appearance)} >>\nstream\n".encode("ascii")
+        + appearance
+        + b"\nendstream"
+    )
+    field = pdf.add(
+        "<< /Type /Annot /Subtype /Widget /FT /Ch /T (Plan) "
+        "/V (Premium) /Opt [(Basic) (Premium) (Enterprise)] "
+        "/Rect [28 34 124 58] "
+        f"/AP << /N {appearance_object} 0 R >> >>"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 6 0 R /MediaBox [0 0 160 100] "
+        f"/Resources << /Font << /F1 {font} 0 R >> >> "
+        f"/Contents {contents} 0 R /Annots [{field} 0 R] >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    catalog = pdf.add(
+        f"<< /Type /Catalog /Pages {pages} 0 R /AcroForm << /Fields [{field} 0 R] >> >>"
+    )
+    assert field == 4
+    assert page == 5
+    assert pages == 6
+    return pdf.render(catalog)
+
+
+def acroform_rotated_text_field_appearance_pdf() -> bytes:
+    pdf = Pdf()
+    content = b"BT /F1 8 Tf 24 122 Td (Rotated approval field) Tj ET"
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    font = pdf.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    appearance = (
+        b"0.94 0.90 0.98 rg 0 0 30 88 re f "
+        b"0.26 0.12 0.40 RG 1 w 0.5 0.5 29 87 re S "
+        b"q 0 1 -1 0 22 10 cm 0.18 0.08 0.28 rg "
+        b"BT /F1 9 Tf 0 0 Td (Approved) Tj ET Q"
+    )
+    appearance_object = pdf.add(
+        f"<< /Type /XObject /Subtype /Form /BBox [0 0 30 88] "
+        f"/Resources << /Font << /F1 {font} 0 R >> >> "
+        f"/Length {len(appearance)} >>\nstream\n".encode("ascii")
+        + appearance
+        + b"\nendstream"
+    )
+    field = pdf.add(
+        "<< /Type /Annot /Subtype /Widget /FT /Tx /T (Approval) /V (Approved) "
+        "/Rect [54 24 84 112] /MK << /R 90 >> "
+        f"/AP << /N {appearance_object} 0 R >> >>"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 6 0 R /MediaBox [0 0 140 140] "
+        f"/Resources << /Font << /F1 {font} 0 R >> >> "
+        f"/Contents {contents} 0 R /Annots [{field} 0 R] >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    catalog = pdf.add(
+        f"<< /Type /Catalog /Pages {pages} 0 R /AcroForm << /Fields [{field} 0 R] >> >>"
+    )
+    assert field == 4
+    assert page == 5
+    assert pages == 6
+    return pdf.render(catalog)
+
+
+def flattened_form_export_pdf() -> bytes:
+    return page_pdf(
+        "[0 0 220 150]",
+        (
+            "q 0.98 0.98 0.96 rg 0 0 220 150 re f Q "
+            "q 0.12 0.18 0.28 RG 0.8 w 18 20 184 104 re S "
+            "18 94 m 202 94 l S 18 64 m 202 64 l S 110 20 m 110 124 l S Q "
+            "q 0.88 0.95 0.92 rg 112 66 70 18 re f Q "
+            "q 0.05 0.35 0.14 RG 2 w 32 73 m 40 65 l 54 84 l S Q "
+            "q 0.18 0.22 0.30 rg 128 30 52 14 re f Q "
+            "BT /F1 10 Tf 24 112 Td (Flattened Intake Form) Tj "
+            "/F1 8 Tf 24 78 Td (Consent) Tj 118 78 Td (Premium) Tj "
+            "24 48 Td (Signed by Ada) Tj 118 48 Td (2026-06-29) Tj ET"
+        ),
+    )
+
+
 def acroform_signature_placeholder_pdf() -> bytes:
     pdf = Pdf()
     content = b""
@@ -7701,6 +7803,12 @@ def main() -> None:
         "acroform-choice-missing-appearance.pdf",
         acroform_choice_missing_appearance_pdf(),
     )
+    write("acroform-combo-box-appearance.pdf", acroform_combo_box_appearance_pdf())
+    write(
+        "acroform-rotated-text-field-appearance.pdf",
+        acroform_rotated_text_field_appearance_pdf(),
+    )
+    write("flattened-form-export.pdf", flattened_form_export_pdf())
     write("acroform-radio.pdf", acroform_radio_pdf())
     write(
         "acroform-radio-missing-appearance.pdf",

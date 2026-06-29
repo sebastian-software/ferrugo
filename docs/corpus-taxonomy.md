@@ -156,6 +156,29 @@ cargo run -p pdfrust-cli -- summarize-fallbacks fixtures/generated \
   --fail-on-fallback
 ```
 
+## Form Filling Flattening Manifest
+
+`fixtures/form-filling-flattening-manifest.tsv` is the focused gate for common
+filled and flattened form exports. Supported families cover explicit AcroForm
+appearances, signature appearance boundaries, bounded missing-appearance
+synthesis, and already-flattened static form pages. The `xfa-boundary` family
+keeps dynamic XFA without static AcroForm fields visible as a typed unsupported
+boundary.
+
+Use the supported families as a native-only gate:
+
+```sh
+cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks \
+  fixtures/generated \
+  --manifest fixtures/form-filling-flattening-manifest.tsv \
+  --include-family existing-appearance \
+  --include-family signature-boundary \
+  --include-family synthesized-static \
+  --include-family flattened-static \
+  --fail-on-fallback \
+  --max-edge 160
+```
+
 ## Spreadsheet Grid Manifest
 
 `fixtures/spreadsheet-grid-manifest.tsv` is the focused gate for spreadsheet

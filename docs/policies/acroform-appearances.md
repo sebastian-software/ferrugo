@@ -1,6 +1,6 @@
 # AcroForm Appearance Policy
 
-Status: accepted for 0053, updated for 0194.
+Status: accepted for 0053, updated for 0194 and 0206.
 Date: 2026-06-24. Updated: 2026-06-29.
 
 The native renderer treats AcroForm widgets as static page annotations for
@@ -14,8 +14,12 @@ does not implement an interactive form engine.
 - Existing `/AP /N` appearance state dictionaries selected by `/AS`.
 - Static text-field, button, and signature placeholder appearances when their
   appearance stream uses already supported drawing operators.
+- Static choice/combo-box and rotated field appearances when the source PDF has
+  already generated a normal appearance stream.
 - XFA/AcroForm hybrid documents when static page content or static widget
   appearances are already present and do not require an XFA runtime.
+- Already-flattened form exports where field values have been written into
+  ordinary page content by the producer.
 - Bounded synthetic thumbnail appearances for missing-appearance text fields,
   choice fields, checkboxes, and radio buttons when the widget dictionary
   exposes common `/FT`, `/V`, `/AS`, `/Ff`, and `/Rect` values.

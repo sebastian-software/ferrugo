@@ -6329,6 +6329,66 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_render_generated_form_filling_flattening_fixtures() {
+        let fixtures: &[(&[u8], u32, u32, &str, usize)] = &[
+            (
+                include_bytes!("../../../fixtures/generated/acroform-combo-box-appearance.pdf")
+                    as &[u8],
+                160,
+                100,
+                "combo box appearance",
+                2_000,
+            ),
+            (
+                include_bytes!(
+                    "../../../fixtures/generated/acroform-rotated-text-field-appearance.pdf"
+                ) as &[u8],
+                140,
+                140,
+                "rotated text-field appearance",
+                2_000,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/flattened-form-export.pdf") as &[u8],
+                220,
+                150,
+                "flattened form export",
+                4_000,
+            ),
+        ];
+
+        for &(bytes, expected_width, expected_height, label, min_visible_pixels) in fixtures {
+            let thumbnail = ThumbnailBackend::render(
+                &NativeBackend::new(),
+                PdfSource::from_bytes(bytes),
+                &ThumbnailOptions {
+                    max_edge: expected_width.max(expected_height),
+                    ..ThumbnailOptions::default()
+                },
+            )
+            .unwrap_or_else(|error| panic!("{label} fixture should render: {error}"));
+
+            assert_eq!(
+                thumbnail.width, expected_width,
+                "{label} width should match"
+            );
+            assert_eq!(
+                thumbnail.height, expected_height,
+                "{label} height should match"
+            );
+            let visible_pixels = thumbnail
+                .bytes
+                .chunks_exact(4)
+                .filter(|pixel| *pixel != [255, 255, 255, 255])
+                .count();
+            assert!(
+                visible_pixels >= min_visible_pixels,
+                "{label} fixture should preserve filled or flattened form content"
+            );
+        }
+    }
+
+    #[test]
     fn native_backend_should_render_generated_digital_signature_appearance_fixture() {
         let bytes = include_bytes!("../../../fixtures/generated/digital-signature-appearance.pdf");
         let thumbnail = ThumbnailBackend::render(
