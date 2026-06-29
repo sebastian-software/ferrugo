@@ -9873,12 +9873,12 @@ fn stroke_radius_for_device_line_width(line_width: f64) -> f64 {
     }
 }
 
-fn should_snap_axis_aligned_hairline(line_width: f64, ctm_scale: f64) -> bool {
+fn should_snap_axis_aligned_hairline(line_width: f64, _ctm_scale: f64) -> bool {
     // Keep these bands narrow: wider 0.7-0.8px signature/legal linework
     // loses visible coverage if it is snapped away from its authored sample row.
     (0.25..=0.45).contains(&line_width)
         || (0.55..=0.65).contains(&line_width)
-        || (ctm_scale > 1.0 + f64::EPSILON && (0.15..0.25).contains(&line_width))
+        || (0.15..0.25).contains(&line_width)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -9888,8 +9888,8 @@ enum HairlineSnapMode {
     RoundedDeviceCoordinate,
 }
 
-fn hairline_snap_mode(line_width: f64, ctm_scale: f64) -> HairlineSnapMode {
-    if ctm_scale > 1.0 + f64::EPSILON && (0.15..0.25).contains(&line_width) {
+fn hairline_snap_mode(line_width: f64, _ctm_scale: f64) -> HairlineSnapMode {
+    if (0.15..0.25).contains(&line_width) {
         HairlineSnapMode::RoundedDeviceCoordinate
     } else if (0.25..=0.32).contains(&line_width) {
         // Match Poppler's forward placement for very thin unscaled map/grid
@@ -15573,9 +15573,13 @@ mod tests {
     }
 
     #[test]
-    fn hairline_snap_policy_should_limit_ultrathin_band_to_scaled_ctm() {
-        assert!(!should_snap_axis_aligned_hairline(0.177, 1.0));
+    fn hairline_snap_policy_should_include_ultrathin_grid_strokes() {
+        assert!(should_snap_axis_aligned_hairline(0.177, 1.0));
         assert!(should_snap_axis_aligned_hairline(0.233, 2.0));
+        assert_eq!(
+            hairline_snap_mode(0.177, 1.0),
+            HairlineSnapMode::RoundedDeviceCoordinate
+        );
         assert_eq!(
             hairline_snap_mode(0.233, 2.0),
             HairlineSnapMode::RoundedDeviceCoordinate

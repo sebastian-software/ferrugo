@@ -112,6 +112,14 @@ Native slice committed toward 0182 on 2026-06-28.
   to 7 total, 0 exact, 5 accepted drift, and 2 blockers. The tagged invoice
   and report fixtures moved to accepted drift; `tagged-office-alt-text.pdf` and
   `tagged-structure-heavy-report.pdf` remain blockers.
+- Re-ran the tagged Poppler oracle after snapping ultrathin 0.15-0.25px
+  axis-aligned strokes to rounded device coordinates. The strict tagged visual
+  gate remains 7 total, 0 exact, 5 accepted drift, and 2 blockers,
+  but `tagged-structure-heavy-report.pdf` improves from MAE 15.294, p95 102,
+  changed ratio 0.220536 to MAE 6.522, p95 23, changed ratio 0.165179. The
+  paired 0183 mixed vector/raster Poppler regression gate remains 8 accepted
+  drift and 0 blockers. `tagged-office-alt-text.pdf` remains unchanged at MAE
+  6.608, p95 2, changed ratio 0.084229.
 
 ## Completion Notes
 
