@@ -547,6 +547,27 @@ Rejected candidate from 2026-06-29:
   Keep culling after flattening for now; revisit pre-flatten culling only with
   fixtures that contain many fully offscreen paths.
 
+Rejected allocation candidate from 2026-06-29:
+
+- Change tested locally but not kept: reuse one `Vec<PreparedStrokeJoin>` scratch
+  buffer across path items instead of allocating a fresh prepared-join vector in
+  each `stroke_path` call.
+- Rationale: this targeted Phase 3 allocation churn in the profiled
+  `stroke_path` hot area without adding a dependency or unsafe code.
+- Baseline:
+  `target/performance-matrix-report-vector-clip-point-bounds-before.json`,
+  native hot-render, `report/vector`, `--max-edge 160`, 200 measured
+  iterations after 10 warmups.
+- Candidate:
+  `target/performance-matrix-report-vector-prepared-joins-scratch-after.json`,
+  same command and host.
+- Result: the protection set regressed: `vector-stress.pdf` p95 `6.488 ms` ->
+  `6.712 ms` (~3.5% slower), `technical-hatch-clipping.pdf` p95 `2.896 ms` ->
+  `2.954 ms` (~2.0% slower), and `prepress-trim-bleed-marks.pdf` p95
+  `1.069 ms` -> `1.101 ms` (~3.0% slower).
+- Decision: reverted. The extra mutable scratch plumbing did not reduce the
+  dominant runtime on the current fixtures and made the hot path slower.
+
 Current profile after accepted vector optimizations:
 
 - `target/sample-vector-stress-current.txt` still shows `stroke_path` as the
