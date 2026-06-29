@@ -482,3 +482,31 @@ max delta `225 -> 196`. It remains just outside the strict gate, so the next
 work should focus on the remaining preview text/image edge tail rather than
 broad stroke snapping. The 0182 tagged sanity slice stayed at 3 accepted drift
 and 4 blockers with unchanged fixture metrics.
+
+## Axis-Aligned Image Edge Coverage
+
+Axis-aligned image painting now computes coverage for pixels at the transformed
+image bounds and composites those edge pixels through the existing source-over
+coverage path. Interior image samples keep the existing nearest-neighbor path,
+so this targets subpixel outer-image edges without introducing broad image
+interpolation.
+
+Full 0183 Poppler follow-up result remains 8 total, 0 exact, 6 accepted drift,
+2 blockers, 0 native errors, 0 reference errors, 0 both errors.
+
+| Fixture | Status | MAE | P95 delta | Changed ratio | Max delta |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `browser-print-raster-vector-mix.pdf` | accepted drift | 0.396 | 0 | 0.018945 | 202 |
+| `high-dpi-preview-fidelity.pdf` | blocker | 1.881 | 7 | 0.087760 | 196 |
+| `image-heavy-rotated-mask-sheet.pdf` | accepted drift | 0.849 | 4 | 0.358728 | 111 |
+| `map-transparent-zoning-overlay.pdf` | blocker | 4.986 | 31 | 0.285608 | 142 |
+| `office-vector-clipped-transparency-group.pdf` | accepted drift | 0.553 | 1 | 0.232045 | 118 |
+| `office-vector-repeated-effects.pdf` | accepted drift | 1.707 | 4 | 0.094334 | 123 |
+| `slide-layered-image-shadow.pdf` | accepted drift | 2.744 | 4 | 0.139861 | 216 |
+| `soft-mask-image.pdf` | accepted drift | 0.829 | 0 | 0.011181 | 255 |
+
+The targeted improvement is `high-dpi-preview-fidelity.pdf`: MAE
+`2.003 -> 1.881`, with p95, changed ratio, and max delta unchanged at `7`,
+`0.087760`, and `196`. A scoped 0182 tagged sanity run stayed at 7 total,
+0 exact, 3 accepted drift, and 4 blockers, so this image-edge change did not
+shift the tagged text-heavy slice.

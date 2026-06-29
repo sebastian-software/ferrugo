@@ -10433,20 +10433,54 @@ fn draw_image(
     let max_x = bounds.max_x.ceil().min(f64::from(dimensions.width)) as u32;
     let max_y = bounds.max_y.ceil().min(f64::from(dimensions.height)) as u32;
     let mut sample_cache = ImageSampleCache::default();
+    let axis_aligned = image_transform_is_axis_aligned(image_to_device);
 
     for y in min_y..max_y {
         for x in min_x..max_x {
+            let coverage = if axis_aligned {
+                axis_aligned_image_pixel_coverage(bounds, x, y)
+            } else {
+                1.0
+            };
+            if coverage <= f64::EPSILON {
+                continue;
+            }
             let sample = inverse.transform_point(f64::from(x) + 0.5, f64::from(y) + 0.5);
+            if axis_aligned {
+                let sample_x = sample.x.clamp(0.0, 1.0);
+                let sample_y = sample.y.clamp(0.0, 1.0);
+                let (sample_x, sample_y) = image_sample_coords(&image.image, sample_x, sample_y);
+                let pixel =
+                    sample_cache.sample(&image.image, sample_x, sample_y, image.state.fill_color);
+                composite_image_pixel(device, x, y, pixel, coverage)?;
+                continue;
+            }
             if !(0.0..1.0).contains(&sample.x) || !(0.0..1.0).contains(&sample.y) {
                 continue;
             }
             let (sample_x, sample_y) = image_sample_coords(&image.image, sample.x, sample.y);
             let pixel =
                 sample_cache.sample(&image.image, sample_x, sample_y, image.state.fill_color);
-            composite_image_pixel(device, x, y, pixel)?;
+            composite_image_pixel(device, x, y, pixel, coverage)?;
         }
     }
     Ok(())
+}
+
+fn image_transform_is_axis_aligned(transform: Matrix) -> bool {
+    transform.b.abs() <= f64::EPSILON && transform.c.abs() <= f64::EPSILON
+}
+
+fn axis_aligned_image_pixel_coverage(bounds: PathBounds, x: u32, y: u32) -> f64 {
+    let min_x = f64::from(x);
+    let min_y = f64::from(y);
+    let x_coverage = overlap_1d(min_x, min_x + 1.0, bounds.min_x, bounds.max_x);
+    let y_coverage = overlap_1d(min_y, min_y + 1.0, bounds.min_y, bounds.max_y);
+    x_coverage * y_coverage
+}
+
+fn overlap_1d(pixel_min: f64, pixel_max: f64, min: f64, max: f64) -> f64 {
+    (pixel_max.min(max) - pixel_min.max(min)).clamp(0.0, 1.0)
 }
 
 fn transformed_image_bounds(transform: Matrix) -> PathBounds {
@@ -10608,15 +10642,16 @@ fn composite_image_pixel(
     x: u32,
     y: u32,
     source: Rgba,
+    coverage: f64,
 ) -> RasterResult<()> {
-    if source.a == 255 {
+    if source.a == 255 && coverage >= 1.0 {
         return device.set_pixel(x, y, source);
     }
-    if source.a == 0 {
+    if source.a == 0 || coverage <= f64::EPSILON {
         return Ok(());
     }
     let dest = device.pixel(x, y)?;
-    device.set_pixel(x, y, source_over(source, dest, 1.0))
+    device.set_pixel(x, y, source_over(source, dest, coverage))
 }
 
 fn cmyk_to_rgba(cyan: u8, magenta: u8, yellow: u8, key: u8) -> Rgba {
@@ -17499,6 +17534,64 @@ mod tests {
                 r: 127,
                 g: 127,
                 b: 255,
+                a: 255,
+            }
+        );
+    }
+
+    #[test]
+    fn rasterize_images_should_antialias_axis_aligned_image_edges() {
+        let image = ImageDisplayItem {
+            image: ImageXObject {
+                resource_name: b"Im1".to_vec(),
+                width: 1,
+                height: 1,
+                bits_per_component: 8,
+                color_space: ImageColorSpace::DeviceRgb,
+                samples: Arc::from([255, 0, 0].as_slice()),
+                kind: ImageKind::Color,
+                indexed_lookup: None,
+                soft_mask: None,
+            },
+            transform: Matrix::translate(0.25, 0.0),
+            bounds: unit_square_bounds(Matrix::translate(0.25, 0.0)),
+            state: GraphicsState::default(),
+        };
+        let mut device = RasterDevice::new(2, 1, Rgba::WHITE).expect("raster device");
+        let dimensions = device.dimensions();
+        draw_image(
+            &mut device,
+            &image,
+            PageTransform {
+                source_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 2.0,
+                    max_y: 1.0,
+                },
+                rotation: PageRotation::Deg0,
+                scale: 1.0,
+                dimensions,
+                matrix: Matrix::IDENTITY,
+            },
+        )
+        .expect("subpixel image draw");
+
+        assert_eq!(
+            device.pixel(0, 0).expect("left edge pixel"),
+            Rgba {
+                r: 255,
+                g: 63,
+                b: 63,
+                a: 255,
+            }
+        );
+        assert_eq!(
+            device.pixel(1, 0).expect("right edge pixel"),
+            Rgba {
+                r: 255,
+                g: 191,
+                b: 191,
                 a: 255,
             }
         );

@@ -166,6 +166,12 @@ Native baseline slice started on 2026-06-28.
   6 accepted drift and 2 blockers, while `high-dpi-preview-fidelity.pdf`
   improves from MAE 7.229, p95 40, changed ratio 0.112604 to MAE 2.003,
   p95 7, changed ratio 0.087760.
+- Added coverage-aware compositing for axis-aligned image outer edges. This
+  keeps nearest-neighbor image interiors unchanged while blending subpixel
+  boundary pixels through the existing source-over coverage path: the 0183
+  summary remains 6 accepted drift and 2 blockers, while
+  `high-dpi-preview-fidelity.pdf` improves from MAE 2.003 to 1.881 with p95 7,
+  changed ratio 0.087760, and max delta 196.
 
 ## Completion Notes
 
