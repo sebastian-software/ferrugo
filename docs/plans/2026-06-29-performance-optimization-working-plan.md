@@ -365,7 +365,7 @@ Work items:
 - [x] Profile top vector fixtures with `sample`, Instruments, or Samply.
 - [x] Confirm whether time is in display-list construction, path flattening,
   clipping, stroke rasterization, or pixel loops.
-- [ ] Add device-bounds culling before expensive raster work.
+- [x] Add device-bounds culling before expensive raster work.
 - [x] Add fast paths for axis-aligned filled rectangles.
 - [ ] Add fast paths for axis-aligned hairlines and simple strokes.
 - [ ] Flatten reusable paths once per display item instead of per raster pass.
@@ -422,6 +422,44 @@ Second vector optimization result from 2026-06-29:
   `target/native-vector-stress-line-bounds.png` is byte-identical to
   `target/performance-matrix-baseline-starter-artifacts-1/native-cold-process-vector-stress.png`;
   focused matrix status remained `rendered` with no fallback bucket or error.
+
+Third vector guard result from 2026-06-30:
+
+- Change: path rasterization now checks transformed device bounds before
+  `flatten_path_segments`, with conservative stroke padding for caps and miter
+  joins.
+- Evidence: `rasterize_paths_should_cull_off_device_paths_before_flattening`
+  proves a fully off-device path is skipped before it can hit the configured
+  flattening limit.
+- Baseline artifact:
+  `target/performance-matrix-technical-cull-baseline.json`.
+- After artifact: `target/performance-matrix-technical-cull-after.json`.
+- Technical drawing result: the current floorplan, schematic, large-coordinate,
+  and transform-detail fixtures did not contain enough off-device path work to
+  produce a meaningful speed win; p95 changes stayed between -0.2% and +2.5%.
+- Protection set artifact: `target/performance-matrix-report-vector-cull-after.json`.
+  All 4 `report/vector` records remained `rendered`, with no fallback bucket or
+  error. `vector-stress` p95 changed from `6.616 ms` to `6.531 ms`; the smaller
+  fixture p95 deltas stayed in the local-noise range.
+- Performance claim: none. This is a culling guard that prevents wasted
+  flattening and off-device complexity errors; it should not be counted as a
+  measured fixture speedup yet.
+
+Rejected candidate from 2026-06-30:
+
+- Candidate: add an axis-aligned line-body shortcut inside `point_in_stroke`
+  for Butt and Square caps before falling back to generic line projection.
+- Baseline artifact:
+  `target/performance-matrix-report-vector-hairline-baseline.json`.
+- Candidate artifact:
+  `target/performance-matrix-report-vector-axis-line-fastpath-after.json`.
+- Result on the focused `report/vector` hot-render set with 100 measured
+  iterations and 10 warmups: `vector-stress` p95 improved only from `6.616 ms`
+  to `6.542 ms` (about 1.1%), while `technical-hatch-clipping` regressed from
+  `2.807 ms` to `2.909 ms` and `prepress-trim-bleed-marks` regressed from
+  `1.098 ms` to `1.430 ms`.
+- Decision: reverted. The candidate is below the repeated 5% threshold and is
+  not protection-set-neutral, so it should not land as a performance commit.
 
 Rejected candidate from 2026-06-29:
 

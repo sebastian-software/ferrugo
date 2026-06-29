@@ -5383,6 +5383,9 @@ fn rasterize_path_item(
     context: PathRasterContext<'_>,
     pattern_cache: &mut PatternCellCache,
 ) -> RasterResult<()> {
+    if path_is_outside_device_bounds(path, context) {
+        return Ok(());
+    }
     let flattened = flatten_path_segments(
         &path.segments,
         context.transform.matrix,
@@ -5473,6 +5476,30 @@ fn rasterize_path_item(
         }
     }
     Ok(())
+}
+
+fn path_is_outside_device_bounds(path: &PathDisplayItem, context: PathRasterContext<'_>) -> bool {
+    let Some(bounds) = path.bounds() else {
+        return false;
+    };
+    let device_bounds = transform_bounds(bounds, context.transform.matrix);
+    let padding = path_device_bounds_padding(path, context.transform);
+    device_pixel_bounds(device_bounds, context.transform.dimensions, padding)
+        .and_then(|bounds| {
+            intersect_active_clip_pixel_bounds(bounds, context.clips, context.transform.dimensions)
+        })
+        .is_none()
+}
+
+fn path_device_bounds_padding(path: &PathDisplayItem, transform: PageTransform) -> f64 {
+    match path.paint {
+        PaintMode::Fill { .. } => 0.0,
+        PaintMode::Stroke | PaintMode::FillStroke { .. } => {
+            let radius =
+                stroke_radius_for_device_line_width(device_stroke_width(path.state, transform));
+            (radius * path.state.miter_limit.max(1.0)).ceil() + 1.0
+        }
+    }
 }
 
 fn device_stroke_width(state: GraphicsState, transform: PageTransform) -> f64 {
@@ -14238,6 +14265,60 @@ mod tests {
             ),
             None
         );
+    }
+
+    #[test]
+    fn rasterize_paths_should_cull_off_device_paths_before_flattening() {
+        let list = DisplayList::from_items(vec![DisplayItem::Path(PathDisplayItem {
+            segments: vec![
+                PathSegment::MoveTo(Point {
+                    x: 1000.0,
+                    y: 1000.0,
+                }),
+                PathSegment::LineTo(Point {
+                    x: 1001.0,
+                    y: 1000.0,
+                }),
+                PathSegment::LineTo(Point {
+                    x: 1002.0,
+                    y: 1000.0,
+                }),
+                PathSegment::LineTo(Point {
+                    x: 1003.0,
+                    y: 1000.0,
+                }),
+            ],
+            paint: PaintMode::Stroke,
+            state: GraphicsState::default(),
+            fill_pattern: None,
+        })]);
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 20.0,
+                    max_y: 20.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            20,
+        )
+        .expect("valid transform");
+
+        let raster = rasterize_paths(
+            &list,
+            transform,
+            Rgba::WHITE,
+            PathRasterOptions {
+                max_flattened_segments: 1,
+                ..PathRasterOptions::default()
+            },
+        )
+        .expect("off-device path should be culled before flattening");
+
+        assert_eq!(raster.pixel(10, 10).expect("sample pixel"), Rgba::WHITE);
     }
 
     #[test]
