@@ -95,12 +95,12 @@ Dependency and hardware-aware acceptance:
 Goal: make the first optimization target defensible.
 
 - [x] Add or document a release-mode path for `scripts/generate_performance_matrix.sh`.
-- [ ] Run the full starter matrix in release mode with `native + poppler`.
+- [x] Run the full starter matrix in release mode with `native + poppler`.
 - [ ] Run the same matrix with PDFium once `FERRUGO_PDFIUM_LIBRARY` is available.
-- [ ] Store baseline artifacts under `target/performance-matrix-baseline-*`.
+- [x] Store baseline artifacts under `target/performance-matrix-baseline-*`.
 - [ ] Record host details: OS, CPU, Rust version, Poppler path, PDFium path, and
   whether RSS was available.
-- [ ] Run the matrix twice and compare rank stability for the top 10 Ferrugo
+- [x] Run the matrix twice and compare rank stability for the top 10 Ferrugo
   fixtures.
 - [x] Treat Poppler as a useful cold-process and visual reference. Do not use
   Poppler outliers as hard optimization targets until the report gains host
@@ -178,8 +178,8 @@ Goal: split Ferrugo time into phases before changing hot paths.
 - [x] Include attribution in a machine-readable report without leaking PDF bytes
   or rendered pixels.
 - [x] Add focused tests for phase-field presence and volatile-field redaction.
-- [ ] Run attribution on the top 5 Ferrugo slow fixtures from the matrix.
-- [ ] Pick the first optimization block from attribution, not from assumptions.
+- [x] Run attribution on the top 5 Ferrugo slow fixtures from the matrix.
+- [x] Pick the first optimization block from attribution, not from assumptions.
 
 Likely implementation shape:
 
@@ -192,6 +192,34 @@ Current caveat:
 - `content_tokenize` only covers explicit token scans outside display-list
   construction. Builder-internal tokenization is still included in
   `display_list_build` until the builder APIs expose a cleaner split.
+
+Baseline artifacts from 2026-06-29:
+
+- `target/performance-matrix-baseline-starter-release-1.json`
+- `target/performance-matrix-baseline-starter-release-1.md`
+- `target/performance-matrix-baseline-starter-release-2.json`
+- `target/performance-matrix-baseline-starter-release-2.md`
+
+Attribution traces from 2026-06-29:
+
+- `target/native-trace-vector-stress.json`: total 11.462 ms, raster paths
+  11.270 ms.
+- `target/native-trace-technical-hatch-clipping.json`: total 4.192 ms, raster
+  paths 3.991 ms.
+- `target/native-trace-prepress-trim-bleed-marks.json`: total 2.456 ms, raster
+  paths 2.339 ms.
+- `target/native-trace-mixed-text-image.json`: total 2.021 ms, raster paths
+  1.843 ms.
+- `target/native-trace-technical-linework-dimensions.json`: total 1.632 ms,
+  raster paths 1.467 ms.
+
+First optimization block:
+
+- Target fixture: `fixtures/generated/vector-stress.pdf`.
+- Target family: `report/vector`.
+- Target phase: `raster_paths`.
+- Initial target result: reduce `vector-stress` hot-render p95 by at least 10%
+  without fallback or visual drift on the report/vector starter set.
 
 ## Phase 2: Vector And Report Hot Paths
 
@@ -360,17 +388,20 @@ Claim checklist:
 
 ## Current Best Guess
 
-The first optimization block should probably be vector/report rendering, but
-that remains a hypothesis until the release matrix and top-fixture profiles are
-captured. The most likely high-value candidates are:
+The first optimization block is vector/report path rasterization. The first two
+release matrix runs and `trace-native` attribution agree that `vector-stress` is
+the dominant hot-render target and that `raster_paths` accounts for nearly all
+of the traced render time on the report/vector candidates.
+
+The most likely high-value candidates are:
 
 1. device-bounds culling before raster work;
 2. simple rect and hairline fast paths;
 3. flatten-once path reuse;
 4. clip-before-loop checks.
 
-If profiling points elsewhere, this section should be edited before code
-changes start.
+If deeper profiler samples point elsewhere inside path rasterization, this
+section should be edited before code changes start.
 
 ## Settled Decisions
 
@@ -382,10 +413,11 @@ changes start.
   detail is needed, Samply as an optional flamegraph-friendly path.
 - [x] Add host timing reliability flags to the matrix report in a follow-up, but
   do not block the first optimization block on that field.
+- [x] First optimization block is `report/vector` path rasterization, starting
+  with `fixtures/generated/vector-stress.pdf`.
 
 ## Remaining Questions
 
-- [ ] Which exact fixture becomes optimization block 1 after two baseline runs?
 - [ ] What family-specific thresholds should replace the global 10% rule after
   we understand variance?
 - [ ] Should any focused performance subset become CI-gated, or should all
