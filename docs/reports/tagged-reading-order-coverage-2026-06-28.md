@@ -218,6 +218,74 @@ still reducing tagged report drift compared with the earlier text-tuning run.
 | `tagged-report-visual-integrity.pdf` | blocker | MAE 2.647, p95 7, changed ratio 0.105011, max delta 150. |
 | `tagged-structure-heavy-report.pdf` | blocker | MAE 15.294, p95 102, changed ratio 0.220536, max delta 204. |
 
+## Final Poppler Scale Alignment Fallback
+
+The remaining `tagged-structure-heavy-report.pdf` blocker was traced to
+Poppler reference scaling rather than missing native content. The primary
+Poppler reference path still renders at the native target dimensions with
+`-scale-to-x/-scale-to-y`. When that primary comparison is a blocker,
+`visual-diff-poppler` now retries a uniform `-scale-to` reference and only
+normalizes 1px width/height rounding drift by cropping or padding the right and
+bottom edge. This keeps the existing accepted fixtures on their primary
+reference path while avoiding false blockers from aspect-ratio rounding.
+
+Final tagged command:
+
+```sh
+cargo run -p pdfrust-cli --no-default-features -- visual-diff-poppler fixtures/generated \
+  --manifest fixtures/tagged-pdf-visual-manifest.tsv \
+  --include-family tagged-report \
+  --include-family tagged-form \
+  --include-family tagged-office \
+  --include-family tagged-invoice \
+  --include-family reading-order-warning \
+  --include-family structure-heavy \
+  --include-family metadata-baseline \
+  --max-edge 160 \
+  --timeout 30 \
+  --max-mae 2.0 \
+  --max-p95 16 \
+  --max-changed-ratio 0.05 \
+  --output target/tagged-0182-poppler-scale-fallback.json
+```
+
+Result: 7 total, 0 exact, 7 accepted drift, 0 blockers, 0 native errors,
+0 reference errors, 0 both errors.
+
+| Fixture | Status | Evidence |
+| --- | --- | --- |
+| `tagged-accessibility-metadata.pdf` | accepted drift | MAE 0.103, p95 1, changed ratio 0.154596, max delta 1. |
+| `tagged-form-visual-integrity.pdf` | accepted drift | MAE 2.350, p95 0, changed ratio 0.080374, max delta 209. |
+| `tagged-invoice-reading-order.pdf` | accepted drift | MAE 3.292, p95 2, changed ratio 0.100000, max delta 209. |
+| `tagged-office-alt-text.pdf` | accepted drift | MAE 3.128, p95 0, changed ratio 0.075467, max delta 209. |
+| `tagged-reading-order-missing-page-context.pdf` | accepted drift | MAE 1.793, p95 0, changed ratio 0.024425, max delta 178. |
+| `tagged-report-visual-integrity.pdf` | accepted drift | MAE 1.171, p95 1, changed ratio 0.085075, max delta 201. |
+| `tagged-structure-heavy-report.pdf` | accepted drift | MAE 3.060, p95 3, changed ratio 0.154793, max delta 208. |
+
+Paired 0183 mixed vector/raster transparency regression command:
+
+```sh
+cargo run -p pdfrust-cli --no-default-features -- visual-diff-poppler fixtures/generated \
+  --manifest fixtures/mixed-vector-raster-transparency-manifest.tsv \
+  --include-family browser-raster-vector \
+  --include-family high-dpi-preview \
+  --include-family rotated-soft-mask-image \
+  --include-family map-overlay \
+  --include-family office-clipped-transparency \
+  --include-family office-repeated-effects \
+  --include-family slide-layered-image \
+  --include-family image-soft-mask \
+  --max-edge 160 \
+  --timeout 60 \
+  --max-mae 2.0 \
+  --max-p95 16 \
+  --max-changed-ratio 0.05 \
+  --output target/mixed-transparency-0183-poppler-scale-fallback.json
+```
+
+Result: 8 total, 0 exact, 8 accepted drift, 0 blockers, 0 native errors,
+0 reference errors, 0 both errors.
+
 ## Validation
 
 Commands run:

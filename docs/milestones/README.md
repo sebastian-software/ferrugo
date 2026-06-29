@@ -40,7 +40,6 @@ when the server renderer is already correct and bounded.
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
-| 0182 | [Accessible Tagged PDF Reading Order Coverage](0182-accessible-tagged-pdf-reading-order-coverage.md) | 34 | medium | 0181 |
 
 ## Done
 
@@ -83,6 +82,7 @@ when the server renderer is already correct and bounded.
 | 0185 | [PDF/A And Archival Document Conformance Boundary](0185-pdf-a-and-archival-document-conformance-boundary.md) | 34 | medium | 2026-06-29 |
 | 0184 | [Print Shop Imposition And Booklet PDF Coverage](0184-print-shop-imposition-and-booklet-pdf-coverage.md) | 34 | medium | 2026-06-29 |
 | 0183 | [Mixed Vector Raster Transparency Edge Cases](0183-mixed-vector-raster-transparency-edge-cases.md) | 34 | medium | 2026-06-29 |
+| 0182 | [Accessible Tagged PDF Reading Order Coverage](0182-accessible-tagged-pdf-reading-order-coverage.md) | 34 | medium | 2026-06-29 |
 | 0181 | [PDF 2.0 Feature Usage Corpus Gate](0181-pdf-2-0-feature-usage-corpus-gate.md) | 34 | medium | 2026-06-28 |
 | 0180 | [PDFium-Free 1.1 Coverage Gate](0180-pdfium-free-1-1-coverage-gate.md) | 33 | medium | 2026-06-26 |
 | 0179 | [Corpus Governance And Regression Dashboard](0179-corpus-governance-and-regression-dashboard.md) | 33 | medium | 2026-06-26 |

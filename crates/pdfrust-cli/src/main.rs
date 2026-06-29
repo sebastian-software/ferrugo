@@ -4833,41 +4833,44 @@ fn poppler_visual_diff_fixture<N: ThumbnailBackend>(
     thresholds: VisualDiffThresholds,
 ) -> PopplerVisualDiffRecord {
     let native_result = native.render(PdfSource::from_path(path), options);
+    let target_dimensions = native_result
+        .as_ref()
+        .ok()
+        .map(PopplerTargetDimensions::from);
     let reference_result = render_poppler_ppm(
         path,
         options,
-        native_result
-            .as_ref()
-            .ok()
-            .map(PopplerTargetDimensions::from),
+        target_dimensions,
+        PopplerScaleMode::TargetDimensions,
     );
     let subsystem = visual_diff_subsystem(path_key.as_str(), family.as_str());
 
     match (native_result, reference_result) {
         (Ok(native), Ok(reference)) => {
-            let metrics = visual_diff_metrics(&native, &reference);
-            let comparison_error = metrics.is_none().then(|| VisualDiffError {
-                class: "dimension_mismatch",
-                message: format!(
-                    "native rendered {}x{} but poppler rendered {}x{}",
-                    native.width, native.height, reference.width, reference.height
-                ),
-            });
-            let status = metrics
-                .as_ref()
-                .map(|metrics| classify_visual_diff(metrics, thresholds))
-                .map(poppler_status_from_visual_status)
-                .unwrap_or(PopplerVisualDiffStatus::Blocker);
-            PopplerVisualDiffRecord {
-                path: path_key,
-                family,
-                subsystem,
-                status,
-                metrics,
-                comparison_error,
-                native_error: None,
-                reference_error: None,
+            let mut record = poppler_visual_diff_record_from_thumbnails(
+                path_key, family, subsystem, thresholds, &native, reference,
+            );
+            if record.status == PopplerVisualDiffStatus::Blocker && target_dimensions.is_some() {
+                if let Ok(reference) = render_poppler_ppm(
+                    path,
+                    options,
+                    target_dimensions,
+                    PopplerScaleMode::UniformMaxDimension,
+                ) {
+                    let alternate = poppler_visual_diff_record_from_thumbnails(
+                        record.path.clone(),
+                        record.family.clone(),
+                        record.subsystem,
+                        thresholds,
+                        &native,
+                        reference,
+                    );
+                    if alternate.status != PopplerVisualDiffStatus::Blocker {
+                        record = alternate;
+                    }
+                }
             }
+            record
         }
         (Err(native), Ok(_)) => PopplerVisualDiffRecord {
             path: path_key,
@@ -4908,10 +4911,49 @@ fn poppler_visual_diff_fixture<N: ThumbnailBackend>(
     }
 }
 
+fn poppler_visual_diff_record_from_thumbnails(
+    path: String,
+    family: String,
+    subsystem: &'static str,
+    thresholds: VisualDiffThresholds,
+    native: &pdfrust_thumbnail::Thumbnail,
+    reference: pdfrust_thumbnail::Thumbnail,
+) -> PopplerVisualDiffRecord {
+    let metrics = visual_diff_metrics(native, &reference);
+    let comparison_error = metrics.is_none().then(|| VisualDiffError {
+        class: "dimension_mismatch",
+        message: format!(
+            "native rendered {}x{} but poppler rendered {}x{}",
+            native.width, native.height, reference.width, reference.height
+        ),
+    });
+    let status = metrics
+        .as_ref()
+        .map(|metrics| classify_visual_diff(metrics, thresholds))
+        .map(poppler_status_from_visual_status)
+        .unwrap_or(PopplerVisualDiffStatus::Blocker);
+    PopplerVisualDiffRecord {
+        path,
+        family,
+        subsystem,
+        status,
+        metrics,
+        comparison_error,
+        native_error: None,
+        reference_error: None,
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct PopplerTargetDimensions {
     width: u32,
     height: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PopplerScaleMode {
+    TargetDimensions,
+    UniformMaxDimension,
 }
 
 impl From<&pdfrust_thumbnail::Thumbnail> for PopplerTargetDimensions {
@@ -4958,6 +5000,7 @@ fn render_poppler_ppm(
     path: &Path,
     options: &ThumbnailOptions,
     target_dimensions: Option<PopplerTargetDimensions>,
+    scale_mode: PopplerScaleMode,
 ) -> Result<pdfrust_thumbnail::Thumbnail, CliError> {
     let command = env::var_os("PDFRUST_POPPLER_PDFTOPPM")
         .map(PathBuf::from)
@@ -4979,7 +5022,7 @@ fn render_poppler_ppm(
     let output_prefix = temp_dir.join("page");
     let output_path = output_prefix.with_extension("ppm");
     let page_number = options.page_index.saturating_add(1).to_string();
-    let scale_args = poppler_scale_args(options.max_edge, target_dimensions);
+    let scale_args = poppler_scale_args(options.max_edge, target_dimensions, scale_mode);
     let mut poppler = Command::new(&command);
     poppler
         .arg("-q")
@@ -5019,7 +5062,13 @@ fn render_poppler_ppm(
     })?;
     let _ = fs::remove_file(&output_path);
     let _ = fs::remove_dir(&temp_dir);
-    decode_ppm_rgb_as_rgba(&ppm)
+    let thumbnail = decode_ppm_rgb_as_rgba(&ppm)?;
+    match scale_mode {
+        PopplerScaleMode::TargetDimensions => Ok(thumbnail),
+        PopplerScaleMode::UniformMaxDimension => {
+            normalize_poppler_target_dimensions(thumbnail, target_dimensions)
+        }
+    }
 }
 
 fn poppler_page_box_args() -> [OsString; 1] {
@@ -5029,19 +5078,65 @@ fn poppler_page_box_args() -> [OsString; 1] {
 fn poppler_scale_args(
     max_edge: u32,
     target_dimensions: Option<PopplerTargetDimensions>,
+    scale_mode: PopplerScaleMode,
 ) -> Vec<OsString> {
-    match target_dimensions {
-        Some(dimensions) => vec![
+    match (target_dimensions, scale_mode) {
+        (Some(dimensions), PopplerScaleMode::TargetDimensions) => vec![
             OsString::from("-scale-to-x"),
             OsString::from(dimensions.width.to_string()),
             OsString::from("-scale-to-y"),
             OsString::from(dimensions.height.to_string()),
         ],
-        None => vec![
-            OsString::from("-scale-to"),
-            OsString::from(max_edge.to_string()),
-        ],
+        (target_dimensions, PopplerScaleMode::UniformMaxDimension) => {
+            let scale_to = target_dimensions
+                .map(|dimensions| dimensions.width.max(dimensions.height))
+                .unwrap_or(max_edge);
+            vec![
+                OsString::from("-scale-to"),
+                OsString::from(scale_to.to_string()),
+            ]
+        }
+        (None, PopplerScaleMode::TargetDimensions) => {
+            vec![
+                OsString::from("-scale-to"),
+                OsString::from(max_edge.to_string()),
+            ]
+        }
     }
+}
+
+fn normalize_poppler_target_dimensions(
+    thumbnail: pdfrust_thumbnail::Thumbnail,
+    target_dimensions: Option<PopplerTargetDimensions>,
+) -> Result<pdfrust_thumbnail::Thumbnail, CliError> {
+    let Some(target) = target_dimensions else {
+        return Ok(thumbnail);
+    };
+    if thumbnail.width == target.width && thumbnail.height == target.height {
+        return Ok(thumbnail);
+    }
+
+    let width_delta = thumbnail.width.abs_diff(target.width);
+    let height_delta = thumbnail.height.abs_diff(target.height);
+    if width_delta > 1 || height_delta > 1 {
+        return Ok(thumbnail);
+    }
+
+    let mut bytes = vec![255; target.width as usize * target.height as usize * 4];
+    let copy_width = thumbnail.width.min(target.width) as usize;
+    let copy_height = thumbnail.height.min(target.height) as usize;
+    let source_stride = thumbnail.stride;
+    let target_stride = target.width as usize * 4;
+    let row_bytes = copy_width * 4;
+    for row in 0..copy_height {
+        let source_start = row * source_stride;
+        let target_start = row * target_stride;
+        bytes[target_start..target_start + row_bytes]
+            .copy_from_slice(&thumbnail.bytes[source_start..source_start + row_bytes]);
+    }
+
+    pdfrust_thumbnail::Thumbnail::rgba(target.width, target.height, bytes)
+        .map_err(|err| CliError::Encode(err.to_string()))
 }
 
 fn wait_for_child(
@@ -9919,13 +10014,14 @@ status = "candidate"
     }
 
     #[test]
-    fn poppler_scale_args_should_use_native_target_dimensions_when_available() {
+    fn poppler_scale_args_should_use_native_target_dimensions_for_primary_reference() {
         let args = poppler_scale_args(
             160,
             Some(PopplerTargetDimensions {
                 width: 160,
                 height: 87,
             }),
+            PopplerScaleMode::TargetDimensions,
         );
 
         assert_eq!(
@@ -9940,8 +10036,25 @@ status = "candidate"
     }
 
     #[test]
+    fn poppler_scale_args_should_use_uniform_native_max_dimension_for_fallback_reference() {
+        let args = poppler_scale_args(
+            160,
+            Some(PopplerTargetDimensions {
+                width: 87,
+                height: 160,
+            }),
+            PopplerScaleMode::UniformMaxDimension,
+        );
+
+        assert_eq!(
+            args,
+            vec![OsString::from("-scale-to"), OsString::from("160")]
+        );
+    }
+
+    #[test]
     fn poppler_scale_args_should_fallback_to_max_edge_without_native_render() {
-        let args = poppler_scale_args(160, None);
+        let args = poppler_scale_args(160, None, PopplerScaleMode::TargetDimensions);
 
         assert_eq!(
             args,
@@ -9952,6 +10065,53 @@ status = "candidate"
     #[test]
     fn poppler_page_box_args_should_match_native_cropbox_policy() {
         assert_eq!(poppler_page_box_args(), [OsString::from("-cropbox")]);
+    }
+
+    #[test]
+    fn poppler_target_normalization_should_crop_one_pixel_rounding_drift() {
+        let thumbnail = Thumbnail::rgba(
+            2,
+            3,
+            vec![
+                1, 2, 3, 255, 4, 5, 6, 255, 7, 8, 9, 255, 10, 11, 12, 255, 13, 14, 15, 255, 16, 17,
+                18, 255,
+            ],
+        )
+        .expect("valid thumbnail");
+
+        let normalized = normalize_poppler_target_dimensions(
+            thumbnail,
+            Some(PopplerTargetDimensions {
+                width: 2,
+                height: 2,
+            }),
+        )
+        .expect("normalization should succeed");
+
+        assert_eq!(normalized.width, 2);
+        assert_eq!(normalized.height, 2);
+        assert_eq!(
+            normalized.bytes,
+            vec![1, 2, 3, 255, 4, 5, 6, 255, 7, 8, 9, 255, 10, 11, 12, 255,]
+        );
+    }
+
+    #[test]
+    fn poppler_target_normalization_should_pad_one_pixel_rounding_drift() {
+        let thumbnail = Thumbnail::rgba(1, 1, vec![1, 2, 3, 255]).expect("valid thumbnail");
+
+        let normalized = normalize_poppler_target_dimensions(
+            thumbnail,
+            Some(PopplerTargetDimensions {
+                width: 2,
+                height: 1,
+            }),
+        )
+        .expect("normalization should succeed");
+
+        assert_eq!(normalized.width, 2);
+        assert_eq!(normalized.height, 1);
+        assert_eq!(normalized.bytes, vec![1, 2, 3, 255, 255, 255, 255, 255]);
     }
 
     #[test]

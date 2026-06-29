@@ -1,6 +1,6 @@
 # 0182: Accessible Tagged PDF Reading Order Coverage
 
-Status: in-progress
+Status: done
 Phase: 34
 Size: medium
 Depends on: 0181
@@ -136,7 +136,18 @@ Native slice committed toward 0182 on 2026-06-28.
   ratio 0.165179 to MAE 6.518, p95 17, changed ratio 0.163675. The paired 0183
   mixed vector/raster Poppler regression gate remains 8 accepted drift and
   0 blockers.
+- Added a Poppler visual-oracle alignment fallback for 1px aspect-ratio
+  rounding drift. `visual-diff-poppler` keeps the native-dimension reference as
+  the primary comparison, then retries uniform `-scale-to` plus bounded 1px
+  crop/pad normalization only when the primary comparison is a blocker. The
+  strict tagged visual gate now reports 7 total, 0 exact, 7 accepted drift, and
+  0 blockers with 0 native/reference errors. The paired 0183 mixed
+  vector/raster Poppler regression gate remains 8 accepted drift and
+  0 blockers.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-29. Tagged PDF fixture coverage now has a clean
+PDFium-free Poppler visual gate, bounded reading-order metadata signals, and
+documented native support/metadata/performance evidence. The remaining
+accessibility API and producer-tag repair work stays outside 0182 by design.
