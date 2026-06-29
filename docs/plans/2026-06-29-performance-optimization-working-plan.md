@@ -503,6 +503,27 @@ Rejected candidate from 2026-06-29:
   mean `0.897 ms`, only a small improvement on the linework fixture.
 - Decision: below the 5% noise threshold, so the code change was reverted.
 
+Rejected candidate from 2026-06-29:
+
+- Change tested locally but not kept: per-sample `ActiveClip` bounds checks
+  before calling `point_in_path` inside `point_in_active_clips`.
+- Rationale: active clip bounds are already used to shrink raster pixel bounds;
+  this candidate tried to avoid polygon tests for samples that still reached
+  the inner clip predicate.
+- Baseline:
+  `target/performance-matrix-report-vector-clip-point-bounds-before.json`,
+  native hot-render, `report/vector`, `--max-edge 160`, 200 measured
+  iterations after 10 warmups.
+- Candidate:
+  `target/performance-matrix-report-vector-clip-point-bounds-after.json`, same
+  command and host.
+- Result: `technical-hatch-clipping.pdf` p95 improved `2.896 ms` -> `2.818 ms`
+  (~2.7%), `technical-linework-dimensions.pdf` p95 improved `0.944 ms` ->
+  `0.909 ms` (~3.7%), and `vector-stress.pdf` was effectively neutral
+  (`6.488 ms` -> `6.464 ms`).
+- Decision: below the 5% noise threshold and not enough evidence for a
+  cumulative track, so the code change was reverted.
+
 Current profile after accepted vector optimizations:
 
 - `target/sample-vector-stress-current.txt` still shows `stroke_path` as the
