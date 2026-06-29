@@ -341,7 +341,7 @@ Work items:
 - [x] Confirm whether time is in display-list construction, path flattening,
   clipping, stroke rasterization, or pixel loops.
 - [ ] Add device-bounds culling before expensive raster work.
-- [ ] Add fast paths for axis-aligned filled rectangles.
+- [x] Add fast paths for axis-aligned filled rectangles.
 - [ ] Add fast paths for axis-aligned hairlines and simple strokes.
 - [ ] Flatten reusable paths once per display item instead of per raster pass.
 - [x] Apply clip/intersection checks before entering expensive pixel loops.
@@ -493,6 +493,23 @@ Current profile after accepted vector optimizations:
 - Decision: continue path-raster work only for profile-backed algorithmic wins.
   The next broad track should include Phase 3 allocation/clone evidence and a
   later revisit of larger raster algorithms, not more sub-5% micro-fast-paths.
+
+Rect-fill fast-path status from 2026-06-29:
+
+- Existing code already routes simple axis-aligned filled rectangles through
+  `axis_aligned_rect_fill_bounds` and `fill_axis_aligned_rect_path`, with
+  targeted coverage in `fill_path_should_center_sample_large_axis_aligned_rectangles`.
+- Additional change tested locally but not kept: skip the
+  `point_in_active_clips` call inside the rect-fill loop when the active clip
+  stack is empty.
+- Result:
+  `target/performance-matrix-report-vector-unclipped-rect-fill-candidate.json`
+  vs `target/performance-matrix-report-vector-axis-image-protection.json` showed
+  `technical-hatch-clipping` p95 `2.920 ms` -> `2.820 ms` (~3.4%), while
+  `vector-stress`, `technical-linework-dimensions`, and
+  `prepress-trim-bleed-marks` were effectively neutral.
+- Decision: reverted. The candidate is below the 5% threshold and should not be
+  treated as a meaningful standalone or cumulative optimization.
 
 ## Hardware-Aware Rust Notes
 
