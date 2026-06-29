@@ -11,8 +11,9 @@ use std::thread;
 use pdfrust_content::{tokenize_content, ContentToken};
 use pdfrust_object::{
     load_classic_document, load_linearized_first_page_document, load_modern_document,
-    ClassicDocument, GenerationNumber, ObjectError, ObjectId, ObjectNumber, ObjectValue, PageBox,
-    PageMetadata as ObjectPageMetadata, PageTree, Reference, StreamDecodeOptions,
+    ClassicDocument, DocumentLoadMetrics, GenerationNumber, ObjectError, ObjectId, ObjectNumber,
+    ObjectValue, PageBox, PageMetadata as ObjectPageMetadata, PageTree, Reference,
+    StreamDecodeOptions,
 };
 use pdfrust_render::{
     build_form_display_list_with_graphics_resources, build_image_display_list,
@@ -196,11 +197,16 @@ impl NativeBackend {
         let bytes = load_source(source)?;
         let mut preview_options = *options;
         preview_options.page_index = 0;
-        let load_mode = first_page_preview_load_mode(bytes.as_ref());
-        let thumbnail = render_bytes(bytes.as_ref(), &preview_options, self.limits)?;
+        let input = PdfBytes::new(bytes.as_ref());
+        let (document, page_tree) = load_render_document(input, preview_options.page_index)?;
+        let load_mode = FirstPagePreviewLoadMode::from_load_metrics(document.load_metrics);
+        let memory = FirstPagePreviewMemory::from_load_metrics(document.load_metrics);
+        let thumbnail =
+            render_loaded_document(&document, &page_tree, &preview_options, self.limits)?;
         Ok(FirstPagePreview {
             thumbnail,
             load_mode,
+            memory,
         })
     }
 
@@ -257,6 +263,14 @@ impl FirstPagePreviewLoadMode {
             Self::FullDocument => "full-document",
         }
     }
+
+    const fn from_load_metrics(metrics: DocumentLoadMetrics) -> Self {
+        if metrics.first_page_only {
+            Self::LinearizedFirstPage
+        } else {
+            Self::FullDocument
+        }
+    }
 }
 
 /// Result from the explicit first-page preview boundary.
@@ -266,6 +280,35 @@ pub struct FirstPagePreview {
     pub thumbnail: Thumbnail,
     /// Loader mode selected for the preview.
     pub load_mode: FirstPagePreviewLoadMode,
+    /// Parser/object retention metrics for the selected preview loader.
+    pub memory: FirstPagePreviewMemory,
+}
+
+/// Memory-relevant loader metrics for first-page preview.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FirstPagePreviewMemory {
+    /// Total input byte length.
+    pub input_bytes: usize,
+    /// Number of indirect objects parsed into the document table.
+    pub loaded_objects: usize,
+    /// Sum of parsed indirect-object byte spans held by the document table.
+    pub loaded_object_bytes: usize,
+    /// Declared first-page section end for linearized inputs.
+    pub first_page_section_bytes: Option<usize>,
+    /// Whether the loader avoided parsing objects past the first-page section.
+    pub first_page_only: bool,
+}
+
+impl FirstPagePreviewMemory {
+    const fn from_load_metrics(metrics: DocumentLoadMetrics) -> Self {
+        Self {
+            input_bytes: metrics.input_bytes,
+            loaded_objects: metrics.loaded_objects,
+            loaded_object_bytes: metrics.loaded_object_bytes,
+            first_page_section_bytes: metrics.first_page_end,
+            first_page_only: metrics.first_page_only,
+        }
+    }
 }
 
 /// Rust-native renderer memory and cache budget profile.
@@ -911,22 +954,31 @@ fn render_bytes(
 ) -> Result<Thumbnail, ThumbnailError> {
     let input = PdfBytes::new(bytes);
     let (document, page_tree) = load_render_document(input, options.page_index)?;
-    enforce_xfa_render_policy(&document)?;
+    render_loaded_document(&document, &page_tree, options, limits)
+}
+
+fn render_loaded_document(
+    document: &ClassicDocument<'_>,
+    page_tree: &PageTree,
+    options: &ThumbnailOptions,
+    limits: NativeRenderLimits,
+) -> Result<Thumbnail, ThumbnailError> {
+    enforce_xfa_render_policy(document)?;
     let page = page_tree
         .pages()
         .get(options.page_index as usize)
         .ok_or_else(|| unsupported_feature(BUCKET_RENDERER_UNSUPPORTED))?;
-    let content = page_content_stream(&document, page)?;
-    let optional_content = page_optional_content_properties(&document, page)?;
-    let optional_content_state = document_optional_content_state(&document)?;
+    let content = page_content_stream(document, page)?;
+    let optional_content = page_optional_content_properties(document, page)?;
+    let optional_content_state = document_optional_content_state(document)?;
     let content = filter_optional_content(&content, &optional_content, &optional_content_state)?;
     let xobject_invocations = xobject_invocation_names(&content)?;
     let display_options = limits.display_options();
     let path_options = limits.path_raster_options();
-    let ext_graphics_states = page_ext_graphics_state_resources(&document, page)?;
-    let shadings = page_shading_resources(&document, page, display_options)?;
-    let patterns = page_tiling_pattern_resources(&document, page, display_options)?;
-    let color_spaces = page_color_space_resources(&document, page)?;
+    let ext_graphics_states = page_ext_graphics_state_resources(document, page)?;
+    let shadings = page_shading_resources(document, page, display_options)?;
+    let patterns = page_tiling_pattern_resources(document, page, display_options)?;
+    let color_spaces = page_color_space_resources(document, page)?;
     let display_list = build_path_display_list_with_graphics_resources(
         tokenize_content(PdfBytes::new(&content)),
         &ext_graphics_states,
@@ -942,7 +994,7 @@ fn render_bytes(
         limits.page_transform_options(),
     )
     .map_err(map_raster_error)?;
-    let form_resources = page_form_resources(&document, page, &xobject_invocations)?;
+    let form_resources = page_form_resources(document, page, &xobject_invocations)?;
     let form_list = build_form_display_list_with_graphics_resources(
         tokenize_content(PdfBytes::new(&content)),
         &form_resources,
@@ -954,14 +1006,14 @@ fn render_bytes(
     )
     .map_err(map_graphics_error)?;
     let image_resources =
-        page_image_resources(&document, page, &xobject_invocations, display_options)?;
+        page_image_resources(document, page, &xobject_invocations, display_options)?;
     let image_list = build_image_display_list(
         tokenize_content(PdfBytes::new(&content)),
         &image_resources,
         display_options,
     )
     .map_err(map_graphics_error)?;
-    let font_resources = page_font_resources(&document, page, display_options)?;
+    let font_resources = page_font_resources(document, page, display_options)?;
     let text_list = build_text_display_list(
         tokenize_content(PdfBytes::new(&content)),
         &font_resources,
@@ -1001,7 +1053,7 @@ fn render_bytes(
         rasterize_text(&text_list, &mut raster, transform).map_err(map_raster_error)?;
     }
     let (annotation_forms, annotation_content, annotation_fallback_content) =
-        page_annotation_appearance_resources(&document, page)?;
+        page_annotation_appearance_resources(document, page)?;
     if !annotation_content.is_empty() {
         let annotation_list = build_form_display_list_with_graphics_resources(
             tokenize_content(PdfBytes::new(&annotation_content)),
@@ -1217,18 +1269,6 @@ fn load_render_document(
     let document = load_classic_document(input).map_err(map_object_error)?;
     let page_tree = document.page_tree().map_err(map_object_error)?;
     Ok((document, page_tree))
-}
-
-fn first_page_preview_load_mode(bytes: &[u8]) -> FirstPagePreviewLoadMode {
-    let input = PdfBytes::new(bytes);
-    if load_linearized_first_page_document(input)
-        .and_then(|document| document.linearized_first_page_tree())
-        .is_ok_and(|page_tree| page_tree.is_some())
-    {
-        FirstPagePreviewLoadMode::LinearizedFirstPage
-    } else {
-        FirstPagePreviewLoadMode::FullDocument
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -6038,6 +6078,14 @@ mod tests {
             FirstPagePreviewLoadMode::LinearizedFirstPage
         );
         assert_eq!(preview.load_mode.as_str(), "linearized-first-page");
+        assert!(preview.memory.first_page_only);
+        assert_eq!(preview.memory.input_bytes, bytes.len());
+        assert!(preview.memory.loaded_objects > 0);
+        assert!(preview.memory.loaded_object_bytes > 0);
+        assert!(preview.memory.first_page_section_bytes.is_some());
+        let full = load_classic_document(PdfBytes::new(bytes)).expect("full classic document");
+        assert!(preview.memory.loaded_objects < full.load_metrics.loaded_objects);
+        assert!(preview.memory.loaded_object_bytes < full.load_metrics.loaded_object_bytes);
         assert_eq!(preview.thumbnail.width, 160);
         assert_eq!(preview.thumbnail.height, 90);
         assert_eq!(rgba_at(&preview.thumbnail, 24, 44), [26, 64, 115, 255]);
@@ -6059,6 +6107,11 @@ mod tests {
 
         assert_eq!(preview.load_mode, FirstPagePreviewLoadMode::FullDocument);
         assert_eq!(preview.load_mode.as_str(), "full-document");
+        assert!(!preview.memory.first_page_only);
+        assert_eq!(preview.memory.input_bytes, bytes.len());
+        assert!(preview.memory.loaded_objects > 0);
+        assert!(preview.memory.loaded_object_bytes > 0);
+        assert!(preview.memory.first_page_section_bytes.is_some());
         assert_eq!(preview.thumbnail.width, 160);
         assert_eq!(preview.thumbnail.height, 90);
         assert_eq!(rgba_at(&preview.thumbnail, 24, 44), [26, 64, 115, 255]);

@@ -302,6 +302,17 @@ The manifest uses families `visible-text`, `office-search`, `browser-search`,
 `ocr-layer`, and `tagged-search`. It is an extraction/search boundary set, not
 a semantic reading-order or selection-highlighting conformance suite.
 
+## Incremental Memory Budget Manifest
+
+`fixtures/incremental-memory-budget-manifest.tsv` is the focused gate for
+first-page preview memory behavior, long-document sampling, page-targeted
+loading, repeated resources, and large resource decode budgets.
+
+The manifest uses families `linearized-first-page`, `full-loader-fallback`,
+`long-document`, `repeated-resources`, `page-targeted`, and `large-resource`.
+It is a local byte/file-input budget gate: remote range fetching and arbitrary
+transport-level random access remain out of scope.
+
 ## Mobile Scan Manifest
 
 `fixtures/mobile-scan-manifest.tsv` is the focused gate for PDFs produced by

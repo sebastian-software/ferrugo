@@ -108,6 +108,22 @@ on-disk page cache for now and keeps future cache experiments behind explicit
 policy and key boundaries. See
 `docs/reports/page-cache-reuse-policy-2026-06-25.md`.
 
+## Incremental Preview Memory
+
+`NativeBackend::render_first_page_preview` now reports
+`FirstPagePreviewMemory` alongside the rendered thumbnail and load mode. The
+metrics expose total input bytes, parsed object count, parsed object byte span,
+the declared linearized first-page section size, and whether the loader kept to
+that first-page section.
+
+For valid linearized local inputs, page-zero preview uses the bounded
+first-page object loader and avoids retaining parsed objects past the
+first-page section. For malformed linearization hints, non-linearized files,
+remote transports, and pages other than page zero, correctness wins: the native
+backend falls back to full-file availability rather than guessing a partial
+object graph. See
+`docs/reports/incremental-streaming-memory-budget-2026-06-29.md`.
+
 ## Font Fallback Policy
 
 Missing and substituted fonts use a deterministic built-in fallback policy
