@@ -415,6 +415,22 @@ Third vector optimization result from 2026-06-29:
   `target/performance-matrix-baseline-starter-artifacts-1/native-cold-process-technical-hatch-clipping.png`;
   focused matrix status remained `rendered` with no fallback bucket or error.
 
+Rejected candidate from 2026-06-29:
+
+- Change tested locally but not kept: direct axis-aligned stroke hit-testing for
+  horizontal and vertical lines with butt, square, and round caps.
+- Result: `target/benchmark-native-vector-stress-axis-stroke-fast-path.json`
+  mean `6.553 ms` vs `target/benchmark-native-vector-stress-clip-bounds.json`
+  mean `6.595 ms`, about 0.6% faster on `vector-stress`.
+- Secondary results:
+  `target/benchmark-native-technical-hatch-axis-stroke-fast-path.json` mean
+  `2.884 ms` vs `target/benchmark-native-technical-hatch-clip-bounds.json`
+  mean `2.842 ms`, about 1.5% slower; and
+  `target/benchmark-native-technical-linework-axis-stroke-fast-path.json` mean
+  `0.899 ms`, only a small improvement on the linework fixture.
+- Decision: below the 5% noise threshold and with a small regression on
+  `technical-hatch-clipping`, so the code change was reverted.
+
 ## Hardware-Aware Rust Notes
 
 Goal: use Rust's memory model and the host CPU well without prematurely
