@@ -35,7 +35,6 @@ when the server renderer is already correct and bounded.
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
 | 0196 | [WASM Low Memory Mobile Browser Gate](0196-wasm-low-memory-mobile-browser-gate.md) | 37 | medium | 0195 |
-| 0220 | [PDFium-Free 1.4 Readiness Gate](0220-pdfium-free-1-4-readiness-gate.md) | 41 | medium | 0219 |
 
 ## In Progress
 
@@ -47,6 +46,7 @@ when the server renderer is already correct and bounded.
 
 | ID | Milestone | Phase | Size | Completed |
 | --- | --- | --- | --- | --- |
+| 0220 | [PDFium-Free 1.4 Readiness Gate](0220-pdfium-free-1-4-readiness-gate.md) | 41 | medium | 2026-06-29 |
 | 0219 | [Unsupported Feature SLA And Consumer Migration Guide](0219-unsupported-feature-sla-and-consumer-migration-guide.md) | 41 | small | 2026-06-29 |
 | 0218 | [Server And WASM Scheduler Tuning Gate](0218-server-and-wasm-scheduler-tuning-gate.md) | 41 | medium | 2026-06-29 |
 | 0217 | [Low-End Device Reliability Sweep](0217-low-end-device-reliability-sweep.md) | 41 | medium | 2026-06-29 |

@@ -1,6 +1,6 @@
 # 0220: PDFium-Free 1.4 Readiness Gate
 
-Status: todo
+Status: done
 Phase: 41
 Size: medium
 Depends on: 0219
@@ -58,4 +58,28 @@ backlog decisions but are not primary release blockers by themselves.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-29.
+
+- Produced `docs/reports/pdfium-free-1-4-readiness-2026-06-29.md`.
+- Decision: stabilize the scoped PDFium-free server/runtime path for 1.4, but
+  defer a broad PDFium-replacement claim.
+- Native-only release, security fuzz smoke, server batch, serverless,
+  scheduler, low-end, WASM, and PDFium-quarantine gates passed.
+- The 1.4 scorecard reached `94.15`, but `presentation` remains below the
+  per-family threshold at `86.09`.
+- Independent Poppler cross-producer visual validation found 7 visual blockers
+  with 0 native errors and 0 reference errors.
+- Post-1.4 backlog is ranked in the readiness report.
+
+Validation:
+
+- `scripts/generate_coverage_scorecard.sh target/readiness-0220-scorecard`
+- `bash scripts/check_native_only_release.sh`
+- `bash scripts/check_fuzz_smoke.sh`
+- `env PDFRUST_SERVERLESS_OUTPUT=target/serverless-profile-0220.json PDFRUST_SERVERLESS_PACKAGE_LIST=target/serverless-profile-0220-pdfrust-cli-package-files.txt scripts/measure_serverless_profile.sh`
+- `bash scripts/check_scheduler_tuning_matrix.sh`
+- `bash scripts/check_low_end_reliability_matrix.sh`
+- `bash scripts/check_wasm_smoke.sh`
+- `cargo run -p pdfrust-cli --no-default-features -- visual-diff-poppler fixtures/generated --manifest fixtures/cross-producer-fusion-manifest.tsv --include-family fused-report --include-family fused-table-statement --include-family fused-form --include-family fused-scan --include-family fused-dashboard-map --max-edge 120 --max-mae 12 --max-p95 96 --max-changed-ratio 0.30 --timeout 30 --output target/readiness-0220-cross-producer-poppler.json`
+- `cargo fmt --check`
+- `git diff --check -- docs/milestones/0220-pdfium-free-1-4-readiness-gate.md docs/milestones/README.md docs/reports/pdfium-free-1-4-readiness-2026-06-29.md`
