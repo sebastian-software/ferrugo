@@ -1421,14 +1421,39 @@ Performance matrix smoke gate from 2026-06-30:
   `target/performance-matrix-smoke.json` plus
   `target/performance-matrix-smoke.md`.
 
-## Remaining Questions
+## Questions Closed For The Next Wave
 
-- [ ] What family-specific standalone and cumulative thresholds should replace
+- [x] What family-specific standalone and cumulative thresholds should replace
   the default 10% / repeatable 5-10% rule after we understand variance?
-- [ ] Should any focused performance subset become CI-gated, or should all
+
+  Keep the default rule for now, but apply it by workload family instead of
+  globally. `report/vector` and image-heavy work need a 10% p95 standalone win
+  on the named target fixture, or repeated 5-10% wins on the same bottleneck
+  track with a neutral protection set. For sub-millisecond image fixtures, p95
+  must be supported by mean movement and a repeat run because tiny p95 values
+  can swing sharply.
+
+- [x] Should any focused performance subset become CI-gated, or should all
   benchmark budgets remain maintainer-local for now?
-- [ ] Which `smallvec` inline capacities are justified by real path/token/clip
+
+  Keep timing budgets maintainer-local. CI should run only budget-free smoke
+  checks that prove the benchmark harness emits valid records and that selected
+  native fixtures render without fallback or errors. Promote timing budgets only
+  after repeated CI-host variance is documented.
+
+- [x] Which `smallvec` inline capacities are justified by real path/token/clip
   histograms?
-- [ ] Which memory tool should be the default for allocation evidence on macOS:
+
+  None yet. Current evidence does not justify `SmallVec` in persistent renderer
+  structures. Any future `SmallVec` candidate must first record p50, p95, p99,
+  and max lengths for the specific collection, then prove that the inline
+  capacity does not widen hot structs enough to hurt cache locality.
+
+- [x] Which memory tool should be the default for allocation evidence on macOS:
   Instruments Allocations, heaptrack-equivalent tooling, or targeted counters in
   the renderer?
+
+  Use Instruments Allocations when allocation stack detail is needed on macOS.
+  For repeatable local gates and CI-friendly evidence, prefer targeted renderer
+  counters in JSON reports. `sample` remains the first CPU profiler, but it is
+  not sufficient allocation evidence by itself.
