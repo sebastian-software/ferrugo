@@ -235,6 +235,23 @@ the normal image and path paths. The raster path does not run OCR; it preserves
 the visual boundary and avoids unnecessary raster work. See
 `docs/reports/ocr-invisible-text-layer-2026-06-25.md`.
 
+## Optional Content And Layer State
+
+The native renderer applies catalog default optional-content state when
+flattening thumbnails. `/OCG` resources referenced from marked content respect
+`/OCProperties /D /BaseState`, `/ON`, and `/OFF`; nested marked-content scopes
+are hidden when any enclosing optional-content group is hidden.
+
+`DocumentMetadata.optional_content` exposes bounded layer policy signals:
+catalog OCG count, default base state, default-on/default-off counts, and flags
+for unsupported usage applications, membership dictionaries, and direct OCG
+dictionaries. Rendering still rejects `/D /AS` usage application arrays and
+`/OCMD` policies with `graphics.optional-content`, but metadata inspection
+classifies those boundaries so consumers can route fallback or flattening
+decisions deterministically. See
+`docs/policies/optional-content.md` and
+`docs/reports/optional-content-ui-state-2026-06-29.md`.
+
 ## Text Extraction
 
 The native backend exposes a bounded `TextExtractionBackend` implementation for

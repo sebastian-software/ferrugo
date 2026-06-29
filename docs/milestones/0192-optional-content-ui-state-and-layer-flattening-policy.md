@@ -1,6 +1,6 @@
 # 0192: Optional Content UI State And Layer Flattening Policy
 
-Status: todo
+Status: done
 Phase: 36
 Size: medium
 Depends on: 0191
@@ -45,4 +45,20 @@ should behave in native rendering and viewer integration.
 
 ## Completion Notes
 
-Empty until done.
+- Added `DocumentMetadata.optional_content` with bounded OCG/default-state
+  metadata and unsupported behavior flags for `/D /AS`, `/OCMD`, and direct
+  OCG dictionaries.
+- Added nested and usage-application optional-content fixtures plus
+  `fixtures/optional-content-ui-state-manifest.tsv`.
+- Kept rendering deterministic: default-on/off and nested OCGs render natively;
+  dynamic usage applications and OCMD policies stay typed
+  `graphics.optional-content` fallback boundaries.
+- Documented flattening, unsupported UI state, and consumer metadata routing in
+  `docs/policies/optional-content.md`,
+  `docs/backend/native.md`, and
+  `docs/reports/optional-content-ui-state-2026-06-29.md`.
+- Validation completed on 2026-06-29:
+  `cargo test -p pdfrust-native optional_content -- --nocapture`, supported
+  optional-content fallback gate, unsupported boundary gate, Poppler visual diff
+  for default-on/default-off/nested fixtures, single-file metadata extraction,
+  and broad workspace gates.

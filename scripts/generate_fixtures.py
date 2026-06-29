@@ -3723,6 +3723,70 @@ def optional_content_ocmd_pdf() -> bytes:
     return pdf.render(catalog)
 
 
+def optional_content_nested_layers_pdf() -> bytes:
+    pdf = Pdf()
+    content = (
+        b"0 0.6 0 rg 10 10 30 30 re f "
+        b"/OC /Outer BDC "
+        b"0 0.2 0.9 rg 50 10 30 30 re f "
+        b"/OC /Inner BDC "
+        b"0.9 0 0 rg 90 10 30 30 re f "
+        b"EMC EMC"
+    )
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 140 90] "
+        "/Resources << /Properties << /Outer 4 0 R /Inner 5 0 R >> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    outer = pdf.add("<< /Type /OCG /Name (Outer Fixture Layer) >>")
+    inner = pdf.add("<< /Type /OCG /Name (Inner Hidden Fixture Layer) >>")
+    catalog = pdf.add(
+        f"<< /Type /Catalog /Pages {pages} 0 R "
+        f"/OCProperties << /OCGs [{outer} 0 R {inner} 0 R] "
+        f"/D << /BaseState /ON /OFF [{inner} 0 R] >> >> >>"
+    )
+    assert outer == 4
+    assert inner == 5
+    return pdf.render(catalog)
+
+
+def optional_content_usage_application_pdf() -> bytes:
+    pdf = Pdf()
+    content = (
+        b"0 0.6 0 rg 10 10 30 30 re f "
+        b"/OC /Usage BDC "
+        b"0.9 0 0 rg 50 10 30 30 re f "
+        b"EMC"
+    )
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 120 80] "
+        "/Resources << /Properties << /Usage 4 0 R >> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    layer = pdf.add("<< /Type /OCG /Name (Usage Application Layer) >>")
+    catalog = pdf.add(
+        f"<< /Type /Catalog /Pages {pages} 0 R "
+        f"/OCProperties << /OCGs [{layer} 0 R] "
+        f"/D << /BaseState /ON "
+        f"/AS [<< /Event /View /OCGs [{layer} 0 R] /Category [/View] >>] "
+        f">> >> >>"
+    )
+    assert layer == 4
+    return pdf.render(catalog)
+
+
 def incremental_update_pdf() -> bytes:
     pdf = bytearray(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
     offsets: list[int] = [0]
@@ -7496,6 +7560,11 @@ def main() -> None:
     write("optional-content-layer-on.pdf", optional_content_layer_pdf(visible=True))
     write("optional-content-layer-off.pdf", optional_content_layer_pdf(visible=False))
     write("optional-content-ocmd.pdf", optional_content_ocmd_pdf())
+    write("optional-content-nested-layers.pdf", optional_content_nested_layers_pdf())
+    write(
+        "optional-content-usage-application.pdf",
+        optional_content_usage_application_pdf(),
+    )
     write("incremental-update.pdf", incremental_update_pdf())
     write("incremental-deleted-object.pdf", incremental_deleted_object_pdf())
     write("hybrid-reference.pdf", hybrid_reference_pdf())

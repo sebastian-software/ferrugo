@@ -1,0 +1,7 @@
+path	family	source	license	page_count	features	notes
+fixtures/generated/optional-content-layer-on.pdf	default-on	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	optional-content,ocg,layer-on,expected:native	Generated default-visible optional content fixture.
+fixtures/generated/optional-content-layer-off.pdf	default-off	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	optional-content,ocg,layer-off,expected:native	Generated default-hidden optional content fixture.
+fixtures/generated/optional-content-nested-layers.pdf	nested	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	optional-content,ocg,nested,layer-off,expected:native	Generated nested OCG fixture with visible outer and hidden inner layer.
+fixtures/generated/map-optional-layer-policy.pdf	map-layer-off	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	map,optional-content,ocg,layer-off,expected:native	Existing map fixture with optional zoning layer hidden by default.
+fixtures/generated/optional-content-usage-application.pdf	unsupported-usage-application	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	optional-content,usage-application,expected:pdfium-fallback	Generated `/D /AS` usage application boundary; native reports graphics.optional-content.
+fixtures/generated/optional-content-ocmd.pdf	unsupported-membership	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	optional-content,ocmd,expected:pdfium-fallback	Generated OCMD membership-policy boundary; native reports graphics.optional-content.

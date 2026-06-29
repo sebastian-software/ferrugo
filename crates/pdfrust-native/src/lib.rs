@@ -27,10 +27,11 @@ use pdfrust_render::{
 use pdfrust_syntax::{PdfBytes, PdfName, PdfNumber, PdfPrimitive, PdfReference, PdfString};
 use pdfrust_thumbnail::{
     unsupported_feature_buckets as buckets, AccessibilityMetadata, ArchivalMetadata, DocumentInfo,
-    DocumentMetadata, DocumentMetadataBackend, DocumentStructure, OutlineMetadata, PageLabel,
-    PageLabelsMetadata, PageMetadata as ThumbnailPageMetadata, PageSize, PageText, PdfSource,
-    PositionedGlyph, TextExtractionBackend, TextExtractionOptions, TextPoint, TextRun, Thumbnail,
-    ThumbnailBackend, ThumbnailError, ThumbnailOptions,
+    DocumentMetadata, DocumentMetadataBackend, DocumentStructure, OptionalContentBaseState,
+    OptionalContentMetadata, OutlineMetadata, PageLabel, PageLabelsMetadata,
+    PageMetadata as ThumbnailPageMetadata, PageSize, PageText, PdfSource, PositionedGlyph,
+    TextExtractionBackend, TextExtractionOptions, TextPoint, TextRun, Thumbnail, ThumbnailBackend,
+    ThumbnailError, ThumbnailOptions,
 };
 
 /// Stable crate role used by architecture smoke tests and documentation.
@@ -1899,6 +1900,140 @@ fn document_optional_content_state(
     })
 }
 
+fn optional_content_metadata(
+    document: &ClassicDocument<'_>,
+    catalog: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    page_tree: &PageTree,
+) -> Result<OptionalContentMetadata, ThumbnailError> {
+    let mut metadata = OptionalContentMetadata::default();
+    let Some(PdfPrimitive::Dictionary(properties)) = dictionary_value(catalog, b"OCProperties")
+    else {
+        return Ok(metadata);
+    };
+    metadata.has_oc_properties = true;
+    metadata.group_count = optional_content_group_count(properties)?;
+
+    if let Some(PdfPrimitive::Dictionary(default_config)) = dictionary_value(properties, b"D") {
+        metadata.has_default_configuration = true;
+        metadata.base_state = optional_content_base_state(default_config)?;
+        metadata.default_on_count = optional_content_reference_array(default_config, b"ON")?.len();
+        metadata.default_off_count =
+            optional_content_reference_array(default_config, b"OFF")?.len();
+        metadata.has_usage_application = dictionary_value(default_config, b"AS").is_some();
+    } else if dictionary_value(properties, b"D").is_some() {
+        return Err(ThumbnailError::Malformed);
+    }
+
+    for page in page_tree.pages() {
+        classify_page_optional_content(document, page, &mut metadata)?;
+    }
+    metadata.has_unsupported_behavior = metadata.has_usage_application
+        || metadata.has_unsupported_membership_policy
+        || metadata.has_direct_group_dictionary;
+    Ok(metadata)
+}
+
+fn optional_content_group_count(
+    properties: &[(PdfName<'_>, PdfPrimitive<'_>)],
+) -> Result<usize, ThumbnailError> {
+    let Some(groups) = dictionary_value(properties, b"OCGs") else {
+        return Ok(0);
+    };
+    let PdfPrimitive::Array(groups) = groups else {
+        return Err(ThumbnailError::Malformed);
+    };
+    for group in groups {
+        match group {
+            PdfPrimitive::Reference(_) | PdfPrimitive::Dictionary(_) => {}
+            _ => return Err(ThumbnailError::Malformed),
+        }
+    }
+    Ok(groups.len())
+}
+
+fn optional_content_base_state(
+    default_config: &[(PdfName<'_>, PdfPrimitive<'_>)],
+) -> Result<OptionalContentBaseState, ThumbnailError> {
+    match dictionary_value(default_config, b"BaseState") {
+        Some(PdfPrimitive::Name(name)) if name.as_bytes() == b"ON" => {
+            Ok(OptionalContentBaseState::On)
+        }
+        Some(PdfPrimitive::Name(name)) if name.as_bytes() == b"OFF" => {
+            Ok(OptionalContentBaseState::Off)
+        }
+        Some(PdfPrimitive::Name(name)) if name.as_bytes() == b"Unchanged" => {
+            Ok(OptionalContentBaseState::Unchanged)
+        }
+        Some(_) => Err(ThumbnailError::Malformed),
+        None => Ok(OptionalContentBaseState::Unspecified),
+    }
+}
+
+fn classify_page_optional_content(
+    document: &ClassicDocument<'_>,
+    page: &ObjectPageMetadata,
+    metadata: &mut OptionalContentMetadata,
+) -> Result<(), ThumbnailError> {
+    let object = document
+        .objects
+        .get(page.id)
+        .ok_or(ThumbnailError::Malformed)?;
+    let dictionary = object_dictionary(&object.value)?;
+    let Some(resources) = dictionary_value(dictionary, b"Resources") else {
+        return Ok(());
+    };
+    let resource_dictionary = resource_dictionary(document, resources)?;
+    let Some(PdfPrimitive::Dictionary(properties)) =
+        dictionary_value(resource_dictionary, b"Properties")
+    else {
+        return Ok(());
+    };
+    for (_, value) in properties {
+        classify_optional_content_property(document, value, metadata)?;
+    }
+    Ok(())
+}
+
+fn classify_optional_content_property(
+    document: &ClassicDocument<'_>,
+    value: &PdfPrimitive<'_>,
+    metadata: &mut OptionalContentMetadata,
+) -> Result<(), ThumbnailError> {
+    match value {
+        PdfPrimitive::Reference(reference) => {
+            let reference_id = object_reference(*reference)?;
+            let object = document
+                .objects
+                .get(reference_id.id)
+                .ok_or(ThumbnailError::Malformed)?;
+            let dictionary = object_dictionary(&object.value)?;
+            classify_optional_content_dictionary(dictionary, metadata)
+        }
+        PdfPrimitive::Dictionary(dictionary) => {
+            if dictionary_name_is(dictionary, b"Type", b"OCG") {
+                metadata.has_direct_group_dictionary = true;
+                return Ok(());
+            }
+            classify_optional_content_dictionary(dictionary, metadata)
+        }
+        _ => Err(ThumbnailError::Malformed),
+    }
+}
+
+fn classify_optional_content_dictionary(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    metadata: &mut OptionalContentMetadata,
+) -> Result<(), ThumbnailError> {
+    if dictionary_name_is(dictionary, b"Type", b"OCG") {
+        return Ok(());
+    }
+    if dictionary_name_is(dictionary, b"Type", b"OCMD") {
+        metadata.has_unsupported_membership_policy = true;
+        return Ok(());
+    }
+    Err(ThumbnailError::Malformed)
+}
+
 fn document_catalog<'a>(
     document: &'a ClassicDocument<'a>,
 ) -> Result<Option<&'a [(PdfName<'a>, PdfPrimitive<'a>)]>, ThumbnailError> {
@@ -3196,6 +3331,7 @@ fn metadata_from_classic_document(
     metadata.page_labels = page_labels_metadata(document, catalog, page_tree.page_count())?;
     metadata.accessibility = accessibility_metadata(document, catalog)?;
     metadata.archival = archival_metadata(document, catalog)?;
+    metadata.optional_content = optional_content_metadata(document, catalog, &page_tree)?;
     Ok(metadata)
 }
 
@@ -6229,6 +6365,27 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_hide_nested_optional_content_layer_fixture() {
+        let bytes =
+            include_bytes!("../../../fixtures/generated/optional-content-nested-layers.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 140,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated nested optional-content fixture should render");
+
+        assert_eq!(thumbnail.width, 140);
+        assert_eq!(thumbnail.height, 90);
+        assert_eq!(rgba_at(&thumbnail, 20, 65), [0, 153, 0, 255]);
+        assert_eq!(rgba_at(&thumbnail, 60, 65), [0, 51, 229, 255]);
+        assert_eq!(rgba_at(&thumbnail, 100, 65), [255, 255, 255, 255]);
+    }
+
+    #[test]
     fn native_backend_should_report_unsupported_optional_content_membership_policy() {
         let bytes = include_bytes!("../../../fixtures/generated/optional-content-ocmd.pdf");
         let error = ThumbnailBackend::render(
@@ -6240,6 +6397,30 @@ mod tests {
             },
         )
         .expect_err("OCMD policy should not render silently");
+
+        assert_eq!(
+            error.class(),
+            pdfrust_thumbnail::ThumbnailErrorClass::Unsupported
+        );
+        assert_eq!(
+            error.unsupported_feature_bucket(),
+            Some(BUCKET_GRAPHICS_OPTIONAL_CONTENT)
+        );
+    }
+
+    #[test]
+    fn native_backend_should_report_unsupported_optional_content_usage_application() {
+        let bytes =
+            include_bytes!("../../../fixtures/generated/optional-content-usage-application.pdf");
+        let error = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 120,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect_err("usage application policy should not render silently");
 
         assert_eq!(
             error.class(),
@@ -8833,6 +9014,62 @@ mod tests {
         assert!(metadata.structure.has_named_destinations);
         assert_eq!(metadata.outlines.item_count, 2);
         assert_eq!(metadata.page_labels.labels[0].label, "A-1");
+    }
+
+    #[test]
+    fn native_backend_should_report_optional_content_metadata() {
+        let nested =
+            include_bytes!("../../../fixtures/generated/optional-content-nested-layers.pdf");
+        let nested_metadata =
+            DocumentMetadataBackend::inspect(&NativeBackend::new(), PdfSource::from_bytes(nested))
+                .expect("nested optional-content fixture should inspect");
+
+        assert!(nested_metadata.optional_content.has_oc_properties);
+        assert_eq!(nested_metadata.optional_content.group_count, 2);
+        assert!(nested_metadata.optional_content.has_default_configuration);
+        assert_eq!(
+            nested_metadata.optional_content.base_state,
+            OptionalContentBaseState::On
+        );
+        assert_eq!(nested_metadata.optional_content.default_on_count, 0);
+        assert_eq!(nested_metadata.optional_content.default_off_count, 1);
+        assert!(!nested_metadata.optional_content.has_usage_application);
+        assert!(
+            !nested_metadata
+                .optional_content
+                .has_unsupported_membership_policy
+        );
+        assert!(!nested_metadata.optional_content.has_direct_group_dictionary);
+        assert!(!nested_metadata.optional_content.has_unsupported_behavior);
+
+        let usage =
+            include_bytes!("../../../fixtures/generated/optional-content-usage-application.pdf");
+        let usage_metadata =
+            DocumentMetadataBackend::inspect(&NativeBackend::new(), PdfSource::from_bytes(usage))
+                .expect("usage application optional-content fixture should inspect");
+
+        assert_eq!(usage_metadata.optional_content.group_count, 1);
+        assert!(usage_metadata.optional_content.has_usage_application);
+        assert!(
+            !usage_metadata
+                .optional_content
+                .has_unsupported_membership_policy
+        );
+        assert!(usage_metadata.optional_content.has_unsupported_behavior);
+
+        let ocmd = include_bytes!("../../../fixtures/generated/optional-content-ocmd.pdf");
+        let ocmd_metadata =
+            DocumentMetadataBackend::inspect(&NativeBackend::new(), PdfSource::from_bytes(ocmd))
+                .expect("OCMD optional-content fixture should inspect");
+
+        assert_eq!(ocmd_metadata.optional_content.group_count, 1);
+        assert!(!ocmd_metadata.optional_content.has_usage_application);
+        assert!(
+            ocmd_metadata
+                .optional_content
+                .has_unsupported_membership_policy
+        );
+        assert!(ocmd_metadata.optional_content.has_unsupported_behavior);
     }
 
     #[test]

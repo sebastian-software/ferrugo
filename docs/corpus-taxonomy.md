@@ -97,6 +97,26 @@ cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks \
   --max-edge 160
 ```
 
+## Optional Content UI State Manifest
+
+`fixtures/optional-content-ui-state-manifest.tsv` is the focused gate for
+default optional-content layer behavior. Supported families cover default-on,
+default-off, nested hidden content, and the existing map layer-off policy. The
+unsupported families keep `/D /AS` usage applications and `/OCMD` membership
+policies in the corpus as typed `graphics.optional-content` boundaries.
+
+Use the supported families as a native-only gate:
+
+```sh
+cargo run -p pdfrust-cli -- summarize-fallbacks fixtures/generated \
+  --manifest fixtures/optional-content-ui-state-manifest.tsv \
+  --include-family default-on \
+  --include-family default-off \
+  --include-family nested \
+  --include-family map-layer-off \
+  --fail-on-fallback
+```
+
 ## Spreadsheet Grid Manifest
 
 `fixtures/spreadsheet-grid-manifest.tsv` is the focused gate for spreadsheet

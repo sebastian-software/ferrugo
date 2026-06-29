@@ -290,6 +290,8 @@ pub struct DocumentMetadata {
     pub accessibility: AccessibilityMetadata,
     /// Archival profile metadata signals such as PDF/A markers.
     pub archival: ArchivalMetadata,
+    /// Optional content group and layer-state metadata.
+    pub optional_content: OptionalContentMetadata,
 }
 
 impl DocumentMetadata {
@@ -304,6 +306,7 @@ impl DocumentMetadata {
             page_labels: PageLabelsMetadata::default(),
             accessibility: AccessibilityMetadata::default(),
             archival: ArchivalMetadata::default(),
+            optional_content: OptionalContentMetadata::default(),
         }
     }
 
@@ -318,6 +321,45 @@ impl DocumentMetadata {
     pub fn first_page_size(&self) -> Option<PageSize> {
         self.pages.first().map(|page| page.size)
     }
+}
+
+/// Optional content default visibility state.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum OptionalContentBaseState {
+    /// No `/BaseState` was declared in the default optional-content config.
+    #[default]
+    Unspecified,
+    /// Unlisted optional content groups are visible by default.
+    On,
+    /// Unlisted optional content groups are hidden by default.
+    Off,
+    /// Unlisted optional content groups keep their previous viewer state.
+    Unchanged,
+}
+
+/// Bounded optional content metadata exposed to consumers.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct OptionalContentMetadata {
+    /// Catalog contains `/OCProperties`.
+    pub has_oc_properties: bool,
+    /// Number of optional content groups listed in `/OCProperties /OCGs`.
+    pub group_count: usize,
+    /// Default configuration declares `/D`.
+    pub has_default_configuration: bool,
+    /// `/D /BaseState` value, when present.
+    pub base_state: OptionalContentBaseState,
+    /// Number of groups explicitly listed under `/D /ON`.
+    pub default_on_count: usize,
+    /// Number of groups explicitly listed under `/D /OFF`.
+    pub default_off_count: usize,
+    /// Default configuration contains usage application arrays (`/D /AS`).
+    pub has_usage_application: bool,
+    /// Page resources expose optional content membership dictionaries (`/OCMD`).
+    pub has_unsupported_membership_policy: bool,
+    /// Page resources use inline OCG dictionaries that cannot be matched to defaults.
+    pub has_direct_group_dictionary: bool,
+    /// Metadata found behavior that native rendering does not implement interactively.
+    pub has_unsupported_behavior: bool,
 }
 
 /// Archival and long-lived document profile metadata signals.

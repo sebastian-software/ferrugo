@@ -7803,7 +7803,7 @@ fn metadata_outcome_json(outcome: &MetadataOutcome) -> String {
                 .collect::<Vec<_>>()
                 .join(",");
             format!(
-                "{{\"status\":\"success\",\"page_count\":{},\"pages\":[{}],\"info\":{},\"structure\":{},\"outlines\":{},\"page_labels\":{},\"accessibility\":{},\"archival\":{}}}",
+                "{{\"status\":\"success\",\"page_count\":{},\"pages\":[{}],\"info\":{},\"structure\":{},\"outlines\":{},\"page_labels\":{},\"accessibility\":{},\"archival\":{},\"optional_content\":{}}}",
                 metadata.page_count(),
                 pages,
                 document_info_json(&metadata.info),
@@ -7811,7 +7811,8 @@ fn metadata_outcome_json(outcome: &MetadataOutcome) -> String {
                 outline_metadata_json(&metadata.outlines),
                 page_labels_metadata_json(&metadata.page_labels),
                 accessibility_metadata_json(&metadata.accessibility),
-                archival_metadata_json(&metadata.archival)
+                archival_metadata_json(&metadata.archival),
+                optional_content_metadata_json(&metadata.optional_content)
             )
         }
         MetadataOutcome::Error { class, message } => format!(
@@ -7901,6 +7902,35 @@ fn archival_metadata_json(archival: &pdfrust_thumbnail::ArchivalMetadata) -> Str
         archival.has_output_intents,
         archival.conformance_validation_performed
     )
+}
+
+fn optional_content_metadata_json(
+    optional_content: &pdfrust_thumbnail::OptionalContentMetadata,
+) -> String {
+    format!(
+        "{{\"has_oc_properties\":{},\"group_count\":{},\"has_default_configuration\":{},\"base_state\":{},\"default_on_count\":{},\"default_off_count\":{},\"has_usage_application\":{},\"has_unsupported_membership_policy\":{},\"has_direct_group_dictionary\":{},\"has_unsupported_behavior\":{}}}",
+        optional_content.has_oc_properties,
+        optional_content.group_count,
+        optional_content.has_default_configuration,
+        optional_content_base_state_json(optional_content.base_state),
+        optional_content.default_on_count,
+        optional_content.default_off_count,
+        optional_content.has_usage_application,
+        optional_content.has_unsupported_membership_policy,
+        optional_content.has_direct_group_dictionary,
+        optional_content.has_unsupported_behavior
+    )
+}
+
+fn optional_content_base_state_json(
+    base_state: pdfrust_thumbnail::OptionalContentBaseState,
+) -> &'static str {
+    match base_state {
+        pdfrust_thumbnail::OptionalContentBaseState::Unspecified => "null",
+        pdfrust_thumbnail::OptionalContentBaseState::On => "\"on\"",
+        pdfrust_thumbnail::OptionalContentBaseState::Off => "\"off\"",
+        pdfrust_thumbnail::OptionalContentBaseState::Unchanged => "\"unchanged\"",
+    }
 }
 
 fn optional_json_string(value: Option<&str>) -> String {
@@ -9400,6 +9430,8 @@ status = "candidate"
         assert!(json.contains("\"has_xmp_metadata\":true"));
         assert!(json.contains("\"item_count\":2"));
         assert!(json.contains("\"label\":\"A-1\""));
+        assert!(json.contains("\"optional_content\""));
+        assert!(json.contains("\"has_oc_properties\":false"));
         assert!(json.contains("\"rust_native_memory\""));
         assert!(json.contains("\"max_page_pixels\":16777216"));
         assert!(json.contains("\"max_total_image_bytes\":134217728"));
