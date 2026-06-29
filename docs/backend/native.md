@@ -584,6 +584,12 @@ fanout by each fixture's declared page count, preserving deterministic
 repetition, input, and page-index ordering while keeping worker and
 in-flight-pixel limits explicit.
 
+The 0218 scheduler tuning gate keeps server batch behavior as the primary
+release signal. The supported gate profiles cover server throughput,
+high-page-count cancellation, constrained server rendering, repeated render
+cache keys, and a secondary WASM smoke check. See
+`docs/reports/server-wasm-scheduler-tuning-2026-06-29.md`.
+
 ## Fallback Policy
 
 Runtime PDFium fallback has been removed from supported rendering paths. Product

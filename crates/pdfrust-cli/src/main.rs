@@ -9243,6 +9243,46 @@ status = "candidate"
     }
 
     #[test]
+    fn batch_benchmark_should_reject_unschedulable_pixel_budget() {
+        let config = BatchBenchmarkConfig {
+            input: PathBuf::from("fixtures/generated"),
+            manifest: None,
+            include_families: Vec::new(),
+            output: None,
+            page_index: 0,
+            max_edge: 120,
+            background: Rgba::WHITE,
+            timeout: Duration::from_secs(5),
+            repetitions: 1,
+            pages_per_input: 1,
+            max_workers: 2,
+            max_in_flight_pixels: 120 * 120 - 1,
+            max_p95_ms: 60_000,
+            max_errors: 0,
+            fail_on_budget: false,
+            native_profile: NativeProfile::Default,
+            cancel_after_jobs: None,
+        };
+        let options = ThumbnailOptions {
+            page_index: 0,
+            max_edge: 120,
+            background: Rgba::WHITE,
+            output_format: pdfrust_thumbnail::OutputFormat::Rgba,
+            timeout: Duration::from_secs(5),
+            annotation_mode: AnnotationMode::Screen,
+            form_appearance_mode: pdfrust_thumbnail::FormAppearanceMode::DocumentState,
+        };
+
+        let error = effective_batch_workers(&config, &options)
+            .expect_err("one render job must fit inside the pixel budget");
+
+        assert_eq!(
+            error.to_string(),
+            "benchmark budget failure: batch memory budget cannot schedule one render job"
+        );
+    }
+
+    #[test]
     fn batch_jobs_should_expand_pages_in_stable_order_with_manifest_bounds() {
         let fixture_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let manifest_path = fixture_root.join("fixtures/shared-resource-cache-manifest.tsv");

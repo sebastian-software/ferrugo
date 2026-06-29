@@ -35,7 +35,6 @@ when the server renderer is already correct and bounded.
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
 | 0196 | [WASM Low Memory Mobile Browser Gate](0196-wasm-low-memory-mobile-browser-gate.md) | 37 | medium | 0195 |
-| 0218 | [Server And WASM Scheduler Tuning Gate](0218-server-and-wasm-scheduler-tuning-gate.md) | 41 | medium | 0216 |
 | 0219 | [Unsupported Feature SLA And Consumer Migration Guide](0219-unsupported-feature-sla-and-consumer-migration-guide.md) | 41 | small | 0218 |
 | 0220 | [PDFium-Free 1.4 Readiness Gate](0220-pdfium-free-1-4-readiness-gate.md) | 41 | medium | 0219 |
 
@@ -49,6 +48,7 @@ when the server renderer is already correct and bounded.
 
 | ID | Milestone | Phase | Size | Completed |
 | --- | --- | --- | --- | --- |
+| 0218 | [Server And WASM Scheduler Tuning Gate](0218-server-and-wasm-scheduler-tuning-gate.md) | 41 | medium | 2026-06-29 |
 | 0217 | [Low-End Device Reliability Sweep](0217-low-end-device-reliability-sweep.md) | 41 | medium | 2026-06-29 |
 | 0216 | [Cross-Producer Typical Document Fusion Corpus](0216-cross-producer-typical-document-fusion-corpus.md) | 41 | medium | 2026-06-29 |
 | 0215 | [PDFium Comparison Tool Removal Decision Gate](0215-pdfium-comparison-tool-removal-decision-gate.md) | 40 | medium | 2026-06-29 |
