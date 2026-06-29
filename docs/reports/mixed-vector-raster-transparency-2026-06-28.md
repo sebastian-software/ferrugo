@@ -278,6 +278,9 @@ they did not produce a clean 0183 gate improvement.
 | Unconditional bilinear RGB/gray sampling | `target/mixed-transparency-0183-poppler-bilinear-rgb.json` | Regressed the summary to 3 accepted drift / 5 blockers; `slide-layered-image-shadow.pdf` and `soft-mask-image.pdf` became blockers. |
 | Upscaled RGB/gray-only bilinear sampling | `target/mixed-transparency-0183-poppler-targeted-image-interp.json` | Regressed the summary to 4 accepted drift / 4 blockers; `slide-layered-image-shadow.pdf` became a blocker. |
 | Global DeviceColor floor quantization | `target/mixed-transparency-0183-poppler-color-floor.json` | Improved `map-transparent-zoning-overlay.pdf` changed ratio `0.968521 -> 0.363016`, but regressed colored fixtures broadly and moved the summary to 3 accepted drift / 5 blockers. |
+| Global 3x path supersampling | `target/mixed-transparency-0183-supersample3-probe.json` | Improved `map-transparent-zoning-overlay.pdf` p95 `31 -> 22` and `high-dpi-preview-fidelity.pdf` p95 `40 -> 35`, but regressed `office-vector-repeated-effects.pdf` p95 `49 -> 54` and increased `office-vector-clipped-transparency-group.pdf` max delta `118 -> 143`. |
+| Selective diagonal dashed-stroke 3x supersampling | `target/mixed-transparency-0183-map-selective-diagonal-dash-ss3-probe.json` | Only improved `map-transparent-zoning-overlay.pdf` to MAE `4.963`, p95 `30`, changed ratio `0.285894`; the fixture remained a blocker and the gain did not justify extra per-stroke sampling. |
+| Selective diagonal dashed-stroke 4x supersampling | `target/mixed-transparency-0183-map-selective-diagonal-dash-ss4-probe.json` | Only improved `map-transparent-zoning-overlay.pdf` to MAE `4.951`, p95 `30`, changed ratio `0.285894`, while max delta regressed `142 -> 145`. |
 
 The rejected probes indicate that the remaining blockers need more targeted
 work: actual Base14/text raster fidelity for text-heavy tails, diagonal
