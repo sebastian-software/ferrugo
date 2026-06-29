@@ -200,7 +200,7 @@ Goal: make the first optimization target defensible.
 - [x] Run the full starter matrix in release mode with `native + poppler`.
 - [ ] Run the same matrix with PDFium once `FERRUGO_PDFIUM_LIBRARY` is available.
 - [x] Store baseline artifacts under `target/performance-matrix-baseline-*`.
-- [ ] Record host details: OS, CPU, Rust version, Poppler path, PDFium path, and
+- [x] Record host details: OS, CPU, Rust version, Poppler path, PDFium path, and
   whether RSS was available.
 - [x] Run the matrix twice and compare rank stability for the top 10 Ferrugo
   fixtures.
@@ -301,6 +301,21 @@ Baseline artifacts from 2026-06-29:
 - `target/performance-matrix-baseline-starter-release-1.md`
 - `target/performance-matrix-baseline-starter-release-2.json`
 - `target/performance-matrix-baseline-starter-release-2.md`
+
+Host details recorded on 2026-06-29:
+
+- OS: macOS 26.5.1, build 25F80.
+- Architecture: arm64 / `aarch64-apple-darwin`.
+- CPU: Apple M1 Ultra, 20 logical CPUs.
+- Memory: 64 GiB reported by Node `os.totalmem()`.
+- Rust: `rustc 1.95.0-nightly (842bd5be2 2026-01-29)`, LLVM 22.1.0.
+- Poppler: `pdftoppm` version 26.05.0 from the Codex runtime dependency
+  bundle. The absolute local runtime path is intentionally not committed.
+- PDFium: `FERRUGO_PDFIUM_LIBRARY` was not set in this shell, so PDFium matrix
+  runs remain deferred and reports must use `missing-tool` until configured.
+- RSS caveat: the local sandbox rejected `ps`, so `current_rss_kib()` reports
+  no RSS samples in this environment. Treat RSS fields from this run as
+  unavailable rather than as zero memory use.
 
 Attribution traces from 2026-06-29:
 
