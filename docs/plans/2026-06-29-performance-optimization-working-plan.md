@@ -46,6 +46,24 @@ profiles, and regressions teach us where the real bottlenecks are.
 - [ ] Do not update public README performance claims until at least two stable
   matrix runs agree.
 
+## Decisions To Settle
+
+These questions should be answered before we turn local measurements into
+claims, CI gates, or broad architecture changes. The current answer is the
+working default until this section is edited.
+
+| Question | Working answer | Acceptance impact |
+| --- | --- | --- |
+| What is the first workload target? | `report/vector`, starting with `vector-stress`. | Phase 2 work must improve the focused vector set before moving to image-heavy or text-heavy work. |
+| What counts as a meaningful speed win? | At least 10% on p95 or wall time for the target fixtures; 5-10% needs repeated confirmation. | No commit should claim a performance win from a single noisy run. |
+| What counts as a meaningful memory win? | At least 10% lower peak RSS, allocation count, allocation bytes, or renderer-owned scratch memory on the target set. | Memory claims need a named metric, not just intuition from code review. |
+| Which references matter first? | PDFium for in-process comparison when available; Poppler as cold-process and visual reference. | Native-only work may proceed, but public comparison claims wait for PDFium evidence. |
+| How strict is visual fidelity during speed work? | No new fallback bucket, error class, crash, timeout, or obvious visual drift on the touched fixture set. | Fast paths must prove they preserve clipping, transforms, alpha, and stroke semantics for their supported shape. |
+| Are WASM and low-memory primary constraints now? | No. Server-side rendering is the primary model; low-memory remains a bounded-cache discipline, not a WASM-first architecture driver. | Avoid optimizing for WASM-specific constraints unless a later product requirement reopens this. |
+| Are global caches allowed? | No. Only explicit request/session caches with visible benchmark configuration. | Any cache PR must expose budget and lifecycle in code and benchmark output. |
+| Is internal page parallelism allowed? | Not in the first wave. Parallelize across requests/pages before adding hidden inner parallelism. | Rayon/thread-pool changes need separate scheduler and RSS evidence. |
+| When do we add a dependency? | Only when profile evidence shows `std` is not enough and the crate has a narrow, justified role. | Dependency PRs need a short local rationale plus before/after data. |
+
 ## Acceptance Criteria
 
 These criteria apply to every optimization block unless a narrower follow-up
@@ -56,12 +74,14 @@ Baseline acceptance:
 - [ ] Two release-mode matrix runs on the same host have comparable top-10
   Ferrugo fixture rankings.
 - [ ] Report artifacts include backend versions/commands, OS, CPU, Rust
-  version, fixture manifest, `max_edge`, iterations, warmup, timeout, and RSS
-  availability.
+  version, available core count, memory size when practical, fixture manifest,
+  `max_edge`, iterations, warmup, timeout, and RSS availability.
 - [ ] Missing PDFium is acceptable only when the report records `missing-tool`;
   PDFium is required before publishing comparison claims.
 - [ ] Poppler timing is treated as a cold-process reference, not as an
   in-process renderer peer.
+- [ ] Any host/tool caveat that affects trust in the numbers is written into
+  the report or the working-plan notes.
 
 Optimization-block acceptance:
 
@@ -79,6 +99,8 @@ Optimization-block acceptance:
   `cargo clippy --workspace --all-targets --all-features -- -D warnings`.
 - [ ] Before/after matrix artifacts are kept locally with enough naming context
   to revisit the result.
+- [ ] The commit message and plan update name the bottleneck and the measured
+  effect. If the candidate did not help, the plan records that negative result.
 
 Dependency and hardware-aware acceptance:
 
@@ -89,6 +111,10 @@ Dependency and hardware-aware acceptance:
   cache.
 - [ ] Any SIMD, pointer-copy, arena, or thread-pool change keeps a simple scalar
   or safe fallback path unless the crate boundary makes that impossible.
+- [ ] Any `unsafe` code must have a local safety comment, a focused test, and a
+  benchmark showing why safe APIs were insufficient.
+- [ ] Any change that increases stack frame size or enum size must be checked
+  against representative fixture data.
 
 ## Phase 0: Baseline Hardening
 
@@ -259,11 +285,16 @@ Acceptance:
 Goal: use Rust's memory model and the host CPU well without prematurely
 outsmarting the compiler.
 
-Default choices:
+Default choices and modern Rust toolbox:
 
 - Use `Vec<T>` for large or genuinely dynamic contiguous data. Prefer
   `with_capacity` when the upper bound is known, reuse buffers across phases,
   and avoid repeated grow/copy cycles inside pixel or path loops.
+- Use `Box<[T]>` when a buffer becomes immutable and should not carry spare
+  capacity. This can make ownership and memory accounting clearer after build
+  phases such as display-list construction.
+- Use `Arc<[T]>` only for shared immutable data across request-local workers or
+  session cache entries. Do not introduce `Arc` just to work around borrowing.
 - Use slices in APIs: `&[T]`, `&mut [T]`, `&str`, and `&[u8]` keep ownership
   local and make hot code easier to profile.
 - Prefer row-major, cache-friendly traversal for raster buffers. Keep inner
@@ -284,19 +315,42 @@ Candidate crates and when to consider them:
   a normal error.
 - [`memchr`](https://docs.rs/memchr/latest/memchr/): consider for tokenizer or
   stream scanning if profiles show byte-search loops dominating.
+- [`bytemuck`](https://docs.rs/bytemuck/latest/bytemuck/): consider only for
+  well-defined plain-data casts at boundaries where layout is explicit. Avoid it
+  for PDF object models or types with padding-sensitive semantics.
 - [`bumpalo`](https://docs.rs/bumpalo/latest/bumpalo/): consider for
   request-local arenas only when allocation profiles show many short-lived
   objects with the same lifetime. Arena memory must be bounded by request
   budgets.
 
-Copy and pointer rules:
+Copy, `memcpy`, and pointer rules:
 
 - Treat "memcpy optimization" as "make the safe slice operation obvious" first.
+- Prefer one bulk copy over many tiny copies. If a loop copies predictable
+  contiguous ranges, reshape it toward slice ranges before considering pointer
+  code.
+- Avoid copying at all when borrowing or reusing a scratch buffer is possible.
+  The fastest `memcpy` is still slower than no copy in a hot loop.
 - Use `std::ptr::copy_nonoverlapping` only if safe slice APIs cannot express the
   operation, after a benchmark proves the win, and with a documented safety
   invariant beside the `unsafe` block.
 - Do not add hand-written pointer loops for style. They must beat the safe
   implementation on the target fixture set.
+- Keep overlapping-copy semantics explicit: `copy_from_slice` /
+  `copy_nonoverlapping` for non-overlap, `copy_within` / `ptr::copy` only when
+  overlap is intended.
+
+Small buffer rules:
+
+- Measure length distributions before choosing `SmallVec<[T; N]>`. Record p50,
+  p95, p99, and max for the candidate collection.
+- Pick `N` to cover the common case without bloating every item. For hot
+  display-list items, a larger inline size can hurt cache locality even when it
+  removes allocations.
+- Keep `Vec<T>` when sizes are usually large, highly variable, or stored inside
+  long-lived structs.
+- Prefer `ArrayVec<T, N>` only when overflow has clear semantics and `N` is a
+  real invariant, not a guess.
 
 SIMD and concurrency rules:
 
@@ -304,6 +358,8 @@ SIMD and concurrency rules:
   show the inner loop dominates and the scalar version has been cleaned up.
 - Any SIMD path needs correctness fixtures, a scalar fallback, and target
   feature gating.
+- Prefer algorithmic wins before SIMD: culling, clipping, squared-distance math,
+  branch reduction, and fewer passes usually beat vectorizing wasted work.
 - Avoid internal Rayon-style parallelism inside one page render for now. Server
   deployments can already parallelize across requests/pages, and hidden inner
   parallelism can increase peak RSS. Revisit this after scheduler benchmarks
