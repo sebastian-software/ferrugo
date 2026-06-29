@@ -1,7 +1,8 @@
 use pdfrust_fuzz::{minimal_pdf_with_content, run_target};
 use pdfrust_native::NativeBackend;
 use pdfrust_thumbnail::{
-    DocumentMetadataBackend, PdfSource, Rgba, ThumbnailBackend, ThumbnailOptions,
+    AnnotationMode, DocumentMetadataBackend, FormAppearanceMode, PdfSource, Rgba,
+    ThumbnailBackend, ThumbnailOptions,
 };
 use std::time::Duration;
 
@@ -28,6 +29,8 @@ fn fuzz_one(data: &[u8]) {
         background: Rgba::WHITE,
         output_format: pdfrust_thumbnail::OutputFormat::Rgba,
         timeout: Duration::from_millis(100),
+        annotation_mode: AnnotationMode::Screen,
+        form_appearance_mode: FormAppearanceMode::DocumentState,
     };
 
     let _ = DocumentMetadataBackend::inspect(&backend, PdfSource::from_bytes(data));

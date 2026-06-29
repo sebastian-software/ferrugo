@@ -35,7 +35,6 @@ when the server renderer is already correct and bounded.
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
 | 0196 | [WASM Low Memory Mobile Browser Gate](0196-wasm-low-memory-mobile-browser-gate.md) | 37 | medium | 0195 |
-| 0200 | [PDFium-Free 1.2 Readiness Gate](0200-pdfium-free-1-2-readiness-gate.md) | 37 | medium | 0199 |
 | 0201 | [Native Renderer 1.3 Coverage Scorecard Baseline](0201-native-renderer-1-3-coverage-scorecard-baseline.md) | 38 | medium | 0200 |
 | 0202 | [Text Selection Geometry And Search Highlight Parity](0202-text-selection-geometry-and-search-highlight-parity.md) | 38 | medium | 0201 |
 | 0203 | [Dense Office Table And Spreadsheet Refinement](0203-dense-office-table-and-spreadsheet-refinement.md) | 38 | medium | 0202 |
@@ -67,6 +66,7 @@ when the server renderer is already correct and bounded.
 
 | ID | Milestone | Phase | Size | Completed |
 | --- | --- | --- | --- | --- |
+| 0200 | [PDFium-Free 1.2 Readiness Gate](0200-pdfium-free-1-2-readiness-gate.md) | 37 | medium | 2026-06-29 |
 | 0199 | [Unsupported Feature Burn-Down Release Candidate Gate](0199-unsupported-feature-burn-down-release-candidate-gate.md) | 37 | medium | 2026-06-29 |
 | 0198 | [Native Renderer Telemetry Privacy And Diagnostics Policy](0198-native-renderer-telemetry-privacy-and-diagnostics-policy.md) | 37 | small | 2026-06-29 |
 | 0197 | [Serverless Cold Start And Binary Size Budget](0197-serverless-cold-start-and-binary-size-budget.md) | 37 | medium | 2026-06-29 |

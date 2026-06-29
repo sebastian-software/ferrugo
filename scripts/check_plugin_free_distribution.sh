@@ -8,7 +8,9 @@ if cargo tree -p pdfrust-cli --no-default-features | rg -q 'pdfrust-pdfium'; the
   exit 1
 fi
 
-if cargo tree -p pdfrust-cli --no-default-features | rg -q 'curl|hyper|isahc|native-tls|openssl|reqwest|rustls|ureq'; then
+dependency_pattern='\b(curl|fetch|hyper|isahc|native-tls|openssl|plugin|reqwest|rustls|ureq|wget)\b'
+
+if cargo tree -p pdfrust-cli --no-default-features | rg -q "${dependency_pattern}"; then
   echo "network or TLS dependency found in the native-only CLI dependency tree" >&2
   exit 1
 fi
@@ -33,7 +35,7 @@ runtime_sources=(
   crates/pdfrust-wasm-smoke/src
 )
 
-if rg -n 'curl|wget|reqwest|ureq|hyper|isahc|native-tls|openssl|rustls|download|fetch|plugin' "${runtime_sources[@]}"; then
+if rg -n "${dependency_pattern}" "${runtime_sources[@]}"; then
   echo "hidden network, download, or plugin hook found in native runtime sources" >&2
   exit 1
 fi
