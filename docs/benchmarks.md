@@ -97,6 +97,12 @@ Run the repeatable matrix:
 bash scripts/generate_performance_matrix.sh
 ```
 
+Run the budget-free native smoke gate before wiring a focused subset into CI:
+
+```sh
+bash scripts/check_performance_matrix_smoke.sh
+```
+
 Or call the CLI directly:
 
 ```sh

@@ -205,6 +205,7 @@ Useful project gates:
 ```sh
 bash scripts/check_pdfium_quarantine.sh
 bash scripts/check_performance_claims.sh
+bash scripts/check_performance_matrix_smoke.sh
 bash scripts/check_plugin_free_distribution.sh
 bash scripts/check_native_only_release.sh
 bash scripts/check_wasm_smoke.sh

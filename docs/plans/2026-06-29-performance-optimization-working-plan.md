@@ -1227,8 +1227,8 @@ Repeat family phase-summary instrumentation from 2026-06-30:
 
 Goal: turn stable evidence into guardrails, not premature marketing.
 
-- [ ] Promote stable fixture subsets into budgeted CI gates only after variance
-  is understood.
+- [x] Promote a stable fixture subset into a budget-free local smoke gate before
+  adding CI timing budgets.
 - [x] Keep the full matrix as a local maintainer tool until tool availability is
   reliable on CI.
 - [x] Add a "performance claim update" checklist before changing README copy.
@@ -1318,6 +1318,22 @@ Performance claim guardrail from 2026-06-30:
   after budgets are documented.
 - MuPDF stance: MuPDF remains v2 comparison backlog and must not block the
   first optimization wave.
+
+Performance matrix smoke gate from 2026-06-30:
+
+- Change: added `scripts/check_performance_matrix_smoke.sh` as a focused
+  native hot-render smoke for one manifest family, defaulting to `small-text`,
+  `--max-edge 120`, three measured iterations, and one warmup.
+- Guardrail: the script validates JSON status only: non-empty records,
+  `timing_reliability` presence, native/hot-render mode, all records rendered,
+  no fallback, no missing tool, no errors, and numeric p95 values.
+- CI stance: no p95 or wall-time budget is encoded yet. This is a safe first
+  subset gate while variance and tool availability remain under observation.
+- Docs: `docs/benchmarks.md` and `README.md` now list the smoke beside the
+  existing performance-claim and native-only gates.
+- Validation: `bash scripts/check_performance_matrix_smoke.sh` passed and wrote
+  `target/performance-matrix-smoke.json` plus
+  `target/performance-matrix-smoke.md`.
 
 ## Remaining Questions
 
