@@ -846,7 +846,7 @@ state.
 - [x] Keep global caches out of the renderer path.
 - [x] Define an explicit request/session cache object for batch or multi-page
   rendering.
-- [ ] Enforce cache-entry budgets by bytes and item count.
+- [x] Enforce cache-entry budgets by bytes and item count.
 - [x] Report session-retained bytes and item counts.
 - [x] Cache parsed document/page tree data only inside the request/session.
 - [ ] Cache decoded shared resources only when identity and budget are clear.
@@ -886,6 +886,26 @@ Initial document-session result from 2026-06-29:
   speed claim. The next Phase 5 optimization should target multi-page/batch
   reuse or decoded shared resources, where repeated document loading and shared
   resource decode are larger parts of total time.
+
+Session budget result from 2026-06-29:
+
+- Change: `NativeRenderLimits` now includes explicit document-session caps for
+  retained indirect-object count and retained parsed object bytes. Default
+  limits are `65,536` objects and `256 MiB`; low-memory limits are `16,384`
+  objects and `32 MiB`.
+- Enforcement: `NativeDocumentSession` rejects documents whose retained parsed
+  object table exceeds those caps and maps the failure to the existing typed
+  `renderer.memory-budget` unsupported bucket.
+- Benchmark visibility: `benchmark-repeat-native` now writes
+  `max_loaded_objects` and `max_loaded_object_bytes` beside the observed
+  `loaded_objects` and `loaded_object_bytes`.
+- Verification report:
+  `target/benchmark-repeat-report-vector-session-budget.json`, same focused
+  `report/vector` repeat benchmark as the first session run, completed with
+  4/4 native rendered records, no fallback/error records, and visible session
+  budget fields.
+- Decision: this completes the bounded-cache part of the initial session
+  contract. It is a low-memory/safety improvement, not a speed claim.
 
 ## Phase 6: Benchmark Gates And Claims
 

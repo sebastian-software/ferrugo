@@ -9434,7 +9434,9 @@ fn native_document_session_stats_json(stats: Option<NativeDocumentSessionStats>)
             "\"cache_policy\":{},",
             "\"input_bytes\":{},",
             "\"loaded_objects\":{},",
+            "\"max_loaded_objects\":{},",
             "\"loaded_object_bytes\":{},",
+            "\"max_loaded_object_bytes\":{},",
             "\"page_count\":{},",
             "\"first_page_only\":{}",
             "}}"
@@ -9442,7 +9444,9 @@ fn native_document_session_stats_json(stats: Option<NativeDocumentSessionStats>)
         native_page_cache_policy_json(stats.cache_policy),
         stats.input_bytes,
         stats.loaded_objects,
+        stats.max_loaded_objects,
         stats.loaded_object_bytes,
+        stats.max_loaded_object_bytes,
         stats.page_count,
         stats.first_page_only
     )

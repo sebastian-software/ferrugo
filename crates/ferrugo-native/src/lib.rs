@@ -133,8 +133,12 @@ pub struct NativeDocumentSessionStats {
     pub input_bytes: usize,
     /// Indirect objects loaded into the parsed document table.
     pub loaded_objects: usize,
+    /// Maximum indirect objects allowed in this session.
+    pub max_loaded_objects: usize,
     /// Sum of parsed indirect-object byte spans retained by the document.
     pub loaded_object_bytes: usize,
+    /// Maximum parsed indirect-object byte spans allowed in this session.
+    pub max_loaded_object_bytes: usize,
     /// Pages visible through the loaded page tree.
     pub page_count: usize,
     /// True when the bounded linearized first-page loader was used.
@@ -498,6 +502,11 @@ pub struct NativeRenderLimits {
     pub max_pattern_tiles: usize,
     /// Maximum cached tiling pattern cells in one rasterization pass.
     pub max_pattern_cell_cache_entries: usize,
+    /// Maximum indirect objects retained in one explicit document session.
+    pub max_session_loaded_objects: usize,
+    /// Maximum parsed indirect-object bytes retained in one explicit document
+    /// session.
+    pub max_session_loaded_object_bytes: usize,
     /// Whether temporary spooling is enabled for sensitive intermediates.
     pub spooling_enabled: bool,
     /// Maximum bytes allowed for temporary spooling.
@@ -531,6 +540,8 @@ impl NativeRenderLimits {
             max_flattened_segments: 16_384,
             max_pattern_tiles: 16_384,
             max_pattern_cell_cache_entries: 8,
+            max_session_loaded_objects: 16_384,
+            max_session_loaded_object_bytes: 32 * 1024 * 1024,
             spooling_enabled: false,
             max_spool_bytes: DEFAULT_SPOOL_BYTES_LIMIT,
         }
@@ -554,6 +565,8 @@ impl NativeRenderLimits {
             max_flattened_segments: self.max_flattened_segments,
             max_pattern_tiles: self.max_pattern_tiles,
             max_pattern_cell_cache_entries: self.max_pattern_cell_cache_entries,
+            max_session_loaded_objects: self.max_session_loaded_objects,
+            max_session_loaded_object_bytes: self.max_session_loaded_object_bytes,
             spooling_enabled: self.spooling_enabled,
             max_spool_bytes: self.max_spool_bytes,
         }
@@ -615,6 +628,8 @@ impl Default for NativeRenderLimits {
             max_flattened_segments: path.max_flattened_segments,
             max_pattern_tiles: path.max_pattern_tiles,
             max_pattern_cell_cache_entries: path.max_pattern_cell_cache_entries,
+            max_session_loaded_objects: 65_536,
+            max_session_loaded_object_bytes: 256 * 1024 * 1024,
             spooling_enabled: false,
             max_spool_bytes: DEFAULT_SPOOL_BYTES_LIMIT,
         }
@@ -656,6 +671,11 @@ pub struct NativeMemoryDiagnostics {
     pub max_pattern_tiles: usize,
     /// Maximum cached tiling pattern cells in one rasterization pass.
     pub max_pattern_cell_cache_entries: usize,
+    /// Maximum indirect objects retained in one explicit document session.
+    pub max_session_loaded_objects: usize,
+    /// Maximum parsed indirect-object bytes retained in one explicit document
+    /// session.
+    pub max_session_loaded_object_bytes: usize,
     /// Whether temporary spooling is enabled for sensitive intermediates.
     pub spooling_enabled: bool,
     /// Maximum bytes allowed for temporary spooling.
@@ -707,11 +727,14 @@ impl<'a> NativeDocumentSession<'a> {
         let input = PdfBytes::new(bytes);
         let (document, page_tree) = load_render_document_for_page_set(input, page_indices)?;
         let load_metrics = document.load_metrics;
+        enforce_document_session_budget(load_metrics, limits)?;
         let stats = NativeDocumentSessionStats {
             cache_policy: NativePageCachePolicy::DocumentSession,
             input_bytes: load_metrics.input_bytes,
             loaded_objects: load_metrics.loaded_objects,
+            max_loaded_objects: limits.max_session_loaded_objects,
             loaded_object_bytes: load_metrics.loaded_object_bytes,
+            max_loaded_object_bytes: limits.max_session_loaded_object_bytes,
             page_count: page_tree.pages().len(),
             first_page_only: load_metrics.first_page_only,
         };
@@ -738,6 +761,18 @@ impl<'a> NativeDocumentSession<'a> {
         reject_form_appearance_mutation(options)?;
         render_loaded_document(&self.document, &self.page_tree, options, self.limits)
     }
+}
+
+fn enforce_document_session_budget(
+    metrics: DocumentLoadMetrics,
+    limits: NativeRenderLimits,
+) -> Result<(), ThumbnailError> {
+    if metrics.loaded_objects > limits.max_session_loaded_objects
+        || metrics.loaded_object_bytes > limits.max_session_loaded_object_bytes
+    {
+        return Err(unsupported_feature(BUCKET_RENDERER_MEMORY_BUDGET));
+    }
+    Ok(())
 }
 
 /// Versioned key shape for caller-owned reusable native page artifacts.
@@ -4612,7 +4647,31 @@ mod tests {
             NativePageCachePolicy::DocumentSession
         );
         assert_eq!(session.stats().input_bytes, bytes.len());
+        assert!(session.stats().loaded_objects <= session.stats().max_loaded_objects);
+        assert!(session.stats().loaded_object_bytes <= session.stats().max_loaded_object_bytes);
         assert!(!session.stats().cache_policy.permits_disk_persistence());
+    }
+
+    #[test]
+    fn native_document_session_should_enforce_retained_object_budget() {
+        let bytes = include_bytes!("../../../fixtures/generated/vector-paths.pdf");
+        let limits = NativeRenderLimits {
+            max_session_loaded_objects: 1,
+            ..NativeRenderLimits::default()
+        };
+
+        let error = NativeBackend::with_render_limits(limits)
+            .document_session(bytes, &[0])
+            .expect_err("tight session object budget should fail");
+
+        assert_eq!(
+            error.class(),
+            ferrugo_thumbnail::ThumbnailErrorClass::Unsupported
+        );
+        assert_eq!(
+            error.unsupported_feature_bucket(),
+            Some(BUCKET_RENDERER_MEMORY_BUDGET)
+        );
     }
 
     #[test]
@@ -4717,6 +4776,11 @@ mod tests {
         assert_eq!(diagnostics.max_flattened_segments, 65_536);
         assert_eq!(diagnostics.max_pattern_tiles, 65_536);
         assert_eq!(diagnostics.max_pattern_cell_cache_entries, 32);
+        assert_eq!(diagnostics.max_session_loaded_objects, 65_536);
+        assert_eq!(
+            diagnostics.max_session_loaded_object_bytes,
+            256 * 1024 * 1024
+        );
         assert!(!diagnostics.spooling_enabled);
         assert_eq!(diagnostics.max_spool_bytes, 0);
     }
@@ -4733,6 +4797,10 @@ mod tests {
         assert!(low_memory.max_total_font_program_bytes < default.max_total_font_program_bytes);
         assert!(low_memory.max_display_items < default.max_display_items);
         assert!(low_memory.max_transparency_group_pixels < default.max_transparency_group_pixels);
+        assert!(low_memory.max_session_loaded_objects < default.max_session_loaded_objects);
+        assert!(
+            low_memory.max_session_loaded_object_bytes < default.max_session_loaded_object_bytes
+        );
         assert!(low_memory.max_page_pixels > 0);
         assert!(low_memory.max_total_image_bytes >= low_memory.max_image_bytes);
         assert!(low_memory.max_total_font_program_bytes >= low_memory.max_font_program_bytes);
