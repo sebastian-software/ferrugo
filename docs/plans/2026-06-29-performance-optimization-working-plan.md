@@ -272,10 +272,13 @@ Work items:
 - [ ] Apply clip/intersection checks before entering expensive pixel loops.
 - [x] Precompute bevel/miter stroke join geometry once per stroke instead of
   normalizing join segments for every candidate pixel/sample.
+- [x] Skip per-segment stroke distance checks when the candidate point is
+  outside conservative padded segment bounds.
 - [ ] Add regression fixtures or targeted tests around clipping and hairline
   correctness.
 - [x] Add targeted tests for prepared stroke join geometry and degenerate join
   segments.
+- [x] Add targeted tests for conservative stroke segment bounds.
 - [x] Re-run matrix before and after each block.
 
 Acceptance:
@@ -300,6 +303,23 @@ First vector optimization result from 2026-06-29:
   9.4-10.1% depending on the baseline run.
 - Visual/fallback check: current native PNG
   `target/native-vector-stress-prepared-joins.png` is byte-identical to
+  `target/performance-matrix-baseline-starter-artifacts-1/native-cold-process-vector-stress.png`;
+  focused matrix status remained `rendered` with no fallback bucket or error.
+
+Second vector optimization result from 2026-06-29:
+
+- Change: `point_in_stroke` now rejects sample points outside each line segment's
+  padded device bounds before running the more expensive distance calculation.
+- Before: `target/benchmark-native-vector-stress-prepared-joins.json` mean
+  `9.554 ms` over 5000 iterations.
+- After: `target/benchmark-native-vector-stress-line-bounds.json` mean
+  `6.588 ms` over 5000 iterations, about 31.0% faster than the previous block.
+- Hot matrix after: `target/performance-matrix-vector-stress-line-bounds.json`
+  p95 `6.709 ms` over 30 measured iterations after 3 warmups.
+- Compared with the original baseline hot matrix p95 `10.929-11.012 ms`, the
+  cumulative p95 improvement on `vector-stress` is about 38.6-39.1%.
+- Visual/fallback check: current native PNG
+  `target/native-vector-stress-line-bounds.png` is byte-identical to
   `target/performance-matrix-baseline-starter-artifacts-1/native-cold-process-vector-stress.png`;
   focused matrix status remained `rendered` with no fallback bucket or error.
 

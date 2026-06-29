@@ -10308,15 +10308,28 @@ fn is_left(from: Point, to: Point, point: Point) -> f64 {
 
 fn point_in_stroke(point: Point, lines: &[LineSegment], radius: f64, line_cap: LineCap) -> bool {
     let radius_squared = radius * radius;
-    lines.iter().any(|line| match line_cap {
-        LineCap::Butt => distance_to_line_body_squared(point, *line)
-            .is_some_and(|distance| distance <= radius_squared),
-        LineCap::Round => distance_to_line_segment_squared(point, *line) <= radius_squared,
-        LineCap::Square => {
-            distance_to_line_body_squared(point, square_capped_line_segment(*line, radius))
-                .is_some_and(|distance| distance <= radius_squared)
+    lines.iter().any(|line| {
+        if !point_in_padded_line_bounds(point, *line, radius) {
+            return false;
+        }
+        match line_cap {
+            LineCap::Butt => distance_to_line_body_squared(point, *line)
+                .is_some_and(|distance| distance <= radius_squared),
+            LineCap::Round => distance_to_line_segment_squared(point, *line) <= radius_squared,
+            LineCap::Square => {
+                distance_to_line_body_squared(point, square_capped_line_segment(*line, radius))
+                    .is_some_and(|distance| distance <= radius_squared)
+            }
         }
     })
+}
+
+fn point_in_padded_line_bounds(point: Point, line: LineSegment, padding: f64) -> bool {
+    let min_x = line.from.x.min(line.to.x) - padding;
+    let max_x = line.from.x.max(line.to.x) + padding;
+    let min_y = line.from.y.min(line.to.y) - padding;
+    let max_y = line.from.y.max(line.to.y) + padding;
+    (min_x..=max_x).contains(&point.x) && (min_y..=max_y).contains(&point.y)
 }
 
 fn point_in_join(
@@ -15983,6 +15996,25 @@ mod tests {
             Rgba::WHITE
         );
         assert_eq!(round.pixel(12, 11).expect("round outside corner"), black);
+    }
+
+    #[test]
+    fn point_in_padded_line_bounds_should_reject_distant_points() {
+        let line = LineSegment {
+            from: Point { x: 0.0, y: 0.0 },
+            to: Point { x: 10.0, y: 0.0 },
+        };
+
+        assert!(!point_in_padded_line_bounds(
+            Point { x: 5.0, y: 2.1 },
+            line,
+            2.0,
+        ));
+        assert!(point_in_padded_line_bounds(
+            Point { x: 5.0, y: 2.0 },
+            line,
+            2.0,
+        ));
     }
 
     #[test]
