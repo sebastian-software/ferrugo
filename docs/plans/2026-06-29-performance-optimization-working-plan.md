@@ -64,6 +64,38 @@ working default until this section is edited.
 | Are global caches allowed? | No. Only explicit request/session caches with visible benchmark configuration. | Any cache PR must expose budget and lifecycle in code and benchmark output. |
 | Is internal page parallelism allowed? | Not in the first wave. Parallelize across requests/pages before adding hidden inner parallelism. | Rayon/thread-pool changes need separate scheduler and RSS evidence. |
 | When do we add a dependency? | Only when profile evidence shows `std` is not enough and the crate has a narrow, justified role. | Dependency PRs need a short local rationale plus before/after data. |
+| Which hardware do we optimize for first? | Commodity 64-bit server CPUs running native Rust release builds. | Avoid WASM-first or embedded-first tradeoffs unless a later product requirement changes the target. |
+| Do we accept hardware-specific fast paths? | Yes, but only behind runtime/compile-time feature checks with a scalar fallback. | SIMD or target-feature PRs need correctness coverage on the fallback path and benchmark evidence on the accelerated path. |
+| Can `SmallVec` replace hot `Vec`s broadly? | No. It is a measured tool for short, hot, high-frequency collections only. | A `SmallVec` PR needs length histograms and must show that stack growth does not hurt cache locality. |
+| Can bulk-copy or `memcpy` style changes be optimized directly? | Prefer safe slice APIs first; let LLVM lower obvious contiguous copies. | Raw pointer copies require a benchmark win, a local safety invariant, and a safe implementation that was insufficient. |
+| What metric decides allocation wins? | Allocation count, allocation bytes, peak RSS, or explicit scratch-buffer high-water, depending on the block. | The metric must be named before implementation and reported after the benchmark run. |
+
+## Questions To Close Before The Next Optimization Wave
+
+These are the questions that should be considered settled for the first vector
+wave. Reopen them only when benchmark evidence or product requirements change.
+
+- [x] Should the next work optimize toward server-side native rendering rather
+  than WASM? Yes. Native server-side rendering is the target for now.
+- [x] Should low-memory behavior drive the architecture? Partly. Keep memory
+  bounded and visible, but do not trade away broad server performance for a
+  WASM-style low-memory constraint.
+- [x] Should performance work favor algorithmic culling before SIMD? Yes.
+  Remove wasted raster work before vectorizing the remaining work.
+- [x] Should PDFium/Poppler parity block local native improvements? No. Local
+  native improvements can land with focused Ferrugo evidence, while public
+  comparison claims wait for reference-renderer runs.
+- [x] Should dependency additions be normal for performance work? No. They are
+  allowed, but each one needs profile evidence, a narrow job, and a rollback
+  story.
+- [x] Should sub-5% benchmark wins be committed? No, not as performance wins.
+  Record them as rejected or inconclusive unless repeated runs show a larger
+  effect.
+- [x] Should we optimize for average latency or tail latency first? Tail first.
+  Use p95 for acceptance, with mean as supporting evidence.
+- [x] Should memory improvements be accepted without speed wins? Yes, when the
+  memory metric is named before the change and improves by at least 10% without
+  visual or fallback regressions.
 
 ## Acceptance Criteria
 
@@ -108,6 +140,10 @@ Dependency and hardware-aware acceptance:
 - [ ] Prefer `std` and safe slice APIs first.
 - [ ] Choose stack-inline data structures only after size histograms show that
   the inline capacity is correct for real fixtures.
+- [ ] Record p50, p95, p99, and max length for any collection proposed for
+  `SmallVec`, `ArrayVec`, or arena allocation.
+- [ ] Keep hot structs and enum variants size-aware. A dependency that removes
+  allocations but bloats every display item must prove a net win.
 - [ ] Keep scratch buffers request-local or session-local; no hidden global
   cache.
 - [ ] Any SIMD, pointer-copy, arena, or thread-pool change keeps a simple scalar
@@ -116,6 +152,11 @@ Dependency and hardware-aware acceptance:
   benchmark showing why safe APIs were insufficient.
 - [ ] Any change that increases stack frame size or enum size must be checked
   against representative fixture data.
+- [ ] Any target-feature-specific path must be gated and must not change output
+  dimensions, alpha semantics, clipping, or fallback classification.
+- [ ] Any bulk-copy optimization must describe source/destination overlap
+  semantics and prefer `copy_from_slice`, `copy_within`, or `extend_from_slice`
+  before pointer APIs.
 
 ## Phase 0: Baseline Hardening
 
@@ -333,10 +374,37 @@ Rejected candidate from 2026-06-29:
 - Decision: below the 5% noise threshold, so the code change was reverted and
   should not be treated as a proven optimization.
 
+Rejected candidate from 2026-06-29:
+
+- Change tested locally but not kept: precompute padded line bounds into a
+  `PreparedStrokeLine` vector before entering `point_in_stroke`.
+- Result: `target/benchmark-native-vector-stress-prepared-line-bounds.json`
+  mean `7.122 ms` vs `target/benchmark-native-vector-stress-line-bounds.json`
+  mean `6.588 ms`, about 8.1% slower on `vector-stress`.
+- Secondary result:
+  `target/benchmark-native-technical-hatch-prepared-line-bounds.json` mean
+  `3.679 ms` vs
+  `target/benchmark-native-technical-hatch-profile-after-stroke-culling.json`
+  mean `3.830 ms`, about 3.9% faster on `technical-hatch-clipping`.
+- Decision: mixed result with a clear regression on the primary vector target
+  and a sub-5% gain on the secondary target, so the code change was reverted.
+
 ## Hardware-Aware Rust Notes
 
 Goal: use Rust's memory model and the host CPU well without prematurely
 outsmarting the compiler.
+
+Working model:
+
+- First make the renderer do less work: cull outside device bounds, intersect
+  clip bounds early, reuse flattened geometry, and avoid repeated decode or
+  allocation.
+- Then make the remaining work friendlier to the CPU: contiguous memory,
+  predictable branches, row-major traversal, and bulk operations that the
+  compiler can recognize.
+- Only then consider specialized crates, SIMD, arenas, or pointer-level copies.
+  These tools are useful, but they should not hide an algorithm that still
+  spends cycles on pixels or paths that cannot affect the output.
 
 Default choices and modern Rust toolbox:
 
@@ -355,6 +423,26 @@ Default choices and modern Rust toolbox:
 - Prefer safe bulk-copy APIs such as `copy_from_slice`, `copy_within`,
   `clone_from_slice`, and `extend_from_slice`. LLVM can lower these to optimized
   `memcpy`/`memmove` patterns for the target CPU.
+- Prefer squared-distance comparisons over `sqrt`/`hypot` in inner loops when
+  the math allows it.
+- Prefer separating rare cases from hot loops. For example, handle complex
+  caps, joins, alpha, or clips outside the tightest loop when a simpler fast
+  path can prove the same output for common cases.
+- Prefer compact plain-data structs for geometry hot paths. Small `Copy` types
+  passed by value are fine; large owned structs and large enum variants should
+  stay out of per-pixel work.
+
+Decision matrix:
+
+| Tool | Use when | Avoid when | Required evidence |
+| --- | --- | --- | --- |
+| `Vec<T>` | Size is dynamic, large, or long-lived. | The collection is tiny, created in a very hot loop, and usually fits a known bound. | Capacity or allocation profile if changing existing code. |
+| `SmallVec<[T; N]>` | Most real fixture lengths fit inline and allocation cost is visible. | `N` is guessed, the type is stored in many display items, or stack/cache cost grows. | p50/p95/p99/max length histogram plus before/after benchmark. |
+| `ArrayVec<T, N>` | A real invariant caps length and overflow is a renderer error or fallback. | The limit is only "probably enough". | Spec/code invariant and overflow test. |
+| Safe slice copy | Source and destination are contiguous and semantics are expressible safely. | Copy can be avoided by borrowing or reusing scratch. | Code clarity plus benchmark if in a hot path. |
+| Raw pointer copy | Safe APIs cannot express the needed non-overlap/aliasing contract fast enough. | The change is only stylistic or marginal. | Safety comment, focused test, and measured win. |
+| SIMD | A cleaned-up scalar inner loop still dominates profiles. | The algorithm still wastes work outside bounds or clips. | Scalar fallback, target gating, visual tests, benchmark win. |
+| Arena allocation | Many short-lived objects share one request lifetime. | Objects escape request/session boundaries or memory budgets are unclear. | Allocation profile, request budget, and peak-memory comparison. |
 
 Candidate crates and when to consider them:
 
