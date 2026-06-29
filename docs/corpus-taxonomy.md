@@ -47,7 +47,8 @@ The file intentionally keeps the same seven-column TSV shape as
 `fixtures/corpus-manifest.tsv`, so existing manifest parsing, fallback summary,
 metadata extraction, and benchmark commands work without a second parser.
 Expected backend behavior is encoded in feature tags such as
-`expected:native`, `expected:pdfium-fallback`, and `expected:error-encrypted`.
+`expected:native`, `expected:native-unsupported`, and
+`expected:error-encrypted`.
 
 Use this manifest for retirement planning only as a first synthetic-realistic
 proxy. It does not replace real local corpus ingestion.

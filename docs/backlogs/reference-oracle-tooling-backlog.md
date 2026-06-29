@@ -19,3 +19,8 @@ comparison toward bounded, PDFium-free release evidence.
 
 Until these items land, supported-family release validation remains native
 fallback/budget/package based. PDFium visual diff stays maintainer-only triage.
+
+Milestone 0215 confirms that this backlog is the deletion blocker for the
+remaining PDFium comparison commands. Once `compare-golden`, retention policy,
+CI golden samples, and multi-oracle records cover the same debugging value,
+`pdfrust-pdfium` and the PDFium-specific CLI commands can be retired.

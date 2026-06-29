@@ -1,7 +1,7 @@
 # PDFium Backend
 
-Status: Phase 0 local backend shell.
-Date: 2026-06-24.
+Status: maintainer-only optional oracle backend.
+Date: 2026-06-29.
 
 The PDFium backend is isolated in `crates/pdfrust-pdfium`. Public consumers use
 the backend-neutral types from `pdfrust-thumbnail`; PDFium handles and symbols
@@ -12,6 +12,9 @@ native-only. Use `--features pdfium` only when running explicit maintainer
 commands such as PDFium renders, metadata comparisons, PDFium benchmarks, or
 visual diffs. Native-default `render` / `render-auto` commands do not retry
 through PDFium.
+
+Milestone 0215 retains this backend as quarantined comparison tooling. It is not
+a supported runtime dependency or a release prerequisite.
 
 Consumers migrating away from PDFium should depend on `pdfrust-thumbnail` plus
 `pdfrust-native`, branch on `ThumbnailError::class()`, and treat `unsupported`

@@ -38,7 +38,7 @@ Every committed corpus row must include:
 Expected backend behavior is encoded as a feature tag:
 
 - `expected:native`
-- `expected:pdfium-fallback`
+- `expected:native-unsupported`
 - `expected:error-encrypted`
 - `expected:error-malformed`
 

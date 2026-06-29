@@ -19,6 +19,19 @@ normal runtime and release gates independent from PDFium.
 PDFium-enabled commands must stay behind `--features pdfium` and are not release
 prerequisites for the supported runtime slice.
 
+## 0215 Removal Decision
+
+Milestone 0215 keeps PDFium comparison tooling as maintainer-only infrastructure
+instead of deleting it. The retained tools are `pdfrust-pdfium`,
+`render-pdfium`, `render-isolated`, `compare-metadata`, `benchmark-pdfium`, and
+`visual-diff`. They remain outside supported runtime and release gates.
+
+Deletion is blocked until native-only golden comparison coverage, retention
+policy, CI golden samples, and multi-oracle records cover the same triage value.
+Active corpus expectations should describe native behavior, such as
+`expected:native` or `expected:native-unsupported`, rather than a PDFium runtime
+fallback.
+
 ## Validation Modes
 
 | Mode | Primary command or artifact | CI suitability | Release suitability | Use when |

@@ -586,11 +586,13 @@ in-flight-pixel limits explicit.
 
 ## Fallback Policy
 
-PDFium remains the oracle and explicit fallback until the visual GA gate says
-the native backend covers enough typical documents. Product code should use
-native only where the support matrix marks the document class as rendered and
-the caller accepts the documented fidelity level, or should explicitly retry
-through PDFium when native returns `unsupported`.
+Runtime PDFium fallback has been removed from supported rendering paths. Product
+code should use the native backend where the support matrix marks the document
+class as rendered and the caller accepts the documented fidelity level. When the
+native backend returns `unsupported`, callers should treat it as a typed policy
+outcome, route the document to their own review/alternate-processing workflow,
+or wait for the relevant native milestone instead of retrying through an
+implicit PDFium path.
 
 Do not retry native `encrypted` or `malformed` errors through a silent repair
 path. Encrypted documents need explicit password/security policy, and malformed

@@ -3,7 +3,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-if cargo tree -p pdfrust-cli --no-default-features | grep -q 'pdfrust-pdfium'; then
+if cargo tree -p pdfrust-cli --no-default-features | rg -q 'pdfrust-pdfium'; then
   echo "pdfrust-pdfium leaked into the native-only pdfrust-cli dependency tree" >&2
   exit 1
 fi
