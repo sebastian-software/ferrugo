@@ -584,7 +584,7 @@ allocations matter.
 
 - [x] Run Clippy with perf lints as part of the normal all-target/all-feature
   gate.
-- [ ] Review hotpath `Vec` creation and growth.
+- [x] Review hotpath `Vec` creation and growth.
 - [ ] Review `String`, `PathBuf`, and large enum clones inside loops.
 - [ ] Remove intermediate `.collect()` calls where the consumer can stream.
 - [ ] Inspect large enum variants if profiles show copy pressure.
@@ -602,6 +602,18 @@ Clippy perf audit from 2026-06-29:
   completed without warnings.
 - No code change was made from Clippy alone; further allocation work needs
   targeted profile or allocation evidence.
+
+Hotpath `Vec` audit from 2026-06-29:
+
+- `target/sample-vector-stress-current.txt` showed only a few allocation samples
+  under `flatten_path_segments` and display-list construction, while
+  `stroke_path` dominated the profile.
+- Reviewed `flatten_path_segments`, `stroke_joins_from_subpaths`,
+  `dashed_subpath_line_segments`, and the hairline snapping `.collect::<Vec<_>>()`
+  paths.
+- Decision: do not introduce `SmallVec`, broad preallocation, or a custom arena
+  yet. The current evidence does not show allocation pressure large enough to
+  satisfy the optimization-block acceptance criteria.
 
 ## Phase 4: Image And Scan Track
 
