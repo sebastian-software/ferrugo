@@ -313,6 +313,17 @@ The manifest uses families `linearized-first-page`, `full-loader-fallback`,
 It is a local byte/file-input budget gate: remote range fetching and arbitrary
 transport-level random access remain out of scope.
 
+## Shared Resource Cache Manifest
+
+`fixtures/shared-resource-cache-manifest.tsv` is the focused gate for
+document-scoped object reuse and bounded cache policy. It covers long-document
+shared resources, repeated font/image resources, repeated image XObjects,
+repeated Type3 CharProcs, and ICC transform cache policy coverage.
+
+The manifest uses families `long-document-shared`, `repeated-font-image`,
+`repeated-image-xobject`, `repeated-font-program`, and `shared-icc`. It does
+not imply a global cache or a decoded-resource cache across tenants.
+
 ## Mobile Scan Manifest
 
 `fixtures/mobile-scan-manifest.tsv` is the focused gate for PDFs produced by

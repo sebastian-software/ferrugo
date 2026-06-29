@@ -1,6 +1,6 @@
 # 0188: Resource Deduplication And Shared Object Cache
 
-Status: todo
+Status: done
 Phase: 35
 Size: medium
 Depends on: 0187
@@ -44,4 +44,17 @@ transforms, and decoded resources across pages.
 
 ## Completion Notes
 
-Empty until done.
+- Changed the bounded multi-page renderer to load the document and page tree
+  once per render request, then share that immutable object graph across scoped
+  page workers.
+- Preserved the linearized first-page fast path for single-page page-zero
+  requests while forcing multi-page requests through the full classic loader so
+  later pages never read an incomplete first-page-only object table.
+- Kept decoded page resources pass-local; no process-wide or tenant-shared
+  cache was introduced.
+- Added `fixtures/shared-resource-cache-manifest.tsv` and
+  `docs/reports/shared-resource-cache-2026-06-29.md` for repeated font/image,
+  long-document, repeated XObject, Type3, and ICC cache evidence.
+- Follow-up: a true document-session decoded font/image cache still needs
+  explicit byte accounting and eviction before it can replace page-local decode
+  caches.

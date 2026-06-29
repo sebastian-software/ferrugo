@@ -741,6 +741,15 @@ fn render_pages_parallel_partial_with_limits(
     let bytes = source_bytes.as_ref();
     let mut pages = Vec::with_capacity(page_indices.len());
     let mut cancelled = false;
+    if page_indices.is_empty() {
+        return Ok(ParallelRenderPartialResult {
+            pages,
+            workers: worker_count,
+            cancelled,
+        });
+    }
+    let input = PdfBytes::new(bytes);
+    let (document, page_tree) = load_render_document_for_page_set(input, page_indices)?;
 
     for chunk in page_indices.chunks(worker_count) {
         if cancellation.is_cancelled() {
@@ -748,6 +757,8 @@ fn render_pages_parallel_partial_with_limits(
             break;
         }
         let batch = thread::scope(|scope| {
+            let document_ref = &document;
+            let page_tree_ref = &page_tree;
             let handles = chunk
                 .iter()
                 .copied()
@@ -755,7 +766,7 @@ fn render_pages_parallel_partial_with_limits(
                     scope.spawn(move || {
                         let mut page_options = *options;
                         page_options.page_index = page_index;
-                        render_bytes(bytes, &page_options, limits)
+                        render_loaded_document(document_ref, page_tree_ref, &page_options, limits)
                     })
                 })
                 .collect::<Vec<_>>();
@@ -1264,6 +1275,19 @@ fn load_render_document(
                 return Ok((document, page_tree));
             }
         }
+    }
+
+    let document = load_classic_document(input).map_err(map_object_error)?;
+    let page_tree = document.page_tree().map_err(map_object_error)?;
+    Ok((document, page_tree))
+}
+
+fn load_render_document_for_page_set<'a>(
+    input: PdfBytes<'a>,
+    page_indices: &[u32],
+) -> Result<(ClassicDocument<'a>, PageTree), ThumbnailError> {
+    if let [page_index] = page_indices {
+        return load_render_document(input, *page_index);
     }
 
     let document = load_classic_document(input).map_err(map_object_error)?;

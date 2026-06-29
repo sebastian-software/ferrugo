@@ -1,0 +1,6 @@
+path	family	source	license	page_count	features	notes
+fixtures/generated/long-document-navigation-deck.pdf	long-document-shared	scripts/generate_fixtures.py	MIT OR Apache-2.0	12	long-document,navigation,repeated-image,repeated-font,shared-resource,expected:native	Generated twelve-page long document fixture with repeated font and image resources.
+fixtures/generated/longform-repeated-resources.pdf	repeated-font-image	scripts/generate_fixtures.py	MIT OR Apache-2.0	3	longform,multipage,repeated-font,repeated-image,shared-resource,expected:native	Existing longform fixture reusing one font and one Image XObject across pages.
+fixtures/generated/image-heavy-repeated-xobject-report.pdf	repeated-image-xobject	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image-heavy,repeated-xobject,flate,expected:native	Generated image-heavy report fixture that reuses one Flate image XObject across many placements.
+fixtures/generated/subset-type3-repeated-charprocs.pdf	repeated-font-program	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,font,subset,type3,charproc,repeated,expected:native	Generated subset Type3 fixture with repeated CharProc glyph use.
+fixtures/generated/icc-rgb-image.pdf	shared-icc	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,icc,rgb,cache,expected:native	Existing ICCBased RGB image fixture for transform cache policy coverage.

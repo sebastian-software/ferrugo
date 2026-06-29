@@ -108,6 +108,15 @@ on-disk page cache for now and keeps future cache experiments behind explicit
 policy and key boundaries. See
 `docs/reports/page-cache-reuse-policy-2026-06-25.md`.
 
+The bounded multi-page renderer shares one immutable parsed document and page
+tree across the pages requested in a single render call. This removes repeated
+object-table parsing for long-document preview batches while keeping decoded
+fonts, images, raster surfaces, and page-local caches owned by each page render.
+Single-page page-zero requests can still use the linearized first-page loader;
+multi-page requests intentionally require the full classic loader so later pages
+never see an incomplete first-page object table. See
+`docs/reports/shared-resource-cache-2026-06-29.md`.
+
 ## Incremental Preview Memory
 
 `NativeBackend::render_first_page_preview` now reports

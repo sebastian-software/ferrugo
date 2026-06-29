@@ -34,7 +34,6 @@ when the server renderer is already correct and bounded.
 
 | ID | Milestone | Phase | Size | Depends On |
 | --- | --- | --- | --- | --- |
-| 0188 | [Resource Deduplication And Shared Object Cache](0188-resource-deduplication-and-shared-object-cache.md) | 35 | medium | 0187 |
 | 0189 | [Layout Stress Corpus For Tables Columns And Footnotes](0189-layout-stress-corpus-for-tables-columns-and-footnotes.md) | 35 | medium | 0188 |
 | 0190 | [Cross-Producer Regression Bisect Workflow](0190-cross-producer-regression-bisect-workflow.md) | 35 | medium | 0189 |
 | 0191 | [DeviceN Spot Color Visual Review Samples](0191-devicen-spot-color-visual-review-samples.md) | 36 | medium | 0190 |
@@ -78,6 +77,7 @@ when the server renderer is already correct and bounded.
 
 | ID | Milestone | Phase | Size | Completed |
 | --- | --- | --- | --- | --- |
+| 0188 | [Resource Deduplication And Shared Object Cache](0188-resource-deduplication-and-shared-object-cache.md) | 35 | medium | 2026-06-29 |
 | 0187 | [Incremental Document Streaming Memory Budget](0187-incremental-document-streaming-memory-budget.md) | 35 | medium | 2026-06-29 |
 | 0186 | [Native Text Extraction And Search Parity Gate](0186-native-text-extraction-and-search-parity-gate.md) | 35 | medium | 2026-06-29 |
 | 0185 | [PDF/A And Archival Document Conformance Boundary](0185-pdf-a-and-archival-document-conformance-boundary.md) | 34 | medium | 2026-06-29 |
