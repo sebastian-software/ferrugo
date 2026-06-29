@@ -11,13 +11,28 @@ MAX_EDGE="${MAX_EDGE:-160}"
 ITERATIONS="${ITERATIONS:-3}"
 WARMUP="${WARMUP:-1}"
 TIMEOUT="${TIMEOUT:-30}"
+PROFILE="${PROFILE:-release}"
+
+profile_args=()
+case "$PROFILE" in
+  release)
+    profile_args=(--release)
+    ;;
+  dev | debug)
+    profile_args=()
+    ;;
+  *)
+    echo "PROFILE must be one of: release, dev, debug" >&2
+    exit 2
+    ;;
+esac
 
 features=(--no-default-features)
 if [[ -n "${FERRUGO_PDFIUM_LIBRARY:-}" ]]; then
   features=(--features pdfium)
 fi
 
-cargo run -p ferrugo-cli "${features[@]}" -- benchmark-matrix fixtures/generated \
+cargo run -p ferrugo-cli "${profile_args[@]}" "${features[@]}" -- benchmark-matrix fixtures/generated \
   --manifest fixtures/performance-matrix-manifest.tsv \
   --max-edge "$MAX_EDGE" \
   --iterations "$ITERATIONS" \

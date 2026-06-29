@@ -37,14 +37,64 @@ profiles, and regressions teach us where the real bottlenecks are.
   finding.
 - [ ] Accept a block only with at least 10% improvement on target fixtures or a
   clear memory reduction, with no new fallback or visual-regression evidence.
+- [ ] Treat changes below 5% as noise unless repeated runs prove otherwise.
+- [ ] Repeat and inspect any 5-10% change before calling it meaningful.
+- [ ] Add no performance dependency without profile evidence and a short
+  "why std is not enough" note in the change.
+- [ ] Keep `unsafe` out of renderer hot paths unless a safe API cannot express
+  the operation, the block is isolated, and the safety invariant is documented.
 - [ ] Do not update public README performance claims until at least two stable
   matrix runs agree.
+
+## Acceptance Criteria
+
+These criteria apply to every optimization block unless a narrower follow-up
+document explicitly overrides them.
+
+Baseline acceptance:
+
+- [ ] Two release-mode matrix runs on the same host have comparable top-10
+  Ferrugo fixture rankings.
+- [ ] Report artifacts include backend versions/commands, OS, CPU, Rust
+  version, fixture manifest, `max_edge`, iterations, warmup, timeout, and RSS
+  availability.
+- [ ] Missing PDFium is acceptable only when the report records `missing-tool`;
+  PDFium is required before publishing comparison claims.
+- [ ] Poppler timing is treated as a cold-process reference, not as an
+  in-process renderer peer.
+
+Optimization-block acceptance:
+
+- [ ] The block targets one fixture family and one profile-backed bottleneck.
+- [ ] Target fixtures improve by at least 10% in p95/wall time, or peak RSS /
+  allocation volume drops by at least 10%.
+- [ ] No new fallback bucket, error class, timeout, or crash appears on the
+  focused fixture set.
+- [ ] Visual output is reviewed against existing differential artifacts and,
+  when available, against Poppler/PDFium reference renders.
+- [ ] The change passes:
+  `cargo fmt --all --check`,
+  `cargo check --workspace --no-default-features`,
+  `cargo test --workspace --no-default-features`, and
+  `cargo clippy --workspace --all-targets --all-features -- -D warnings`.
+- [ ] Before/after matrix artifacts are kept locally with enough naming context
+  to revisit the result.
+
+Dependency and hardware-aware acceptance:
+
+- [ ] Prefer `std` and safe slice APIs first.
+- [ ] Choose stack-inline data structures only after size histograms show that
+  the inline capacity is correct for real fixtures.
+- [ ] Keep scratch buffers request-local or session-local; no hidden global
+  cache.
+- [ ] Any SIMD, pointer-copy, arena, or thread-pool change keeps a simple scalar
+  or safe fallback path unless the crate boundary makes that impossible.
 
 ## Phase 0: Baseline Hardening
 
 Goal: make the first optimization target defensible.
 
-- [ ] Add or document a release-mode path for `scripts/generate_performance_matrix.sh`.
+- [x] Add or document a release-mode path for `scripts/generate_performance_matrix.sh`.
 - [ ] Run the full starter matrix in release mode with `native + poppler`.
 - [ ] Run the same matrix with PDFium once `FERRUGO_PDFIUM_LIBRARY` is available.
 - [ ] Store baseline artifacts under `target/performance-matrix-baseline-*`.
@@ -52,10 +102,28 @@ Goal: make the first optimization target defensible.
   whether RSS was available.
 - [ ] Run the matrix twice and compare rank stability for the top 10 Ferrugo
   fixtures.
-- [ ] Decide whether Poppler outliers on this host are useful timing references
-  or only functional reference rows.
+- [x] Treat Poppler as a useful cold-process and visual reference. Do not use
+  Poppler outliers as hard optimization targets until the report gains host
+  timing reliability flags.
 
-Suggested command:
+Suggested wrapper command:
+
+```sh
+OUTPUT=target/performance-matrix-baseline-release.json \
+REPORT=target/performance-matrix-baseline-release.md \
+ARTIFACT_DIR=target/performance-matrix-baseline-artifacts \
+ITERATIONS=5 \
+TIMEOUT=60 \
+./scripts/generate_performance_matrix.sh
+```
+
+Smoke variant:
+
+```sh
+PROFILE=dev ./scripts/generate_performance_matrix.sh
+```
+
+Equivalent direct command:
 
 ```sh
 cargo run -p ferrugo-cli --release --no-default-features -- benchmark-matrix fixtures/generated \
@@ -84,6 +152,14 @@ cargo run -p ferrugo-cli --release --features pdfium -- benchmark-matrix fixture
   --report target/performance-matrix-baseline-pdfium-release.md \
   --artifact-dir target/performance-matrix-baseline-pdfium-artifacts
 ```
+
+PDFium path policy:
+
+- keep local PDFium paths in `FERRUGO_PDFIUM_LIBRARY` and
+  `DYLD_LIBRARY_PATH`;
+- do not commit absolute maintainer paths;
+- record the resolved command/path in the matrix report;
+- keep native-only runs valid by marking PDFium as `missing-tool`.
 
 ## Phase 1: Renderer Timing Attribution
 
@@ -143,6 +219,61 @@ Acceptance:
   reason why the profile disproved the candidate.
 - [ ] No new fallback categories.
 - [ ] No unacceptable Poppler/PDFium visual drift on the touched fixture set.
+
+## Hardware-Aware Rust Notes
+
+Goal: use Rust's memory model and the host CPU well without prematurely
+outsmarting the compiler.
+
+Default choices:
+
+- Use `Vec<T>` for large or genuinely dynamic contiguous data. Prefer
+  `with_capacity` when the upper bound is known, reuse buffers across phases,
+  and avoid repeated grow/copy cycles inside pixel or path loops.
+- Use slices in APIs: `&[T]`, `&mut [T]`, `&str`, and `&[u8]` keep ownership
+  local and make hot code easier to profile.
+- Prefer row-major, cache-friendly traversal for raster buffers. Keep inner
+  loops branch-light and make clipping decisions before entering them.
+- Prefer safe bulk-copy APIs such as `copy_from_slice`, `copy_within`,
+  `clone_from_slice`, and `extend_from_slice`. LLVM can lower these to optimized
+  `memcpy`/`memmove` patterns for the target CPU.
+
+Candidate crates and when to consider them:
+
+- [`smallvec`](https://docs.rs/smallvec/latest/smallvec/): consider for tiny,
+  hot vectors such as path operands, short clip stacks, or compact text-state
+  runs after histograms show most values fit inline. Pick the inline size from
+  fixture data, not taste. Watch for larger stack frames and larger enum
+  variants.
+- [`arrayvec`](https://docs.rs/arrayvec/latest/arrayvec/): consider when a hard
+  PDF or renderer limit gives a fixed maximum and overflow should be handled as
+  a normal error.
+- [`memchr`](https://docs.rs/memchr/latest/memchr/): consider for tokenizer or
+  stream scanning if profiles show byte-search loops dominating.
+- [`bumpalo`](https://docs.rs/bumpalo/latest/bumpalo/): consider for
+  request-local arenas only when allocation profiles show many short-lived
+  objects with the same lifetime. Arena memory must be bounded by request
+  budgets.
+
+Copy and pointer rules:
+
+- Treat "memcpy optimization" as "make the safe slice operation obvious" first.
+- Use `std::ptr::copy_nonoverlapping` only if safe slice APIs cannot express the
+  operation, after a benchmark proves the win, and with a documented safety
+  invariant beside the `unsafe` block.
+- Do not add hand-written pointer loops for style. They must beat the safe
+  implementation on the target fixture set.
+
+SIMD and concurrency rules:
+
+- Write a simple scalar implementation first. Consider SIMD only after profiles
+  show the inner loop dominates and the scalar version has been cleaned up.
+- Any SIMD path needs correctness fixtures, a scalar fallback, and target
+  feature gating.
+- Avoid internal Rayon-style parallelism inside one page render for now. Server
+  deployments can already parallelize across requests/pages, and hidden inner
+  parallelism can increase peak RSS. Revisit this after scheduler benchmarks
+  show a clear need.
 
 ## Phase 3: Allocation And Clone Audit
 
@@ -235,12 +366,26 @@ captured. The most likely high-value candidates are:
 If profiling points elsewhere, this section should be edited before code
 changes start.
 
-## Open Questions
+## Settled Decisions
 
-- [ ] Where should the local PDFium dylib live for repeatable maintainer runs?
-- [ ] Should `scripts/generate_performance_matrix.sh` default to release mode or
-  keep smoke mode as default and expose `PROFILE=release`?
-- [ ] Which profiler should be the default documented path on macOS: `sample`,
-  Instruments, or Samply?
-- [ ] Should the matrix report gain explicit "host timing reliability" flags for
-  Poppler or RSS availability?
+- [x] `scripts/generate_performance_matrix.sh` defaults to release mode.
+  Use `PROFILE=dev` only for smoke runs.
+- [x] PDFium library location stays environment-driven. Do not commit machine
+  paths.
+- [x] Default macOS profiling order: `sample` first, Instruments when call-tree
+  detail is needed, Samply as an optional flamegraph-friendly path.
+- [x] Add host timing reliability flags to the matrix report in a follow-up, but
+  do not block the first optimization block on that field.
+
+## Remaining Questions
+
+- [ ] Which exact fixture becomes optimization block 1 after two baseline runs?
+- [ ] What family-specific thresholds should replace the global 10% rule after
+  we understand variance?
+- [ ] Should any focused performance subset become CI-gated, or should all
+  benchmark budgets remain maintainer-local for now?
+- [ ] Which `smallvec` inline capacities are justified by real path/token/clip
+  histograms?
+- [ ] Which memory tool should be the default for allocation evidence on macOS:
+  Instruments Allocations, heaptrack-equivalent tooling, or targeted counters in
+  the renderer?
