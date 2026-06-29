@@ -129,6 +129,13 @@ Native slice committed toward 0182 on 2026-06-28.
   blocker at MAE 6.522, p95 23, changed ratio 0.165179. The paired 0183 mixed
   vector/raster Poppler regression gate remains 8 accepted drift and
   0 blockers.
+- Switched snapped axis-aligned hairlines to pixel-center sampling even when
+  the broader path rasterizer is using 2x supersampling. The strict tagged
+  visual gate remains 7 total, 0 exact, 6 accepted drift, and 1 blocker, while
+  `tagged-structure-heavy-report.pdf` improves from MAE 6.522, p95 23, changed
+  ratio 0.165179 to MAE 6.518, p95 17, changed ratio 0.163675. The paired 0183
+  mixed vector/raster Poppler regression gate remains 8 accepted drift and
+  0 blockers.
 
 ## Completion Notes
 

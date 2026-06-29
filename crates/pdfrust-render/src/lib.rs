@@ -9807,24 +9807,28 @@ fn stroke_path(
     };
     let snapped_lines;
     let snapped_joins;
-    let (stroke_lines, joins): (&[LineSegment], &[StrokeJoin]) =
-        if should_snap_axis_aligned_hairline(state.line_width, state.ctm_scale) {
-            let snap_mode = hairline_snap_mode(state.line_width, state.ctm_scale);
-            snapped_lines = base_lines
-                .iter()
-                .copied()
-                .map(|line| snap_axis_aligned_hairline_line(line, snap_mode))
-                .collect::<Vec<_>>();
-            snapped_joins = base_joins
-                .iter()
-                .copied()
-                .map(|join| snap_axis_aligned_hairline_join(join, snap_mode))
-                .collect::<Vec<_>>();
-            (snapped_lines.as_slice(), snapped_joins.as_slice())
-        } else {
-            (base_lines, base_joins)
-        };
-    let samples = u32::from(context.options.supersample);
+    let snap_hairline = should_snap_axis_aligned_hairline(state.line_width, state.ctm_scale);
+    let (stroke_lines, joins): (&[LineSegment], &[StrokeJoin]) = if snap_hairline {
+        let snap_mode = hairline_snap_mode(state.line_width, state.ctm_scale);
+        snapped_lines = base_lines
+            .iter()
+            .copied()
+            .map(|line| snap_axis_aligned_hairline_line(line, snap_mode))
+            .collect::<Vec<_>>();
+        snapped_joins = base_joins
+            .iter()
+            .copied()
+            .map(|join| snap_axis_aligned_hairline_join(join, snap_mode))
+            .collect::<Vec<_>>();
+        (snapped_lines.as_slice(), snapped_joins.as_slice())
+    } else {
+        (base_lines, base_joins)
+    };
+    let samples = if snap_hairline {
+        1
+    } else {
+        u32::from(context.options.supersample)
+    };
     let sample_count = samples * samples;
     let dimensions = device.dimensions();
     let Some(bounds) = stroke_pixel_bounds(stroke_lines, joins, radius, dimensions) else {
@@ -15634,6 +15638,54 @@ mod tests {
         assert_eq!(
             raster.pixel(10, 5).expect("snapped ultrathin hairline"),
             black
+        );
+    }
+
+    #[test]
+    fn snapped_hairlines_should_use_pixel_center_sampling() {
+        let list = build_path_display_list(
+            tokenize_content(PdfBytes::new(b"0.3 w 0 5 m 20 5 l S")),
+            DisplayListOptions::default(),
+        )
+        .expect("valid hairline stream");
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 20.0,
+                    max_y: 10.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            20,
+        )
+        .expect("hairline transform");
+
+        let raster = rasterize_paths(
+            &list,
+            transform,
+            Rgba::WHITE,
+            PathRasterOptions {
+                supersample: 2,
+                ..PathRasterOptions::default()
+            },
+        )
+        .expect("snapped hairline should rasterize");
+
+        assert_eq!(
+            raster.pixel(10, 5).expect("snapped hairline center row"),
+            Rgba {
+                r: 0,
+                g: 0,
+                b: 0,
+                a: 255,
+            }
+        );
+        assert_eq!(
+            raster.pixel(10, 4).expect("row before snapped hairline"),
+            Rgba::WHITE
         );
     }
 
