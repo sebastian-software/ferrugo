@@ -12,9 +12,9 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use ferrugo_native::{
-    scan_operator_coverage, NativeBackend, NativeMemoryDiagnostics, NativePageCacheKey,
-    NativePageCachePolicy, NativeRenderPhaseTimings, NativeRenderTrace, OperatorCoverageEntry,
-    OperatorCoverageOptions, OperatorSupportStatus,
+    scan_operator_coverage, NativeBackend, NativeDocumentSessionStats, NativeMemoryDiagnostics,
+    NativePageCacheKey, NativePageCachePolicy, NativeRenderPhaseTimings, NativeRenderTrace,
+    OperatorCoverageEntry, OperatorCoverageOptions, OperatorSupportStatus,
 };
 #[cfg(feature = "pdfium")]
 use ferrugo_pdfium::PdfiumBackend;
@@ -3887,6 +3887,7 @@ struct RepeatBenchmarkRecord {
     family: String,
     page_index: u32,
     cache_key: NativePageCacheKey,
+    session_stats: Option<NativeDocumentSessionStats>,
     timings_ms: Vec<f64>,
     budget_violations: Vec<&'static str>,
     outcome: RepeatBenchmarkOutcome,
@@ -5294,46 +5295,67 @@ fn benchmark_repeat_fixture(
     cache_key: NativePageCacheKey,
 ) -> RepeatBenchmarkRecord {
     let mut timings_ms = Vec::with_capacity(config.repetitions);
-    let mut last_success = None;
-    for _ in 0..config.repetitions {
+    let mut last_success;
+    let first_started = Instant::now();
+    let bytes = match fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            let outcome = RepeatBenchmarkOutcome::Error {
+                class: "io",
+                message: error.to_string(),
+            };
+            return repeat_error_record(path_key, family, options.page_index, cache_key, outcome);
+        }
+    };
+    let session = match native.document_session(&bytes, &[options.page_index]) {
+        Ok(session) => session,
+        Err(error) => {
+            let outcome = repeat_error_outcome(error);
+            return repeat_error_record(path_key, family, options.page_index, cache_key, outcome);
+        }
+    };
+    let session_stats = session.stats();
+    match session.render_page(options) {
+        Ok(thumbnail) => {
+            timings_ms.push(elapsed_ms(first_started.elapsed()));
+            last_success = thumbnail;
+        }
+        Err(error) => {
+            let outcome = repeat_error_outcome(error);
+            return repeat_error_record_with_session(
+                path_key,
+                family,
+                options.page_index,
+                cache_key,
+                Some(session_stats),
+                timings_ms,
+                outcome,
+            );
+        }
+    }
+
+    for _ in 1..config.repetitions {
         let started = Instant::now();
-        match native.render(PdfSource::from_path(path), options) {
+        match session.render_page(options) {
             Ok(thumbnail) => {
                 timings_ms.push(elapsed_ms(started.elapsed()));
-                last_success = Some(thumbnail);
+                last_success = thumbnail;
             }
             Err(error) => {
-                let outcome =
-                    if error.class() == ferrugo_thumbnail::ThumbnailErrorClass::Unsupported {
-                        RepeatBenchmarkOutcome::FallbackRequired {
-                            reason: FallbackReason::from_native_error(&error),
-                            message: error.to_string(),
-                        }
-                    } else {
-                        RepeatBenchmarkOutcome::Error {
-                            class: error.class().as_str(),
-                            message: error.to_string(),
-                        }
-                    };
-                let budget_violations = match &outcome {
-                    RepeatBenchmarkOutcome::FallbackRequired { .. } => vec!["native_fallback"],
-                    RepeatBenchmarkOutcome::Error { .. } => vec!["render_error"],
-                    RepeatBenchmarkOutcome::NativeRendered { .. } => Vec::new(),
-                };
-                return RepeatBenchmarkRecord {
-                    path: path_key,
+                let outcome = repeat_error_outcome(error);
+                return repeat_error_record_with_session(
+                    path_key,
                     family,
-                    page_index: options.page_index,
+                    options.page_index,
                     cache_key,
+                    Some(session_stats),
                     timings_ms,
-                    budget_violations,
                     outcome,
-                };
+                );
             }
         }
     }
 
-    let thumbnail = last_success.expect("repetitions is validated as at least two");
     let first_ms = timings_ms[0];
     let repeat_values = &timings_ms[1..];
     let repeat_mean_ms = repeat_values.iter().sum::<f64>() / repeat_values.len() as f64;
@@ -5361,18 +5383,77 @@ fn benchmark_repeat_fixture(
         family,
         page_index: options.page_index,
         cache_key,
+        session_stats: Some(session_stats),
         timings_ms,
         budget_violations,
         outcome: RepeatBenchmarkOutcome::NativeRendered {
-            width: thumbnail.width,
-            height: thumbnail.height,
-            output_bytes: thumbnail.bytes.len(),
+            width: last_success.width,
+            height: last_success.height,
+            output_bytes: last_success.bytes.len(),
             first_ms,
             repeat_mean_ms,
             repeat_min_ms,
             repeat_max_ms,
             repeat_to_first_ratio,
         },
+    }
+}
+
+fn repeat_error_outcome(error: ThumbnailError) -> RepeatBenchmarkOutcome {
+    if error.class() == ferrugo_thumbnail::ThumbnailErrorClass::Unsupported {
+        RepeatBenchmarkOutcome::FallbackRequired {
+            reason: FallbackReason::from_native_error(&error),
+            message: error.to_string(),
+        }
+    } else {
+        RepeatBenchmarkOutcome::Error {
+            class: error.class().as_str(),
+            message: error.to_string(),
+        }
+    }
+}
+
+fn repeat_error_record(
+    path: String,
+    family: String,
+    page_index: u32,
+    cache_key: NativePageCacheKey,
+    outcome: RepeatBenchmarkOutcome,
+) -> RepeatBenchmarkRecord {
+    repeat_error_record_with_session(
+        path,
+        family,
+        page_index,
+        cache_key,
+        None,
+        Vec::new(),
+        outcome,
+    )
+}
+
+fn repeat_error_record_with_session(
+    path: String,
+    family: String,
+    page_index: u32,
+    cache_key: NativePageCacheKey,
+    session_stats: Option<NativeDocumentSessionStats>,
+    timings_ms: Vec<f64>,
+    outcome: RepeatBenchmarkOutcome,
+) -> RepeatBenchmarkRecord {
+    let budget_violations = match &outcome {
+        RepeatBenchmarkOutcome::FallbackRequired { .. } => vec!["native_fallback"],
+        RepeatBenchmarkOutcome::Error { .. } => vec!["render_error"],
+        RepeatBenchmarkOutcome::NativeRendered { .. } => Vec::new(),
+    };
+    RepeatBenchmarkRecord {
+        path,
+        family,
+        page_index,
+        cache_key,
+        session_stats,
+        timings_ms,
+        budget_violations,
+        outcome,
     }
 }
 
@@ -5406,7 +5487,7 @@ fn repeat_report_from_records(
 
     RepeatBenchmarkReport {
         platform: PlatformMetadata::current(),
-        cache_policy: NativePageCachePolicy::IsolatedRender,
+        cache_policy: NativePageCachePolicy::DocumentSession,
         total: records.len(),
         native_rendered,
         fallback_required,
@@ -9326,6 +9407,7 @@ fn repeat_benchmark_record_json(record: &RepeatBenchmarkRecord) -> String {
             "\"family\":{},",
             "\"page_index\":{},",
             "\"cache_key\":{},",
+            "\"session\":{},",
             "\"timings_ms\":{},",
             "\"budget_violations\":{},",
             "\"outcome\":{}",
@@ -9335,9 +9417,34 @@ fn repeat_benchmark_record_json(record: &RepeatBenchmarkRecord) -> String {
         json_string(&record.family),
         record.page_index,
         native_page_cache_key_json(&record.cache_key),
+        native_document_session_stats_json(record.session_stats),
         float_array_json(&record.timings_ms),
         json_str_array(record.budget_violations.as_slice()),
         repeat_benchmark_outcome_json(&record.outcome)
+    )
+}
+
+fn native_document_session_stats_json(stats: Option<NativeDocumentSessionStats>) -> String {
+    let Some(stats) = stats else {
+        return "null".to_string();
+    };
+    format!(
+        concat!(
+            "{{",
+            "\"cache_policy\":{},",
+            "\"input_bytes\":{},",
+            "\"loaded_objects\":{},",
+            "\"loaded_object_bytes\":{},",
+            "\"page_count\":{},",
+            "\"first_page_only\":{}",
+            "}}"
+        ),
+        native_page_cache_policy_json(stats.cache_policy),
+        stats.input_bytes,
+        stats.loaded_objects,
+        stats.loaded_object_bytes,
+        stats.page_count,
+        stats.first_page_only
     )
 }
 
@@ -11797,7 +11904,17 @@ status = "candidate"
             report.records[0].cache_key.document_identity,
             report.records[1].cache_key.document_identity
         );
-        assert!(json.contains("\"name\":\"isolated-render\""));
+        assert_eq!(report.cache_policy, NativePageCachePolicy::DocumentSession);
+        assert_eq!(
+            report.records[0]
+                .session_stats
+                .expect("record should expose session stats")
+                .cache_policy,
+            NativePageCachePolicy::DocumentSession
+        );
+        assert!(json.contains("\"name\":\"document-session\""));
+        assert!(json.contains("\"session\""));
+        assert!(json.contains("\"loaded_objects\""));
         assert!(json.contains("\"cache_key\""));
         assert!(json.contains("\"repeat_mean_ms\""));
     }

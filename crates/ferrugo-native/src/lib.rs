@@ -111,6 +111,36 @@ pub struct NativeRenderTrace {
     pub timings: NativeRenderPhaseTimings,
 }
 
+/// Explicit request/session-local native document state.
+///
+/// A session borrows caller-owned PDF bytes and keeps the parsed document plus
+/// page tree alive for repeated page renders inside one request or benchmark
+/// run. It does not persist artifacts to disk and it does not use global state.
+#[derive(Debug)]
+pub struct NativeDocumentSession<'a> {
+    document: ClassicDocument<'a>,
+    page_tree: PageTree,
+    limits: NativeRenderLimits,
+    stats: NativeDocumentSessionStats,
+}
+
+/// Bounded state retained by a [`NativeDocumentSession`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeDocumentSessionStats {
+    /// Cache policy used for the retained state.
+    pub cache_policy: NativePageCachePolicy,
+    /// Input bytes borrowed by the session.
+    pub input_bytes: usize,
+    /// Indirect objects loaded into the parsed document table.
+    pub loaded_objects: usize,
+    /// Sum of parsed indirect-object byte spans retained by the document.
+    pub loaded_object_bytes: usize,
+    /// Pages visible through the loaded page tree.
+    pub page_count: usize,
+    /// True when the bounded linearized first-page loader was used.
+    pub first_page_only: bool,
+}
+
 #[derive(Debug, Clone, Copy)]
 enum NativeRenderPhase {
     StreamDecode,
@@ -312,6 +342,24 @@ impl NativeBackend {
         )?;
         timings.total = total_started.elapsed();
         Ok(NativeRenderTrace { thumbnail, timings })
+    }
+
+    /// Creates an explicit document session for repeated renders over the same
+    /// caller-owned PDF bytes.
+    ///
+    /// The returned session borrows `bytes`; callers own the lifecycle and must
+    /// keep the bytes alive for as long as the session is used.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ThumbnailError`] when the document cannot be loaded or the
+    /// requested page set cannot be represented by the loaded page tree.
+    pub fn document_session<'a>(
+        &self,
+        bytes: &'a [u8],
+        page_indices: &[u32],
+    ) -> Result<NativeDocumentSession<'a>, ThumbnailError> {
+        NativeDocumentSession::new(bytes, page_indices, self.limits)
     }
 
     /// Renders requested preview pages while preserving page-level outcomes.
@@ -624,6 +672,9 @@ pub struct NativeMemoryDiagnostics {
 pub enum NativePageCachePolicy {
     /// Every render owns its decoded resources and pass-local caches.
     IsolatedRender,
+    /// Parsed document and page tree are retained inside an explicit request
+    /// session owned by the caller.
+    DocumentSession,
 }
 
 impl NativePageCachePolicy {
@@ -632,6 +683,7 @@ impl NativePageCachePolicy {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::IsolatedRender => "isolated-render",
+            Self::DocumentSession => "document-session",
         }
     }
 
@@ -641,7 +693,50 @@ impl NativePageCachePolicy {
     pub const fn permits_disk_persistence(self) -> bool {
         match self {
             Self::IsolatedRender => false,
+            Self::DocumentSession => false,
         }
+    }
+}
+
+impl<'a> NativeDocumentSession<'a> {
+    fn new(
+        bytes: &'a [u8],
+        page_indices: &[u32],
+        limits: NativeRenderLimits,
+    ) -> Result<Self, ThumbnailError> {
+        let input = PdfBytes::new(bytes);
+        let (document, page_tree) = load_render_document_for_page_set(input, page_indices)?;
+        let load_metrics = document.load_metrics;
+        let stats = NativeDocumentSessionStats {
+            cache_policy: NativePageCachePolicy::DocumentSession,
+            input_bytes: load_metrics.input_bytes,
+            loaded_objects: load_metrics.loaded_objects,
+            loaded_object_bytes: load_metrics.loaded_object_bytes,
+            page_count: page_tree.pages().len(),
+            first_page_only: load_metrics.first_page_only,
+        };
+        Ok(Self {
+            document,
+            page_tree,
+            limits,
+            stats,
+        })
+    }
+
+    /// Returns the retained session budget and loader stats.
+    #[must_use]
+    pub const fn stats(&self) -> NativeDocumentSessionStats {
+        self.stats
+    }
+
+    /// Renders one page through the session-retained document and page tree.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ThumbnailError`] when the requested page cannot be rendered.
+    pub fn render_page(&self, options: &ThumbnailOptions) -> Result<Thumbnail, ThumbnailError> {
+        reject_form_appearance_mutation(options)?;
+        render_loaded_document(&self.document, &self.page_tree, options, self.limits)
     }
 }
 
@@ -4485,6 +4580,39 @@ mod tests {
 
         assert_eq!(policy.as_str(), "isolated-render");
         assert!(!policy.permits_disk_persistence());
+        assert_eq!(
+            NativePageCachePolicy::DocumentSession.as_str(),
+            "document-session"
+        );
+        assert!(!NativePageCachePolicy::DocumentSession.permits_disk_persistence());
+    }
+
+    #[test]
+    fn native_document_session_should_render_repeated_pages_without_disk_persistence() {
+        let bytes = include_bytes!("../../../fixtures/generated/vector-paths.pdf");
+        let options = ThumbnailOptions {
+            max_edge: 64,
+            ..ThumbnailOptions::default()
+        };
+        let backend = NativeBackend::new();
+
+        let session = backend
+            .document_session(bytes, &[0])
+            .expect("document session should load");
+        let first = session
+            .render_page(&options)
+            .expect("first session render should work");
+        let second = session
+            .render_page(&options)
+            .expect("second session render should work");
+
+        assert_eq!(first.bytes, second.bytes);
+        assert_eq!(
+            session.stats().cache_policy,
+            NativePageCachePolicy::DocumentSession
+        );
+        assert_eq!(session.stats().input_bytes, bytes.len());
+        assert!(!session.stats().cache_policy.permits_disk_persistence());
     }
 
     #[test]

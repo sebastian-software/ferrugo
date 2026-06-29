@@ -843,19 +843,49 @@ First image raster optimization result from 2026-06-29:
 Goal: improve batch and multi-page workloads without introducing hidden global
 state.
 
-- [ ] Keep global caches out of the renderer path.
-- [ ] Define an explicit request/session cache object for batch or multi-page
+- [x] Keep global caches out of the renderer path.
+- [x] Define an explicit request/session cache object for batch or multi-page
   rendering.
-- [ ] Budget cache entries by bytes and item count.
-- [ ] Cache parsed document/page tree data only inside the request/session.
+- [ ] Enforce cache-entry budgets by bytes and item count.
+- [x] Report session-retained bytes and item counts.
+- [x] Cache parsed document/page tree data only inside the request/session.
 - [ ] Cache decoded shared resources only when identity and budget are clear.
-- [ ] Make cache use visible in benchmark output.
+- [x] Make cache use visible in benchmark output.
 
 Acceptance:
 
-- [ ] Repeat/batch benchmark shows improvement.
+- [ ] Repeat/batch benchmark shows a standalone or cumulative accepted
+  improvement.
 - [ ] Low-memory profile remains bounded.
 - [ ] Cache invalidation is tied to document identity and render options.
+
+Initial document-session result from 2026-06-29:
+
+- Change: added `NativeDocumentSession<'a>` as an explicit request-local native
+  session that borrows caller-owned PDF bytes and retains the parsed
+  `ClassicDocument` plus `PageTree` without global state or disk persistence.
+- Benchmark visibility: `benchmark-repeat-native` now reports
+  `document-session` cache policy and per-record session stats:
+  `input_bytes`, `loaded_objects`, `loaded_object_bytes`, `page_count`, and
+  `first_page_only`.
+- Baseline:
+  `target/benchmark-repeat-report-vector-session-baseline.json`, native
+  repeat benchmark, `fixtures/performance-matrix-manifest.tsv`,
+  `--include-family report/vector`, `--max-edge 160`, 30 repetitions.
+- After:
+  `target/benchmark-repeat-report-vector-session-after.json`, same command and
+  host.
+- Result on one-page `report/vector` fixtures: family first-render mean
+  improved `3.087 ms` -> `2.883 ms` (~6.6%), family repeat mean improved
+  `2.834 ms` -> `2.787 ms` (~1.7%). Fixture-level repeat gains were mixed:
+  `technical-hatch-clipping.pdf` repeat mean improved ~5.1%, while
+  `vector-stress.pdf` was effectively neutral.
+- Decision: keep the session boundary because it completes the required
+  explicit, request-local cache shape and makes retained state visible in
+  reports. Do not treat the current one-page repeat result as a standalone
+  speed claim. The next Phase 5 optimization should target multi-page/batch
+  reuse or decoded shared resources, where repeated document loading and shared
+  resource decode are larger parts of total time.
 
 ## Phase 6: Benchmark Gates And Claims
 
