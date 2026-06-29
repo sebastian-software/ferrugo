@@ -813,6 +813,34 @@ Rect-fill fast-path status from 2026-06-29:
 - Decision: reverted. The candidate is below the 5% threshold and should not be
   treated as a meaningful standalone or cumulative optimization.
 
+Rejected axis-aligned hairline candidate from 2026-06-30:
+
+- Change tested locally but not kept: when snapped hairline strokes had no
+  joins, used butt caps, and every segment was axis-aligned, route the stroke
+  through a simpler centerline pixel predicate instead of the generic
+  `point_in_stroke`/join path.
+- Rationale: this targeted the still-open Phase 2 work item for
+  axis-aligned hairlines and simple strokes. The candidate was intentionally
+  narrow so dashed segments, joins, round/square caps, and clipped pixels would
+  continue to use existing semantics.
+- Candidate artifacts:
+  `target/performance-matrix-axis-hairline-candidate-technical.json` and
+  `target/performance-matrix-axis-hairline-candidate-technical-repeat.json`,
+  native hot-render, `fixtures/technical-drawing-manifest.tsv`, `--max-edge
+  160`.
+- Repeat result against
+  `target/performance-matrix-blend-fastpath-technical-repeat-after.json`:
+  small p95 gains appeared on `clipped-paths.pdf` (~9.3%),
+  `dashed-stroke.pdf` (~9.8%), and `engineering-schematic-symbols.pdf`
+  (~9.3%), but mean gains were only about 2-4%. The heavier target fixtures
+  improved much less: `vector-stress.pdf` p95 ~2.3%, `technical-hatch-clipping`
+  ~1.8%, `engineering-floorplan-precision` ~1.3%, and
+  `technical-linework-dimensions` ~1.1%.
+- Decision: reverted. The branch adds specialized stroke code but does not move
+  the actual heavy fixtures enough to justify the extra surface area. Revisit
+  simple-stroke work only with a profile that points to a broader stroke
+  predicate or bounds strategy, not this narrow centerline branch.
+
 ## Hardware-Aware Rust Notes
 
 Goal: use Rust's memory model and the host CPU well without prematurely
