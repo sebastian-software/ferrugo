@@ -1,6 +1,6 @@
 # 0197: Serverless Cold Start And Binary Size Budget
 
-Status: todo
+Status: done
 Phase: 37
 Size: medium
 Depends on: 0195
@@ -46,4 +46,18 @@ WASM/mobile profile readiness.
 
 ## Completion Notes
 
-Empty until done.
+- Added the explicit Cargo `serverless` profile for native-only short-lived
+  workers.
+- Added `scripts/measure_serverless_profile.sh` to build the profile, inspect
+  the CLI package file list, and measure binary size, startup, and first-render
+  latency.
+- Documented default budgets in `docs/packaging.md` and the measurement flow in
+  `docs/benchmarks.md`.
+- Report:
+  `docs/reports/serverless-cold-start-and-binary-size-2026-06-29.md`.
+- Validation:
+  - `bash scripts/measure_serverless_profile.sh`
+  - `cargo fmt --check`
+  - `git diff --check -- Cargo.toml scripts/measure_serverless_profile.sh docs/packaging.md docs/benchmarks.md docs/milestones/0197-serverless-cold-start-and-binary-size-budget.md docs/milestones/README.md docs/reports/serverless-cold-start-and-binary-size-2026-06-29.md`
+  - `cargo test --workspace --no-default-features`
+  - `cargo clippy --workspace --all-targets --all-features -- -D warnings`

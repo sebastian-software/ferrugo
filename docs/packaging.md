@@ -76,6 +76,37 @@ artifact dry-runs, and all-features clippy. It writes the inspected CLI package
 file list to
 `target/native-only-release-pdfrust-cli-package-files.txt`.
 
+## Serverless Profile
+
+Short-lived server rendering can use the explicit Cargo `serverless` profile:
+
+```sh
+cargo build --profile serverless -p pdfrust-cli --no-default-features
+```
+
+The profile inherits release mode, strips symbols, uses ThinLTO, keeps one code
+generation unit, optimizes for size, and uses `panic = "abort"`. It is intended
+for native-only thumbnail workers where PDFium is not packaged and process
+startup matters.
+
+Measure the profile before changing renderer dependencies, feature flags, or
+startup-sensitive code:
+
+```sh
+bash scripts/measure_serverless_profile.sh
+```
+
+The script builds `target/serverless/pdfrust-cli`, inspects the CLI package file
+list for PDFium/native runtime assets, and records binary size, process startup,
+and first-render latency in `target/serverless-profile-0197.json`.
+
+Default local budgets:
+
+- binary size: 8 MiB;
+- startup p95: 500 ms;
+- first-render p95: 250 ms;
+- render output: 1 MiB.
+
 ## Plugin-Free Install
 
 The native CLI can be installed from the workspace without PDFium binaries,

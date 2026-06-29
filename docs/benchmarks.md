@@ -91,3 +91,20 @@ The harness deliberately does not report operating-system peak RSS. Memory
 expectations remain enforced through deterministic renderer budgets documented
 in `docs/policies/renderer-memory-budgets.md`; benchmark output bytes are only
 a lightweight allocation proxy.
+
+## Serverless Cold Start
+
+Use `scripts/measure_serverless_profile.sh` for short-lived native-only worker
+checks. It builds `pdfrust-cli` with the Cargo `serverless` profile, verifies
+the CLI package file list does not contain PDFium/native runtime assets, then
+measures:
+
+- binary size from `target/serverless/pdfrust-cli`;
+- process startup by invoking `pdfrust-cli --help`;
+- first-render latency by invoking a new `render-native` process per sample.
+
+The default fixture is `fixtures/generated/text-page.pdf` at `--max-edge 160`.
+Override budgets with `PDFRUST_SERVERLESS_MAX_BINARY_BYTES`,
+`PDFRUST_SERVERLESS_MAX_STARTUP_P95_MS`,
+`PDFRUST_SERVERLESS_MAX_FIRST_RENDER_P95_MS`, and
+`PDFRUST_SERVERLESS_MAX_RENDER_OUTPUT_BYTES`.
