@@ -4521,7 +4521,7 @@ impl PageTransform {
         let height = scaled_dimension(rotated_height, scale, max_edge)?;
         let dimensions = RasterDimensions::new(width, height)?;
         ensure_page_raster_pixel_budget(dimensions, options.max_page_pixels)?;
-        let matrix = page_to_pixel_matrix(source_box, geometry.rotation, scale);
+        let matrix = page_to_pixel_matrix(source_box, geometry.rotation, scale, dimensions);
         Ok(Self {
             source_box,
             rotation: geometry.rotation,
@@ -12282,7 +12282,12 @@ fn ensure_page_raster_pixel_budget(
     Ok(())
 }
 
-fn page_to_pixel_matrix(bounds: PathBounds, rotation: PageRotation, scale: f64) -> Matrix {
+fn page_to_pixel_matrix(
+    bounds: PathBounds,
+    rotation: PageRotation,
+    scale: f64,
+    dimensions: RasterDimensions,
+) -> Matrix {
     match rotation {
         PageRotation::Deg0 => Matrix::new(
             scale,
@@ -12290,7 +12295,7 @@ fn page_to_pixel_matrix(bounds: PathBounds, rotation: PageRotation, scale: f64) 
             0.0,
             -scale,
             -bounds.min_x * scale,
-            bounds.max_y * scale,
+            (f64::from(dimensions.height) + bounds.min_y * scale).max(bounds.max_y * scale),
         ),
         PageRotation::Deg90 => Matrix::new(
             0.0,
@@ -13288,6 +13293,43 @@ mod tests {
         assert_eq!(transform.dimensions.width, 256);
         assert_eq!(transform.dimensions.height, 137);
         assert!((transform.scale - (256.0 / 300.0)).abs() < 0.000_001);
+    }
+
+    #[test]
+    fn page_transform_should_extend_translation_only_for_rounded_up_height() {
+        let rounded_up = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 360.0,
+                    max_y: 240.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            160,
+        )
+        .expect("valid rounded-up page transform");
+        let rounded_down = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 380.0,
+                    max_y: 260.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            160,
+        )
+        .expect("valid rounded-down page transform");
+
+        assert_eq!(rounded_up.dimensions.height, 107);
+        assert_eq!(rounded_up.matrix.transform_point(0.0, 0.0).y, 107.0);
+        assert_eq!(rounded_down.dimensions.height, 109);
+        assert!((rounded_down.matrix.transform_point(0.0, 0.0).y - 109.473_684).abs() < 0.000_001);
     }
 
     #[test]

@@ -152,6 +152,14 @@ Native baseline slice started on 2026-06-28.
   `office-vector-repeated-effects.pdf` improves further from MAE 5.674, p95 17,
   changed ratio 0.107126, max delta 225 to MAE 4.556, p95 15, changed ratio
   0.105374, max delta 184.
+- Extended the Deg0 page-to-pixel translation only when rounded raster height
+  exceeds the geometric scaled page height. This fixes bottom-edge alignment for
+  rounded-up pages without shifting rounded-down pages such as the map overlay:
+  the 0183 summary improves from 5 accepted drift and 3 blockers to 6 accepted
+  drift and 2 blockers. `office-vector-repeated-effects.pdf` is now accepted
+  drift at MAE 1.707, p95 4, changed ratio 0.094334, max delta 123, while
+  `map-transparent-zoning-overlay.pdf` remains unchanged at MAE 4.986, p95 31,
+  changed ratio 0.285608, max delta 142.
 
 ## Completion Notes
 
