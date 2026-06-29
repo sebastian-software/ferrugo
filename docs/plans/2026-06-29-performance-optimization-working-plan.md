@@ -690,6 +690,28 @@ Hotpath `Vec` audit from 2026-06-29:
   yet. The current evidence does not show allocation pressure large enough to
   satisfy the optimization-block acceptance criteria.
 
+Stream decode allocation probe from 2026-06-29:
+
+- Profile evidence:
+  `target/sample-mobile-mixed-compression-phase-attribution.txt` showed
+  allocation/reallocation samples under
+  `StreamObject::decode_with_options` / `default_read_to_end` during Flate
+  image resource decode.
+- Change tested locally but not kept: avoid the initial `raw.to_vec()` copy for
+  filtered streams and initialize Flate output capacity from the encoded input
+  length.
+- Result:
+  `target/performance-matrix-image-heavy-stream-decode-candidate.json` vs
+  `target/performance-matrix-image-heavy-axis-final.json` regressed the focused
+  image-heavy matrix: `mobile-mixed-compression-scan.pdf` p95 `1.046 ms` ->
+  `1.139 ms`, `image-heavy-repeated-xobject-report.pdf` p95 `0.833 ms` ->
+  `0.898 ms`, `scanner-large-image-budget.pdf` p95 `0.604 ms` -> `0.647 ms`,
+  and the smaller image fixtures also worsened.
+- Decision: reverted. The allocation samples are real, but this copy/capacity
+  shape is not a useful optimization. Any future stream-decode work should use
+  a more precise allocation counter or a decoder-level benchmark before touching
+  the shared object model.
+
 ## Phase 4: Image And Scan Track
 
 Goal: make scan/image-heavy documents fast without increasing peak memory.
