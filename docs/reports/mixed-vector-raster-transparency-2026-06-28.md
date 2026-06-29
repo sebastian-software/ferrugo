@@ -281,6 +281,9 @@ they did not produce a clean 0183 gate improvement.
 | Global 3x path supersampling | `target/mixed-transparency-0183-supersample3-probe.json` | Improved `map-transparent-zoning-overlay.pdf` p95 `31 -> 22` and `high-dpi-preview-fidelity.pdf` p95 `40 -> 35`, but regressed `office-vector-repeated-effects.pdf` p95 `49 -> 54` and increased `office-vector-clipped-transparency-group.pdf` max delta `118 -> 143`. |
 | Selective diagonal dashed-stroke 3x supersampling | `target/mixed-transparency-0183-map-selective-diagonal-dash-ss3-probe.json` | Only improved `map-transparent-zoning-overlay.pdf` to MAE `4.963`, p95 `30`, changed ratio `0.285894`; the fixture remained a blocker and the gain did not justify extra per-stroke sampling. |
 | Selective diagonal dashed-stroke 4x supersampling | `target/mixed-transparency-0183-map-selective-diagonal-dash-ss4-probe.json` | Only improved `map-transparent-zoning-overlay.pdf` to MAE `4.951`, p95 `30`, changed ratio `0.285894`, while max delta regressed `142 -> 145`. |
+| Tiny upscaled RGB bilinear sampling | `target/high-dpi-tiny-rgb-interp-probe.json` | Reduced `high-dpi-preview-fidelity.pdf` p95 only from `7 -> 6`, but regressed MAE `1.881 -> 2.102` and changed ratio `0.087760 -> 0.193542`; broad interpolation is not acceptable for this fixture. |
+| Tiny upscaled RGB sample bias 0.125 | `target/high-dpi-tiny-bias-0125-probe.json` | Kept p95 at `7` and regressed MAE `1.881 -> 1.914` plus changed ratio `0.087760 -> 0.092500`; a small source-cell boundary bias does not match the Poppler output. |
+| StandardBase fallback mask thinning | `target/high-dpi-standardbase-inset10-probe.json`, `target/high-dpi-standardbase-inset16-probe.json` | Improved High-DPI MAE only to `1.851` while p95 stayed at `7`; the remaining blocker is not solved by further Base14 bitmap mask tuning. |
 
 The rejected probes indicate that the remaining blockers need more targeted
 work: actual Base14/text raster fidelity for text-heavy tails, diagonal
@@ -570,3 +573,25 @@ The targeted improvement is `map-transparent-zoning-overlay.pdf`: MAE
 `3.207 -> 1.225`, p95 `6 -> 1`, changed ratio `0.273394 -> 0.258372`, and
 max delta `142 -> 136`. Only `high-dpi-preview-fidelity.pdf` remains a strict
 0183 visual blocker.
+
+## High-DPI Residual Probe Notes
+
+The final 0183 blocker is narrow but real: `high-dpi-preview-fidelity.pdf`
+stays at MAE `1.881`, p95 `7`, changed ratio `0.087760`, and max delta `196`.
+Pixel inspection shows the p95 tail is concentrated in the tiny 8x8 preview
+image under the alpha overlay plus the simple Helvetica title fallback. Grid
+linework outside those regions is no longer the dominant error.
+
+Three narrow probes were rejected:
+
+- Tiny upscaled RGB bilinear sampling lowered p95 only to `6`, while MAE and
+  changed ratio regressed to `2.102` and `0.193542`.
+- A small source-cell sample bias of `0.125` left p95 at `7` and regressed MAE
+  and changed ratio to `1.914` and `0.092500`.
+- Thinning StandardBase fallback masks improved MAE to `1.851`, but p95 stayed
+  at `7` for both tested mask insets.
+
+The next useful work should be either a real Base14/text raster path or a more
+specific image/compositing investigation for the tiny scaled preview image. A
+broader visual-diff threshold change would hide an identified renderer gap and
+is not justified by these probes.

@@ -183,6 +183,13 @@ Native baseline slice started on 2026-06-28.
   Poppler's row: the 0183 summary improves to 7 accepted drift and 1 blocker,
   and `map-transparent-zoning-overlay.pdf` is now accepted drift at MAE 1.225,
   p95 1, changed ratio 0.258372, max delta 136.
+- Rejected three narrow High-DPI residual probes. Tiny upscaled RGB bilinear
+  sampling lowered `high-dpi-preview-fidelity.pdf` p95 only from 7 to 6 while
+  regressing MAE and changed ratio; a `0.125` tiny-image sample bias kept p95
+  at 7 and regressed MAE/ratio; and further StandardBase mask thinning improved
+  MAE only to 1.851 while leaving p95 at 7. The remaining blocker should stay
+  focused on real Base14/text fidelity or a more specific tiny-image
+  compositing investigation rather than threshold relaxation.
 
 ## Completion Notes
 
