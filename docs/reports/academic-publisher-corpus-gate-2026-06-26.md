@@ -23,7 +23,7 @@ New fixtures:
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/academic-publisher-manifest.tsv --include-family paper --include-family publisher-article --include-family equation-figure --include-family references-footnotes --include-family long-report --fail-on-fallback --max-edge 160 --output target/academic-0150-supported-gate.json
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/academic-publisher-manifest.tsv --include-family paper --include-family publisher-article --include-family equation-figure --include-family references-footnotes --include-family long-report --fail-on-fallback --max-edge 160 --output target/academic-0150-supported-gate.json
 ```
 
 Result:
@@ -47,7 +47,7 @@ Supported family result:
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/academic-publisher-manifest.tsv --include-family paper --include-family publisher-article --include-family equation-figure --include-family references-footnotes --include-family long-report --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/academic-0150-benchmark.json
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/academic-publisher-manifest.tsv --include-family paper --include-family publisher-article --include-family equation-figure --include-family references-footnotes --include-family long-report --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/academic-0150-benchmark.json
 ```
 
 Result:
@@ -65,7 +65,7 @@ Result:
 Command:
 
 ```sh
-PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/academic-publisher-manifest.tsv --include-family paper --include-family publisher-article --include-family equation-figure --include-family references-footnotes --include-family long-report --max-edge 160 --max-mae 2.0 --max-p95 16 --max-changed-ratio 0.05 --output target/academic-0150-visual-diff.json
+FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/academic-publisher-manifest.tsv --include-family paper --include-family publisher-article --include-family equation-figure --include-family references-footnotes --include-family long-report --max-edge 160 --max-mae 2.0 --max-p95 16 --max-changed-ratio 0.05 --output target/academic-0150-visual-diff.json
 ```
 
 Result:
@@ -118,12 +118,12 @@ Commands run:
 
 ```sh
 python3 scripts/generate_fixtures.py
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/academic-publisher-manifest.tsv --include-family paper --include-family publisher-article --include-family equation-figure --include-family references-footnotes --include-family long-report --fail-on-fallback --max-edge 160 --output target/academic-0150-supported-gate.json
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/academic-publisher-manifest.tsv --include-family paper --include-family publisher-article --include-family equation-figure --include-family references-footnotes --include-family long-report --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/academic-0150-benchmark.json
-PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/academic-publisher-manifest.tsv --include-family paper --include-family publisher-article --include-family equation-figure --include-family references-footnotes --include-family long-report --max-edge 160 --max-mae 2.0 --max-p95 16 --max-changed-ratio 0.05 --output target/academic-0150-visual-diff.json
-cargo test -p pdfrust-native scientific_report -- --nocapture
-cargo test -p pdfrust-native font_subset -- --nocapture
-cargo test -p pdfrust-render text_display_list -- --nocapture
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/academic-publisher-manifest.tsv --include-family paper --include-family publisher-article --include-family equation-figure --include-family references-footnotes --include-family long-report --fail-on-fallback --max-edge 160 --output target/academic-0150-supported-gate.json
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/academic-publisher-manifest.tsv --include-family paper --include-family publisher-article --include-family equation-figure --include-family references-footnotes --include-family long-report --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/academic-0150-benchmark.json
+FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/academic-publisher-manifest.tsv --include-family paper --include-family publisher-article --include-family equation-figure --include-family references-footnotes --include-family long-report --max-edge 160 --max-mae 2.0 --max-p95 16 --max-changed-ratio 0.05 --output target/academic-0150-visual-diff.json
+cargo test -p ferrugo-native scientific_report -- --nocapture
+cargo test -p ferrugo-native font_subset -- --nocapture
+cargo test -p ferrugo-render text_display_list -- --nocapture
 find fixtures/generated -name '*.pdf' -size +512k -print
 wc -c fixtures/generated/academic-publisher-first-page.pdf fixtures/generated/academic-equation-symbols-page.pdf fixtures/generated/academic-references-appendix.pdf
 rg -n "private|customer|confidential|personal|production|PII|@" fixtures/corpus-manifest.tsv fixtures/academic-publisher-manifest.tsv scripts/generate_fixtures.py

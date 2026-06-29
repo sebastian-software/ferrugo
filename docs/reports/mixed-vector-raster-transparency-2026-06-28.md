@@ -35,7 +35,7 @@ Base14/text-fidelity milestones rather than keeping 0183 open.
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated \
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated \
   --manifest fixtures/mixed-vector-raster-transparency-manifest.tsv \
   --include-family browser-raster-vector \
   --include-family high-dpi-preview \
@@ -57,7 +57,7 @@ Result: 8 total, 8 native rendered, 0 fallback required, 0 errors.
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated \
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated \
   --manifest fixtures/mixed-vector-raster-transparency-manifest.tsv \
   --include-family browser-raster-vector \
   --include-family high-dpi-preview \
@@ -93,7 +93,7 @@ failures.
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- visual-diff-poppler fixtures/generated \
+cargo run -p ferrugo-cli --no-default-features -- visual-diff-poppler fixtures/generated \
   --manifest fixtures/mixed-vector-raster-transparency-manifest.tsv \
   --include-family browser-raster-vector \
   --include-family high-dpi-preview \

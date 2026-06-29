@@ -29,15 +29,15 @@ Local-only categories to track:
 Command shape:
 
 ```sh
-cargo run -p pdfrust-cli -- render-native <fixture> --max-edge 256 --output target/pdfrust-thumbnails/<name>-native.png
+cargo run -p ferrugo-cli -- render-native <fixture> --max-edge 256 --output target/ferrugo-thumbnails/<name>-native.png
 ```
 
 PDFium oracle renders use:
 
 ```sh
-PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib \
-DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib \
-cargo run -p pdfrust-cli -- render <fixture> --max-edge <edge> --output <output.png>
+FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib \
+DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib \
+cargo run -p ferrugo-cli -- render <fixture> --max-edge <edge> --output <output.png>
 ```
 
 | Fixture | Category | Native outcome | Evidence |

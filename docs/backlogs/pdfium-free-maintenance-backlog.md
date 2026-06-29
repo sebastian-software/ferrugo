@@ -10,7 +10,7 @@ comparison infrastructure. Each deletion item should be small and reversible.
 
 | Area | Decision | Reason |
 | --- | --- | --- |
-| `pdfrust-pdfium` crate | Keep as optional maintainer tooling. | It is the current local oracle for metadata, PDFium benchmarks, and visual diffs. |
+| `ferrugo-pdfium` crate | Keep as optional maintainer tooling. | It is the current local oracle for metadata, PDFium benchmarks, and visual diffs. |
 | `render-pdfium` / `render-isolated` | Keep behind `--features pdfium`. | Maintainers still need direct oracle renders and process-isolated probes. |
 | `compare-metadata` | Keep behind `--features pdfium`. | Native metadata expansion still needs an oracle for page-count and page-size parity. |
 | `benchmark-pdfium` | Keep behind `--features pdfium`. | Performance regression work needs a reference backend. |
@@ -29,9 +29,9 @@ comparison infrastructure. Each deletion item should be small and reversible.
 | Item | Removed in | Rollback |
 | --- | --- | --- |
 | `render` / `render-auto --allow-pdfium-fallback` runtime retry | 0141 | Reintroduce the fallback branch in `render_auto_thumbnail`. |
-| `PDFRUST_ALLOW_PDFIUM_FALLBACK` environment runtime opt-in | 0141 | Restore env parsing and fallback policy state. |
-| `PDFRUST_DENY_FALLBACK_REASONS` targeted runtime denial | 0141 | Restore fallback policy parsing if runtime fallback returns. |
-| Direct `render-worker` CLI invocation | 0142 | Keep the private entry point guarded by `PDFRUST_PDFIUM_RENDER_WORKER`; direct invocation now fails with a usage error. |
+| `FERRUGO_ALLOW_PDFIUM_FALLBACK` environment runtime opt-in | 0141 | Restore env parsing and fallback policy state. |
+| `FERRUGO_DENY_FALLBACK_REASONS` targeted runtime denial | 0141 | Restore fallback policy parsing if runtime fallback returns. |
+| Direct `render-worker` CLI invocation | 0142 | Keep the private entry point guarded by `FERRUGO_PDFIUM_RENDER_WORKER`; direct invocation now fails with a usage error. |
 
 ## Deferred Until Native Coverage Lands
 

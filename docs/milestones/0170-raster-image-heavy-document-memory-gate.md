@@ -63,7 +63,7 @@ Implemented:
 
 Validation:
 
-- `cargo test -p pdfrust-native image_heavy -- --nocapture`
+- `cargo test -p ferrugo-native image_heavy -- --nocapture`
 - Image-heavy supported gate: 8 total, 8 native rendered, 0 fallbacks, 0
   errors.
 - Image-heavy benchmark: 8 total, 8 native rendered, 0 fallbacks, 0 errors, 0

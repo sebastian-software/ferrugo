@@ -48,7 +48,7 @@ Decode and place common image XObjects in the display list.
 Completed with the `feat: place decoded image xobjects` change.
 
 - Added `ImageResources`, `ImageObjectResolver`, `ImageXObject`,
-  `ImageDisplayItem`, and `ImageColorSpace` to `pdfrust-render`.
+  `ImageDisplayItem`, and `ImageColorSpace` to `ferrugo-render`.
 - Resolved image XObjects from `/XObject` resource dictionaries against loaded
   classic and modern documents.
 - Supported unfiltered and `FlateDecode` `DeviceRGB`/`DeviceGray` image streams
@@ -64,4 +64,4 @@ Completed with the `feat: place decoded image xobjects` change.
   `DCTDecode`, and unsupported color spaces.
 - Validation:
   - `cargo fmt --check`
-  - `cargo test -p pdfrust-render`
+  - `cargo test -p ferrugo-render`

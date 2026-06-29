@@ -70,7 +70,7 @@ work needed before golden images can become a release gate.
 Native supported gate:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated \
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated \
   --manifest fixtures/corpus-manifest.tsv \
   --include-family browser-print \
   --include-family office-export \

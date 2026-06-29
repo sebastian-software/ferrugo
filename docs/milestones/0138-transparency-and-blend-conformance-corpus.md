@@ -61,9 +61,9 @@ Completed on 2026-06-26.
   the native backend transparency/blend matrix.
 - Validation:
   `cargo fmt --check`;
-  `cargo test -p pdfrust-render ext_graphics_state_resources -- --nocapture`;
-  `cargo test -p pdfrust-native transparency -- --nocapture`;
-  `cargo test -p pdfrust-native blend_mode -- --nocapture`;
+  `cargo test -p ferrugo-render ext_graphics_state_resources -- --nocapture`;
+  `cargo test -p ferrugo-native transparency -- --nocapture`;
+  `cargo test -p ferrugo-native blend_mode -- --nocapture`;
   transparency fallback gates;
   transparency benchmark;
   PDFium visual diff;

@@ -63,8 +63,8 @@ Completed:
   diagnostics can use the `security.encryption` bucket recorded in
   `docs/errors.md`.
 - Current validation:
-  - `cargo test -p pdfrust-object encrypted -- --nocapture`
-  - `cargo test -p pdfrust-native encrypted_generated -- --nocapture`
+  - `cargo test -p ferrugo-object encrypted -- --nocapture`
+  - `cargo test -p ferrugo-native encrypted_generated -- --nocapture`
   - `cargo fmt --check`
   - `cargo check`
   - `cargo clippy --all-targets --all-features -- -D warnings`

@@ -5,9 +5,9 @@ budgets and native/PDFium baseline comparison.
 
 ## Implemented Slice
 
-- Added `pdfrust-cli benchmark-native` for Rust-native corpus benchmark runs.
-- Added `pdfrust-cli benchmark-pdfium` for PDFium baseline runs when
-  `PDFRUST_PDFIUM_LIBRARY` points at a local dynamic library.
+- Added `ferrugo-cli benchmark-native` for Rust-native corpus benchmark runs.
+- Added `ferrugo-cli benchmark-pdfium` for PDFium baseline runs when
+  `FERRUGO_PDFIUM_LIBRARY` points at a local dynamic library.
 - Reused `ThumbnailBackend` so both benchmark commands exercise the same
   thumbnail facade and option surface.
 - Added JSON report output grouped by `fixtures/corpus-manifest.tsv` families.
@@ -20,8 +20,8 @@ budgets and native/PDFium baseline comparison.
 Commands:
 
 ```text
-cargo run -p pdfrust-cli -- benchmark-native fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --iterations 1 --max-ms 1000 --max-output-bytes 1048576 --output target/benchmark-native-0078-smoke.json
-PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli --features pdfium -- benchmark-pdfium fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --iterations 1 --max-ms 1000 --max-output-bytes 1048576 --output target/benchmark-pdfium-0078-smoke.json
+cargo run -p ferrugo-cli -- benchmark-native fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --iterations 1 --max-ms 1000 --max-output-bytes 1048576 --output target/benchmark-native-0078-smoke.json
+FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli --features pdfium -- benchmark-pdfium fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --iterations 1 --max-ms 1000 --max-output-bytes 1048576 --output target/benchmark-pdfium-0078-smoke.json
 ```
 
 Native summary:
@@ -72,7 +72,7 @@ The expected smoke budget failures are:
 Command:
 
 ```text
-cargo run -p pdfrust-cli -- benchmark-native fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 320 --iterations 3 --max-ms 10000 --max-output-bytes 4194304 --output target/benchmark-native-0078-deep.json
+cargo run -p ferrugo-cli -- benchmark-native fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 320 --iterations 3 --max-ms 10000 --max-output-bytes 4194304 --output target/benchmark-native-0078-deep.json
 ```
 
 Summary:
@@ -89,7 +89,7 @@ budget.
 
 ```text
 cargo fmt --check
-cargo test -p pdfrust-cli benchmark -- --nocapture
+cargo test -p ferrugo-cli benchmark -- --nocapture
 cargo check
 cargo test
 cargo clippy --all-targets --all-features -- -D warnings

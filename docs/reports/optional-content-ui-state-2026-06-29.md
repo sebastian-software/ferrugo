@@ -42,7 +42,7 @@ rasterization first.
 Focused native tests:
 
 ```sh
-cargo test -p pdfrust-native optional_content -- --nocapture
+cargo test -p ferrugo-native optional_content -- --nocapture
 ```
 
 Result: 6 passed.
@@ -50,7 +50,7 @@ Result: 6 passed.
 Supported native fallback gate:
 
 ```sh
-cargo run -p pdfrust-cli -- summarize-fallbacks fixtures/generated \
+cargo run -p ferrugo-cli -- summarize-fallbacks fixtures/generated \
   --manifest fixtures/optional-content-ui-state-manifest.tsv \
   --include-family default-on \
   --include-family default-off \
@@ -64,7 +64,7 @@ Result: 4 total, 4 native rendered, 0 fallback required.
 Unsupported boundary gate:
 
 ```sh
-cargo run -p pdfrust-cli -- summarize-fallbacks fixtures/generated \
+cargo run -p ferrugo-cli -- summarize-fallbacks fixtures/generated \
   --manifest fixtures/optional-content-ui-state-manifest.tsv \
   --include-family unsupported-usage-application \
   --include-family unsupported-membership
@@ -76,7 +76,7 @@ Result: 2 total, 2 fallback required, both categorized as
 Visual comparison for the 0192 OCG fixtures:
 
 ```sh
-cargo run -p pdfrust-cli -- visual-diff-poppler fixtures/generated \
+cargo run -p ferrugo-cli -- visual-diff-poppler fixtures/generated \
   --manifest fixtures/optional-content-ui-state-manifest.tsv \
   --include-family default-on \
   --include-family default-off \

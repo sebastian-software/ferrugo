@@ -44,9 +44,9 @@ Manifest structure and file presence:
 Commands:
 
 ```text
-cargo run -p pdfrust-cli --no-default-features -- extract-corpus-metadata fixtures/generated --manifest fixtures/real-world-style-manifest.tsv --output target/0083-real-world-style-metadata.json
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/real-world-style-manifest.tsv --max-edge 160 --output target/0083-real-world-style-fallback-summary.json
-PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli --features pdfium -- benchmark-pdfium fixtures/generated --manifest fixtures/real-world-style-manifest.tsv --max-edge 160 --iterations 1 --max-ms 1000 --max-output-bytes 1048576 --output target/0083-real-world-style-pdfium-benchmark.json
+cargo run -p ferrugo-cli --no-default-features -- extract-corpus-metadata fixtures/generated --manifest fixtures/real-world-style-manifest.tsv --output target/0083-real-world-style-metadata.json
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/real-world-style-manifest.tsv --max-edge 160 --output target/0083-real-world-style-fallback-summary.json
+FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli --features pdfium -- benchmark-pdfium fixtures/generated --manifest fixtures/real-world-style-manifest.tsv --max-edge 160 --iterations 1 --max-ms 1000 --max-output-bytes 1048576 --output target/0083-real-world-style-pdfium-benchmark.json
 ```
 
 The existing corpus commands take an input directory and classify every PDF in

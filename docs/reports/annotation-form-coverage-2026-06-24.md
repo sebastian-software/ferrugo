@@ -20,12 +20,12 @@ cargo fmt --check
 cargo check
 cargo test
 cargo clippy --all-targets --all-features -- -D warnings
-cargo test -p pdfrust-native acroform_radio -- --nocapture
-cargo run -p pdfrust-cli -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --output target/form-summary-0074.json
-cargo run -p pdfrust-cli -- render-native fixtures/generated/acroform-radio.pdf --max-edge 100 --output target/pdfrust-thumbnails/acroform-radio-native.png
-cargo run -p pdfrust-cli -- render-native fixtures/generated/acroform-radio-off.pdf --max-edge 100 --output target/pdfrust-thumbnails/acroform-radio-off-native.png
-PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render-pdfium fixtures/generated/acroform-radio.pdf --max-edge 100 --output target/pdfrust-thumbnails/acroform-radio-pdfium.png
-PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render-pdfium fixtures/generated/acroform-radio-off.pdf --max-edge 100 --output target/pdfrust-thumbnails/acroform-radio-off-pdfium.png
+cargo test -p ferrugo-native acroform_radio -- --nocapture
+cargo run -p ferrugo-cli -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --output target/form-summary-0074.json
+cargo run -p ferrugo-cli -- render-native fixtures/generated/acroform-radio.pdf --max-edge 100 --output target/ferrugo-thumbnails/acroform-radio-native.png
+cargo run -p ferrugo-cli -- render-native fixtures/generated/acroform-radio-off.pdf --max-edge 100 --output target/ferrugo-thumbnails/acroform-radio-off-native.png
+FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli -- render-pdfium fixtures/generated/acroform-radio.pdf --max-edge 100 --output target/ferrugo-thumbnails/acroform-radio-pdfium.png
+FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli -- render-pdfium fixtures/generated/acroform-radio-off.pdf --max-edge 100 --output target/ferrugo-thumbnails/acroform-radio-off-pdfium.png
 ```
 
 All commands completed successfully.

@@ -19,7 +19,7 @@ Artifact:
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- operator-coverage fixtures/generated --manifest fixtures/corpus-manifest.tsv --page-index 0 --output target/operator-coverage-0144.json
+cargo run -p ferrugo-cli --no-default-features -- operator-coverage fixtures/generated --manifest fixtures/corpus-manifest.tsv --page-index 0 --output target/operator-coverage-0144.json
 ```
 
 ## Coverage Result
@@ -109,13 +109,13 @@ except where optional-content policy already filters content before rendering.
 
 ## Implementation Notes
 
-- Added `pdfrust_native::scan_operator_coverage`.
+- Added `ferrugo_native::scan_operator_coverage`.
 - Added public report types:
   - `OperatorCoverageOptions`
   - `OperatorSupportStatus`
   - `OperatorCoverageEntry`
   - `OperatorCoverageReport`
-- Added `pdfrust-cli operator-coverage`.
+- Added `ferrugo-cli operator-coverage`.
 - The scanner records inline images as `BI` and counts them separately.
 - Annotation appearance and synthesized fallback appearance streams are
   included by default; `--no-annotations` disables that part of the scan.
@@ -142,12 +142,12 @@ Commands run:
 
 ```sh
 cargo fmt --check
-cargo check -p pdfrust-native
-cargo test -p pdfrust-native operator_coverage -- --nocapture
-cargo check -p pdfrust-cli --no-default-features
-cargo test -p pdfrust-cli operator_coverage -- --nocapture
-cargo clippy -p pdfrust-native -p pdfrust-cli --all-targets --all-features -- -D warnings
-cargo run -p pdfrust-cli --no-default-features -- operator-coverage fixtures/generated --manifest fixtures/corpus-manifest.tsv --page-index 0 --output target/operator-coverage-0144.json
+cargo check -p ferrugo-native
+cargo test -p ferrugo-native operator_coverage -- --nocapture
+cargo check -p ferrugo-cli --no-default-features
+cargo test -p ferrugo-cli operator_coverage -- --nocapture
+cargo clippy -p ferrugo-native -p ferrugo-cli --all-targets --all-features -- -D warnings
+cargo run -p ferrugo-cli --no-default-features -- operator-coverage fixtures/generated --manifest fixtures/corpus-manifest.tsv --page-index 0 --output target/operator-coverage-0144.json
 ```
 
 All commands passed.

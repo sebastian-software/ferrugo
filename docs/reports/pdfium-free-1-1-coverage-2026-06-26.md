@@ -142,12 +142,12 @@ Covered:
 - native-only `cargo test`;
 - plugin-free distribution check;
 - PDFium quarantine check;
-- `pdfrust-cli` package file inspection;
-- leaf package dry-runs for `pdfrust-syntax` and `pdfrust-thumbnail`;
+- `ferrugo-cli` package file inspection;
+- leaf package dry-runs for `ferrugo-syntax` and `ferrugo-thumbnail`;
 - all-features Clippy.
 
 Registry-backed workspace package verification was intentionally skipped because
-`PDFRUST_NATIVE_RELEASE_VERIFY_REGISTRY` was not set.
+`FERRUGO_NATIVE_RELEASE_VERIFY_REGISTRY` was not set.
 
 ## Security
 

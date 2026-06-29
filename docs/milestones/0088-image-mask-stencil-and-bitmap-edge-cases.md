@@ -61,14 +61,14 @@ and scanned overlays.
 Validation completed:
 
 - `cargo fmt --check`
-- `cargo test -p pdfrust-render image_mask`
-- `cargo test -p pdfrust-native image_mask`
+- `cargo test -p ferrugo-render image_mask`
+- `cargo test -p ferrugo-native image_mask`
 - `cargo check --workspace --no-default-features`
 - `cargo test --workspace --no-default-features`
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
-- `cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --output target/image-mask-summary-0088.json`
-- `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --output target/image-mask-visual-diff-0088.json`
-- `cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/image-mask-benchmark-0088.json`
+- `cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --output target/image-mask-summary-0088.json`
+- `FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --output target/image-mask-visual-diff-0088.json`
+- `cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/image-mask-benchmark-0088.json`
 
 The ImageMask fixtures reported two exact visual matches and one accepted drift
 against PDFium. The full corpus reported 61 fixtures total, 59 native renders,

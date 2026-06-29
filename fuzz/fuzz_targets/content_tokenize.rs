@@ -1,6 +1,6 @@
-use pdfrust_content::tokenize_content;
-use pdfrust_fuzz::run_target;
-use pdfrust_syntax::PdfBytes;
+use ferrugo_content::tokenize_content;
+use ferrugo_fuzz::run_target;
+use ferrugo_syntax::PdfBytes;
 
 fn main() {
     run_target(

@@ -5,13 +5,14 @@ Status: accepted.
 
 ## Context
 
-The repository started under the working name `pdfrust` while the project was
+The repository started under a descriptive working name while the project was
 still validating its first product slice: reliable PDF thumbnail generation
 backed by PDFium and, over time, a Rust-native PDF engine.
 
-That working name is descriptive, but it is also narrow and generic. It ties
-the project closely to Rust and PDF implementation mechanics, while the intended
-library surface may eventually cover more than thumbnail rendering:
+That working name was useful during exploration, but it was also narrow and
+generic. It tied the project closely to Rust and PDF implementation mechanics,
+while the intended library surface may eventually cover more than thumbnail
+rendering:
 
 - PDF parsing,
 - page and document inspection,
@@ -31,10 +32,10 @@ package name before this decision was recorded.
 
 Use **Ferrugo** as the public project and package name.
 
-The exact timing of repository, crate, module, and package renames is deferred.
-This decision records the naming direction only; it does not require immediate
-changes to existing Rust crate names, code paths, documentation links, or GitHub
-repository metadata while parallel implementation work is in progress.
+The repository, crate, module, CLI, script, environment-variable, fixture, and
+documentation surfaces now use the `ferrugo` / `FERRUGO` naming family. GitHub
+repository metadata and registry publication are still separate operational
+steps.
 
 ## Rationale
 
@@ -52,7 +53,7 @@ without naming a single implementation detail:
 - It is distinctive enough to work as a project name rather than only a
   descriptive implementation label.
 
-Compared with more literal names such as `pdfrust`, Ferrugo gives the project a
+Compared with literal implementation names, Ferrugo gives the project a
 durable identity while still preserving a quiet technical hint: iron, rust, and
 the Rust ecosystem.
 
@@ -79,19 +80,17 @@ Tradeoffs:
 
 - The name does not directly say "PDF", so package descriptions and README
   copy must make the domain clear.
-- The current repository and crate names still use `pdfrust` until a separate
-  rename plan is accepted.
-- A future rename should be handled deliberately to avoid disrupting ongoing
-  work, docs, crate paths, and package metadata in one uncontrolled change.
+- Existing local clones, scripts, and unpublished package references may need a
+  one-time update to the new crate and binary names.
+- Registry publication still needs the usual owner, package-order, and release
+  checks.
 
 ## Follow-Up
 
-When parallel implementation work has settled, create a separate rename plan for
-the concrete surfaces that should move from `pdfrust` to `ferrugo`, including:
+Remaining naming work:
 
-- Rust crate names and crate prefixes,
-- Node.js package structure,
-- README and documentation references,
-- GitHub repository metadata,
-- CI and release configuration,
-- and migration notes for early users.
+- Rename GitHub repository metadata when the remote is configured.
+- Keep the npm `ferrugo` reservation until the Node package surface is ready.
+- Publish Rust crates in dependency order once the registry release train is
+  ready.
+- Add migration notes if any external users adopted the earlier working names.

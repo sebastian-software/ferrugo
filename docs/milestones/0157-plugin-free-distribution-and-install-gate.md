@@ -54,4 +54,4 @@ Completed on 2026-06-26.
 - Added `docs/reports/plugin-free-distribution-install-gate-2026-06-26.md`
   with dependency, package, install, and CLI smoke evidence.
 - Verified a clean native-only `cargo install` and render smoke without
-  `PDFRUST_PDFIUM_LIBRARY` or dynamic-library path configuration.
+  `FERRUGO_PDFIUM_LIBRARY` or dynamic-library path configuration.

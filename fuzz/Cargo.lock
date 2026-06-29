@@ -24,6 +24,64 @@ dependencies = [
 ]
 
 [[package]]
+name = "ferrugo-content"
+version = "0.1.0"
+dependencies = [
+ "ferrugo-object",
+ "ferrugo-syntax",
+]
+
+[[package]]
+name = "ferrugo-fuzz"
+version = "0.0.0"
+dependencies = [
+ "ferrugo-content",
+ "ferrugo-native",
+ "ferrugo-object",
+ "ferrugo-syntax",
+ "ferrugo-thumbnail",
+]
+
+[[package]]
+name = "ferrugo-native"
+version = "0.1.0"
+dependencies = [
+ "ferrugo-content",
+ "ferrugo-object",
+ "ferrugo-render",
+ "ferrugo-syntax",
+ "ferrugo-thumbnail",
+]
+
+[[package]]
+name = "ferrugo-object"
+version = "0.1.0"
+dependencies = [
+ "ferrugo-syntax",
+ "flate2",
+]
+
+[[package]]
+name = "ferrugo-render"
+version = "0.1.0"
+dependencies = [
+ "ferrugo-content",
+ "ferrugo-object",
+ "ferrugo-syntax",
+ "ferrugo-thumbnail",
+ "ttf-parser",
+ "zune-jpeg",
+]
+
+[[package]]
+name = "ferrugo-syntax"
+version = "0.1.0"
+
+[[package]]
+name = "ferrugo-thumbnail"
+version = "0.1.0"
+
+[[package]]
 name = "flate2"
 version = "1.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -42,64 +100,6 @@ dependencies = [
  "adler2",
  "simd-adler32",
 ]
-
-[[package]]
-name = "pdfrust-content"
-version = "0.1.0"
-dependencies = [
- "pdfrust-object",
- "pdfrust-syntax",
-]
-
-[[package]]
-name = "pdfrust-fuzz"
-version = "0.0.0"
-dependencies = [
- "pdfrust-content",
- "pdfrust-native",
- "pdfrust-object",
- "pdfrust-syntax",
- "pdfrust-thumbnail",
-]
-
-[[package]]
-name = "pdfrust-native"
-version = "0.1.0"
-dependencies = [
- "pdfrust-content",
- "pdfrust-object",
- "pdfrust-render",
- "pdfrust-syntax",
- "pdfrust-thumbnail",
-]
-
-[[package]]
-name = "pdfrust-object"
-version = "0.1.0"
-dependencies = [
- "flate2",
- "pdfrust-syntax",
-]
-
-[[package]]
-name = "pdfrust-render"
-version = "0.1.0"
-dependencies = [
- "pdfrust-content",
- "pdfrust-object",
- "pdfrust-syntax",
- "pdfrust-thumbnail",
- "ttf-parser",
- "zune-jpeg",
-]
-
-[[package]]
-name = "pdfrust-syntax"
-version = "0.1.0"
-
-[[package]]
-name = "pdfrust-thumbnail"
-version = "0.1.0"
 
 [[package]]
 name = "simd-adler32"

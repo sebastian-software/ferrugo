@@ -34,7 +34,7 @@ when transformed glyph rectangles are filled on the raster device.
 Command:
 
 ```text
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/glyph-cache-benchmark-0087.json
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/glyph-cache-benchmark-0087.json
 ```
 
 Summary:
@@ -58,7 +58,7 @@ budget remain the limiting cases.
 Command:
 
 ```text
-PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --output target/glyph-cache-visual-diff-0087.json
+FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --output target/glyph-cache-visual-diff-0087.json
 ```
 
 Corpus summary:
@@ -81,8 +81,8 @@ is output-neutral for the generated corpus.
 ```text
 cargo fmt --check
 cargo check --workspace --no-default-features
-cargo test -p pdfrust-render glyph_bitmap_cache
-cargo test -p pdfrust-render text_display_list_should_preserve_subpixel_glyph_origins
+cargo test -p ferrugo-render glyph_bitmap_cache
+cargo test -p ferrugo-render text_display_list_should_preserve_subpixel_glyph_origins
 cargo test --workspace --no-default-features
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 ```

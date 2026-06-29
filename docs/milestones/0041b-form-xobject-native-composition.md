@@ -12,7 +12,7 @@ renderer so simple form-backed pages render without requiring PDFium.
 
 ## Scope
 
-- Resolve page-level Form XObject resources in `pdfrust-native`.
+- Resolve page-level Form XObject resources in `ferrugo-native`.
 - Execute Form XObject path display lists before later image/text passes.
 - Rasterize form paths into the existing page raster instead of allocating a
   separate output buffer.
@@ -46,7 +46,7 @@ renderer so simple form-backed pages render without requiring PDFium.
 - Run `cargo fmt --check`.
 - Run `cargo check`.
 - Run `cargo test`.
-- Run `cargo run -p pdfrust-cli -- render-native fixtures/generated/form-xobject.pdf --max-edge 256 --output target/pdfrust-thumbnails/coverage-form-native.png`.
+- Run `cargo run -p ferrugo-cli -- render-native fixtures/generated/form-xobject.pdf --max-edge 256 --output target/ferrugo-thumbnails/coverage-form-native.png`.
 - Confirm the native PNG contains non-white pixels.
 - Run `cargo clippy --all-targets --all-features -- -D warnings`.
 
@@ -57,7 +57,7 @@ renderer so simple form-backed pages render without requiring PDFium.
 - Extended Image and Form XObject resource maps to remember known opposite
   subtype names, preventing `/Fm* Do` from failing the image pass and `/Im* Do`
   from failing the form pass.
-- Wired page Form XObject resources into `pdfrust-native` and rasterized form
+- Wired page Form XObject resources into `ferrugo-native` and rasterized form
   path items before image and text passes.
 - Added native backend tests for `form-xobject.pdf` and regression coverage for
   Image XObject rendering through the new form pass.
@@ -67,8 +67,8 @@ renderer so simple form-backed pages render without requiring PDFium.
   - `cargo check`
   - `cargo test`
   - `cargo clippy --all-targets --all-features -- -D warnings`
-  - `cargo test -p pdfrust-render -p pdfrust-native`
-  - `cargo run -p pdfrust-cli -- render-native fixtures/generated/form-xobject.pdf --max-edge 256 --output target/pdfrust-thumbnails/coverage-form-native.png`
+  - `cargo test -p ferrugo-render -p ferrugo-native`
+  - `cargo run -p ferrugo-cli -- render-native fixtures/generated/form-xobject.pdf --max-edge 256 --output target/ferrugo-thumbnails/coverage-form-native.png`
   - PNG probe: `dimensions=120x120 nonwhite=6400`,
     `bounds=20,8..99,87`,
     `sample_30_30=(51, 179, 77, 255)`,

@@ -81,7 +81,7 @@ Commands run:
 
 ```text
 bash scripts/generate_coverage_scorecard.sh target/hardening-0210-scorecard
-cargo run -p pdfrust-cli --no-default-features -- benchmark-repeat-native fixtures/generated --manifest fixtures/real-world-style-manifest.tsv --include-family invoice --include-family statement --include-family scanned-packet --include-family form --include-family browser-export --include-family office-export --include-family report --include-family malformed-recovery --repetitions 3 --max-first-ms 1000 --max-repeat-mean-ms 1000 --max-errors 0 --fail-on-budget --output target/hardening-0210-repeat.json
+cargo run -p ferrugo-cli --no-default-features -- benchmark-repeat-native fixtures/generated --manifest fixtures/real-world-style-manifest.tsv --include-family invoice --include-family statement --include-family scanned-packet --include-family form --include-family browser-export --include-family office-export --include-family report --include-family malformed-recovery --repetitions 3 --max-first-ms 1000 --max-repeat-mean-ms 1000 --max-errors 0 --fail-on-budget --output target/hardening-0210-repeat.json
 bash scripts/check_fuzz_smoke.sh
 bash scripts/check_native_only_release.sh
 bash scripts/check_wasm_smoke.sh

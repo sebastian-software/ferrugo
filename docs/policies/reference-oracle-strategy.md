@@ -3,7 +3,7 @@
 Status: accepted.
 Date: 2026-06-26.
 
-This policy defines how `pdfrust` validates visual behavior while keeping
+This policy defines how `ferrugo` validates visual behavior while keeping
 normal runtime and release gates independent from PDFium.
 
 ## Roles
@@ -22,7 +22,7 @@ prerequisites for the supported runtime slice.
 ## 0215 Removal Decision
 
 Milestone 0215 keeps PDFium comparison tooling as maintainer-only infrastructure
-instead of deleting it. The retained tools are `pdfrust-pdfium`,
+instead of deleting it. The retained tools are `ferrugo-pdfium`,
 `render-pdfium`, `render-isolated`, `compare-metadata`, `benchmark-pdfium`, and
 `visual-diff`. They remain outside supported runtime and release gates.
 

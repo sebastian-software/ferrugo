@@ -44,9 +44,9 @@ native renderer behavior is visible before deeper fidelity work begins.
 
 ## Completion Notes
 
-- Added `pdfrust_native::scan_operator_coverage` and public operator coverage
+- Added `ferrugo_native::scan_operator_coverage` and public operator coverage
   report types.
-- Added `pdfrust-cli operator-coverage` with manifest, family filter,
+- Added `ferrugo-cli operator-coverage` with manifest, family filter,
   `--page-index`, `--output`, and `--no-annotations` support.
 - Generated `target/operator-coverage-0144.json` over the generated corpus:
   155 total fixtures, 154 scanned, 1 encrypted error, 5,565 operators, 0 fully

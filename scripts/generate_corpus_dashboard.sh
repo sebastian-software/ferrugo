@@ -21,30 +21,30 @@ for family in "${primary_families[@]}"; do
 done
 
 echo "==> corpus metadata"
-cargo run -p pdfrust-cli --no-default-features -- extract-corpus-metadata fixtures/generated \
+cargo run -p ferrugo-cli --no-default-features -- extract-corpus-metadata fixtures/generated \
   --manifest fixtures/corpus-manifest.tsv \
   --output "${output_dir}/metadata.json"
 
 echo "==> local corpus metadata validation"
-cargo run -p pdfrust-cli --no-default-features -- validate-local-corpus \
+cargo run -p ferrugo-cli --no-default-features -- validate-local-corpus \
   fixtures/local-corpus.example.toml \
   --allow-missing > "${output_dir}/local-corpus-validation.json"
 
 echo "==> native support classification"
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated \
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated \
   --manifest fixtures/corpus-manifest.tsv \
   "${family_args[@]}" \
   --max-edge 160 \
   --output "${output_dir}/support.json"
 
 echo "==> operator coverage"
-cargo run -p pdfrust-cli --no-default-features -- operator-coverage fixtures/generated \
+cargo run -p ferrugo-cli --no-default-features -- operator-coverage fixtures/generated \
   --manifest fixtures/corpus-manifest.tsv \
   "${family_args[@]}" \
   --output "${output_dir}/operators.json"
 
 echo "==> native performance sample"
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated \
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated \
   --manifest fixtures/corpus-manifest.tsv \
   --include-family report \
   --include-family presentation \
@@ -55,7 +55,7 @@ cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/gene
   --output "${output_dir}/performance.json"
 
 echo "==> server batch sample"
-cargo run -p pdfrust-cli --no-default-features -- benchmark-batch-native fixtures/generated \
+cargo run -p ferrugo-cli --no-default-features -- benchmark-batch-native fixtures/generated \
   --manifest fixtures/server-batch-manifest.tsv \
   --include-family small \
   --include-family mixed-size \

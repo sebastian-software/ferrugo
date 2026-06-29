@@ -15,7 +15,7 @@ workflows.
   crates.
 - Added explicit `version = "0.1.0"` to internal path dependencies so packaged
   manifests have versioned dependency metadata.
-- Kept `pdfrust-pdfium` optional behind the `pdfrust-cli/pdfium` feature.
+- Kept `ferrugo-pdfium` optional behind the `ferrugo-cli/pdfium` feature.
 - Kept root workspace `default-members` focused on the native-only stack.
 
 ## Dependency Graph Comparison
@@ -23,13 +23,13 @@ workflows.
 Command:
 
 ```sh
-cargo tree -p pdfrust-cli --no-default-features --prefix none
-cargo tree -p pdfrust-cli --features pdfium --prefix none
+cargo tree -p ferrugo-cli --no-default-features --prefix none
+cargo tree -p ferrugo-cli --features pdfium --prefix none
 ```
 
 Observed locally:
 
-| Build | Dependency lines | Includes `pdfrust-pdfium` |
+| Build | Dependency lines | Includes `ferrugo-pdfium` |
 | --- | ---: | --- |
 | Native-only | 24 | no |
 | PDFium-enabled | 26 | yes |
@@ -53,7 +53,7 @@ cargo test --workspace --no-default-features
 PDFium maintainer smoke completed:
 
 ```sh
-cargo test -p pdfrust-cli --features pdfium
+cargo test -p ferrugo-cli --features pdfium
 ```
 
 ## Package Dry-Run
@@ -61,20 +61,20 @@ cargo test -p pdfrust-cli --features pdfium
 Leaf package dry-runs completed:
 
 ```sh
-cargo package -p pdfrust-syntax --allow-dirty --no-verify
-cargo package -p pdfrust-thumbnail --allow-dirty --no-verify
+cargo package -p ferrugo-syntax --allow-dirty --no-verify
+cargo package -p ferrugo-thumbnail --allow-dirty --no-verify
 ```
 
 Results:
 
 | Package | Raw size | Compressed size |
 | --- | ---: | ---: |
-| `pdfrust-syntax` | 27.1 KiB | 6.2 KiB |
-| `pdfrust-thumbnail` | 15.6 KiB | 4.5 KiB |
+| `ferrugo-syntax` | 27.1 KiB | 6.2 KiB |
+| `ferrugo-thumbnail` | 15.6 KiB | 4.5 KiB |
 
-`pdfrust-cli` package preparation is intentionally blocked until internal
+`ferrugo-cli` package preparation is intentionally blocked until internal
 crates are available in release order. With registry access, Cargo reports no
-matching published `pdfrust-native` package for the versioned dependency. See
+matching published `ferrugo-native` package for the versioned dependency. See
 `docs/packaging.md` for the release order.
 
 ## Consumer Migration Notes

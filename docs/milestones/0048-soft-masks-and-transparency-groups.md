@@ -74,11 +74,11 @@ PDF thumbnails.
   dimensions `120x120`, changed pixels `0`, MAE `0.000`, p95 `0`, max channel
   delta `0`, native non-white pixels `400`.
 - Validation so far: `cargo fmt --check`, `git diff --check`,
-  `cargo test -p pdfrust-render soft_mask -- --nocapture`,
-  `cargo test -p pdfrust-render generated_soft_mask -- --nocapture`,
-  `cargo test -p pdfrust-render transparency_group -- --nocapture`,
-  `cargo test -p pdfrust-native soft_mask -- --nocapture`,
-  `cargo test -p pdfrust-native transparency_group -- --nocapture`,
+  `cargo test -p ferrugo-render soft_mask -- --nocapture`,
+  `cargo test -p ferrugo-render generated_soft_mask -- --nocapture`,
+  `cargo test -p ferrugo-render transparency_group -- --nocapture`,
+  `cargo test -p ferrugo-native soft_mask -- --nocapture`,
+  `cargo test -p ferrugo-native transparency_group -- --nocapture`,
   `cargo check`, `cargo test --quiet`,
   native/PDFium fixture rendering and PNG comparison,
   `cargo clippy --all-targets --all-features -- -D warnings`.

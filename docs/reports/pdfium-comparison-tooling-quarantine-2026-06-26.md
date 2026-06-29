@@ -11,7 +11,7 @@ PDFium comparison commands are guarded by the `pdfium` feature plus a
 regression scan that catches accidental runtime reintroduction.
 
 The private `render-worker` entry point is no longer directly callable as a
-normal CLI command. It requires the internal `PDFRUST_PDFIUM_RENDER_WORKER`
+normal CLI command. It requires the internal `FERRUGO_PDFIUM_RENDER_WORKER`
 environment marker, which `render-isolated` sets only for its single-use child
 process.
 
@@ -51,20 +51,20 @@ bash scripts/check_pdfium_quarantine.sh
 
 The script verifies:
 
-- `cargo tree -p pdfrust-cli --no-default-features` has no `pdfrust-pdfium`
+- `cargo tree -p ferrugo-cli --no-default-features` has no `ferrugo-pdfium`
   dependency edge.
 - Runtime crates do not contain forbidden PDFium integration symbols such as
-  `pdfrust_pdfium`, `PdfiumBackend`, or `PDFRUST_PDFIUM`.
+  `ferrugo_pdfium`, `PdfiumBackend`, or `FERRUGO_PDFIUM`.
 
 The checked runtime crates are:
 
-- `pdfrust-content`
-- `pdfrust-native`
-- `pdfrust-object`
-- `pdfrust-render`
-- `pdfrust-syntax`
-- `pdfrust-thumbnail`
-- `pdfrust-wasm-smoke`
+- `ferrugo-content`
+- `ferrugo-native`
+- `ferrugo-object`
+- `ferrugo-render`
+- `ferrugo-syntax`
+- `ferrugo-thumbnail`
+- `ferrugo-wasm-smoke`
 
 Result:
 
@@ -77,7 +77,7 @@ PDFium quarantine check passed
 Command:
 
 ```sh
-PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli --features pdfium -- visual-diff fixtures/generated/vector-paths.pdf --max-edge 120 --output target/pdfium-quarantine-0142-visual-diff.json
+FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli --features pdfium -- visual-diff fixtures/generated/vector-paths.pdf --max-edge 120 --output target/pdfium-quarantine-0142-visual-diff.json
 ```
 
 Result:
@@ -106,8 +106,8 @@ bash scripts/check_pdfium_quarantine.sh
 cargo check --workspace --no-default-features
 cargo check --workspace --all-features
 cargo test --workspace --no-default-features
-cargo test -p pdfrust-cli --features pdfium render_worker_should_reject_direct_cli_invocation -- --nocapture
-PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli --features pdfium -- visual-diff fixtures/generated/vector-paths.pdf --max-edge 120 --output target/pdfium-quarantine-0142-visual-diff.json
+cargo test -p ferrugo-cli --features pdfium render_worker_should_reject_direct_cli_invocation -- --nocapture
+FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli --features pdfium -- visual-diff fixtures/generated/vector-paths.pdf --max-edge 120 --output target/pdfium-quarantine-0142-visual-diff.json
 ```
 
 All commands passed.

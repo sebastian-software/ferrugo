@@ -60,9 +60,9 @@ typical documents.
 Validation run:
 
 - `cargo fmt --check`
-- `cargo test -p pdfrust-native operator_coverage_should_match_semantic_snapshots -- --nocapture`
-- `cargo run -p pdfrust-cli --no-default-features -- operator-coverage fixtures/generated --manifest fixtures/operator-semantic-snapshot-manifest.tsv --include-family text-state --include-family path-state --include-family image-state --include-family pattern-state --output target/operator-snapshot-0211-operators.json`
-- `cargo run -p pdfrust-cli --no-default-features -- visual-diff-poppler fixtures/generated --manifest fixtures/operator-semantic-snapshot-manifest.tsv --include-family text-state --include-family path-state --include-family image-state --include-family pattern-state --max-edge 120 --max-mae 8 --max-p95 64 --max-changed-ratio 0.20 --output target/operator-snapshot-0211-poppler.json`
+- `cargo test -p ferrugo-native operator_coverage_should_match_semantic_snapshots -- --nocapture`
+- `cargo run -p ferrugo-cli --no-default-features -- operator-coverage fixtures/generated --manifest fixtures/operator-semantic-snapshot-manifest.tsv --include-family text-state --include-family path-state --include-family image-state --include-family pattern-state --output target/operator-snapshot-0211-operators.json`
+- `cargo run -p ferrugo-cli --no-default-features -- visual-diff-poppler fixtures/generated --manifest fixtures/operator-semantic-snapshot-manifest.tsv --include-family text-state --include-family path-state --include-family image-state --include-family pattern-state --max-edge 120 --max-mae 8 --max-p95 64 --max-changed-ratio 0.20 --output target/operator-snapshot-0211-poppler.json`
 - `cargo check --workspace --no-default-features`
 - `cargo test --workspace --no-default-features`
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`

@@ -1,6 +1,6 @@
-use pdfrust_fuzz::{minimal_pdf_with_content, run_target};
-use pdfrust_object::{load_classic_document, load_modern_document, parse_indirect_object};
-use pdfrust_syntax::PdfBytes;
+use ferrugo_fuzz::{minimal_pdf_with_content, run_target};
+use ferrugo_object::{load_classic_document, load_modern_document, parse_indirect_object};
+use ferrugo_syntax::PdfBytes;
 
 fn main() {
     run_target(

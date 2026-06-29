@@ -46,7 +46,7 @@ Result:
 Command:
 
 ```bash
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/font-cache-compaction-manifest.tsv --include-family office-font-cache --include-family browser-font-cache --include-family report-font-cache --include-family longform-font-cache --include-family subset-font-cache --include-family cjk-font-cache --include-family type3-font-cache --fail-on-fallback --max-edge 160 --diagnostics-dir target/font-cache-0212-diagnostics-filtered --output target/font-cache-0212-supported-gate.json
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/font-cache-compaction-manifest.tsv --include-family office-font-cache --include-family browser-font-cache --include-family report-font-cache --include-family longform-font-cache --include-family subset-font-cache --include-family cjk-font-cache --include-family type3-font-cache --fail-on-fallback --max-edge 160 --diagnostics-dir target/font-cache-0212-diagnostics-filtered --output target/font-cache-0212-supported-gate.json
 ```
 
 ## Low-Memory Repeat Gate
@@ -66,7 +66,7 @@ Result:
 Command:
 
 ```bash
-cargo run -p pdfrust-cli --no-default-features -- benchmark-repeat-native fixtures/generated --manifest fixtures/font-cache-compaction-manifest.tsv --include-family office-font-cache --include-family browser-font-cache --include-family report-font-cache --include-family longform-font-cache --include-family subset-font-cache --include-family cjk-font-cache --include-family type3-font-cache --native-profile low-memory --repetitions 2 --max-edge 160 --max-first-ms 1000 --max-repeat-mean-ms 1000 --max-errors 0 --fail-on-budget --output target/font-cache-0212-low-memory-repeat.json
+cargo run -p ferrugo-cli --no-default-features -- benchmark-repeat-native fixtures/generated --manifest fixtures/font-cache-compaction-manifest.tsv --include-family office-font-cache --include-family browser-font-cache --include-family report-font-cache --include-family longform-font-cache --include-family subset-font-cache --include-family cjk-font-cache --include-family type3-font-cache --native-profile low-memory --repetitions 2 --max-edge 160 --max-first-ms 1000 --max-repeat-mean-ms 1000 --max-errors 0 --fail-on-budget --output target/font-cache-0212-low-memory-repeat.json
 ```
 
 ## Cache Invariants
@@ -83,10 +83,10 @@ cargo run -p pdfrust-cli --no-default-features -- benchmark-repeat-native fixtur
 ## Focused Tests
 
 ```bash
-cargo test -p pdfrust-render font_resources_should_share_program_cache_for_repeated_references -- --nocapture
-cargo test -p pdfrust-render font_resources_should_enforce_total_program_byte_budget -- --nocapture
-cargo test -p pdfrust-native native_backend_should_expose_memory_diagnostics -- --nocapture
-cargo test -p pdfrust-native native_low_memory_profile_should_expose_tighter_memory_diagnostics -- --nocapture
+cargo test -p ferrugo-render font_resources_should_share_program_cache_for_repeated_references -- --nocapture
+cargo test -p ferrugo-render font_resources_should_enforce_total_program_byte_budget -- --nocapture
+cargo test -p ferrugo-native native_backend_should_expose_memory_diagnostics -- --nocapture
+cargo test -p ferrugo-native native_low_memory_profile_should_expose_tighter_memory_diagnostics -- --nocapture
 ```
 
 All focused tests passed locally.
@@ -95,7 +95,7 @@ All focused tests passed locally.
 
 ```bash
 cargo fmt --check
-git diff --check -- crates/pdfrust-render/src/lib.rs crates/pdfrust-native/src/lib.rs crates/pdfrust-cli/src/main.rs fixtures/font-cache-compaction-manifest.tsv docs/backend/native.md docs/baselines.md docs/milestones/README.md docs/milestones/0212-rust-native-font-cache-compaction.md docs/reports/font-cache-compaction-2026-06-29.md
+git diff --check -- crates/ferrugo-render/src/lib.rs crates/ferrugo-native/src/lib.rs crates/ferrugo-cli/src/main.rs fixtures/font-cache-compaction-manifest.tsv docs/backend/native.md docs/baselines.md docs/milestones/README.md docs/milestones/0212-rust-native-font-cache-compaction.md docs/reports/font-cache-compaction-2026-06-29.md
 cargo check --workspace --no-default-features
 cargo test --workspace --no-default-features
 cargo clippy --workspace --all-targets --all-features -- -D warnings

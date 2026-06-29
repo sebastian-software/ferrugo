@@ -22,12 +22,12 @@ cargo fmt --check
 cargo check
 cargo test
 cargo clippy --all-targets --all-features -- -D warnings
-cargo test -p pdfrust-render vector_stress -- --nocapture
-cargo test -p pdfrust-native vector_stress -- --nocapture
-cargo run -p pdfrust-cli -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --output target/vector-summary-0072.json
-cargo run -p pdfrust-cli -- render-native fixtures/generated/vector-stress.pdf --max-edge 160 --output target/pdfrust-thumbnails/vector-stress-native.png
-PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render-pdfium fixtures/generated/vector-stress.pdf --max-edge 160 --output target/pdfrust-thumbnails/vector-stress-pdfium.png
-/usr/bin/time -p cargo run -p pdfrust-cli -- render-native fixtures/generated/vector-stress.pdf --max-edge 160 --output target/pdfrust-thumbnails/vector-stress-native-bench.png
+cargo test -p ferrugo-render vector_stress -- --nocapture
+cargo test -p ferrugo-native vector_stress -- --nocapture
+cargo run -p ferrugo-cli -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --output target/vector-summary-0072.json
+cargo run -p ferrugo-cli -- render-native fixtures/generated/vector-stress.pdf --max-edge 160 --output target/ferrugo-thumbnails/vector-stress-native.png
+FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli -- render-pdfium fixtures/generated/vector-stress.pdf --max-edge 160 --output target/ferrugo-thumbnails/vector-stress-pdfium.png
+/usr/bin/time -p cargo run -p ferrugo-cli -- render-native fixtures/generated/vector-stress.pdf --max-edge 160 --output target/ferrugo-thumbnails/vector-stress-native-bench.png
 ```
 
 All commands completed successfully. The portable timing run reported:

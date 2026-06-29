@@ -23,10 +23,10 @@ precompiled Node.js addons in Rust and has broad platform support.
 
 ## Initial Package Shape
 
-Package name placeholder: `@pdfrust/node`.
+Package name placeholder: `@ferrugo/node`.
 
 ```ts
-import { Document } from '@pdfrust/node'
+import { Document } from '@ferrugo/node'
 
 const document = await Document.open(buffer, { password: undefined })
 const page = document.page(0)
@@ -127,7 +127,7 @@ once the core is useful enough and the PDFium/Rust backend strategy is clearer:
 
 Because the long-term goal is pure Rust, the package should avoid bundling
 PDFium or MuPDF unless a later product decision explicitly accepts that tradeoff.
-During early development, a separate `@pdfrust/pdfium-oracle` or dev-only tool
+During early development, a separate `@ferrugo/pdfium-oracle` or dev-only tool
 may be useful for differential testing.
 
 ## Sources

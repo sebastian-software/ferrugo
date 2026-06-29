@@ -9,11 +9,11 @@ shipping a native PDFium runtime.
 
 - Added Cargo profile `serverless`.
 - Added `scripts/measure_serverless_profile.sh`.
-- The script builds `pdfrust-cli` with `--profile serverless` and
+- The script builds `ferrugo-cli` with `--profile serverless` and
   `--no-default-features`.
-- The script checks the `pdfrust-cli` package file list for PDFium/runtime
+- The script checks the `ferrugo-cli` package file list for PDFium/runtime
   native assets.
-- Startup is measured with a fresh `pdfrust-cli --help` process per sample.
+- Startup is measured with a fresh `ferrugo-cli --help` process per sample.
 - First render is measured with a fresh `render-native` process per sample.
 
 The `serverless` profile inherits release mode and sets:
@@ -75,10 +75,10 @@ First-render latency:
 
 The same script writes and inspects:
 
-- `target/serverless-profile-pdfrust-cli-package-files.txt`
+- `target/serverless-profile-ferrugo-cli-package-files.txt`
 
 No PDFium runtime asset, dynamic library, static native archive, framework, or
-`PDFRUST_PDFIUM_LIBRARY` packaging hook was found in the native-only CLI package
+`FERRUGO_PDFIUM_LIBRARY` packaging hook was found in the native-only CLI package
 file list.
 
 ## Follow-Up List

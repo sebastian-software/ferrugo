@@ -54,7 +54,7 @@ Completed on 2026-06-25.
   and native render setup.
 - Added reduced adversarial corpus inputs under `fixtures/adversarial/`.
 - Added a primitive nesting budget
-  (`pdfrust_syntax::DEFAULT_MAX_PRIMITIVE_NESTING`) and a regression test for
+  (`ferrugo_syntax::DEFAULT_MAX_PRIMITIVE_NESTING`) and a regression test for
   excessive nested arrays.
 - Added content and native backend regressions for unterminated inline-image
   tokenization and truncated malformed PDF setup.

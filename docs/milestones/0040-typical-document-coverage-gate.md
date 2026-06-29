@@ -69,10 +69,10 @@ renderer focus from evidence.
   - `cargo fmt --check`
   - `cargo check`
   - `cargo test`
-  - `cargo run -p pdfrust-cli -- render-native fixtures/generated/page-size-letter.pdf --max-edge 256 --output target/pdfrust-thumbnails/coverage-page-size-letter-native.png`
-  - `cargo run -p pdfrust-cli -- render-native fixtures/generated/vector-paths.pdf --max-edge 256 --output target/pdfrust-thumbnails/coverage-vector-native.png`
-  - `cargo run -p pdfrust-cli -- render-native fixtures/generated/text-page.pdf --max-edge 256 --output target/pdfrust-thumbnails/coverage-text-native.png`
-  - `cargo run -p pdfrust-cli -- render-native fixtures/generated/image-xobject.pdf --max-edge 256 --output target/pdfrust-thumbnails/coverage-image-xobject-native.png`
-  - `cargo run -p pdfrust-cli -- render-native fixtures/generated/form-xobject.pdf --max-edge 256 --output target/pdfrust-thumbnails/coverage-form-native.png` returned `render error [unsupported]`.
-  - `cargo run -p pdfrust-cli -- render-native fixtures/generated/inline-image.pdf --max-edge 256 --output target/pdfrust-thumbnails/coverage-inline-image-native.png` produced a blank native image with `nonwhite=0`.
+  - `cargo run -p ferrugo-cli -- render-native fixtures/generated/page-size-letter.pdf --max-edge 256 --output target/ferrugo-thumbnails/coverage-page-size-letter-native.png`
+  - `cargo run -p ferrugo-cli -- render-native fixtures/generated/vector-paths.pdf --max-edge 256 --output target/ferrugo-thumbnails/coverage-vector-native.png`
+  - `cargo run -p ferrugo-cli -- render-native fixtures/generated/text-page.pdf --max-edge 256 --output target/ferrugo-thumbnails/coverage-text-native.png`
+  - `cargo run -p ferrugo-cli -- render-native fixtures/generated/image-xobject.pdf --max-edge 256 --output target/ferrugo-thumbnails/coverage-image-xobject-native.png`
+  - `cargo run -p ferrugo-cli -- render-native fixtures/generated/form-xobject.pdf --max-edge 256 --output target/ferrugo-thumbnails/coverage-form-native.png` returned `render error [unsupported]`.
+  - `cargo run -p ferrugo-cli -- render-native fixtures/generated/inline-image.pdf --max-edge 256 --output target/ferrugo-thumbnails/coverage-inline-image-native.png` produced a blank native image with `nonwhite=0`.
   - `cargo clippy --all-targets --all-features -- -D warnings`

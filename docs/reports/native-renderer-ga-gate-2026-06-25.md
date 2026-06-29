@@ -25,7 +25,7 @@ normal native-only execution.
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated \
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated \
   --manifest fixtures/corpus-manifest.tsv \
   --include-family browser-print \
   --include-family office-export \
@@ -52,7 +52,7 @@ as a normal dependency.
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated \
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated \
   --manifest fixtures/corpus-manifest.tsv \
   --max-edge 160 \
   --iterations 1 \
@@ -88,9 +88,9 @@ families and should stay out of the supported GA claim.
 Command:
 
 ```sh
-PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib \
-DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib \
-cargo run -p pdfrust-cli --features pdfium -- visual-diff fixtures/generated \
+FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib \
+DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib \
+cargo run -p ferrugo-cli --features pdfium -- visual-diff fixtures/generated \
   --manifest fixtures/corpus-manifest.tsv \
   --max-edge 120 \
   --output target/ga-0100-visual-diff.json
@@ -154,10 +154,10 @@ Package dry-runs:
 
 | Package | Raw size | Compressed size |
 | --- | ---: | ---: |
-| `pdfrust-syntax` | 27.1 KiB | 6.2 KiB |
-| `pdfrust-thumbnail` | 15.5 KiB | 4.5 KiB |
+| `ferrugo-syntax` | 27.1 KiB | 6.2 KiB |
+| `ferrugo-thumbnail` | 15.5 KiB | 4.5 KiB |
 
-`pdfrust-cli` packaging remains intentionally release-order bound until the
+`ferrugo-cli` packaging remains intentionally release-order bound until the
 internal crates are published in dependency order, as documented in
 `docs/packaging.md`.
 
@@ -199,15 +199,15 @@ The current native fallback surface remains:
 - `cargo fmt --check`
 - `cargo check --workspace --no-default-features`
 - `cargo test --workspace --no-default-features`
-- `cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --include-family browser-print --include-family office-export --include-family form --fail-on-fallback --max-edge 160 --output target/ga-0100-supported-gate.json`
-- `cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --iterations 1 --max-ms 1000 --max-output-bytes 1048576 --output target/ga-0100-benchmark-native.json`
-- `cargo run -p pdfrust-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 120 --output target/ga-0100-visual-diff.json`
+- `cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --include-family browser-print --include-family office-export --include-family form --fail-on-fallback --max-edge 160 --output target/ga-0100-supported-gate.json`
+- `cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --iterations 1 --max-ms 1000 --max-output-bytes 1048576 --output target/ga-0100-benchmark-native.json`
+- `cargo run -p ferrugo-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 120 --output target/ga-0100-visual-diff.json`
 - `cargo run --manifest-path fuzz/Cargo.toml --bin primitive_parse -- --smoke`
 - `cargo run --manifest-path fuzz/Cargo.toml --bin xref_load -- --smoke`
 - `cargo run --manifest-path fuzz/Cargo.toml --bin stream_decode -- --smoke`
 - `cargo run --manifest-path fuzz/Cargo.toml --bin content_tokenize -- --smoke`
 - `cargo run --manifest-path fuzz/Cargo.toml --bin render_setup -- --smoke`
-- `cargo package -p pdfrust-syntax --allow-dirty --no-verify`
-- `cargo package -p pdfrust-thumbnail --allow-dirty --no-verify`
-- `cargo test -p pdfrust-cli --features pdfium`
+- `cargo package -p ferrugo-syntax --allow-dirty --no-verify`
+- `cargo package -p ferrugo-thumbnail --allow-dirty --no-verify`
+- `cargo test -p ferrugo-cli --features pdfium`
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`

@@ -101,20 +101,20 @@ In progress:
   half-pixel radius, keeping `0 w` and positive subpixel strokes visible without
   widening already-visible strokes.
 - Current validation:
-  - `cargo test -p pdfrust-render dash -- --nocapture`
-  - `cargo test -p pdfrust-render line_cap -- --nocapture`
-  - `cargo test -p pdfrust-render line_join -- --nocapture`
-  - `cargo test -p pdfrust-render clip -- --nocapture`
-  - `cargo test -p pdfrust-render hairline -- --nocapture`
-  - `cargo test -p pdfrust-native dashed_stroke -- --nocapture`
-  - `cargo test -p pdfrust-native line_caps -- --nocapture`
-  - `cargo test -p pdfrust-native line_joins -- --nocapture`
-  - `cargo test -p pdfrust-native clipped_paths -- --nocapture`
-  - `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render fixtures/generated/dashed-stroke.pdf --max-edge 120 --output target/pdfrust-thumbnails/dashed-stroke-pdfium-0051.png`
-  - `cargo run -p pdfrust-cli -- render-native fixtures/generated/dashed-stroke.pdf --max-edge 120 --output target/pdfrust-thumbnails/dashed-stroke-native-0051.png`
-  - `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render fixtures/generated/line-caps.pdf --max-edge 120 --output target/pdfrust-thumbnails/line-caps-pdfium-0051.png`
-  - `cargo run -p pdfrust-cli -- render-native fixtures/generated/line-caps.pdf --max-edge 120 --output target/pdfrust-thumbnails/line-caps-native-0051.png`
-  - `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render fixtures/generated/line-joins.pdf --max-edge 120 --output target/pdfrust-thumbnails/line-joins-pdfium-0051.png`
-  - `cargo run -p pdfrust-cli -- render-native fixtures/generated/line-joins.pdf --max-edge 120 --output target/pdfrust-thumbnails/line-joins-native-0051.png`
-  - `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render fixtures/generated/clipped-paths.pdf --max-edge 120 --output target/pdfrust-thumbnails/clipped-paths-pdfium-0051.png`
-  - `cargo run -p pdfrust-cli -- render-native fixtures/generated/clipped-paths.pdf --max-edge 120 --output target/pdfrust-thumbnails/clipped-paths-native-0051.png`
+  - `cargo test -p ferrugo-render dash -- --nocapture`
+  - `cargo test -p ferrugo-render line_cap -- --nocapture`
+  - `cargo test -p ferrugo-render line_join -- --nocapture`
+  - `cargo test -p ferrugo-render clip -- --nocapture`
+  - `cargo test -p ferrugo-render hairline -- --nocapture`
+  - `cargo test -p ferrugo-native dashed_stroke -- --nocapture`
+  - `cargo test -p ferrugo-native line_caps -- --nocapture`
+  - `cargo test -p ferrugo-native line_joins -- --nocapture`
+  - `cargo test -p ferrugo-native clipped_paths -- --nocapture`
+  - `FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli -- render fixtures/generated/dashed-stroke.pdf --max-edge 120 --output target/ferrugo-thumbnails/dashed-stroke-pdfium-0051.png`
+  - `cargo run -p ferrugo-cli -- render-native fixtures/generated/dashed-stroke.pdf --max-edge 120 --output target/ferrugo-thumbnails/dashed-stroke-native-0051.png`
+  - `FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli -- render fixtures/generated/line-caps.pdf --max-edge 120 --output target/ferrugo-thumbnails/line-caps-pdfium-0051.png`
+  - `cargo run -p ferrugo-cli -- render-native fixtures/generated/line-caps.pdf --max-edge 120 --output target/ferrugo-thumbnails/line-caps-native-0051.png`
+  - `FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli -- render fixtures/generated/line-joins.pdf --max-edge 120 --output target/ferrugo-thumbnails/line-joins-pdfium-0051.png`
+  - `cargo run -p ferrugo-cli -- render-native fixtures/generated/line-joins.pdf --max-edge 120 --output target/ferrugo-thumbnails/line-joins-native-0051.png`
+  - `FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli -- render fixtures/generated/clipped-paths.pdf --max-edge 120 --output target/ferrugo-thumbnails/clipped-paths-pdfium-0051.png`
+  - `cargo run -p ferrugo-cli -- render-native fixtures/generated/clipped-paths.pdf --max-edge 120 --output target/ferrugo-thumbnails/clipped-paths-native-0051.png`

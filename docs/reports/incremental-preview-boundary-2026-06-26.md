@@ -37,7 +37,7 @@ The focused preview manifest is
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/incremental-preview-manifest.tsv --include-family first-page-linearized --include-family first-page-fallback --include-family page-targeted --include-family multipage-preview --include-family longform-preview --fail-on-fallback --max-edge 160 --output target/preview-0155-supported-gate.json
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/incremental-preview-manifest.tsv --include-family first-page-linearized --include-family first-page-fallback --include-family page-targeted --include-family multipage-preview --include-family longform-preview --fail-on-fallback --max-edge 160 --output target/preview-0155-supported-gate.json
 ```
 
 Result:
@@ -51,7 +51,7 @@ Result:
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/incremental-preview-manifest.tsv --include-family first-page-linearized --include-family first-page-fallback --include-family page-targeted --include-family multipage-preview --include-family longform-preview --max-edge 160 --iterations 3 --max-ms 1000 --max-output-bytes 1048576 --output target/preview-0155-benchmark.json
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/incremental-preview-manifest.tsv --include-family first-page-linearized --include-family first-page-fallback --include-family page-targeted --include-family multipage-preview --include-family longform-preview --max-edge 160 --iterations 3 --max-ms 1000 --max-output-bytes 1048576 --output target/preview-0155-benchmark.json
 ```
 
 Result:
@@ -67,7 +67,7 @@ Result:
 Low-memory longform command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/incremental-preview-manifest.tsv --include-family longform-preview --max-edge 160 --iterations 3 --max-ms 1000 --max-output-bytes 1048576 --native-profile low-memory --output target/preview-0155-low-memory-benchmark.json
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/incremental-preview-manifest.tsv --include-family longform-preview --max-edge 160 --iterations 3 --max-ms 1000 --max-output-bytes 1048576 --native-profile low-memory --output target/preview-0155-low-memory-benchmark.json
 ```
 
 Result:
@@ -104,11 +104,11 @@ Focused tests cover:
 Commands run:
 
 ```sh
-cargo test -p pdfrust-native first_page_preview -- --nocapture
-cargo test -p pdfrust-native preview_partial -- --nocapture
-cargo test -p pdfrust-native linearized -- --nocapture
-cargo test -p pdfrust-native partial_renderer -- --nocapture
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/incremental-preview-manifest.tsv --include-family first-page-linearized --include-family first-page-fallback --include-family page-targeted --include-family multipage-preview --include-family longform-preview --fail-on-fallback --max-edge 160 --output target/preview-0155-supported-gate.json
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/incremental-preview-manifest.tsv --include-family first-page-linearized --include-family first-page-fallback --include-family page-targeted --include-family multipage-preview --include-family longform-preview --max-edge 160 --iterations 3 --max-ms 1000 --max-output-bytes 1048576 --output target/preview-0155-benchmark.json
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/incremental-preview-manifest.tsv --include-family longform-preview --max-edge 160 --iterations 3 --max-ms 1000 --max-output-bytes 1048576 --native-profile low-memory --output target/preview-0155-low-memory-benchmark.json
+cargo test -p ferrugo-native first_page_preview -- --nocapture
+cargo test -p ferrugo-native preview_partial -- --nocapture
+cargo test -p ferrugo-native linearized -- --nocapture
+cargo test -p ferrugo-native partial_renderer -- --nocapture
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/incremental-preview-manifest.tsv --include-family first-page-linearized --include-family first-page-fallback --include-family page-targeted --include-family multipage-preview --include-family longform-preview --fail-on-fallback --max-edge 160 --output target/preview-0155-supported-gate.json
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/incremental-preview-manifest.tsv --include-family first-page-linearized --include-family first-page-fallback --include-family page-targeted --include-family multipage-preview --include-family longform-preview --max-edge 160 --iterations 3 --max-ms 1000 --max-output-bytes 1048576 --output target/preview-0155-benchmark.json
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/incremental-preview-manifest.tsv --include-family longform-preview --max-edge 160 --iterations 3 --max-ms 1000 --max-output-bytes 1048576 --native-profile low-memory --output target/preview-0155-low-memory-benchmark.json
 ```

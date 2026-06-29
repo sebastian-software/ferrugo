@@ -51,7 +51,7 @@ The four new generated PDFs are also included in the main corpus manifest under
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated \
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated \
   --manifest fixtures/browser-print-edge-manifest.tsv \
   --include-family sticky-headers \
   --include-family clipped-backgrounds \
@@ -76,7 +76,7 @@ Result:
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated \
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated \
   --manifest fixtures/browser-print-edge-manifest.tsv \
   --include-family sticky-headers \
   --include-family clipped-backgrounds \
@@ -109,9 +109,9 @@ Result:
 Command:
 
 ```sh
-PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib \
-DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib \
-cargo run -p pdfrust-cli --features pdfium -- visual-diff fixtures/generated \
+FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib \
+DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib \
+cargo run -p ferrugo-cli --features pdfium -- visual-diff fixtures/generated \
   --manifest fixtures/browser-print-edge-manifest.tsv \
   --include-family sticky-headers \
   --include-family clipped-backgrounds \
@@ -134,8 +134,8 @@ All four new fixtures were exact at `max-edge 160`.
 
 ## Validation
 
-- `cargo test -p pdfrust-render rasterize_paths_should_restore_clip_with_graphics_state -- --nocapture`
-- `cargo test -p pdfrust-native browser_print_edge -- --nocapture`
+- `cargo test -p ferrugo-render rasterize_paths_should_restore_clip_with_graphics_state -- --nocapture`
+- `cargo test -p ferrugo-native browser_print_edge -- --nocapture`
 - `cargo test --workspace --no-default-features`
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
 - `cargo fmt --check`

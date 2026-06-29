@@ -33,9 +33,9 @@ limits, cleanup, and privacy behavior.
 ## Targeted Tests
 
 ```text
-cargo test -p pdfrust-render total_image_byte_budget -- --nocapture
-cargo test -p pdfrust-native memory_diagnostics -- --nocapture
-cargo test -p pdfrust-cli comparison_json_should_include_match_status -- --nocapture
+cargo test -p ferrugo-render total_image_byte_budget -- --nocapture
+cargo test -p ferrugo-native memory_diagnostics -- --nocapture
+cargo test -p ferrugo-cli comparison_json_should_include_match_status -- --nocapture
 ```
 
 The renderer test builds two individually valid image XObjects whose combined
@@ -48,7 +48,7 @@ map.
 Command:
 
 ```text
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/large-document-memory-benchmark-0095.json
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/large-document-memory-benchmark-0095.json
 ```
 
 Corpus summary:
@@ -71,12 +71,12 @@ Selected families:
 cargo fmt
 cargo fmt --check
 cargo check --workspace --no-default-features
-cargo test -p pdfrust-render total_image_byte_budget -- --nocapture
-cargo test -p pdfrust-native memory_diagnostics -- --nocapture
-cargo test -p pdfrust-cli comparison_json_should_include_match_status -- --nocapture
+cargo test -p ferrugo-render total_image_byte_budget -- --nocapture
+cargo test -p ferrugo-native memory_diagnostics -- --nocapture
+cargo test -p ferrugo-cli comparison_json_should_include_match_status -- --nocapture
 cargo test --workspace --no-default-features
 cargo clippy --workspace --all-targets --all-features -- -D warnings
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/large-document-memory-benchmark-0095.json
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/large-document-memory-benchmark-0095.json
 ```
 
 All listed commands completed successfully.

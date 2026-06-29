@@ -35,7 +35,7 @@ The render hot path is unchanged. Each scheduled job still creates its own
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- benchmark-batch-native fixtures/generated \
+cargo run -p ferrugo-cli --no-default-features -- benchmark-batch-native fixtures/generated \
   --manifest fixtures/server-batch-manifest.tsv \
   --include-family small \
   --include-family mixed-size \
@@ -101,7 +101,7 @@ in-flight pixel bounds plus maximum output bytes.
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- benchmark-batch-native fixtures/generated \
+cargo run -p ferrugo-cli --no-default-features -- benchmark-batch-native fixtures/generated \
   --manifest fixtures/server-batch-manifest.tsv \
   --include-family small \
   --include-family mixed-size \
@@ -136,7 +136,7 @@ is scheduled while already scheduled jobs remain isolated and successful.
 
 ## Validation
 
-- `cargo test -p pdfrust-cli batch_benchmark -- --nocapture`
+- `cargo test -p ferrugo-cli batch_benchmark -- --nocapture`
 - Server batch isolation gate with `--fail-on-budget`.
 - Server batch cancellation gate with `--cancel-after-jobs 5`.
 - Native parallel cancellation tests are covered by the workspace test gate.

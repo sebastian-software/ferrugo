@@ -19,19 +19,19 @@ const instantiateStart = performance.now();
 const instance = await WebAssembly.instantiate(module, {});
 const instantiateMs = performance.now() - instantiateStart;
 
-const smoke = instance.exports.pdfrust_wasm_smoke_status;
+const smoke = instance.exports.ferrugo_wasm_smoke_status;
 if (typeof smoke !== "function") {
-  console.error("missing pdfrust_wasm_smoke_status export");
+  console.error("missing ferrugo_wasm_smoke_status export");
   process.exit(3);
 }
-const fixtureCount = instance.exports.pdfrust_wasm_smoke_fixture_count;
+const fixtureCount = instance.exports.ferrugo_wasm_smoke_fixture_count;
 if (typeof fixtureCount !== "function") {
-  console.error("missing pdfrust_wasm_smoke_fixture_count export");
+  console.error("missing ferrugo_wasm_smoke_fixture_count export");
   process.exit(3);
 }
-const totalOutputBytes = instance.exports.pdfrust_wasm_smoke_total_output_bytes;
+const totalOutputBytes = instance.exports.ferrugo_wasm_smoke_total_output_bytes;
 if (typeof totalOutputBytes !== "function") {
-  console.error("missing pdfrust_wasm_smoke_total_output_bytes export");
+  console.error("missing ferrugo_wasm_smoke_total_output_bytes export");
   process.exit(3);
 }
 

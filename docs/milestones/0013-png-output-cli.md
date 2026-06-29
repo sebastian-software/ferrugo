@@ -44,7 +44,7 @@ Expose a local CLI that writes a PNG thumbnail artifact.
 
 Completed on 2026-06-24.
 
-- Implemented `pdfrust-cli render <input.pdf> --output <output.png>`.
+- Implemented `ferrugo-cli render <input.pdf> --output <output.png>`.
 - Added page index, max edge, background, and timeout arguments with Phase 0
   defaults.
 - Added std-only PNG encoding for RGBA thumbnails.

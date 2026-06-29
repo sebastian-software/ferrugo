@@ -1,6 +1,6 @@
-use pdfrust_fuzz::{minimal_pdf_with_content, run_target};
-use pdfrust_native::NativeBackend;
-use pdfrust_thumbnail::{
+use ferrugo_fuzz::{minimal_pdf_with_content, run_target};
+use ferrugo_native::NativeBackend;
+use ferrugo_thumbnail::{
     AnnotationMode, DocumentMetadataBackend, FormAppearanceMode, PdfSource, Rgba,
     ThumbnailBackend, ThumbnailOptions,
 };
@@ -27,7 +27,7 @@ fn fuzz_one(data: &[u8]) {
         page_index: 0,
         max_edge: 32,
         background: Rgba::WHITE,
-        output_format: pdfrust_thumbnail::OutputFormat::Rgba,
+        output_format: ferrugo_thumbnail::OutputFormat::Rgba,
         timeout: Duration::from_millis(100),
         annotation_mode: AnnotationMode::Screen,
         form_appearance_mode: FormAppearanceMode::DocumentState,

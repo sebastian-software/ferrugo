@@ -1,31 +1,31 @@
 [workspace]
 members = [
-    "crates/pdfrust-cli",
-    "crates/pdfrust-content",
-    "crates/pdfrust-native",
-    "crates/pdfrust-object",
-    "crates/pdfrust-pdfium",
-    "crates/pdfrust-render",
-    "crates/pdfrust-syntax",
-    "crates/pdfrust-thumbnail",
-    "crates/pdfrust-wasm-smoke",
+    "crates/ferrugo-cli",
+    "crates/ferrugo-content",
+    "crates/ferrugo-native",
+    "crates/ferrugo-object",
+    "crates/ferrugo-pdfium",
+    "crates/ferrugo-render",
+    "crates/ferrugo-syntax",
+    "crates/ferrugo-thumbnail",
+    "crates/ferrugo-wasm-smoke",
 ]
 resolver = "2"
 default-members = [
-    "crates/pdfrust-cli",
-    "crates/pdfrust-content",
-    "crates/pdfrust-native",
-    "crates/pdfrust-object",
-    "crates/pdfrust-render",
-    "crates/pdfrust-syntax",
-    "crates/pdfrust-thumbnail",
+    "crates/ferrugo-cli",
+    "crates/ferrugo-content",
+    "crates/ferrugo-native",
+    "crates/ferrugo-object",
+    "crates/ferrugo-render",
+    "crates/ferrugo-syntax",
+    "crates/ferrugo-thumbnail",
 ]
 
 [workspace.package]
 edition = "2021"
 description = "Rust-native PDF thumbnail and rendering components."
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/pdfrust/pdfrust"
+repository = "https://github.com/ferrugo/ferrugo"
 rust-version = "1.81"
 
 [workspace.lints.rust]

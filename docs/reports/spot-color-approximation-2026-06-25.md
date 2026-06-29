@@ -67,15 +67,15 @@ targets predictable RGB thumbnail approximation, not proofing parity.
 ## Validation
 
 - `cargo fmt --check`
-- `cargo check -p pdfrust-render -p pdfrust-native`
+- `cargo check -p ferrugo-render -p ferrugo-native`
 - `cargo check --workspace`
 - `cargo check --workspace --no-default-features`
-- `cargo test -p pdfrust-render`
-- `cargo test -p pdfrust-native`
+- `cargo test -p ferrugo-render`
+- `cargo test -p ferrugo-native`
 - `cargo test --workspace`
 - `cargo test --workspace --no-default-features`
-- `cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --include-family browser-print --include-family office-export --include-family form --fail-on-fallback --max-edge 160 --output target/spot-color-0105-supported-gate.json`
-- `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --max-mae 1.0 --max-p95 8 --max-changed-ratio 0.02 --output target/spot-color-0105-visual-diff.json`
+- `cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --include-family browser-print --include-family office-export --include-family form --fail-on-fallback --max-edge 160 --output target/spot-color-0105-supported-gate.json`
+- `FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --max-mae 1.0 --max-p95 8 --max-changed-ratio 0.02 --output target/spot-color-0105-visual-diff.json`
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
 
 ## Follow-Ups

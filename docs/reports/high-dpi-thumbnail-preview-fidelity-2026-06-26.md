@@ -50,7 +50,7 @@ Added:
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated \
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated \
   --manifest fixtures/high-dpi-preview-manifest.tsv \
   --include-family high-dpi-preview \
   --include-family text-baseline \
@@ -73,7 +73,7 @@ Result:
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated \
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated \
   --manifest fixtures/high-dpi-preview-manifest.tsv \
   --include-family high-dpi-preview \
   --include-family text-baseline \
@@ -102,7 +102,7 @@ Result:
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- benchmark-batch-native fixtures/generated \
+cargo run -p ferrugo-cli --no-default-features -- benchmark-batch-native fixtures/generated \
   --manifest fixtures/high-dpi-preview-manifest.tsv \
   --include-family high-dpi-preview \
   --include-family text-baseline \
@@ -128,9 +128,9 @@ available on this host, so the recorded memory signal is the enforced
 Command:
 
 ```sh
-PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib \
-DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib \
-cargo run -p pdfrust-cli --features pdfium -- visual-diff fixtures/generated \
+FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib \
+DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib \
+cargo run -p ferrugo-cli --features pdfium -- visual-diff fixtures/generated \
   --manifest fixtures/high-dpi-preview-manifest.tsv \
   --include-family high-dpi-preview \
   --include-family text-baseline \
@@ -157,8 +157,8 @@ cache-key, or memory-budget failures.
 ## Validation
 
 - `python3 scripts/generate_fixtures.py`
-- `cargo test -p pdfrust-native high_dpi -- --nocapture`
-- `cargo test -p pdfrust-native native_page_cache_key_should_isolate_high_dpi_scale -- --nocapture`
+- `cargo test -p ferrugo-native high_dpi -- --nocapture`
+- `cargo test -p ferrugo-native native_page_cache_key_should_isolate_high_dpi_scale -- --nocapture`
 - Native supported gate, benchmark, batch memory profile, and visual comparison
   commands listed above.
 - `cargo test --workspace --no-default-features`

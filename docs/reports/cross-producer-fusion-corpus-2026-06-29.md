@@ -106,9 +106,9 @@ Commands run:
 
 ```sh
 bash scripts/check_cross_producer_fusion_corpus.sh
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/cross-producer-fusion-manifest.tsv --include-family fused-report --include-family fused-table-statement --include-family fused-form --include-family fused-scan --include-family fused-dashboard-map --fail-on-fallback --max-edge 160 --output target/cross-producer-fusion-0216-supported-gate.json
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/cross-producer-fusion-manifest.tsv --include-family fused-unsupported-boundary --max-edge 160 --output target/cross-producer-fusion-0216-boundary-classification.json
-cargo run -p pdfrust-cli --no-default-features -- producer-regression-report fixtures/generated --manifest fixtures/cross-producer-fusion-manifest.tsv --max-edge 160 --output target/cross-producer-fusion-0216-producer-report.json
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/cross-producer-fusion-manifest.tsv --include-family fused-report --include-family fused-table-statement --include-family fused-form --include-family fused-scan --include-family fused-dashboard-map --fail-on-fallback --max-edge 160 --output target/cross-producer-fusion-0216-supported-gate.json
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/cross-producer-fusion-manifest.tsv --include-family fused-unsupported-boundary --max-edge 160 --output target/cross-producer-fusion-0216-boundary-classification.json
+cargo run -p ferrugo-cli --no-default-features -- producer-regression-report fixtures/generated --manifest fixtures/cross-producer-fusion-manifest.tsv --max-edge 160 --output target/cross-producer-fusion-0216-producer-report.json
 cargo fmt --check
 cargo test --workspace --no-default-features
 cargo clippy --workspace --all-targets --all-features -- -D warnings

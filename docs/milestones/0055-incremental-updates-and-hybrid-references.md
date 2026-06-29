@@ -78,15 +78,15 @@ Completed:
   diagnostics can use the `xref.incremental-hybrid` bucket recorded in
   `docs/errors.md`.
 - Current validation:
-  - `cargo test -p pdfrust-object incremental -- --nocapture`
-  - `cargo test -p pdfrust-object hybrid -- --nocapture`
-  - `cargo test -p pdfrust-native incremental_update -- --nocapture`
-  - `cargo test -p pdfrust-native hybrid_reference -- --nocapture`
+  - `cargo test -p ferrugo-object incremental -- --nocapture`
+  - `cargo test -p ferrugo-object hybrid -- --nocapture`
+  - `cargo test -p ferrugo-native incremental_update -- --nocapture`
+  - `cargo test -p ferrugo-native hybrid_reference -- --nocapture`
   - `cargo fmt --check`
   - `cargo check`
   - `cargo clippy --all-targets --all-features -- -D warnings`
   - `cargo test --quiet`
-  - `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render fixtures/generated/incremental-update.pdf --max-edge 120 --output target/pdfrust-thumbnails/incremental-update-pdfium-0055.png`
-  - `cargo run -p pdfrust-cli -- render-native fixtures/generated/incremental-update.pdf --max-edge 120 --output target/pdfrust-thumbnails/incremental-update-native-0055.png`
-  - `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render fixtures/generated/hybrid-reference.pdf --max-edge 120 --output target/pdfrust-thumbnails/hybrid-reference-pdfium-0055.png`
-  - `cargo run -p pdfrust-cli -- render-native fixtures/generated/hybrid-reference.pdf --max-edge 120 --output target/pdfrust-thumbnails/hybrid-reference-native-0055.png`
+  - `FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli -- render fixtures/generated/incremental-update.pdf --max-edge 120 --output target/ferrugo-thumbnails/incremental-update-pdfium-0055.png`
+  - `cargo run -p ferrugo-cli -- render-native fixtures/generated/incremental-update.pdf --max-edge 120 --output target/ferrugo-thumbnails/incremental-update-native-0055.png`
+  - `FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli -- render fixtures/generated/hybrid-reference.pdf --max-edge 120 --output target/ferrugo-thumbnails/hybrid-reference-pdfium-0055.png`
+  - `cargo run -p ferrugo-cli -- render-native fixtures/generated/hybrid-reference.pdf --max-edge 120 --output target/ferrugo-thumbnails/hybrid-reference-native-0055.png`

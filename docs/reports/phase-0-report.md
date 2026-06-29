@@ -27,9 +27,9 @@ text fixture through the release CLI.
   - `fixtures/generated/*.pdf`
   - `scripts/generate_fixtures.py`
 - Rust workspace:
-  - `crates/pdfrust-thumbnail`
-  - `crates/pdfrust-pdfium`
-  - `crates/pdfrust-cli`
+  - `crates/ferrugo-thumbnail`
+  - `crates/ferrugo-pdfium`
+  - `crates/ferrugo-cli`
 - Error taxonomy: `docs/errors.md`.
 - Baseline metadata format: `docs/baselines.md`,
   `baselines/examples/*.json`.
@@ -38,11 +38,11 @@ text fixture through the release CLI.
 
 PDFium revision `573758fe2dd928279cd52b5a4bc955a6938aab39` was built locally.
 
-- Static complete library: `out/pdfrust-thumb/obj/libpdfium.a`, 264M.
-- Runtime component dylib: `out/pdfrust-dylib/libpdfium.dylib`, 5.4M plus
+- Static complete library: `out/ferrugo-thumb/obj/libpdfium.a`, 264M.
+- Runtime component dylib: `out/ferrugo-dylib/libpdfium.dylib`, 5.4M plus
   colocated `@rpath` dylib dependencies.
 - Runtime path:
-  `/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib`.
+  `/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib`.
 - Smoke probe: `initialized=true`, `last_error=0`.
 
 Release CLI render measurements for `fixtures/generated/text-page.pdf`:

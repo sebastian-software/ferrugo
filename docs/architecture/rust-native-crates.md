@@ -4,7 +4,7 @@ Status: accepted initial layout.
 Date: 2026-06-24.
 
 The Rust-native renderer grows behind the existing backend-neutral
-`pdfrust-thumbnail` facade. PDFium remains the behavior oracle and differential
+`ferrugo-thumbnail` facade. PDFium remains the behavior oracle and differential
 baseline, but the Rust-native crates must not expose PDFium handles, symbols, or
 naming as public API.
 
@@ -12,24 +12,24 @@ naming as public API.
 
 | Crate | Role | Depends On |
 | --- | --- | --- |
-| `pdfrust-syntax` | Byte-level PDF syntax, tokens, and offset-aware parser errors. | none |
-| `pdfrust-object` | Indirect objects, references, xref data, trailers, catalog, and page tree. | `pdfrust-syntax` |
-| `pdfrust-content` | Page content stream tokenization and display-list interpretation. | `pdfrust-object` |
-| `pdfrust-render` | Raster buffers, page transforms, drawing, and pixel output helpers. | `pdfrust-content`, `pdfrust-thumbnail` |
-| `pdfrust-native` | Rust-native backend adapter for the thumbnail facade. | `pdfrust-object`, `pdfrust-render`, `pdfrust-thumbnail` |
+| `ferrugo-syntax` | Byte-level PDF syntax, tokens, and offset-aware parser errors. | none |
+| `ferrugo-object` | Indirect objects, references, xref data, trailers, catalog, and page tree. | `ferrugo-syntax` |
+| `ferrugo-content` | Page content stream tokenization and display-list interpretation. | `ferrugo-object` |
+| `ferrugo-render` | Raster buffers, page transforms, drawing, and pixel output helpers. | `ferrugo-content`, `ferrugo-thumbnail` |
+| `ferrugo-native` | Rust-native backend adapter for the thumbnail facade. | `ferrugo-object`, `ferrugo-render`, `ferrugo-thumbnail` |
 
 ## Dependency Direction
 
 ```text
-pdfrust-thumbnail
+ferrugo-thumbnail
         ^
         |
-pdfrust-native -----> pdfrust-render -----> pdfrust-content
+ferrugo-native -----> ferrugo-render -----> ferrugo-content
         |                                      |
-        +---------------> pdfrust-object <-----+
+        +---------------> ferrugo-object <-----+
                              |
                              v
-                       pdfrust-syntax
+                       ferrugo-syntax
 ```
 
 The direction is intentionally one-way from high-level backend code down to
@@ -51,7 +51,7 @@ measurable slices against the PDFium baseline.
 
 ## Current Syntax Foundation
 
-`pdfrust-syntax` owns borrowed PDF input and offset-aware syntax failures.
+`ferrugo-syntax` owns borrowed PDF input and offset-aware syntax failures.
 `PdfBytes<'a>` and `ByteCursor<'a>` keep scanning over borrowed bytes, while
 `ByteOffset`, `SyntaxErrorKind`, and `SyntaxError` provide diagnostics that
 later parser layers can preserve without inventing new error plumbing.
@@ -63,7 +63,7 @@ Literal string escapes and hexadecimal string bytes are preserved raw for later
 semantic decoding. Parser layers that need to read a primitive followed by more
 structure use `parse_primitive_prefix` to keep the first consumed byte offset.
 
-`pdfrust-object` owns typed indirect object IDs and references. Its first loader
+`ferrugo-object` owns typed indirect object IDs and references. Its first loader
 can parse contiguous `obj ... endobj` slices into `IndirectObject<'a>` values
 and store them in an `ObjectTable<'a>` with duplicate detection.
 
@@ -85,10 +85,10 @@ the trailer `/Root`, catalog `/Pages`, page tree `Kids`, inherited page boxes,
 and inherited resource references into `PageTree` and `PageMetadata` values.
 Content streams and rendering remain separate layers.
 
-`pdfrust-thumbnail` now also owns the backend-neutral `DocumentMetadataBackend`
-contract used by the differential harness. `pdfrust-pdfium` implements it by
+`ferrugo-thumbnail` now also owns the backend-neutral `DocumentMetadataBackend`
+contract used by the differential harness. `ferrugo-pdfium` implements it by
 loading a document through PDFium and reading page count plus page sizes.
-`pdfrust-native` implements it through the Rust object model and page tree
+`ferrugo-native` implements it through the Rust object model and page tree
 without rendering pixels. It also exposes common classic-document inspection
 signals for document info fields, XMP presence, outlines, page labels, named
 destinations, and tagged-PDF presence. The CLI `compare-metadata` command
@@ -96,13 +96,13 @@ records the PDFium oracle and Rust-native candidate results in the baseline
 format; `extract-corpus-metadata` serializes the extended native metadata for
 corpus work.
 
-`pdfrust-content` starts with a borrowed content-stream tokenizer. It reuses
-`pdfrust-syntax` primitives for operands, represents operators as borrowed byte
+`ferrugo-content` starts with a borrowed content-stream tokenizer. It reuses
+`ferrugo-syntax` primitives for operands, represents operators as borrowed byte
 slices, skips content comments, and preserves byte offsets in `ContentError`.
 It deliberately does not execute graphics state, resolve resources, or build a
 display list yet.
 
-`pdfrust-render` now owns the first graphics-state and display-list execution
+`ferrugo-render` now owns the first graphics-state and display-list execution
 slices. It provides deterministic affine `Matrix` math, a small copyable
 `GraphicsState`, stack limits for `q`/`Q`, interpretation for `cm`, `w`, gray
 and RGB fill/stroke color, and clipping placeholders. It also builds bounded
@@ -167,7 +167,7 @@ Basic path rasterization now paints path display lists into RGBA rasters using
 bounded line-segment flattening and fixed supersampling. It supports nonzero
 and even-odd fills plus simple stroked line segments, composites opaque device
 gray/RGB colors over the requested background with `Normal`, `Multiply`, and
-`Screen` blend modes, and is wired through `pdfrust-native` for simple
+`Screen` blend modes, and is wired through `ferrugo-native` for simple
 path-only Classic PDFs. The CLI exposes this path as `render-native` so
 generated vector fixtures can be compared against the PDFium backend during
 development.
@@ -190,7 +190,7 @@ XObjects. Filtered inline images remain explicit unsupported cases until the
 image-filter milestone.
 Basic text rasterization uses an internal 5x7 ASCII fallback font for the first
 visible text milestone. It renders positioned text display-list runs using the
-captured text origin, font size, and fill color. `pdfrust-native` resolves page
+captured text origin, font size, and fill color. `ferrugo-native` resolves page
 `/Resources /Font` entries into font descriptors, and the render layer loads
 bounded embedded Type1, TrueType, and CFF font program streams behind a small
 object-identity cache. Text strings are decoded through simple font encodings

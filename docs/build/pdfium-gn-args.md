@@ -12,7 +12,7 @@ local build recipe, not repository automation.
 From `../pdfium-work/pdfium`:
 
 ```sh
-gn gen out/pdfrust-thumb --args="$(cat <<'EOF'
+gn gen out/ferrugo-thumb --args="$(cat <<'EOF'
 is_debug = false
 is_component_build = false
 pdf_enable_v8 = false
@@ -35,7 +35,7 @@ a component build that emits `libpdfium.dylib` plus its colocated `@rpath`
 dependencies:
 
 ```sh
-gn gen out/pdfrust-dylib --args="$(cat <<'EOF'
+gn gen out/ferrugo-dylib --args="$(cat <<'EOF'
 is_debug = false
 is_component_build = true
 pdf_enable_v8 = false
@@ -74,14 +74,14 @@ EOF
 ## Build Command
 
 ```sh
-ninja -C out/pdfrust-thumb pdfium
-ninja -C out/pdfrust-dylib pdfium
+ninja -C out/ferrugo-thumb pdfium
+ninja -C out/ferrugo-dylib pdfium
 ```
 
 If the `pdfium` target is unavailable for the pinned revision, inspect targets:
 
 ```sh
-gn ls out/pdfrust-thumb '*pdfium*'
+gn ls out/ferrugo-thumb '*pdfium*'
 ```
 
 and record the target used in the measurement report.
@@ -91,5 +91,5 @@ and record the target used in the measurement report.
 In this environment on 2026-06-24, both configurations built successfully for
 PDFium revision `573758fe2dd928279cd52b5a4bc955a6938aab39`.
 
-- `out/pdfrust-thumb/obj/libpdfium.a`: 264M
-- `out/pdfrust-dylib/libpdfium.dylib`: 5.4M
+- `out/ferrugo-thumb/obj/libpdfium.a`: 264M
+- `out/ferrugo-dylib/libpdfium.dylib`: 5.4M

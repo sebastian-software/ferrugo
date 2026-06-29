@@ -267,8 +267,8 @@ def metadata_outline_page_labels_pdf() -> bytes:
         + b"\nendstream"
     )
     info = pdf.add(
-        "<< /Title (Metadata Fixture) /Author (pdfrust) "
-        "/Creator (fixture generator) /Producer (pdfrust) >>"
+        "<< /Title (Metadata Fixture) /Author (ferrugo) "
+        "/Creator (fixture generator) /Producer (ferrugo) >>"
     )
     outline_one = pdf.add(
         f"<< /Title (Chapter One) /Parent 8 0 R /Dest [{page} 0 R /Fit] /Next 7 0 R >>"
@@ -339,8 +339,8 @@ def pdfa_2b_archival_record_pdf() -> bytes:
         f"<< /Type /OutputIntent /S /GTS_PDFA1 /OutputConditionIdentifier (sRGB archive) /DestOutputProfile {profile_object} 0 R >>"
     )
     info = pdf.add(
-        "<< /Title (PDF/A-2B Archive Record) /Creator (pdfrust fixture generator) "
-        "/Producer (pdfrust) /CreationDate (D:20200101000000Z) /ModDate (D:20200101000000Z) >>"
+        "<< /Title (PDF/A-2B Archive Record) /Creator (ferrugo fixture generator) "
+        "/Producer (ferrugo) /CreationDate (D:20200101000000Z) /ModDate (D:20200101000000Z) >>"
     )
     catalog = pdf.add(
         f"<< /Type /Catalog /Pages {pages} 0 R /Metadata {metadata} 0 R "
@@ -425,7 +425,7 @@ def tagged_accessibility_metadata_pdf() -> bytes:
         f"<< /Type /StructTreeRoot /K [{structure} 0 R] "
         "/RoleMap << /Document /Document >> >>"
     )
-    info = pdf.add("<< /Title (Tagged Accessibility Fixture) /Author (pdfrust) >>")
+    info = pdf.add("<< /Title (Tagged Accessibility Fixture) /Author (ferrugo) >>")
     catalog = pdf.add(
         f"<< /Type /Catalog /Pages {pages} 0 R /Lang (en-US) "
         "/MarkInfo << /Marked true >> "
@@ -469,7 +469,7 @@ def tagged_report_visual_integrity_pdf() -> bytes:
         f"<< /S /Table /Pg {page} 0 R /K << /Type /MCR /Pg {page} 0 R /MCID 1 >> >>"
         "] >>] /RoleMap << /H1 /H /Table /Table /Document /Document >> >>"
     )
-    info = pdf.add("<< /Title (Tagged Report Visual Integrity) /Author (pdfrust) >>")
+    info = pdf.add("<< /Title (Tagged Report Visual Integrity) /Author (ferrugo) >>")
     catalog = pdf.add(
         f"<< /Type /Catalog /Pages {pages} 0 R /Lang (en-US) "
         "/MarkInfo << /Marked true >> "
@@ -528,7 +528,7 @@ def tagged_form_visual_integrity_pdf() -> bytes:
         f"<< /S /Form /Pg {page} 0 R /K << /Type /MCR /Pg {page} 0 R /MCID 0 >> >>"
         "] >>] /RoleMap << /Form /P /Document /Document >> >>"
     )
-    info = pdf.add("<< /Title (Tagged Form Visual Integrity) /Author (pdfrust) >>")
+    info = pdf.add("<< /Title (Tagged Form Visual Integrity) /Author (ferrugo) >>")
     catalog = pdf.add(
         f"<< /Type /Catalog /Pages {pages} 0 R /Lang (en-US) "
         f"/AcroForm << /Fields [{field} 0 R] >> "
@@ -581,7 +581,7 @@ def tagged_office_alt_text_pdf() -> bytes:
         f"<< /S /P /Pg {page} 0 R /K << /Type /MCR /Pg {page} 0 R /MCID 1 >> >>"
         "] >>] /RoleMap << /Document /Document /Figure /Figure /P /P >> >>"
     )
-    info = pdf.add("<< /Title (Tagged Office Alt Text Fixture) /Author (pdfrust) >>")
+    info = pdf.add("<< /Title (Tagged Office Alt Text Fixture) /Author (ferrugo) >>")
     catalog = pdf.add(
         f"<< /Type /Catalog /Pages {pages} 0 R /Lang (en-US) "
         "/MarkInfo << /Marked true >> "
@@ -628,7 +628,7 @@ def tagged_invoice_reading_order_pdf() -> bytes:
         f"<< /S /P /Pg {page} 0 R /K << /Type /MCR /Pg {page} 0 R /MCID 2 >> >>"
         "] >>] /RoleMap << /Document /Document /H1 /H /Table /Table /P /P >> >>"
     )
-    info = pdf.add("<< /Title (Tagged Invoice Reading Order) /Author (pdfrust) >>")
+    info = pdf.add("<< /Title (Tagged Invoice Reading Order) /Author (ferrugo) >>")
     catalog = pdf.add(
         f"<< /Type /Catalog /Pages {pages} 0 R /Lang (en-US) "
         "/MarkInfo << /Marked true >> "
@@ -662,7 +662,7 @@ def tagged_reading_order_missing_page_context_pdf() -> bytes:
         "<< /S /P /K << /Type /MCR /MCID 0 >> >>"
         "] >>] /RoleMap << /Document /Document /P /P >> >>"
     )
-    info = pdf.add("<< /Title (Tagged Reading Order Warning) /Author (pdfrust) >>")
+    info = pdf.add("<< /Title (Tagged Reading Order Warning) /Author (ferrugo) >>")
     catalog = pdf.add(
         f"<< /Type /Catalog /Pages {pages} 0 R /Lang (en-US) "
         "/MarkInfo << /Marked true >> "
@@ -709,7 +709,7 @@ def tagged_structure_heavy_report_pdf() -> bytes:
         + " ".join(kids)
         + "] >>] /RoleMap << /Document /Document /P /P >> >>"
     )
-    info = pdf.add("<< /Title (Tagged Structure Heavy Report) /Author (pdfrust) >>")
+    info = pdf.add("<< /Title (Tagged Structure Heavy Report) /Author (ferrugo) >>")
     catalog = pdf.add(
         f"<< /Type /Catalog /Pages {pages} 0 R /Lang (en-US) "
         "/MarkInfo << /Marked true >> "
@@ -1028,7 +1028,7 @@ def icc_rgb_image_pdf() -> bytes:
         b"DeviceRGB",
         3,
         image,
-        b"pdfrust synthetic icc rgb profile",
+        b"ferrugo synthetic icc rgb profile",
     )
 
 
@@ -1038,7 +1038,7 @@ def icc_gray_image_pdf() -> bytes:
         b"DeviceGray",
         1,
         image,
-        b"pdfrust synthetic icc gray profile",
+        b"ferrugo synthetic icc gray profile",
     )
 
 
@@ -1067,14 +1067,14 @@ def icc_cmyk_image_pdf() -> bytes:
         b"DeviceCMYK",
         4,
         image,
-        b"pdfrust synthetic icc cmyk profile",
+        b"ferrugo synthetic icc cmyk profile",
     )
 
 
 def output_intent_rgb_pdf() -> bytes:
     pdf = Pdf()
     content = b"0.1 0.45 0.85 rg 20 20 80 50 re f"
-    profile = b"pdfrust synthetic profile placeholder"
+    profile = b"ferrugo synthetic profile placeholder"
     contents = pdf.add(
         f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
         + content
@@ -4846,14 +4846,14 @@ def embedded_font_program_text_pdf(
 
 def type1_fontfile_text_pdf() -> bytes:
     program = (
-        b"%!PS-AdobeFont-1.0: PdfrustTypeOne 1.0\n"
+        b"%!PS-AdobeFont-1.0: FerrugoTypeOne 1.0\n"
         b"/CharStrings 2 dict dup begin\n"
         b"/.notdef <0e> def\n"
         b"/A <8bef0d8b8b15ef8b058bef05278b058b2705090e> def\n"
         b"end\n"
     )
     return embedded_font_program_text_pdf(
-        "PdfrustTypeOne",
+        "FerrugoTypeOne",
         "FontFile",
         "<<",
         program,
@@ -4863,7 +4863,7 @@ def type1_fontfile_text_pdf() -> bytes:
 
 def cff_fontfile3_text_pdf() -> bytes:
     return embedded_font_program_text_pdf(
-        "PdfrustCffOne",
+        "FerrugoCffOne",
         "FontFile3",
         "<< /Subtype /Type1C >>",
         b"fake-cff-font-program",
@@ -7127,7 +7127,7 @@ def academic_publisher_first_page_pdf() -> bytes:
         "q 0.11 0.18 0.28 RG 0.6 w 30 92 m 330 92 l 30 384 m 330 384 l S Q",
         "BT /F1 13 Tf 38 454 Td (Journal of Synthetic Documents) Tj ET",
         "BT /F1 14 Tf 42 414 Td (Publisher-Style Two Column Article) Tj ET",
-        "BT /F1 7 Tf 42 400 Td (DOI 10.0000/pdfrust.0150) Tj 0 -12 Td (Received 2026-06-26) Tj ET",
+        "BT /F1 7 Tf 42 400 Td (DOI 10.0000/ferrugo.0150) Tj 0 -12 Td (Received 2026-06-26) Tj ET",
         "BT /F1 8 Tf 42 374 Td (Abstract) Tj ET",
     ]
     for row in range(17):
@@ -7307,7 +7307,7 @@ def book_frontmatter_page_labels_pdf() -> bytes:
         f"<< /Type /Outlines /First {outline_one} 0 R /Last {outline_three} 0 R /Count 3 >>"
     )
     info = pdf.add(
-        "<< /Title (Longform Book Fixture) /Author (pdfrust) /Creator (fixture generator) >>"
+        "<< /Title (Longform Book Fixture) /Author (ferrugo) /Creator (fixture generator) >>"
     )
     catalog = pdf.add(
         f"<< /Type /Catalog /Pages {pages} 0 R /Outlines {outlines} 0 R "
@@ -7790,7 +7790,7 @@ def main() -> None:
         "text-page.pdf",
         page_pdf(
             "[0 0 300 160]",
-            "BT /F1 24 Tf 40 90 Td (pdfrust thumbnail fixture) Tj ET",
+            "BT /F1 24 Tf 40 90 Td (ferrugo thumbnail fixture) Tj ET",
         ),
     )
     write(

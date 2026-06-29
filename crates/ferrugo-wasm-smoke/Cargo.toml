@@ -1,0 +1,19 @@
+[package]
+name = "ferrugo-wasm-smoke"
+version = "0.1.0"
+edition.workspace = true
+description.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+ferrugo-native = { version = "0.1.0", path = "../ferrugo-native" }
+ferrugo-thumbnail = { version = "0.1.0", path = "../ferrugo-thumbnail" }
+
+[lints]
+workspace = true

@@ -11,11 +11,11 @@ as explicit SemVer decisions instead of accidental renderer churn.
 
 | Surface | Status | Decision |
 | --- | --- | --- |
-| `pdfrust-thumbnail` facade types | Stable consumer boundary | Keep backend-neutral and PDFium-free. |
-| `pdfrust-native::NativeBackend` | Stable native entry point | Keep construction, render limits, diagnostics, preview APIs, and trait impls public. |
+| `ferrugo-thumbnail` facade types | Stable consumer boundary | Keep backend-neutral and PDFium-free. |
+| `ferrugo-native::NativeBackend` | Stable native entry point | Keep construction, render limits, diagnostics, preview APIs, and trait impls public. |
 | `ThumbnailErrorClass::as_str()` | Stable strings | Preserve class strings for logs and baseline metadata. |
 | `ThumbnailError::UnsupportedFeature` buckets | Diagnostic boundary | Keep available, but do not make bucket names a 1.0 SLA until the typed unsupported milestone. |
-| `pdfrust-pdfium` | Maintainer-only oracle | Keep optional and outside normal runtime SemVer expectations. |
+| `ferrugo-pdfium` | Maintainer-only oracle | Keep optional and outside normal runtime SemVer expectations. |
 | Low-level renderer crates | Internal implementation surface | Avoid recommending direct application use before a separate API design milestone. |
 
 ## Cleanup Candidates

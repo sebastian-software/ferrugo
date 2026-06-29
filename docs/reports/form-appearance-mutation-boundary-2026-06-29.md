@@ -32,7 +32,7 @@ Focused manifest:
 Command:
 
 ```sh
-cargo run -p pdfrust-cli -- summarize-fallbacks fixtures/generated \
+cargo run -p ferrugo-cli -- summarize-fallbacks fixtures/generated \
   --manifest fixtures/form-appearance-mutation-manifest.tsv \
   --include-family existing-appearance \
   --include-family stale-appearance \
@@ -60,7 +60,7 @@ Families:
 Document-state visual comparison command:
 
 ```sh
-cargo run -p pdfrust-cli -- visual-diff-poppler fixtures/generated \
+cargo run -p ferrugo-cli -- visual-diff-poppler fixtures/generated \
   --manifest fixtures/form-appearance-mutation-manifest.tsv \
   --include-family existing-appearance \
   --include-family stale-appearance \
@@ -95,9 +95,9 @@ Targeted native tests verify:
 Commands:
 
 ```sh
-cargo test -p pdfrust-native acroform -- --nocapture
-cargo test -p pdfrust-native appearance -- --nocapture
-cargo test -p pdfrust-native mutation -- --nocapture
+cargo test -p ferrugo-native acroform -- --nocapture
+cargo test -p ferrugo-native appearance -- --nocapture
+cargo test -p ferrugo-native mutation -- --nocapture
 ```
 
 Results:

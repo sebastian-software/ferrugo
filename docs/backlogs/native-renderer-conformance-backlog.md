@@ -11,7 +11,7 @@ follow-up slices. Counts come from
 
 | Rank | Slice | Evidence | Recommended next action | Validation gate |
 | ---: | --- | --- | --- | --- |
-| 1 | Office text/font fidelity | `text-fonts` + `office-export`: 21 blockers. | Audit fallback text metrics, text spacing, subset font widths, Type1/CFF/CID positioning, and missing-font substitution as separate fixture groups. | Focused visual diff over office text fixtures plus `cargo test -p pdfrust-render text_display_list`. |
+| 1 | Office text/font fidelity | `text-fonts` + `office-export`: 21 blockers. | Audit fallback text metrics, text spacing, subset font widths, Type1/CFF/CID positioning, and missing-font substitution as separate fixture groups. | Focused visual diff over office text fixtures plus `cargo test -p ferrugo-render text_display_list`. |
 | 2 | Dense office table/grid rendering | `rendering-core` + `office-export`: 16 blockers. | Split spreadsheet/table fixtures into operator semantics, clipping, hairline/grid stroke, and cell-overflow cases. | Focused visual diff over spreadsheet and business office fixtures. |
 | 3 | Form and annotation appearance parity | `annotations-forms` + `form`: 12 blockers. | Compare native synthesized appearances against explicit appearance streams; isolate checkbox/radio/text-field/signature/stamp differences. | Focused visual diff over form fixtures and native form appearance tests. |
 | 4 | Report rendering-core fidelity | `rendering-core` + `report`: 12 blockers. | Triage scientific, long-report, technical, and dashboard fixtures by operator surface before broad fixes. | Focused report-family visual diff and operator snapshot coverage from 0144. |

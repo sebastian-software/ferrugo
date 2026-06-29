@@ -5,7 +5,7 @@ Status: done.
 
 ## Summary
 
-The existing `pdfrust-wasm-smoke` package remains PDFium-free and validates the
+The existing `ferrugo-wasm-smoke` package remains PDFium-free and validates the
 Rust-native low-memory thumbnail path as a secondary viewer-profile signal.
 This milestone does not introduce a production browser viewer. It confirms that
 the current WASM package can compile, instantiate, and render a supported first
@@ -20,7 +20,7 @@ safety defect.
 ## Gate Artifacts
 
 WASM artifact:
-`target/wasm32-unknown-unknown/release/pdfrust_wasm_smoke.wasm`
+`target/wasm32-unknown-unknown/release/ferrugo_wasm_smoke.wasm`
 
 Script report:
 `target/wasm-0132-smoke.json`
@@ -44,7 +44,7 @@ Both measurements are comfortably within the configured viewer-profile budgets.
 ## Unsupported WASM Surface
 
 - PDFium is not part of the WASM package path.
-- `pdfrust-cli` remains a native command-line surface and is not exported to
+- `ferrugo-cli` remains a native command-line surface and is not exported to
   WASM.
 - Browser viewer bindings are still deferred; the smoke export is the current
   integration boundary.
@@ -57,15 +57,15 @@ Commands run:
 
 ```text
 sh scripts/check_wasm_smoke.sh
-node scripts/wasm_smoke.mjs target/wasm32-unknown-unknown/release/pdfrust_wasm_smoke.wasm target/wasm-0176-smoke.json
-cargo test -p pdfrust-wasm-smoke --no-default-features -- --nocapture
+node scripts/wasm_smoke.mjs target/wasm32-unknown-unknown/release/ferrugo_wasm_smoke.wasm target/wasm-0176-smoke.json
+cargo test -p ferrugo-wasm-smoke --no-default-features -- --nocapture
 ```
 
 Results:
 
 - `scripts/check_wasm_smoke.sh` passed all size, compile, instantiate, and smoke
   render budgets.
-- `pdfrust_wasm_smoke_status` returned a non-zero status encoding a 96x51
+- `ferrugo_wasm_smoke_status` returned a non-zero status encoding a 96x51
   thumbnail.
-- `cargo test -p pdfrust-wasm-smoke --no-default-features` passed 2 tests and
+- `cargo test -p ferrugo-wasm-smoke --no-default-features` passed 2 tests and
   0 doctests.

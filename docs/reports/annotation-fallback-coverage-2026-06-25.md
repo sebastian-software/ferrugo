@@ -26,7 +26,7 @@ external behavior while rendering thumbnails.
 Command:
 
 ```text
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --output target/annotation-fallback-summary-0091.json
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --output target/annotation-fallback-summary-0091.json
 ```
 
 Corpus summary:
@@ -57,7 +57,7 @@ appearance-free annotation fixtures render natively.
 Command:
 
 ```text
-PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --output target/annotation-fallback-visual-diff-0091.json
+FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --output target/annotation-fallback-visual-diff-0091.json
 ```
 
 Corpus summary:
@@ -86,7 +86,7 @@ New fixture details:
 Command:
 
 ```text
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/annotation-fallback-benchmark-0091.json
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/annotation-fallback-benchmark-0091.json
 ```
 
 Corpus summary:
@@ -114,7 +114,7 @@ New fixture outcomes:
 
 ```text
 cargo fmt --check
-cargo test -p pdfrust-native annotation -- --nocapture
+cargo test -p ferrugo-native annotation -- --nocapture
 cargo check --workspace --no-default-features
 cargo test --workspace --no-default-features
 cargo clippy --workspace --all-targets --all-features -- -D warnings

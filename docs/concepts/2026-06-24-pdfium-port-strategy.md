@@ -61,22 +61,22 @@ aligned to ownership boundaries. This is not a Phase 0 deliverable; Phase 0 only
 needs the backend-neutral thumbnail facade sketched well enough to measure the
 PDFium probe.
 
-- `pdfrust-syntax`: byte-level scanner, primitive parser, cross-reference
+- `ferrugo-syntax`: byte-level scanner, primitive parser, cross-reference
   parsing, object streams, repair-mode parsing, and source spans for diagnostics.
-- `pdfrust-core`: typed object model, documents, pages, resources, name trees,
+- `ferrugo-core`: typed object model, documents, pages, resources, name trees,
   metadata, permissions, and high-level document access.
-- `pdfrust-filter`: stream filters and image/data codecs. This should isolate
+- `ferrugo-filter`: stream filters and image/data codecs. This should isolate
   unsafe or native codec dependencies behind small traits.
-- `pdfrust-content`: PDF content stream interpreter, graphics state stack,
+- `ferrugo-content`: PDF content stream interpreter, graphics state stack,
   text state, resources, operators, clipping, and display-list emission.
-- `pdfrust-font`: font discovery, embedded font parsing, CMaps, glyph mapping,
+- `ferrugo-font`: font discovery, embedded font parsing, CMaps, glyph mapping,
   text metrics, shaping hooks, and fallback policy.
-- `pdfrust-render`: display list, raster device abstraction, color conversion,
+- `ferrugo-render`: display list, raster device abstraction, color conversion,
   blending, transparency groups, image sampling, antialiasing, and page output.
-- `pdfrust-api`: stable Rust API for loading, inspecting, and rendering.
-- `pdfrust-capi`: optional C ABI or FPDF-compatible facade if needed for
+- `ferrugo-api`: stable Rust API for loading, inspecting, and rendering.
+- `ferrugo-capi`: optional C ABI or FPDF-compatible facade if needed for
   integration and differential testing.
-- `pdfrust-node`: Node-API bindings and TypeScript package.
+- `ferrugo-node`: Node-API bindings and TypeScript package.
 
 ## Compatibility Harness
 
@@ -85,7 +85,7 @@ a renderer. Phase 0 narrows that further to a source-built PDFium thumbnail
 probe plus RGBA/PNG output for generated fixtures.
 
 - Build or download a pinned PDFium binary for test runs.
-- Render fixtures through PDFium and `pdfrust`, then compare dimensions,
+- Render fixtures through PDFium and `ferrugo`, then compare dimensions,
   metadata, errors, text extraction, and pixels.
 - Keep separate thresholds for exact pixel equality, antialiasing tolerance, and
   known font/platform drift.

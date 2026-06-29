@@ -58,7 +58,7 @@ PDF output without taking on full shaping.
 - Complex shaping, vertical writing, and text extraction remain unsupported
   non-goals.
 - Validation: `cargo fmt --check`, `cargo check`, `cargo test`,
-  `cargo test -p pdfrust-render -p pdfrust-native`,
+  `cargo test -p ferrugo-render -p ferrugo-native`,
   `cargo clippy --all-targets --all-features -- -D warnings`, native CLI smoke
   for `text-spacing.pdf`, and PDFium/native pixel comparison for
   `text-spacing.pdf` at `260x120`, MAE `13.265`, max `255`,

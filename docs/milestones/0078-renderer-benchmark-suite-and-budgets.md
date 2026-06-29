@@ -49,7 +49,7 @@ that guide PDFium replacement decisions.
 Completed on 2026-06-24.
 
 - Added the reusable renderer benchmark harness in
-  `pdfrust-cli benchmark-native` and `pdfrust-cli benchmark-pdfium`.
+  `ferrugo-cli benchmark-native` and `ferrugo-cli benchmark-pdfium`.
 - Added JSON benchmark reports with backend, budget config, summary, family
   aggregates, fixture outcomes, and typed budget violations.
 - Documented benchmark commands and budget policy in `docs/benchmarks.md`.
@@ -57,7 +57,7 @@ Completed on 2026-06-24.
   `docs/reports/renderer-benchmark-suite-2026-06-24.md`.
 - Validation passed:
   `cargo fmt --check`,
-  `cargo test -p pdfrust-cli benchmark -- --nocapture`,
+  `cargo test -p ferrugo-cli benchmark -- --nocapture`,
   `cargo check`,
   `cargo test`,
   `cargo clippy --all-targets --all-features -- -D warnings`.

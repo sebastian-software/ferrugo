@@ -26,7 +26,7 @@ remain non-goals.
 Command:
 
 ```text
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --output target/acroform-synthesis-summary-0092.json
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --output target/acroform-synthesis-summary-0092.json
 ```
 
 Corpus summary:
@@ -54,7 +54,7 @@ Fallback categories:
 Command:
 
 ```text
-PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --output target/acroform-synthesis-visual-diff-0092.json
+FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --output target/acroform-synthesis-visual-diff-0092.json
 ```
 
 Corpus summary:
@@ -87,7 +87,7 @@ slice intentionally does not copy.
 Command:
 
 ```text
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/acroform-synthesis-benchmark-0092.json
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/acroform-synthesis-benchmark-0092.json
 ```
 
 Corpus summary:
@@ -115,7 +115,7 @@ New fixture outcomes:
 
 ```text
 cargo fmt --check
-cargo test -p pdfrust-native acroform -- --nocapture
+cargo test -p ferrugo-native acroform -- --nocapture
 cargo check --workspace --no-default-features
 cargo test --workspace --no-default-features
 cargo clippy --workspace --all-targets --all-features -- -D warnings

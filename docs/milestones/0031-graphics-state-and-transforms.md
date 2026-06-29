@@ -46,7 +46,7 @@ Interpret graphics-state stack operations and current transformation matrices.
 Completed with the `feat: interpret graphics state transforms` change.
 
 - Added deterministic affine `Matrix` math and `Point` transforms to
-  `pdfrust-render`.
+  `ferrugo-render`.
 - Added `GraphicsState`, `GraphicsStateOptions`, `GraphicsError`, and
   `interpret_graphics_state`.
 - Implemented `q`, `Q`, `cm`, `w`, `g`, `G`, `W`, and `W*` handling with a
@@ -58,4 +58,4 @@ Completed with the `feat: interpret graphics state transforms` change.
   stack overflow, operand count errors, and text-fixture operator tolerance.
 - Validation:
   - `cargo fmt --check`
-  - `cargo test -p pdfrust-render`
+  - `cargo test -p ferrugo-render`

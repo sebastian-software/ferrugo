@@ -22,7 +22,7 @@ New fixtures:
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/scanner-ocr-workflow-manifest.tsv --include-family rotation --include-family crop --include-family ocr-layer --include-family compression --include-family skew --include-family large-image --include-family form-overlay --fail-on-fallback --max-edge 160 --output target/scanner-0147-supported-gate.json
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/scanner-ocr-workflow-manifest.tsv --include-family rotation --include-family crop --include-family ocr-layer --include-family compression --include-family skew --include-family large-image --include-family form-overlay --fail-on-fallback --max-edge 160 --output target/scanner-0147-supported-gate.json
 ```
 
 Result:
@@ -48,7 +48,7 @@ Supported family result:
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/scanner-ocr-workflow-manifest.tsv --include-family unsupported-filter --max-edge 160 --output target/scanner-0147-unsupported-backlog.json
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/scanner-ocr-workflow-manifest.tsv --include-family unsupported-filter --max-edge 160 --output target/scanner-0147-unsupported-backlog.json
 ```
 
 Result:
@@ -62,7 +62,7 @@ Result:
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/scanner-ocr-workflow-manifest.tsv --include-family rotation --include-family crop --include-family ocr-layer --include-family compression --include-family skew --include-family large-image --include-family form-overlay --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/scanner-0147-benchmark.json
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/scanner-ocr-workflow-manifest.tsv --include-family rotation --include-family crop --include-family ocr-layer --include-family compression --include-family skew --include-family large-image --include-family form-overlay --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/scanner-0147-benchmark.json
 ```
 
 Result:
@@ -82,7 +82,7 @@ Result:
 Command:
 
 ```sh
-PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/scanner-ocr-workflow-manifest.tsv --include-family rotation --include-family crop --include-family ocr-layer --include-family compression --include-family skew --include-family large-image --include-family form-overlay --max-edge 160 --max-mae 2.0 --max-p95 16 --max-changed-ratio 0.05 --output target/scanner-0147-visual-diff.json
+FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/scanner-ocr-workflow-manifest.tsv --include-family rotation --include-family crop --include-family ocr-layer --include-family compression --include-family skew --include-family large-image --include-family form-overlay --max-edge 160 --max-mae 2.0 --max-p95 16 --max-changed-ratio 0.05 --output target/scanner-0147-visual-diff.json
 ```
 
 Result:
@@ -124,12 +124,12 @@ Commands run:
 
 ```sh
 python3 scripts/generate_fixtures.py
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/scanner-ocr-workflow-manifest.tsv --include-family rotation --include-family crop --include-family ocr-layer --include-family compression --include-family skew --include-family large-image --include-family form-overlay --fail-on-fallback --max-edge 160 --output target/scanner-0147-supported-gate.json
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/scanner-ocr-workflow-manifest.tsv --include-family unsupported-filter --max-edge 160 --output target/scanner-0147-unsupported-backlog.json
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/scanner-ocr-workflow-manifest.tsv --include-family rotation --include-family crop --include-family ocr-layer --include-family compression --include-family skew --include-family large-image --include-family form-overlay --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/scanner-0147-benchmark.json
-PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/scanner-ocr-workflow-manifest.tsv --include-family rotation --include-family crop --include-family ocr-layer --include-family compression --include-family skew --include-family large-image --include-family form-overlay --max-edge 160 --max-mae 2.0 --max-p95 16 --max-changed-ratio 0.05 --output target/scanner-0147-visual-diff.json
-cargo test -p pdfrust-native native_backend_should_bound_adversarial_huge_image_dimensions -- --nocapture
-cargo test -p pdfrust-render image_resources_should_enforce -- --nocapture
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/scanner-ocr-workflow-manifest.tsv --include-family rotation --include-family crop --include-family ocr-layer --include-family compression --include-family skew --include-family large-image --include-family form-overlay --fail-on-fallback --max-edge 160 --output target/scanner-0147-supported-gate.json
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/scanner-ocr-workflow-manifest.tsv --include-family unsupported-filter --max-edge 160 --output target/scanner-0147-unsupported-backlog.json
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/scanner-ocr-workflow-manifest.tsv --include-family rotation --include-family crop --include-family ocr-layer --include-family compression --include-family skew --include-family large-image --include-family form-overlay --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/scanner-0147-benchmark.json
+FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/scanner-ocr-workflow-manifest.tsv --include-family rotation --include-family crop --include-family ocr-layer --include-family compression --include-family skew --include-family large-image --include-family form-overlay --max-edge 160 --max-mae 2.0 --max-p95 16 --max-changed-ratio 0.05 --output target/scanner-0147-visual-diff.json
+cargo test -p ferrugo-native native_backend_should_bound_adversarial_huge_image_dimensions -- --nocapture
+cargo test -p ferrugo-render image_resources_should_enforce -- --nocapture
 find fixtures/generated -name '*.pdf' -size +512k -print
 wc -c fixtures/generated/scanner-skewed-mailroom-page.pdf fixtures/generated/scanner-large-image-budget.pdf fixtures/generated/scanner-ocr-form-overlay.pdf
 ```

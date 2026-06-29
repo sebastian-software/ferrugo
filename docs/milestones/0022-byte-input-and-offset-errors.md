@@ -48,7 +48,7 @@ offsets.
 Completed on 2026-06-24.
 
 - Added borrowed `PdfBytes<'a>` and `ByteCursor<'a>` types in
-  `pdfrust-syntax`.
+  `ferrugo-syntax`.
 - Added `ByteOffset`, `SyntaxErrorKind`, `SyntaxError`, and `SyntaxResult`.
 - Added tests for borrowed input, offset movement, EOF errors, bounds checks,
   and error formatting.

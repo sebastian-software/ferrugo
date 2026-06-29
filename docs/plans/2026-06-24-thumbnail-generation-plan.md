@@ -162,7 +162,7 @@ Use Poppler as a third oracle for disputed PDFs, not as the primary port target.
 Node / CLI / Server
         |
         v
-pdfrust-thumbnail API
+ferrugo-thumbnail API
         |
         +-- pdfium backend       (first product backend)
         |

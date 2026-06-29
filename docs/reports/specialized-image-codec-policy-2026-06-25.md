@@ -30,7 +30,7 @@ Milestone: 0089.
 Command:
 
 ```text
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --output target/codec-policy-summary-0089.json
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --output target/codec-policy-summary-0089.json
 ```
 
 Corpus summary:
@@ -61,7 +61,7 @@ The three scan fallbacks are intentionally generated codec-policy fixtures:
 Command:
 
 ```text
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/codec-policy-benchmark-0089.json
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/codec-policy-benchmark-0089.json
 ```
 
 Corpus summary:
@@ -85,10 +85,10 @@ the codec-policy fixtures. No scan fixture reports a render error.
 
 ```text
 cargo fmt --check
-cargo test -p pdfrust-render image_resources_should_decode_flate_alias_xobject
-cargo test -p pdfrust-render image_resources_should_route_dct_alias_to_jpeg_decoder
-cargo test -p pdfrust-render image_resources_should_report_unsupported_deferred_image_codecs
-cargo test -p pdfrust-native unsupported_
+cargo test -p ferrugo-render image_resources_should_decode_flate_alias_xobject
+cargo test -p ferrugo-render image_resources_should_route_dct_alias_to_jpeg_decoder
+cargo test -p ferrugo-render image_resources_should_report_unsupported_deferred_image_codecs
+cargo test -p ferrugo-native unsupported_
 cargo check --workspace --no-default-features
 cargo test --workspace --no-default-features
 cargo clippy --workspace --all-targets --all-features -- -D warnings

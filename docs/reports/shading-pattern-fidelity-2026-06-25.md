@@ -33,7 +33,7 @@ rounding noise from hiding larger visual mismatches.
 Command:
 
 ```text
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --output target/shading-pattern-summary-0090.json
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --output target/shading-pattern-summary-0090.json
 ```
 
 Corpus summary:
@@ -65,7 +65,7 @@ fixture.
 Command:
 
 ```text
-PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --output target/shading-pattern-visual-diff-0090.json
+FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --output target/shading-pattern-visual-diff-0090.json
 ```
 
 Corpus summary:
@@ -98,7 +98,7 @@ native-only error rather than a blocker image.
 Command:
 
 ```text
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/shading-pattern-benchmark-0090.json
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/shading-pattern-benchmark-0090.json
 ```
 
 Corpus summary:
@@ -130,10 +130,10 @@ classification.
 
 ```text
 cargo fmt --check
-cargo test -p pdfrust-cli visual_diff_metrics_should_accept_low_amplitude_field_drift
-cargo test -p pdfrust-native mesh_shading
-cargo test -p pdfrust-render shading
-cargo test -p pdfrust-render pattern
+cargo test -p ferrugo-cli visual_diff_metrics_should_accept_low_amplitude_field_drift
+cargo test -p ferrugo-native mesh_shading
+cargo test -p ferrugo-render shading
+cargo test -p ferrugo-render pattern
 cargo test --workspace --no-default-features
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 ```

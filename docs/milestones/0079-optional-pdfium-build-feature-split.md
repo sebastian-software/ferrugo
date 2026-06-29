@@ -47,7 +47,7 @@ native renderer use.
 
 Completed on 2026-06-24.
 
-- Made `pdfrust-pdfium` an optional `pdfrust-cli` dependency behind the
+- Made `ferrugo-pdfium` an optional `ferrugo-cli` dependency behind the
   `pdfium` feature.
 - Added workspace `default-members` so root-level builds focus on the
   native-only stack by default.
@@ -60,7 +60,7 @@ Completed on 2026-06-24.
   `cargo fmt --check`,
   `cargo check --no-default-features`,
   `cargo test --no-default-features`,
-  `cargo test -p pdfrust-cli --features pdfium`,
+  `cargo test -p ferrugo-cli --features pdfium`,
   `cargo clippy --workspace --all-targets --all-features -- -D warnings`.
 - Runtime probes passed:
   PDFium-enabled `compare-metadata`,

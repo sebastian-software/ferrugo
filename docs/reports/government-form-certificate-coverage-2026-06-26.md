@@ -22,7 +22,7 @@ New fixtures:
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/government-form-manifest.tsv --include-family permit --include-family certificate --include-family tax-notice --include-family widget-appearance --include-family signature-appearance --include-family static-xfa --include-family business-form --fail-on-fallback --max-edge 160 --output target/government-0148-supported-gate.json
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/government-form-manifest.tsv --include-family permit --include-family certificate --include-family tax-notice --include-family widget-appearance --include-family signature-appearance --include-family static-xfa --include-family business-form --fail-on-fallback --max-edge 160 --output target/government-0148-supported-gate.json
 ```
 
 Result:
@@ -48,7 +48,7 @@ Supported family result:
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/government-form-manifest.tsv --include-family dynamic-xfa-unsupported --max-edge 160 --output target/government-0148-dynamic-backlog.json
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/government-form-manifest.tsv --include-family dynamic-xfa-unsupported --max-edge 160 --output target/government-0148-dynamic-backlog.json
 ```
 
 Result:
@@ -65,7 +65,7 @@ forms and certificate pages are not blocked by this boundary.
 Command:
 
 ```sh
-PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/government-form-manifest.tsv --include-family permit --include-family certificate --include-family tax-notice --include-family widget-appearance --include-family signature-appearance --include-family static-xfa --include-family business-form --max-edge 160 --max-mae 2.0 --max-p95 16 --max-changed-ratio 0.05 --output target/government-0148-visual-diff.json
+FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/government-form-manifest.tsv --include-family permit --include-family certificate --include-family tax-notice --include-family widget-appearance --include-family signature-appearance --include-family static-xfa --include-family business-form --max-edge 160 --max-mae 2.0 --max-p95 16 --max-changed-ratio 0.05 --output target/government-0148-visual-diff.json
 ```
 
 Result:
@@ -109,12 +109,12 @@ Commands run:
 
 ```sh
 python3 scripts/generate_fixtures.py
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/government-form-manifest.tsv --include-family permit --include-family certificate --include-family tax-notice --include-family widget-appearance --include-family signature-appearance --include-family static-xfa --include-family business-form --fail-on-fallback --max-edge 160 --output target/government-0148-supported-gate.json
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/government-form-manifest.tsv --include-family dynamic-xfa-unsupported --max-edge 160 --output target/government-0148-dynamic-backlog.json
-PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/government-form-manifest.tsv --include-family permit --include-family certificate --include-family tax-notice --include-family widget-appearance --include-family signature-appearance --include-family static-xfa --include-family business-form --max-edge 160 --max-mae 2.0 --max-p95 16 --max-changed-ratio 0.05 --output target/government-0148-visual-diff.json
-cargo test -p pdfrust-native acroform -- --nocapture
-cargo test -p pdfrust-native signature -- --nocapture
-cargo test -p pdfrust-native annotation_appearance -- --nocapture
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/government-form-manifest.tsv --include-family permit --include-family certificate --include-family tax-notice --include-family widget-appearance --include-family signature-appearance --include-family static-xfa --include-family business-form --fail-on-fallback --max-edge 160 --output target/government-0148-supported-gate.json
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/government-form-manifest.tsv --include-family dynamic-xfa-unsupported --max-edge 160 --output target/government-0148-dynamic-backlog.json
+FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/government-form-manifest.tsv --include-family permit --include-family certificate --include-family tax-notice --include-family widget-appearance --include-family signature-appearance --include-family static-xfa --include-family business-form --max-edge 160 --max-mae 2.0 --max-p95 16 --max-changed-ratio 0.05 --output target/government-0148-visual-diff.json
+cargo test -p ferrugo-native acroform -- --nocapture
+cargo test -p ferrugo-native signature -- --nocapture
+cargo test -p ferrugo-native annotation_appearance -- --nocapture
 find fixtures/generated -name '*.pdf' -size +512k -print
 wc -c fixtures/generated/government-permit-checkbox-form.pdf fixtures/generated/government-certificate-seal-signature.pdf fixtures/generated/government-tax-notice-barcode.pdf
 rg -n "private|customer|confidential|personal|production|PII|@" fixtures/corpus-manifest.tsv fixtures/government-form-manifest.tsv scripts/generate_fixtures.py

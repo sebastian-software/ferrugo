@@ -9,25 +9,25 @@ Rust-native renderer.
 ## Build And Packaging
 
 - Build normal production paths without `--features pdfium`.
-- Remove `PDFRUST_PDFIUM_LIBRARY`, bundled PDFium dynamic libraries, and plugin
+- Remove `FERRUGO_PDFIUM_LIBRARY`, bundled PDFium dynamic libraries, and plugin
   download steps from runtime images.
 - Keep PDFium-enabled commands only for maintainer oracle comparison or local
   migration audits.
-- Use `pdfrust-thumbnail` as the stable facade for application error handling.
+- Use `ferrugo-thumbnail` as the stable facade for application error handling.
 
 CLI production examples:
 
 ```sh
-cargo install --path crates/pdfrust-cli --no-default-features --locked
-pdfrust-cli render input.pdf --max-edge 256 --output thumbnail.png
+cargo install --path crates/ferrugo-cli --no-default-features --locked
+ferrugo-cli render input.pdf --max-edge 256 --output thumbnail.png
 ```
 
 Library dependency example:
 
 ```toml
 [dependencies]
-pdfrust-native = "0.1.0"
-pdfrust-thumbnail = "0.1.0"
+ferrugo-native = "0.1.0"
+ferrugo-thumbnail = "0.1.0"
 ```
 
 ## Error Handling
@@ -35,7 +35,7 @@ pdfrust-thumbnail = "0.1.0"
 Route by stable class first and bucket second:
 
 ```rust
-use pdfrust_thumbnail::{
+use ferrugo_thumbnail::{
     unsupported_feature_buckets, ThumbnailError, ThumbnailErrorClass,
 };
 
@@ -78,15 +78,15 @@ control flow. Bucket constants are the stable feature-specific boundary.
   rates alone.
 - Keep maintainer comparison tools behind `--features pdfium`.
 - Document any application-owned alternate renderer path as a product policy,
-  not as hidden pdfrust runtime fallback.
+  not as hidden ferrugo runtime fallback.
 
 ## Validation Commands
 
 ```sh
 bash scripts/check_unsupported_feature_sla.sh
-cargo test -p pdfrust-thumbnail consumer_migration -- --nocapture
+cargo test -p ferrugo-thumbnail consumer_migration -- --nocapture
 cargo test --workspace --no-default-features
-cargo package -p pdfrust-thumbnail --allow-dirty --no-verify --list
-cargo package -p pdfrust-cli --allow-dirty --no-verify --list
+cargo package -p ferrugo-thumbnail --allow-dirty --no-verify --list
+cargo package -p ferrugo-cli --allow-dirty --no-verify --list
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 ```

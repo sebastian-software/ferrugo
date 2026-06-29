@@ -69,7 +69,7 @@ Validation passed:
 - `cargo fmt --check`
 - `cargo check`
 - `cargo test`
-- `cargo test -p pdfrust-cli --features pdfium`
+- `cargo test -p ferrugo-cli --features pdfium`
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
 
 Strict native-only fallback gate failed as expected with

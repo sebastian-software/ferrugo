@@ -30,7 +30,7 @@ New artifact:
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/cross-producer-fusion-manifest.tsv --include-family fused-report --include-family fused-table-statement --include-family fused-form --include-family fused-scan --include-family fused-dashboard-map --fail-on-fallback --max-edge 120 --native-profile low-memory --output target/low-end-0217-low-memory-summary.json
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/cross-producer-fusion-manifest.tsv --include-family fused-report --include-family fused-table-statement --include-family fused-form --include-family fused-scan --include-family fused-dashboard-map --fail-on-fallback --max-edge 120 --native-profile low-memory --output target/low-end-0217-low-memory-summary.json
 ```
 
 Result:
@@ -47,7 +47,7 @@ pass rate.
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- benchmark-repeat-native fixtures/generated --manifest fixtures/cross-producer-fusion-manifest.tsv --include-family fused-report --include-family fused-table-statement --include-family fused-form --include-family fused-scan --include-family fused-dashboard-map --native-profile low-memory --repetitions 2 --max-edge 120 --max-first-ms 1000 --max-repeat-mean-ms 1000 --max-errors 0 --fail-on-budget --output target/low-end-0217-low-memory-repeat.json
+cargo run -p ferrugo-cli --no-default-features -- benchmark-repeat-native fixtures/generated --manifest fixtures/cross-producer-fusion-manifest.tsv --include-family fused-report --include-family fused-table-statement --include-family fused-form --include-family fused-scan --include-family fused-dashboard-map --native-profile low-memory --repetitions 2 --max-edge 120 --max-first-ms 1000 --max-repeat-mean-ms 1000 --max-errors 0 --fail-on-budget --output target/low-end-0217-low-memory-repeat.json
 ```
 
 Result:
@@ -65,7 +65,7 @@ policy and low-memory profile in every cache key.
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- benchmark-batch-native fixtures/generated --manifest fixtures/high-page-count-batch-manifest.tsv --include-family long-document --include-family book --include-family email-thread --include-family repeated-resources --include-family report-statement --repetitions 2 --pages-per-input 12 --max-workers 2 --max-in-flight-pixels 51200 --max-edge 120 --max-p95-ms 1000 --max-errors 0 --fail-on-budget --native-profile low-memory --output target/low-end-0217-server-constrained-batch.json
+cargo run -p ferrugo-cli --no-default-features -- benchmark-batch-native fixtures/generated --manifest fixtures/high-page-count-batch-manifest.tsv --include-family long-document --include-family book --include-family email-thread --include-family repeated-resources --include-family report-statement --repetitions 2 --pages-per-input 12 --max-workers 2 --max-in-flight-pixels 51200 --max-edge 120 --max-p95-ms 1000 --max-errors 0 --fail-on-budget --native-profile low-memory --output target/low-end-0217-server-constrained-batch.json
 ```
 
 Result:
@@ -101,8 +101,8 @@ Result:
 Commands:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- render-native fixtures/generated/business-invoice-dense.pdf --max-edge 96 --output target/low-end-0217-deterministic-a.png
-cargo run -p pdfrust-cli --no-default-features -- render-native fixtures/generated/business-invoice-dense.pdf --max-edge 96 --output target/low-end-0217-deterministic-b.png
+cargo run -p ferrugo-cli --no-default-features -- render-native fixtures/generated/business-invoice-dense.pdf --max-edge 96 --output target/low-end-0217-deterministic-a.png
+cargo run -p ferrugo-cli --no-default-features -- render-native fixtures/generated/business-invoice-dense.pdf --max-edge 96 --output target/low-end-0217-deterministic-b.png
 cmp -s target/low-end-0217-deterministic-a.png target/low-end-0217-deterministic-b.png
 ```
 
@@ -127,11 +127,11 @@ Commands run:
 
 ```sh
 bash scripts/check_low_end_reliability_matrix.sh
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/cross-producer-fusion-manifest.tsv --include-family fused-report --include-family fused-table-statement --include-family fused-form --include-family fused-scan --include-family fused-dashboard-map --fail-on-fallback --max-edge 120 --native-profile low-memory --output target/low-end-0217-low-memory-summary.json
-cargo run -p pdfrust-cli --no-default-features -- benchmark-repeat-native fixtures/generated --manifest fixtures/cross-producer-fusion-manifest.tsv --include-family fused-report --include-family fused-table-statement --include-family fused-form --include-family fused-scan --include-family fused-dashboard-map --native-profile low-memory --repetitions 2 --max-edge 120 --max-first-ms 1000 --max-repeat-mean-ms 1000 --max-errors 0 --fail-on-budget --output target/low-end-0217-low-memory-repeat.json
-cargo run -p pdfrust-cli --no-default-features -- benchmark-batch-native fixtures/generated --manifest fixtures/high-page-count-batch-manifest.tsv --include-family long-document --include-family book --include-family email-thread --include-family repeated-resources --include-family report-statement --repetitions 2 --pages-per-input 12 --max-workers 2 --max-in-flight-pixels 51200 --max-edge 120 --max-p95-ms 1000 --max-errors 0 --fail-on-budget --native-profile low-memory --output target/low-end-0217-server-constrained-batch.json
-cargo run -p pdfrust-cli --no-default-features -- render-native fixtures/generated/business-invoice-dense.pdf --max-edge 96 --output target/low-end-0217-deterministic-a.png
-cargo run -p pdfrust-cli --no-default-features -- render-native fixtures/generated/business-invoice-dense.pdf --max-edge 96 --output target/low-end-0217-deterministic-b.png
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/cross-producer-fusion-manifest.tsv --include-family fused-report --include-family fused-table-statement --include-family fused-form --include-family fused-scan --include-family fused-dashboard-map --fail-on-fallback --max-edge 120 --native-profile low-memory --output target/low-end-0217-low-memory-summary.json
+cargo run -p ferrugo-cli --no-default-features -- benchmark-repeat-native fixtures/generated --manifest fixtures/cross-producer-fusion-manifest.tsv --include-family fused-report --include-family fused-table-statement --include-family fused-form --include-family fused-scan --include-family fused-dashboard-map --native-profile low-memory --repetitions 2 --max-edge 120 --max-first-ms 1000 --max-repeat-mean-ms 1000 --max-errors 0 --fail-on-budget --output target/low-end-0217-low-memory-repeat.json
+cargo run -p ferrugo-cli --no-default-features -- benchmark-batch-native fixtures/generated --manifest fixtures/high-page-count-batch-manifest.tsv --include-family long-document --include-family book --include-family email-thread --include-family repeated-resources --include-family report-statement --repetitions 2 --pages-per-input 12 --max-workers 2 --max-in-flight-pixels 51200 --max-edge 120 --max-p95-ms 1000 --max-errors 0 --fail-on-budget --native-profile low-memory --output target/low-end-0217-server-constrained-batch.json
+cargo run -p ferrugo-cli --no-default-features -- render-native fixtures/generated/business-invoice-dense.pdf --max-edge 96 --output target/low-end-0217-deterministic-a.png
+cargo run -p ferrugo-cli --no-default-features -- render-native fixtures/generated/business-invoice-dense.pdf --max-edge 96 --output target/low-end-0217-deterministic-b.png
 cmp -s target/low-end-0217-deterministic-a.png target/low-end-0217-deterministic-b.png
 bash scripts/check_wasm_smoke.sh
 cargo fmt --check

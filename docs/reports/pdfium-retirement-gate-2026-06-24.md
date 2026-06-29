@@ -19,7 +19,7 @@ The committed generated fixture set was rendered through both backends at
 at:
 
 ```text
-/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib
+/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib
 ```
 
 Native results:
@@ -44,15 +44,15 @@ not by a fresh full local-corpus run.
 Command shape:
 
 ```sh
-cargo build -p pdfrust-cli
-target/debug/pdfrust-cli render-native fixtures/generated/<fixture>.pdf \
+cargo build -p ferrugo-cli
+target/debug/ferrugo-cli render-native fixtures/generated/<fixture>.pdf \
   --max-edge 120 \
-  --output target/pdfrust-retirement-0060/<fixture>-native.png
-PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib \
-DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib \
-target/debug/pdfrust-cli render fixtures/generated/<fixture>.pdf \
+  --output target/ferrugo-retirement-0060/<fixture>-native.png
+FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib \
+DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib \
+target/debug/ferrugo-cli render fixtures/generated/<fixture>.pdf \
   --max-edge 120 \
-  --output target/pdfrust-retirement-0060/<fixture>-pdfium.png
+  --output target/ferrugo-retirement-0060/<fixture>-pdfium.png
 ```
 
 | Fixture | Native | PDFium |

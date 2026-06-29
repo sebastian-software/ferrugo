@@ -48,7 +48,7 @@ Create the Rust-native raster device and page-to-pixel transform path.
 
 - Added checked `RasterDimensions`, owned `RasterDevice`, safe row and pixel
   accessors, and typed `RasterError` / `RasterErrorKind` failures in
-  `pdfrust-render`.
+  `ferrugo-render`.
 - Added `PageGeometry`, `PageRotation`, and `PageTransform` for mapping
   media/crop boxes, rotation, and `max_edge` into pixel-space target dimensions
   and a PDF-user-space-to-device matrix.
@@ -63,6 +63,6 @@ Create the Rust-native raster device and page-to-pixel transform path.
   - `cargo fmt --check`
   - `cargo check`
   - `cargo test`
-  - `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render fixtures/generated/text-page.pdf --max-edge 256 --output target/pdfrust-thumbnails/text-page-0036-256.png`
+  - `FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli -- render fixtures/generated/text-page.pdf --max-edge 256 --output target/ferrugo-thumbnails/text-page-0036-256.png`
     produced a `256 x 137` RGBA PNG, matching the `PageTransform` test.
   - `cargo clippy --all-targets --all-features -- -D warnings`

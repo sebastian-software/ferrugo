@@ -32,8 +32,8 @@ terminates the worker process and returns the `timeout` class.
 
 Native renderer diagnostics can attach a stable feature bucket while preserving
 the public `unsupported` class. The bucket constants are exposed by
-`pdfrust_thumbnail::unsupported_feature_buckets`, and the full stable set is
-available as `pdfrust_thumbnail::STABLE_UNSUPPORTED_FEATURE_BUCKETS`.
+`ferrugo_thumbnail::unsupported_feature_buckets`, and the full stable set is
+available as `ferrugo_thumbnail::STABLE_UNSUPPORTED_FEATURE_BUCKETS`.
 
 | Bucket | Meaning | Typical owner |
 | --- | --- | --- |

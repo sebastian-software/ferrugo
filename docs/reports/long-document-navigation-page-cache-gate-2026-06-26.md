@@ -46,7 +46,7 @@ Added:
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated \
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated \
   --manifest fixtures/long-document-navigation-manifest.tsv \
   --include-family navigation-longdoc \
   --include-family book-navigation \
@@ -69,7 +69,7 @@ Result:
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated \
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated \
   --manifest fixtures/long-document-navigation-manifest.tsv \
   --include-family navigation-longdoc \
   --include-family book-navigation \
@@ -98,7 +98,7 @@ Result:
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- benchmark-repeat-native fixtures/generated \
+cargo run -p ferrugo-cli --no-default-features -- benchmark-repeat-native fixtures/generated \
   --manifest fixtures/long-document-navigation-manifest.tsv \
   --include-family navigation-longdoc \
   --include-family book-navigation \
@@ -131,7 +131,7 @@ The report records `cache_policy.name = isolated-render` and
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- benchmark-batch-native fixtures/generated \
+cargo run -p ferrugo-cli --no-default-features -- benchmark-batch-native fixtures/generated \
   --manifest fixtures/long-document-navigation-manifest.tsv \
   --include-family navigation-longdoc \
   --include-family book-navigation \
@@ -156,9 +156,9 @@ available on this host, so the recorded memory signal is the enforced
 Command:
 
 ```sh
-PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib \
-DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib \
-cargo run -p pdfrust-cli --features pdfium -- visual-diff fixtures/generated \
+FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib \
+DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib \
+cargo run -p ferrugo-cli --features pdfium -- visual-diff fixtures/generated \
   --manifest fixtures/long-document-navigation-manifest.tsv \
   --include-family navigation-longdoc \
   --include-family book-navigation \
@@ -184,8 +184,8 @@ support or navigation failures.
 ## Validation
 
 - `python3 scripts/generate_fixtures.py`
-- `cargo test -p pdfrust-native long_document_navigation -- --nocapture`
-- `cargo test -p pdfrust-native native_page_cache -- --nocapture`
+- `cargo test -p ferrugo-native long_document_navigation -- --nocapture`
+- `cargo test -p ferrugo-native native_page_cache -- --nocapture`
 - Native supported gate, benchmark, repeat benchmark, batch memory profile, and
   visual comparison commands listed above.
 - `cargo test --workspace --no-default-features`

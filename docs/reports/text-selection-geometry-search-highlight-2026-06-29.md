@@ -15,7 +15,7 @@ reading-order model.
 
 ## API Changes
 
-`pdfrust-thumbnail` now exposes:
+`ferrugo-thumbnail` now exposes:
 
 - `TextQuad`
 - `PositionedGlyph::quad`
@@ -103,13 +103,13 @@ Focused tests:
 Commands run:
 
 ```sh
-cargo test -p pdfrust-render text_display_list_should -- --nocapture
-cargo test -p pdfrust-native extract -- --nocapture
-cargo test -p pdfrust-native geometry -- --nocapture
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/text-extraction-search-manifest.tsv --include-family visible-text --include-family office-search --include-family browser-search --include-family ocr-layer --include-family tagged-search --include-family rotated-geometry --include-family vertical-geometry --include-family ligature-geometry --include-family mixed-script-geometry --fail-on-fallback --max-edge 160 --output target/text-geometry-0202-support.json
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/text-extraction-search-manifest.tsv --include-family visible-text --include-family office-search --include-family browser-search --include-family ocr-layer --include-family tagged-search --include-family rotated-geometry --include-family vertical-geometry --include-family ligature-geometry --include-family mixed-script-geometry --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/text-geometry-0202-benchmark.json
+cargo test -p ferrugo-render text_display_list_should -- --nocapture
+cargo test -p ferrugo-native extract -- --nocapture
+cargo test -p ferrugo-native geometry -- --nocapture
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/text-extraction-search-manifest.tsv --include-family visible-text --include-family office-search --include-family browser-search --include-family ocr-layer --include-family tagged-search --include-family rotated-geometry --include-family vertical-geometry --include-family ligature-geometry --include-family mixed-script-geometry --fail-on-fallback --max-edge 160 --output target/text-geometry-0202-support.json
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/text-extraction-search-manifest.tsv --include-family visible-text --include-family office-search --include-family browser-search --include-family ocr-layer --include-family tagged-search --include-family rotated-geometry --include-family vertical-geometry --include-family ligature-geometry --include-family mixed-script-geometry --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/text-geometry-0202-benchmark.json
 cargo fmt --check
-git diff --check -- crates/pdfrust-thumbnail/src/lib.rs crates/pdfrust-render/src/lib.rs crates/pdfrust-native/src/lib.rs fixtures/text-extraction-search-manifest.tsv docs/backend/native.md docs/corpus-taxonomy.md docs/milestones/0202-text-selection-geometry-and-search-highlight-parity.md docs/milestones/README.md docs/reports/text-selection-geometry-search-highlight-2026-06-29.md
+git diff --check -- crates/ferrugo-thumbnail/src/lib.rs crates/ferrugo-render/src/lib.rs crates/ferrugo-native/src/lib.rs fixtures/text-extraction-search-manifest.tsv docs/backend/native.md docs/corpus-taxonomy.md docs/milestones/0202-text-selection-geometry-and-search-highlight-parity.md docs/milestones/README.md docs/reports/text-selection-geometry-search-highlight-2026-06-29.md
 cargo test --workspace --no-default-features
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 ```

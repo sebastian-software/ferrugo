@@ -45,10 +45,10 @@ Tokenize page content streams into operands and operators.
 
 Completed with the `feat: tokenize content streams` change.
 
-- Added `pdfrust-content` tokenizer APIs:
+- Added `ferrugo-content` tokenizer APIs:
   `tokenize_content`, `ContentTokenizer`, `ContentToken`, `OperatorName`,
   `ContentError`, and `ContentErrorKind`.
-- Reused `pdfrust-syntax::parse_primitive_prefix` for operands while keeping
+- Reused `ferrugo-syntax::parse_primitive_prefix` for operands while keeping
   operator names borrowed and allocation-free.
 - Preserved absolute source offsets for operands, operators, syntax failures,
   comments, and invalid delimiter-started operators.
@@ -57,4 +57,4 @@ Completed with the `feat: tokenize content streams` change.
   end-to-end tokenization of `fixtures/generated/text-page.pdf`.
 - Validation:
   - `cargo fmt --check`
-  - `cargo test -p pdfrust-content`
+  - `cargo test -p ferrugo-content`

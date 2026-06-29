@@ -63,9 +63,9 @@ Completed 2026-06-26.
 
 Validation:
 
-- `cargo test -p pdfrust-native corrupt -- --nocapture`
-- `cargo test -p pdfrust-native malformed_metadata -- --nocapture`
-- `cargo test -p pdfrust-native xref_offset_drift -- --nocapture`
+- `cargo test -p ferrugo-native corrupt -- --nocapture`
+- `cargo test -p ferrugo-native malformed_metadata -- --nocapture`
+- `cargo test -p ferrugo-native xref_offset_drift -- --nocapture`
 - Corrupt corpus recoverable gate, full classification, and benchmark subset.
 - `cargo run --manifest-path fuzz/Cargo.toml --bin xref_load -- --smoke`
 - `cargo run --manifest-path fuzz/Cargo.toml --bin stream_decode -- --smoke`

@@ -13,7 +13,7 @@ the PDFium-free native renderer.
 
 ## Usage Classifier
 
-Added `classify-pdf20-usage` to `pdfrust-cli`. The command combines:
+Added `classify-pdf20-usage` to `ferrugo-cli`. The command combines:
 
 - PDF header version detection;
 - catalog `/Version /2.0` detection;
@@ -29,7 +29,7 @@ text samples, stream bytes, or operands.
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- classify-pdf20-usage fixtures/generated \
+cargo run -p ferrugo-cli --no-default-features -- classify-pdf20-usage fixtures/generated \
   --manifest fixtures/pdf20-compatibility-manifest.tsv \
   --max-edge 160 \
   --output target/pdf20-0181-usage.json
@@ -59,7 +59,7 @@ Feature counts:
 Supported PDF 2.0 subset:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated \
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated \
   --manifest fixtures/pdf20-compatibility-manifest.tsv \
   --include-family accepted-office \
   --include-family accepted-associated-file \
@@ -73,7 +73,7 @@ Result: 2 total, 2 native rendered, 0 fallback required, 0 errors.
 Full PDF 2.0 classification:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated \
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated \
   --manifest fixtures/pdf20-compatibility-manifest.tsv \
   --include-family accepted-office \
   --include-family accepted-associated-file \
@@ -100,8 +100,8 @@ Commands run:
 
 ```sh
 cargo fmt
-cargo test -p pdfrust-cli pdf20_usage -- --nocapture
-cargo run -p pdfrust-cli --no-default-features -- classify-pdf20-usage fixtures/generated --manifest fixtures/pdf20-compatibility-manifest.tsv --max-edge 160 --output target/pdf20-0181-usage.json
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/pdf20-compatibility-manifest.tsv --include-family accepted-office --include-family accepted-associated-file --fail-on-fallback --max-edge 160 --output target/pdf20-0181-supported-gate.json
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/pdf20-compatibility-manifest.tsv --include-family accepted-office --include-family accepted-associated-file --include-family unsupported-color-management --max-edge 160 --output target/pdf20-0181-classification.json
+cargo test -p ferrugo-cli pdf20_usage -- --nocapture
+cargo run -p ferrugo-cli --no-default-features -- classify-pdf20-usage fixtures/generated --manifest fixtures/pdf20-compatibility-manifest.tsv --max-edge 160 --output target/pdf20-0181-usage.json
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/pdf20-compatibility-manifest.tsv --include-family accepted-office --include-family accepted-associated-file --fail-on-fallback --max-edge 160 --output target/pdf20-0181-supported-gate.json
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/pdf20-compatibility-manifest.tsv --include-family accepted-office --include-family accepted-associated-file --include-family unsupported-color-management --max-edge 160 --output target/pdf20-0181-classification.json
 ```

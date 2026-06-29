@@ -61,7 +61,7 @@ Completed on 2026-06-26.
   benchmark and visual comparison evidence.
 - Validation:
   `cargo fmt --check`;
-  `cargo test -p pdfrust-render image_ -- --nocapture`;
+  `cargo test -p ferrugo-render image_ -- --nocapture`;
   `cargo check --workspace`;
   `cargo clippy --workspace --all-targets --all-features -- -D warnings`;
   `cargo test --workspace`;

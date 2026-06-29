@@ -64,12 +64,12 @@ PDF image content across desktop, server, WASM, and low-memory profiles.
 Validation run:
 
 - `cargo fmt --check`
-- `cargo test -p pdfrust-native image_codec_deployment -- --nocapture`
-- `cargo test -p pdfrust-render image_resources_should_report_unsupported_deferred_image_codecs -- --nocapture`
-- `cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/image-codec-deployment-manifest.tsv --include-family builtin-raster --include-family flate-predictor --include-family mixed-compression --include-family jpeg --include-family mask-alpha --include-family image-heavy --fail-on-fallback --max-edge 180 --output target/image-codec-0209-supported.json`
-- `cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/image-codec-deployment-manifest.tsv --include-family unsupported-specialized --max-edge 180 --output target/image-codec-0209-unsupported.json`
-- `cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/image-codec-deployment-manifest.tsv --include-family builtin-raster --include-family flate-predictor --include-family mixed-compression --include-family jpeg --include-family mask-alpha --include-family image-heavy --max-edge 180 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/image-codec-0209-benchmark.json`
-- `cargo run -p pdfrust-cli --no-default-features -- visual-diff-poppler fixtures/generated --manifest fixtures/image-codec-deployment-manifest.tsv --include-family builtin-raster --include-family flate-predictor --include-family mixed-compression --include-family jpeg --include-family mask-alpha --include-family image-heavy --max-edge 120 --max-mae 8 --max-p95 64 --max-changed-ratio 0.20 --output target/image-codec-0209-poppler.json`
+- `cargo test -p ferrugo-native image_codec_deployment -- --nocapture`
+- `cargo test -p ferrugo-render image_resources_should_report_unsupported_deferred_image_codecs -- --nocapture`
+- `cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/image-codec-deployment-manifest.tsv --include-family builtin-raster --include-family flate-predictor --include-family mixed-compression --include-family jpeg --include-family mask-alpha --include-family image-heavy --fail-on-fallback --max-edge 180 --output target/image-codec-0209-supported.json`
+- `cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/image-codec-deployment-manifest.tsv --include-family unsupported-specialized --max-edge 180 --output target/image-codec-0209-unsupported.json`
+- `cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/image-codec-deployment-manifest.tsv --include-family builtin-raster --include-family flate-predictor --include-family mixed-compression --include-family jpeg --include-family mask-alpha --include-family image-heavy --max-edge 180 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/image-codec-0209-benchmark.json`
+- `cargo run -p ferrugo-cli --no-default-features -- visual-diff-poppler fixtures/generated --manifest fixtures/image-codec-deployment-manifest.tsv --include-family builtin-raster --include-family flate-predictor --include-family mixed-compression --include-family jpeg --include-family mask-alpha --include-family image-heavy --max-edge 120 --max-mae 8 --max-p95 64 --max-changed-ratio 0.20 --output target/image-codec-0209-poppler.json`
 - `bash scripts/check_fuzz_smoke.sh`
 - `bash scripts/check_native_only_release.sh`
 - `bash scripts/check_wasm_smoke.sh`

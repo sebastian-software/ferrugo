@@ -106,13 +106,13 @@ edge/text rasterization.
 
 ```text
 cargo fmt --check
-git diff --check -- crates/pdfrust-cli/src/main.rs crates/pdfrust-native/src/lib.rs crates/pdfrust-thumbnail/src/lib.rs fixtures/corpus-manifest.tsv fixtures/archival-pdfa-manifest.tsv scripts/generate_fixtures.py docs/backend/native.md docs/corpus-taxonomy.md docs/milestones/README.md docs/milestones/0185-pdf-a-and-archival-document-conformance-boundary.md docs/policies/pdfa-archival-boundary.md docs/reports/pdfa-archival-boundary-2026-06-29.md
-cargo test -p pdfrust-native pdfa -- --nocapture
-cargo test -p pdfrust-cli metadata --no-default-features
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/archival-pdfa-manifest.tsv --include-family pdfa-profile --include-family embedded-font --include-family output-intent --include-family metadata --fail-on-fallback --max-edge 160 --output target/archival-pdfa-0185-supported-gate.json
-cargo run -p pdfrust-cli --no-default-features -- extract-corpus-metadata fixtures/generated --manifest fixtures/archival-pdfa-manifest.tsv --output target/archival-pdfa-0185-metadata.json
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/archival-pdfa-manifest.tsv --include-family pdfa-profile --include-family embedded-font --include-family output-intent --include-family metadata --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/archival-pdfa-0185-benchmark.json
-cargo run -p pdfrust-cli --no-default-features -- visual-diff-poppler fixtures/generated --manifest fixtures/archival-pdfa-manifest.tsv --include-family pdfa-profile --max-edge 160 --max-mae 2.0 --max-p95 16 --max-changed-ratio 0.05 --timeout 30 --output target/archival-pdfa-0185-poppler-visual-diff.json
+git diff --check -- crates/ferrugo-cli/src/main.rs crates/ferrugo-native/src/lib.rs crates/ferrugo-thumbnail/src/lib.rs fixtures/corpus-manifest.tsv fixtures/archival-pdfa-manifest.tsv scripts/generate_fixtures.py docs/backend/native.md docs/corpus-taxonomy.md docs/milestones/README.md docs/milestones/0185-pdf-a-and-archival-document-conformance-boundary.md docs/policies/pdfa-archival-boundary.md docs/reports/pdfa-archival-boundary-2026-06-29.md
+cargo test -p ferrugo-native pdfa -- --nocapture
+cargo test -p ferrugo-cli metadata --no-default-features
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/archival-pdfa-manifest.tsv --include-family pdfa-profile --include-family embedded-font --include-family output-intent --include-family metadata --fail-on-fallback --max-edge 160 --output target/archival-pdfa-0185-supported-gate.json
+cargo run -p ferrugo-cli --no-default-features -- extract-corpus-metadata fixtures/generated --manifest fixtures/archival-pdfa-manifest.tsv --output target/archival-pdfa-0185-metadata.json
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/archival-pdfa-manifest.tsv --include-family pdfa-profile --include-family embedded-font --include-family output-intent --include-family metadata --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/archival-pdfa-0185-benchmark.json
+cargo run -p ferrugo-cli --no-default-features -- visual-diff-poppler fixtures/generated --manifest fixtures/archival-pdfa-manifest.tsv --include-family pdfa-profile --max-edge 160 --max-mae 2.0 --max-p95 16 --max-changed-ratio 0.05 --timeout 30 --output target/archival-pdfa-0185-poppler-visual-diff.json
 cargo check --workspace --no-default-features
 cargo test --workspace --no-default-features
 cargo clippy --workspace --all-targets --all-features -- -D warnings

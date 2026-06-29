@@ -58,9 +58,9 @@ debug artifacts for parser, display-list, raster, and comparison stages.
 - Report: `docs/reports/renderer-diagnostics-bundle-2026-06-25.md`.
 - Validation:
   - `cargo fmt --check`
-  - `cargo test -p pdfrust-cli diagnostic_bundles -- --nocapture`
-  - `cargo test -p pdfrust-cli fallback_summary_config_should_accept_family_filters -- --nocapture`
-  - `cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --include-family presentation --max-edge 160 --diagnostics-dir target/diagnostics-0135 --output target/diagnostics-0135-summary.json`
+  - `cargo test -p ferrugo-cli diagnostic_bundles -- --nocapture`
+  - `cargo test -p ferrugo-cli fallback_summary_config_should_accept_family_filters -- --nocapture`
+  - `cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --include-family presentation --max-edge 160 --diagnostics-dir target/diagnostics-0135 --output target/diagnostics-0135-summary.json`
   - `cargo check --workspace`
   - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
   - `cargo test --workspace`

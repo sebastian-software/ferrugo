@@ -45,7 +45,7 @@ Out of scope:
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/spot-color-visual-review-manifest.tsv --include-family separation-business --include-family devicen-business --include-family separation-cmyk --include-family separation-baseline --include-family devicen-baseline --include-family overprint-baseline --include-family prepress-boundary --fail-on-fallback --max-edge 180 --output target/spot-color-0191-supported-gate.json
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/spot-color-visual-review-manifest.tsv --include-family separation-business --include-family devicen-business --include-family separation-cmyk --include-family separation-baseline --include-family devicen-baseline --include-family overprint-baseline --include-family prepress-boundary --fail-on-fallback --max-edge 180 --output target/spot-color-0191-supported-gate.json
 ```
 
 Result:
@@ -61,7 +61,7 @@ All seven families rendered 1/1 natively.
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/spot-color-visual-review-manifest.tsv --include-family separation-business --include-family devicen-business --include-family separation-cmyk --include-family separation-baseline --include-family devicen-baseline --include-family overprint-baseline --include-family prepress-boundary --max-edge 180 --iterations 2 --max-ms 1000 --max-output-bytes 129600 --output target/spot-color-0191-benchmark.json
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/spot-color-visual-review-manifest.tsv --include-family separation-business --include-family devicen-business --include-family separation-cmyk --include-family separation-baseline --include-family devicen-baseline --include-family overprint-baseline --include-family prepress-boundary --max-edge 180 --iterations 2 --max-ms 1000 --max-output-bytes 129600 --output target/spot-color-0191-benchmark.json
 ```
 
 Result:
@@ -85,7 +85,7 @@ result.
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- visual-diff-poppler fixtures/generated --manifest fixtures/spot-color-visual-review-manifest.tsv --include-family separation-business --include-family devicen-business --include-family separation-cmyk --include-family separation-baseline --include-family devicen-baseline --include-family overprint-baseline --include-family prepress-boundary --max-edge 180 --max-mae 24 --max-p95 140 --max-changed-ratio 0.45 --timeout 30 --output target/spot-color-0191-poppler-visual-diff.json
+cargo run -p ferrugo-cli --no-default-features -- visual-diff-poppler fixtures/generated --manifest fixtures/spot-color-visual-review-manifest.tsv --include-family separation-business --include-family devicen-business --include-family separation-cmyk --include-family separation-baseline --include-family devicen-baseline --include-family overprint-baseline --include-family prepress-boundary --max-edge 180 --max-mae 24 --max-p95 140 --max-changed-ratio 0.45 --timeout 30 --output target/spot-color-0191-poppler-visual-diff.json
 ```
 
 Thresholds are intentionally category-local:
@@ -113,11 +113,11 @@ reference errors.
 
 ```text
 cargo fmt --check
-git diff --check -- crates/pdfrust-native/src/lib.rs scripts/generate_fixtures.py fixtures/corpus-manifest.tsv fixtures/spot-color-visual-review-manifest.tsv docs/corpus-taxonomy.md docs/backend/native.md docs/policies/prepress-boundary.md docs/milestones/0191-devicen-spot-color-visual-review-samples.md docs/milestones/README.md docs/reports/devicen-spot-color-visual-review-2026-06-29.md
-cargo test -p pdfrust-native spot_color -- --nocapture
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/spot-color-visual-review-manifest.tsv --include-family separation-business --include-family devicen-business --include-family separation-cmyk --include-family separation-baseline --include-family devicen-baseline --include-family overprint-baseline --include-family prepress-boundary --fail-on-fallback --max-edge 180 --output target/spot-color-0191-supported-gate.json
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/spot-color-visual-review-manifest.tsv --include-family separation-business --include-family devicen-business --include-family separation-cmyk --include-family separation-baseline --include-family devicen-baseline --include-family overprint-baseline --include-family prepress-boundary --max-edge 180 --iterations 2 --max-ms 1000 --max-output-bytes 129600 --output target/spot-color-0191-benchmark.json
-cargo run -p pdfrust-cli --no-default-features -- visual-diff-poppler fixtures/generated --manifest fixtures/spot-color-visual-review-manifest.tsv --include-family separation-business --include-family devicen-business --include-family separation-cmyk --include-family separation-baseline --include-family devicen-baseline --include-family overprint-baseline --include-family prepress-boundary --max-edge 180 --max-mae 24 --max-p95 140 --max-changed-ratio 0.45 --timeout 30 --output target/spot-color-0191-poppler-visual-diff.json
+git diff --check -- crates/ferrugo-native/src/lib.rs scripts/generate_fixtures.py fixtures/corpus-manifest.tsv fixtures/spot-color-visual-review-manifest.tsv docs/corpus-taxonomy.md docs/backend/native.md docs/policies/prepress-boundary.md docs/milestones/0191-devicen-spot-color-visual-review-samples.md docs/milestones/README.md docs/reports/devicen-spot-color-visual-review-2026-06-29.md
+cargo test -p ferrugo-native spot_color -- --nocapture
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/spot-color-visual-review-manifest.tsv --include-family separation-business --include-family devicen-business --include-family separation-cmyk --include-family separation-baseline --include-family devicen-baseline --include-family overprint-baseline --include-family prepress-boundary --fail-on-fallback --max-edge 180 --output target/spot-color-0191-supported-gate.json
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/spot-color-visual-review-manifest.tsv --include-family separation-business --include-family devicen-business --include-family separation-cmyk --include-family separation-baseline --include-family devicen-baseline --include-family overprint-baseline --include-family prepress-boundary --max-edge 180 --iterations 2 --max-ms 1000 --max-output-bytes 129600 --output target/spot-color-0191-benchmark.json
+cargo run -p ferrugo-cli --no-default-features -- visual-diff-poppler fixtures/generated --manifest fixtures/spot-color-visual-review-manifest.tsv --include-family separation-business --include-family devicen-business --include-family separation-cmyk --include-family separation-baseline --include-family devicen-baseline --include-family overprint-baseline --include-family prepress-boundary --max-edge 180 --max-mae 24 --max-p95 140 --max-changed-ratio 0.45 --timeout 30 --output target/spot-color-0191-poppler-visual-diff.json
 cargo check --workspace --no-default-features
 cargo test --workspace --no-default-features
 cargo clippy --workspace --all-targets --all-features -- -D warnings

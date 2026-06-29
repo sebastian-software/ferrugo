@@ -3,17 +3,17 @@ set -eu
 
 target="wasm32-unknown-unknown"
 profile="release"
-max_bytes="${PDFRUST_WASM_MAX_BYTES:-4194304}"
-max_compile_ms="${PDFRUST_WASM_MAX_COMPILE_MS:-250}"
-max_instantiate_ms="${PDFRUST_WASM_MAX_INSTANTIATE_MS:-100}"
-max_smoke_ms="${PDFRUST_WASM_MAX_SMOKE_MS:-250}"
-max_total_output_bytes="${PDFRUST_WASM_MAX_TOTAL_OUTPUT_BYTES:-524288}"
-min_fixtures="${PDFRUST_WASM_MIN_FIXTURES:-5}"
-artifact="target/${target}/${profile}/pdfrust_wasm_smoke.wasm"
-report="${PDFRUST_WASM_REPORT:-target/wasm-0132-smoke.json}"
+max_bytes="${FERRUGO_WASM_MAX_BYTES:-4194304}"
+max_compile_ms="${FERRUGO_WASM_MAX_COMPILE_MS:-250}"
+max_instantiate_ms="${FERRUGO_WASM_MAX_INSTANTIATE_MS:-100}"
+max_smoke_ms="${FERRUGO_WASM_MAX_SMOKE_MS:-250}"
+max_total_output_bytes="${FERRUGO_WASM_MAX_TOTAL_OUTPUT_BYTES:-524288}"
+min_fixtures="${FERRUGO_WASM_MIN_FIXTURES:-5}"
+artifact="target/${target}/${profile}/ferrugo_wasm_smoke.wasm"
+report="${FERRUGO_WASM_REPORT:-target/wasm-0132-smoke.json}"
 
-cargo check -p pdfrust-wasm-smoke --target "${target}" --no-default-features
-cargo build -p pdfrust-wasm-smoke --target "${target}" --release
+cargo check -p ferrugo-wasm-smoke --target "${target}" --no-default-features
+cargo build -p ferrugo-wasm-smoke --target "${target}" --release
 
 if [ ! -f "${artifact}" ]; then
   echo "missing WASM artifact: ${artifact}" >&2

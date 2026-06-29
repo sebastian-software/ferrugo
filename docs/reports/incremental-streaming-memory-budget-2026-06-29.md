@@ -52,7 +52,7 @@ Added `fixtures/incremental-memory-budget-manifest.tsv`.
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/incremental-memory-budget-manifest.tsv --include-family linearized-first-page --include-family full-loader-fallback --include-family long-document --include-family repeated-resources --include-family page-targeted --include-family large-resource --fail-on-fallback --max-edge 160 --output target/incremental-memory-0187-supported-gate.json
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/incremental-memory-budget-manifest.tsv --include-family linearized-first-page --include-family full-loader-fallback --include-family long-document --include-family repeated-resources --include-family page-targeted --include-family large-resource --fail-on-fallback --max-edge 160 --output target/incremental-memory-0187-supported-gate.json
 ```
 
 Result:
@@ -66,7 +66,7 @@ Result:
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/incremental-memory-budget-manifest.tsv --include-family linearized-first-page --include-family full-loader-fallback --include-family long-document --include-family repeated-resources --include-family page-targeted --include-family large-resource --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/incremental-memory-0187-benchmark.json
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/incremental-memory-budget-manifest.tsv --include-family linearized-first-page --include-family full-loader-fallback --include-family long-document --include-family repeated-resources --include-family page-targeted --include-family large-resource --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/incremental-memory-0187-benchmark.json
 ```
 
 Result:
@@ -85,7 +85,7 @@ Result:
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- benchmark-batch-native fixtures/generated --manifest fixtures/incremental-memory-budget-manifest.tsv --include-family linearized-first-page --include-family full-loader-fallback --include-family long-document --include-family repeated-resources --include-family page-targeted --include-family large-resource --repetitions 2 --max-workers 2 --max-in-flight-pixels 51200 --max-p95-ms 1000 --max-errors 0 --fail-on-budget --output target/incremental-memory-0187-batch-memory.json
+cargo run -p ferrugo-cli --no-default-features -- benchmark-batch-native fixtures/generated --manifest fixtures/incremental-memory-budget-manifest.tsv --include-family linearized-first-page --include-family full-loader-fallback --include-family long-document --include-family repeated-resources --include-family page-targeted --include-family large-resource --repetitions 2 --max-workers 2 --max-in-flight-pixels 51200 --max-p95-ms 1000 --max-errors 0 --fail-on-budget --output target/incremental-memory-0187-batch-memory.json
 ```
 
 Result: 6 inputs, 12 jobs, 12 native rendered, 0 fallbacks, 0 errors, 0 budget
@@ -99,10 +99,10 @@ Commands run:
 
 ```sh
 cargo fmt --check
-cargo test -p pdfrust-native first_page_preview -- --nocapture
-cargo test -p pdfrust-object linearized -- --nocapture
-cargo test -p pdfrust-native long_document -- --nocapture
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/incremental-memory-budget-manifest.tsv --include-family linearized-first-page --include-family full-loader-fallback --include-family long-document --include-family repeated-resources --include-family page-targeted --include-family large-resource --fail-on-fallback --max-edge 160 --output target/incremental-memory-0187-supported-gate.json
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/incremental-memory-budget-manifest.tsv --include-family linearized-first-page --include-family full-loader-fallback --include-family long-document --include-family repeated-resources --include-family page-targeted --include-family large-resource --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/incremental-memory-0187-benchmark.json
-cargo run -p pdfrust-cli --no-default-features -- benchmark-batch-native fixtures/generated --manifest fixtures/incremental-memory-budget-manifest.tsv --include-family linearized-first-page --include-family full-loader-fallback --include-family long-document --include-family repeated-resources --include-family page-targeted --include-family large-resource --repetitions 2 --max-workers 2 --max-in-flight-pixels 51200 --max-p95-ms 1000 --max-errors 0 --fail-on-budget --output target/incremental-memory-0187-batch-memory.json
+cargo test -p ferrugo-native first_page_preview -- --nocapture
+cargo test -p ferrugo-object linearized -- --nocapture
+cargo test -p ferrugo-native long_document -- --nocapture
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/incremental-memory-budget-manifest.tsv --include-family linearized-first-page --include-family full-loader-fallback --include-family long-document --include-family repeated-resources --include-family page-targeted --include-family large-resource --fail-on-fallback --max-edge 160 --output target/incremental-memory-0187-supported-gate.json
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/incremental-memory-budget-manifest.tsv --include-family linearized-first-page --include-family full-loader-fallback --include-family long-document --include-family repeated-resources --include-family page-targeted --include-family large-resource --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/incremental-memory-0187-benchmark.json
+cargo run -p ferrugo-cli --no-default-features -- benchmark-batch-native fixtures/generated --manifest fixtures/incremental-memory-budget-manifest.tsv --include-family linearized-first-page --include-family full-loader-fallback --include-family long-document --include-family repeated-resources --include-family page-targeted --include-family large-resource --repetitions 2 --max-workers 2 --max-in-flight-pixels 51200 --max-p95-ms 1000 --max-errors 0 --fail-on-budget --output target/incremental-memory-0187-batch-memory.json
 ```

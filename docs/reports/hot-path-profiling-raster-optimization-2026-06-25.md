@@ -39,7 +39,7 @@ or raster bounds checks.
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated/vector-stress.pdf --manifest fixtures/corpus-manifest.tsv --max-edge 320 --iterations 5 --max-ms 10000 --max-output-bytes 4194304 --output target/hotpath-0096-vector-stress-after.json
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated/vector-stress.pdf --manifest fixtures/corpus-manifest.tsv --max-edge 320 --iterations 5 --max-ms 10000 --max-output-bytes 4194304 --output target/hotpath-0096-vector-stress-after.json
 ```
 
 Results:
@@ -63,7 +63,7 @@ benchmark while producing the same output size and no budget violations.
 ## Validation
 
 - `cargo fmt`
-- `cargo test -p pdfrust-render path_rasterizer -- --nocapture`
-- `cargo test -p pdfrust-render pixel_bounds -- --nocapture`
-- `cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated/vector-stress.pdf --manifest fixtures/corpus-manifest.tsv --max-edge 320 --iterations 5 --max-ms 10000 --max-output-bytes 4194304 --output target/hotpath-0096-vector-stress-after.json`
+- `cargo test -p ferrugo-render path_rasterizer -- --nocapture`
+- `cargo test -p ferrugo-render pixel_bounds -- --nocapture`
+- `cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated/vector-stress.pdf --manifest fixtures/corpus-manifest.tsv --max-edge 320 --iterations 5 --max-ms 10000 --max-output-bytes 4194304 --output target/hotpath-0096-vector-stress-after.json`
 - `sample <pid> 2 -file target/hotpath-0096-vector-stress.sample.txt`

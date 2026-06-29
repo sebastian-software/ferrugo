@@ -103,11 +103,11 @@ contexts. The measurement above was captured in an unsandboxed run.
 
 ```text
 cargo fmt --check
-git diff --check -- crates/pdfrust-cli/src/main.rs fixtures/server-batch-manifest.tsv
+git diff --check -- crates/ferrugo-cli/src/main.rs fixtures/server-batch-manifest.tsv
 cargo check --workspace
 cargo clippy --workspace --all-targets --all-features -- -D warnings
-cargo test -p pdfrust-cli batch_benchmark -- --nocapture
+cargo test -p ferrugo-cli batch_benchmark -- --nocapture
 cargo test --workspace
 cargo test --workspace --no-default-features
-cargo run -p pdfrust-cli --no-default-features -- benchmark-batch-native fixtures/generated --manifest fixtures/server-batch-manifest.tsv --include-family small --include-family mixed-size --include-family image-heavy --include-family repeated-resources --include-family vector-stress --repetitions 2 --max-workers 2 --max-in-flight-pixels 51200 --max-edge 160 --max-p95-ms 1000 --max-errors 0 --fail-on-budget --output target/server-batch-0133-benchmark.json
+cargo run -p ferrugo-cli --no-default-features -- benchmark-batch-native fixtures/generated --manifest fixtures/server-batch-manifest.tsv --include-family small --include-family mixed-size --include-family image-heavy --include-family repeated-resources --include-family vector-stress --repetitions 2 --max-workers 2 --max-in-flight-pixels 51200 --max-edge 160 --max-p95-ms 1000 --max-errors 0 --fail-on-budget --output target/server-batch-0133-benchmark.json
 ```

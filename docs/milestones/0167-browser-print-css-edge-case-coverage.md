@@ -63,8 +63,8 @@ Implemented:
 
 Validation:
 
-- `cargo test -p pdfrust-render rasterize_paths_should_restore_clip_with_graphics_state -- --nocapture`
-- `cargo test -p pdfrust-native browser_print_edge -- --nocapture`
+- `cargo test -p ferrugo-render rasterize_paths_should_restore_clip_with_graphics_state -- --nocapture`
+- `cargo test -p ferrugo-native browser_print_edge -- --nocapture`
 - Browser-print native support gate: 7 total, 7 native rendered, 0 fallbacks,
   0 errors.
 - Browser-print benchmark: 7 total, 7 native rendered, 0 fallbacks, 0 errors,

@@ -9,7 +9,7 @@ route consumers back to runtime PDFium fallback.
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated \
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated \
   --manifest fixtures/corpus-manifest.tsv \
   --max-edge 160 \
   --output target/unsupported-0199-classification.json
@@ -39,7 +39,7 @@ Unsupported buckets:
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated \
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated \
   --manifest fixtures/corpus-manifest.tsv \
   --max-edge 160 \
   --iterations 1 \
@@ -75,7 +75,7 @@ Policy errors are not unsupported buckets:
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated \
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated \
   --manifest fixtures/corpus-manifest.tsv \
   --include-family browser-print \
   --include-family email-web-archive \
@@ -110,9 +110,9 @@ headline 211/227 native-render count as sufficient on its own.
 ## Validation Commands
 
 ```text
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --output target/unsupported-0199-classification.json
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --iterations 1 --max-ms 1000 --max-output-bytes 1048576 --output target/unsupported-0199-benchmark-fixtures.json
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --include-family browser-print --include-family email-web-archive --include-family form --fail-on-fallback --max-edge 160 --output target/unsupported-0199-supported-families.json
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --output target/unsupported-0199-classification.json
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --iterations 1 --max-ms 1000 --max-output-bytes 1048576 --output target/unsupported-0199-benchmark-fixtures.json
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --include-family browser-print --include-family email-web-archive --include-family form --fail-on-fallback --max-edge 160 --output target/unsupported-0199-supported-families.json
 cargo fmt --check
 git diff --check -- docs/reports/native-renderer-support-matrix-2026-06-24.md docs/milestones/0199-unsupported-feature-burn-down-release-candidate-gate.md docs/milestones/README.md docs/reports/unsupported-feature-burn-down-2026-06-29.md
 cargo test --workspace --no-default-features

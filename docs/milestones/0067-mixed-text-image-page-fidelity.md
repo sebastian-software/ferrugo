@@ -61,8 +61,8 @@ Completed on 2026-06-24.
   - `cargo fmt --check`
   - `cargo check`
   - `cargo test`
-  - `cargo test -p pdfrust-render`
-  - `cargo test -p pdfrust-native`
+  - `cargo test -p ferrugo-render`
+  - `cargo test -p ferrugo-native`
   - `cargo clippy --all-targets --all-features -- -D warnings`
   - mixed-layout fallback summary with `fixtures/corpus-manifest.tsv`
   - native/PDFium render comparison for `mixed-text-image.pdf`

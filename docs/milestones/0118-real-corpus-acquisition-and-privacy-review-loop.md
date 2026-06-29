@@ -46,7 +46,7 @@ coverage program without committing sensitive files.
 
 ## Completion Notes
 
-- Added a Rust-native `pdfrust-cli validate-local-corpus` command for
+- Added a Rust-native `ferrugo-cli validate-local-corpus` command for
   aggregate local corpus TOML validation without new dependencies.
 - Updated `fixtures/local-corpus.example.toml` to use privacy-safe `[[sample]]`
   entries instead of per-document private paths.

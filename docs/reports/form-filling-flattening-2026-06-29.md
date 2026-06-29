@@ -41,7 +41,7 @@ fixtures.
 Supported-family command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/form-filling-flattening-manifest.tsv --include-family existing-appearance --include-family signature-boundary --include-family synthesized-static --include-family flattened-static --fail-on-fallback --max-edge 160 --output target/form-filling-0206-supported.json
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/form-filling-flattening-manifest.tsv --include-family existing-appearance --include-family signature-boundary --include-family synthesized-static --include-family flattened-static --fail-on-fallback --max-edge 160 --output target/form-filling-0206-supported.json
 ```
 
 | Total | Native rendered | Fallbacks | Errors |
@@ -51,7 +51,7 @@ cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/g
 XFA-boundary command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/form-filling-flattening-manifest.tsv --include-family xfa-boundary --max-edge 160 --output target/form-filling-0206-xfa-boundary.json
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/form-filling-flattening-manifest.tsv --include-family xfa-boundary --max-edge 160 --output target/form-filling-0206-xfa-boundary.json
 ```
 
 | Total | Native rendered | Fallbacks | Fallback category | Errors |
@@ -74,7 +74,7 @@ Poppler is used here only as an independent review oracle. It is not part of
 the supported runtime path.
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- visual-diff-poppler fixtures/generated --manifest fixtures/form-filling-flattening-manifest.tsv --include-family existing-appearance --include-family signature-boundary --include-family flattened-static --max-edge 120 --max-mae 8 --max-p95 64 --max-changed-ratio 0.20 --output target/form-filling-0206-poppler.json
+cargo run -p ferrugo-cli --no-default-features -- visual-diff-poppler fixtures/generated --manifest fixtures/form-filling-flattening-manifest.tsv --include-family existing-appearance --include-family signature-boundary --include-family flattened-static --max-edge 120 --max-mae 8 --max-p95 64 --max-changed-ratio 0.20 --output target/form-filling-0206-poppler.json
 ```
 
 | Total | Accepted drift | Blockers | Native errors | Reference errors |
@@ -98,15 +98,15 @@ Commands run:
 python3 scripts/generate_fixtures.py
 cargo fmt --check
 python3 -m py_compile scripts/generate_fixtures.py
-cargo test -p pdfrust-native native_backend_should_render_generated_form_filling_flattening_fixtures -- --nocapture
-cargo test -p pdfrust-native acroform -- --nocapture
-cargo test -p pdfrust-native form_filling -- --nocapture
-cargo test -p pdfrust-native signature_presence -- --nocapture
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/form-filling-flattening-manifest.tsv --include-family existing-appearance --include-family signature-boundary --include-family synthesized-static --include-family flattened-static --fail-on-fallback --max-edge 160 --output target/form-filling-0206-supported.json
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/form-filling-flattening-manifest.tsv --include-family xfa-boundary --max-edge 160 --output target/form-filling-0206-xfa-boundary.json
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/form-filling-flattening-manifest.tsv --include-family existing-appearance --include-family signature-boundary --include-family synthesized-static --include-family flattened-static --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/form-filling-0206-benchmark.json
-cargo run -p pdfrust-cli --no-default-features -- operator-coverage fixtures/generated --manifest fixtures/form-filling-flattening-manifest.tsv --include-family existing-appearance --include-family signature-boundary --include-family synthesized-static --include-family flattened-static --include-family xfa-boundary --output target/form-filling-0206-operators.json
-cargo run -p pdfrust-cli --no-default-features -- visual-diff-poppler fixtures/generated --manifest fixtures/form-filling-flattening-manifest.tsv --include-family existing-appearance --include-family signature-boundary --include-family flattened-static --max-edge 120 --max-mae 8 --max-p95 64 --max-changed-ratio 0.20 --output target/form-filling-0206-poppler.json
+cargo test -p ferrugo-native native_backend_should_render_generated_form_filling_flattening_fixtures -- --nocapture
+cargo test -p ferrugo-native acroform -- --nocapture
+cargo test -p ferrugo-native form_filling -- --nocapture
+cargo test -p ferrugo-native signature_presence -- --nocapture
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/form-filling-flattening-manifest.tsv --include-family existing-appearance --include-family signature-boundary --include-family synthesized-static --include-family flattened-static --fail-on-fallback --max-edge 160 --output target/form-filling-0206-supported.json
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/form-filling-flattening-manifest.tsv --include-family xfa-boundary --max-edge 160 --output target/form-filling-0206-xfa-boundary.json
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/form-filling-flattening-manifest.tsv --include-family existing-appearance --include-family signature-boundary --include-family synthesized-static --include-family flattened-static --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/form-filling-0206-benchmark.json
+cargo run -p ferrugo-cli --no-default-features -- operator-coverage fixtures/generated --manifest fixtures/form-filling-flattening-manifest.tsv --include-family existing-appearance --include-family signature-boundary --include-family synthesized-static --include-family flattened-static --include-family xfa-boundary --output target/form-filling-0206-operators.json
+cargo run -p ferrugo-cli --no-default-features -- visual-diff-poppler fixtures/generated --manifest fixtures/form-filling-flattening-manifest.tsv --include-family existing-appearance --include-family signature-boundary --include-family flattened-static --max-edge 120 --max-mae 8 --max-p95 64 --max-changed-ratio 0.20 --output target/form-filling-0206-poppler.json
 cargo check --workspace --no-default-features
 cargo test --workspace --no-default-features
 cargo clippy --workspace --all-targets --all-features -- -D warnings

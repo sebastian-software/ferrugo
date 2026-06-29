@@ -62,7 +62,7 @@ Completed on 2026-06-24.
   - `cargo fmt --check`
   - `cargo check`
   - `cargo test`
-  - `cargo test -p pdfrust-native`
+  - `cargo test -p ferrugo-native`
   - `cargo clippy --all-targets --all-features -- -D warnings`
   - shaped-text fallback summary through the office-export family
   - native/PDFium render comparison for `shaped-rtl-text.pdf`

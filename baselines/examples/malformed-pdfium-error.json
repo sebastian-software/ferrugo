@@ -8,7 +8,7 @@
   "backend": {
     "id": "pdfium",
     "revision": "573758fe2dd928279cd52b5a4bc955a6938aab39",
-    "configuration": "pdfrust-thumb"
+    "configuration": "ferrugo-thumb"
   },
   "request": {
     "page_index": 0,

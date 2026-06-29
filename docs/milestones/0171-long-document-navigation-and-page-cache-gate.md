@@ -63,8 +63,8 @@ Implemented:
 
 Validation:
 
-- `cargo test -p pdfrust-native long_document_navigation -- --nocapture`
-- `cargo test -p pdfrust-native native_page_cache -- --nocapture`
+- `cargo test -p ferrugo-native long_document_navigation -- --nocapture`
+- `cargo test -p ferrugo-native native_page_cache -- --nocapture`
 - Long-document supported gate: 5 total, 5 native rendered, 0 fallbacks, 0
   errors.
 - Long-document benchmark: 5 total, 5 native rendered, 0 fallbacks, 0 errors, 0

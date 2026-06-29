@@ -31,7 +31,7 @@ Milestone: 0094.
 Command:
 
 ```text
-cargo run -p pdfrust-cli --no-default-features -- extract-corpus-metadata fixtures/generated/metadata-outline-page-labels.pdf --manifest fixtures/corpus-manifest.tsv --output target/metadata-0094-fixture.json
+cargo run -p ferrugo-cli --no-default-features -- extract-corpus-metadata fixtures/generated/metadata-outline-page-labels.pdf --manifest fixtures/corpus-manifest.tsv --output target/metadata-0094-fixture.json
 ```
 
 Extracted metadata:
@@ -41,9 +41,9 @@ Extracted metadata:
 | Page count | 1 |
 | Page 0 size | `200.000 x 120.000` |
 | Title | `Metadata Fixture` |
-| Author | `pdfrust` |
+| Author | `ferrugo` |
 | Creator | `fixture generator` |
-| Producer | `pdfrust` |
+| Producer | `ferrugo` |
 | XMP present | true |
 | MarkInfo present | true |
 | StructTreeRoot present | true |
@@ -54,7 +54,7 @@ Extracted metadata:
 Render smoke:
 
 ```text
-cargo run -p pdfrust-cli --no-default-features -- render-native fixtures/generated/metadata-outline-page-labels.pdf --max-edge 120 --output target/metadata-0094-fixture.png
+cargo run -p ferrugo-cli --no-default-features -- render-native fixtures/generated/metadata-outline-page-labels.pdf --max-edge 120 --output target/metadata-0094-fixture.png
 ```
 
 The metadata fixture also renders natively, confirming the added catalog and
@@ -65,7 +65,7 @@ trailer entries do not break the normal thumbnail path.
 Command:
 
 ```text
-cargo run -p pdfrust-cli --no-default-features -- extract-corpus-metadata fixtures/generated --manifest fixtures/corpus-manifest.tsv --output target/metadata-0094-corpus.json
+cargo run -p ferrugo-cli --no-default-features -- extract-corpus-metadata fixtures/generated --manifest fixtures/corpus-manifest.tsv --output target/metadata-0094-corpus.json
 ```
 
 Corpus metadata extraction reported `75` fixtures: `74` successful metadata
@@ -74,7 +74,7 @@ records and the existing encrypted fixture error.
 Command:
 
 ```text
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --output target/metadata-0094-summary.json
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --output target/metadata-0094-summary.json
 ```
 
 Fallback summary:
@@ -96,15 +96,15 @@ python3 scripts/generate_fixtures.py
 cargo fmt
 cargo fmt --check
 cargo check --workspace --no-default-features
-cargo test -p pdfrust-native metadata -- --nocapture
-cargo test -p pdfrust-cli metadata -- --nocapture
-cargo test -p pdfrust-cli comparison_json_should_include_match_status -- --nocapture
+cargo test -p ferrugo-native metadata -- --nocapture
+cargo test -p ferrugo-cli metadata -- --nocapture
+cargo test -p ferrugo-cli comparison_json_should_include_match_status -- --nocapture
 cargo test --workspace --no-default-features
 cargo clippy --workspace --all-targets --all-features -- -D warnings
-cargo run -p pdfrust-cli --no-default-features -- extract-corpus-metadata fixtures/generated/metadata-outline-page-labels.pdf --manifest fixtures/corpus-manifest.tsv --output target/metadata-0094-fixture.json
-cargo run -p pdfrust-cli --no-default-features -- extract-corpus-metadata fixtures/generated --manifest fixtures/corpus-manifest.tsv --output target/metadata-0094-corpus.json
-cargo run -p pdfrust-cli --no-default-features -- render-native fixtures/generated/metadata-outline-page-labels.pdf --max-edge 120 --output target/metadata-0094-fixture.png
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --output target/metadata-0094-summary.json
+cargo run -p ferrugo-cli --no-default-features -- extract-corpus-metadata fixtures/generated/metadata-outline-page-labels.pdf --manifest fixtures/corpus-manifest.tsv --output target/metadata-0094-fixture.json
+cargo run -p ferrugo-cli --no-default-features -- extract-corpus-metadata fixtures/generated --manifest fixtures/corpus-manifest.tsv --output target/metadata-0094-corpus.json
+cargo run -p ferrugo-cli --no-default-features -- render-native fixtures/generated/metadata-outline-page-labels.pdf --max-edge 120 --output target/metadata-0094-fixture.png
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --output target/metadata-0094-summary.json
 ```
 
 All listed commands completed successfully.

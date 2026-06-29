@@ -23,7 +23,7 @@ New fixtures:
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/technical-drawing-manifest.tsv --include-family linework --include-family hatch-clipping --include-family large-coordinate --include-family repeated-symbols --include-family floorplan --include-family schematic --include-family transform-detail --fail-on-fallback --max-edge 160 --output target/engineering-0151-supported-gate.json
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/technical-drawing-manifest.tsv --include-family linework --include-family hatch-clipping --include-family large-coordinate --include-family repeated-symbols --include-family floorplan --include-family schematic --include-family transform-detail --fail-on-fallback --max-edge 160 --output target/engineering-0151-supported-gate.json
 ```
 
 Result:
@@ -37,7 +37,7 @@ Result:
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/technical-drawing-manifest.tsv --include-family linework --include-family hatch-clipping --include-family large-coordinate --include-family repeated-symbols --include-family floorplan --include-family schematic --include-family transform-detail --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/engineering-0151-benchmark.json
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/technical-drawing-manifest.tsv --include-family linework --include-family hatch-clipping --include-family large-coordinate --include-family repeated-symbols --include-family floorplan --include-family schematic --include-family transform-detail --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/engineering-0151-benchmark.json
 ```
 
 Result:
@@ -57,7 +57,7 @@ Result:
 Command:
 
 ```sh
-PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/technical-drawing-manifest.tsv --include-family linework --include-family hatch-clipping --include-family large-coordinate --include-family repeated-symbols --include-family floorplan --include-family schematic --include-family transform-detail --max-edge 160 --max-mae 2.0 --max-p95 16 --max-changed-ratio 0.05 --output target/engineering-0151-visual-diff.json
+FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/technical-drawing-manifest.tsv --include-family linework --include-family hatch-clipping --include-family large-coordinate --include-family repeated-symbols --include-family floorplan --include-family schematic --include-family transform-detail --max-edge 160 --max-mae 2.0 --max-p95 16 --max-changed-ratio 0.05 --output target/engineering-0151-visual-diff.json
 ```
 
 Result:
@@ -111,12 +111,12 @@ Commands run:
 
 ```sh
 python3 scripts/generate_fixtures.py
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/technical-drawing-manifest.tsv --include-family linework --include-family hatch-clipping --include-family large-coordinate --include-family repeated-symbols --include-family floorplan --include-family schematic --include-family transform-detail --fail-on-fallback --max-edge 160 --output target/engineering-0151-supported-gate.json
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/technical-drawing-manifest.tsv --include-family linework --include-family hatch-clipping --include-family large-coordinate --include-family repeated-symbols --include-family floorplan --include-family schematic --include-family transform-detail --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/engineering-0151-benchmark.json
-PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/technical-drawing-manifest.tsv --include-family linework --include-family hatch-clipping --include-family large-coordinate --include-family repeated-symbols --include-family floorplan --include-family schematic --include-family transform-detail --max-edge 160 --max-mae 2.0 --max-p95 16 --max-changed-ratio 0.05 --output target/engineering-0151-visual-diff.json
-cargo test -p pdfrust-native technical_drawing -- --nocapture
-cargo test -p pdfrust-render rasterize_paths -- --nocapture
-cargo test -p pdfrust-render page_transform -- --nocapture
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/technical-drawing-manifest.tsv --include-family linework --include-family hatch-clipping --include-family large-coordinate --include-family repeated-symbols --include-family floorplan --include-family schematic --include-family transform-detail --fail-on-fallback --max-edge 160 --output target/engineering-0151-supported-gate.json
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/technical-drawing-manifest.tsv --include-family linework --include-family hatch-clipping --include-family large-coordinate --include-family repeated-symbols --include-family floorplan --include-family schematic --include-family transform-detail --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/engineering-0151-benchmark.json
+FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/technical-drawing-manifest.tsv --include-family linework --include-family hatch-clipping --include-family large-coordinate --include-family repeated-symbols --include-family floorplan --include-family schematic --include-family transform-detail --max-edge 160 --max-mae 2.0 --max-p95 16 --max-changed-ratio 0.05 --output target/engineering-0151-visual-diff.json
+cargo test -p ferrugo-native technical_drawing -- --nocapture
+cargo test -p ferrugo-render rasterize_paths -- --nocapture
+cargo test -p ferrugo-render page_transform -- --nocapture
 find fixtures/generated -name '*.pdf' -size +512k -print
 wc -c fixtures/generated/engineering-floorplan-precision.pdf fixtures/generated/engineering-schematic-symbols.pdf fixtures/generated/engineering-large-transform-detail.pdf
 rg -n "private|customer|confidential|personal|production|PII|@" fixtures/corpus-manifest.tsv fixtures/technical-drawing-manifest.tsv scripts/generate_fixtures.py

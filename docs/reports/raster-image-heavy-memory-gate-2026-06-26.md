@@ -42,7 +42,7 @@ Both are included in the main corpus manifest with `expected:native`.
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated \
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated \
   --manifest fixtures/image-heavy-memory-manifest.tsv \
   --include-family repeated-xobject \
   --include-family rotated-mask \
@@ -68,7 +68,7 @@ Result:
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated \
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated \
   --manifest fixtures/image-heavy-memory-manifest.tsv \
   --include-family repeated-xobject \
   --include-family rotated-mask \
@@ -101,7 +101,7 @@ Result:
 Low-memory native profile command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated \
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated \
   --manifest fixtures/image-heavy-memory-manifest.tsv \
   --include-family repeated-xobject \
   --include-family rotated-mask \
@@ -126,9 +126,9 @@ Result: 8 total, 8 native rendered, 0 fallbacks, 0 errors, 0 budget failures.
 Command:
 
 ```sh
-PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib \
-DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib \
-cargo run -p pdfrust-cli --features pdfium -- visual-diff fixtures/generated \
+FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib \
+DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib \
+cargo run -p ferrugo-cli --features pdfium -- visual-diff fixtures/generated \
   --manifest fixtures/image-heavy-memory-manifest.tsv \
   --include-family repeated-xobject \
   --include-family rotated-mask \
@@ -167,7 +167,7 @@ memory failures:
 ## Validation
 
 - `python3 scripts/generate_fixtures.py`
-- `cargo test -p pdfrust-native image_heavy -- --nocapture`
+- `cargo test -p ferrugo-native image_heavy -- --nocapture`
 - Native supported gate, default benchmark, low-memory benchmark, and visual
   comparison commands listed above.
 - `cargo test --workspace --no-default-features`

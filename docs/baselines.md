@@ -29,7 +29,7 @@ Each record is one JSON object:
   "backend": {
     "id": "pdfium",
     "revision": "573758fe2dd928279cd52b5a4bc955a6938aab39",
-    "configuration": "pdfrust-thumb"
+    "configuration": "ferrugo-thumb"
   },
   "request": {
     "page_index": 0,
@@ -46,7 +46,7 @@ Each record is one JSON object:
       "pixel_format": "rgba8"
     },
     "pixel_sha256": "2cd4dbfeb05110c7c67e5ae7bf6f2f6c0a9cc240bf69aa5f0acd902426ff31b8",
-    "artifact_path": "target/pdfrust-thumbnails/text-page-256.png",
+    "artifact_path": "target/ferrugo-thumbnails/text-page-256.png",
     "artifact_sha256": "1711931704d73467a89f35f4ff523dabecd3b1bf4f4716924e350c4dfc957593",
     "artifact_bytes": 140288
   },
@@ -137,8 +137,8 @@ used to interpret local comparison results.
 Run a local metadata comparison with:
 
 ```sh
-PDFRUST_PDFIUM_LIBRARY=/path/to/libpdfium.dylib \
+FERRUGO_PDFIUM_LIBRARY=/path/to/libpdfium.dylib \
 DYLD_LIBRARY_PATH=/path/to/pdfium/out \
-cargo run -p pdfrust-cli -- compare-metadata fixtures/generated/text-page.pdf \
-  --output target/pdfrust-thumbnails/text-page-metadata-comparison.json
+cargo run -p ferrugo-cli -- compare-metadata fixtures/generated/text-page.pdf \
+  --output target/ferrugo-thumbnails/text-page-metadata-comparison.json
 ```

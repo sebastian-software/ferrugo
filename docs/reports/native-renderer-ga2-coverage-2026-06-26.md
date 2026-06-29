@@ -26,7 +26,7 @@ milestones before runtime deletion.
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --include-family browser-print --include-family office-export --include-family form --fail-on-fallback --max-edge 160 --output target/ga2-0140-core-supported-gate.json
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --include-family browser-print --include-family office-export --include-family form --fail-on-fallback --max-edge 160 --output target/ga2-0140-core-supported-gate.json
 ```
 
 Result:
@@ -125,16 +125,16 @@ maintainer evidence, not a normal runtime dependency.
 
 ## Packaging And Profile Evidence
 
-- `cargo tree -p pdfrust-cli --no-default-features` has no `pdfrust-pdfium`
+- `cargo tree -p ferrugo-cli --no-default-features` has no `ferrugo-pdfium`
   dependency edge.
-- `cargo package -p pdfrust-syntax --allow-dirty --no-verify` passed:
+- `cargo package -p ferrugo-syntax --allow-dirty --no-verify` passed:
   27.1 KiB raw, 6.2 KiB compressed.
-- `cargo package -p pdfrust-thumbnail --allow-dirty --no-verify` passed:
+- `cargo package -p ferrugo-thumbnail --allow-dirty --no-verify` passed:
   16.9 KiB raw, 4.9 KiB compressed.
-- `cargo package -p pdfrust-cli --allow-dirty --no-verify --list` contains only
+- `cargo package -p ferrugo-cli --allow-dirty --no-verify --list` contains only
   CLI package files and Cargo metadata.
-- Full `pdfrust-cli` package preparation remains release-order blocked until
-  internal crates such as `pdfrust-native` are available from the registry.
+- Full `ferrugo-cli` package preparation remains release-order blocked until
+  internal crates such as `ferrugo-native` are available from the registry.
 
 WASM and low-memory host checks remain compatibility signals. They passed as
 part of the workspace tests, but they do not define the server-side GA2 decision.
@@ -160,16 +160,16 @@ Recommended next stabilization/deletion cycle:
 Commands run:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --include-family browser-print --include-family office-export --include-family form --include-family scan --include-family report --include-family presentation --include-family mixed-layout --fail-on-fallback --max-edge 160 --output target/ga2-0140-supported-gate.json
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --include-family browser-print --include-family office-export --include-family form --fail-on-fallback --max-edge 160 --output target/ga2-0140-core-supported-gate.json
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --output target/ga2-0140-full-fallback-summary.json
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --iterations 1 --max-ms 1000 --max-output-bytes 1048576 --output target/ga2-0140-benchmark-native.json
-PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 120 --max-mae 2.0 --max-p95 16 --max-changed-ratio 0.05 --output target/ga2-0140-visual-diff.json
-cargo tree -p pdfrust-cli --no-default-features
-cargo package -p pdfrust-syntax --allow-dirty --no-verify
-cargo package -p pdfrust-thumbnail --allow-dirty --no-verify
-cargo package -p pdfrust-cli --allow-dirty --no-verify --list
-cargo package -p pdfrust-cli --allow-dirty --no-verify
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --include-family browser-print --include-family office-export --include-family form --include-family scan --include-family report --include-family presentation --include-family mixed-layout --fail-on-fallback --max-edge 160 --output target/ga2-0140-supported-gate.json
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --include-family browser-print --include-family office-export --include-family form --fail-on-fallback --max-edge 160 --output target/ga2-0140-core-supported-gate.json
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --output target/ga2-0140-full-fallback-summary.json
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --iterations 1 --max-ms 1000 --max-output-bytes 1048576 --output target/ga2-0140-benchmark-native.json
+FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 120 --max-mae 2.0 --max-p95 16 --max-changed-ratio 0.05 --output target/ga2-0140-visual-diff.json
+cargo tree -p ferrugo-cli --no-default-features
+cargo package -p ferrugo-syntax --allow-dirty --no-verify
+cargo package -p ferrugo-thumbnail --allow-dirty --no-verify
+cargo package -p ferrugo-cli --allow-dirty --no-verify --list
+cargo package -p ferrugo-cli --allow-dirty --no-verify
 cargo check --workspace --no-default-features
 cargo test --workspace --no-default-features
 cargo clippy --workspace --all-targets --all-features -- -D warnings
@@ -178,5 +178,5 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings
 Expected non-zero validation:
 
 - The broad typical fail-on-fallback command found 8 typed fallbacks.
-- Full `pdfrust-cli` package preparation failed because `pdfrust-native` is not
+- Full `ferrugo-cli` package preparation failed because `ferrugo-native` is not
   available from the crates.io index yet.

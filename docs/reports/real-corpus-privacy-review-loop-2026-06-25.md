@@ -4,7 +4,7 @@ Milestone: 0118.
 
 ## Implemented Slice
 
-- Added `validate-local-corpus` to `pdfrust-cli` for local-only corpus metadata.
+- Added `validate-local-corpus` to `ferrugo-cli` for local-only corpus metadata.
 - Replaced the local corpus example with aggregate `[[sample]]` entries that
   record category, privacy, permission, redaction state, coarse page range,
   feature tags, synthetic replacement, and review status.
@@ -69,11 +69,11 @@ and 1 returned the expected encrypted error.
 ```text
 cargo fmt --check
 cargo check --workspace
-cargo test -p pdfrust-cli local_corpus -- --nocapture
-cargo run -p pdfrust-cli --no-default-features -- validate-local-corpus fixtures/local-corpus.example.toml
-cargo run -p pdfrust-cli --no-default-features -- validate-local-corpus fixtures/local-corpus/metadata.toml --allow-missing
-cargo run -p pdfrust-cli --no-default-features -- extract-corpus-metadata fixtures/generated --manifest fixtures/real-world-style-manifest.tsv --output target/real-world-style-0118-metadata.json
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/real-world-style-manifest.tsv --max-edge 160 --output target/real-world-style-0118-fallbacks.json
+cargo test -p ferrugo-cli local_corpus -- --nocapture
+cargo run -p ferrugo-cli --no-default-features -- validate-local-corpus fixtures/local-corpus.example.toml
+cargo run -p ferrugo-cli --no-default-features -- validate-local-corpus fixtures/local-corpus/metadata.toml --allow-missing
+cargo run -p ferrugo-cli --no-default-features -- extract-corpus-metadata fixtures/generated --manifest fixtures/real-world-style-manifest.tsv --output target/real-world-style-0118-metadata.json
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/real-world-style-manifest.tsv --max-edge 160 --output target/real-world-style-0118-fallbacks.json
 ```
 
 ## Limits

@@ -80,7 +80,7 @@ Reviewed `docs/reports/native-renderer-rc-gate-2026-06-24.md` and reran the
 0080 corpus summary command:
 
 ```text
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --output target/rc-0080-fallback-summary.json
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --output target/rc-0080-fallback-summary.json
 ```
 
 Current generated-corpus evidence:

@@ -61,11 +61,11 @@ against realistic document families instead of isolated fixtures only.
   manifest source/license/features plus native page count and page sizes.
 - Validation: manifest TSV has 7 columns on every row, covers exactly the
   39 committed `fixtures/generated/*.pdf` files, and
-  `cargo run -p pdfrust-cli -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 120 --output target/fallback-summary-with-families.json`
+  `cargo run -p ferrugo-cli -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 120 --output target/fallback-summary-with-families.json`
   reported 37 native renders, 1 `graphics.optional-content` fallback, and 1
   encrypted input.
 - Validation:
-  `cargo run -p pdfrust-cli -- extract-corpus-metadata fixtures/generated --manifest fixtures/corpus-manifest.tsv --output target/corpus-metadata.json`
+  `cargo run -p ferrugo-cli -- extract-corpus-metadata fixtures/generated --manifest fixtures/corpus-manifest.tsv --output target/corpus-metadata.json`
   produced 39 metadata records.
 - Validation: `cargo fmt --check`, `cargo check`,
   `cargo clippy --all-targets --all-features -- -D warnings`, and

@@ -1,0 +1,20 @@
+[package]
+name = "ferrugo-cli"
+version = "0.1.0"
+edition.workspace = true
+description.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+ferrugo-native = { version = "0.1.0", path = "../ferrugo-native" }
+ferrugo-pdfium = { version = "0.1.0", path = "../ferrugo-pdfium", optional = true }
+ferrugo-thumbnail = { version = "0.1.0", path = "../ferrugo-thumbnail" }
+
+[features]
+default = []
+pdfium = ["dep:ferrugo-pdfium"]
+
+[lints]
+workspace = true

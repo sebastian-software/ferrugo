@@ -82,12 +82,12 @@ does not address that semantic mismatch.
 
 ```text
 rustc --version --verbose
-cargo test -p pdfrust-render source_over -- --nocapture
-cargo test -p pdfrust-render blend -- --nocapture
-cargo test -p pdfrust-render image_sample_cache -- --nocapture
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/low-memory-profile-manifest.tsv --include-family common --include-family scan --include-family vector-stress --include-family repeated-resources --max-edge 160 --iterations 3 --max-ms 1000 --max-output-bytes 1048576 --output target/simd-0159-scalar-low-memory-benchmark.json
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/transparency-conformance-manifest.tsv --include-family alpha --include-family group --include-family blend --include-family image-soft-mask --include-family unsupported-soft-mask --include-family unsupported-blend --max-edge 160 --iterations 3 --max-ms 1000 --max-output-bytes 1048576 --output target/simd-0159-scalar-transparency-benchmark.json
-PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/transparency-conformance-manifest.tsv --include-family alpha --include-family group --include-family blend --include-family image-soft-mask --max-edge 160 --max-mae 2.0 --max-p95 16 --max-changed-ratio 0.05 --output target/simd-0159-transparency-visual-diff.json
+cargo test -p ferrugo-render source_over -- --nocapture
+cargo test -p ferrugo-render blend -- --nocapture
+cargo test -p ferrugo-render image_sample_cache -- --nocapture
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/low-memory-profile-manifest.tsv --include-family common --include-family scan --include-family vector-stress --include-family repeated-resources --max-edge 160 --iterations 3 --max-ms 1000 --max-output-bytes 1048576 --output target/simd-0159-scalar-low-memory-benchmark.json
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/transparency-conformance-manifest.tsv --include-family alpha --include-family group --include-family blend --include-family image-soft-mask --include-family unsupported-soft-mask --include-family unsupported-blend --max-edge 160 --iterations 3 --max-ms 1000 --max-output-bytes 1048576 --output target/simd-0159-scalar-transparency-benchmark.json
+FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/transparency-conformance-manifest.tsv --include-family alpha --include-family group --include-family blend --include-family image-soft-mask --max-edge 160 --max-mae 2.0 --max-p95 16 --max-changed-ratio 0.05 --output target/simd-0159-transparency-visual-diff.json
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 ```
 

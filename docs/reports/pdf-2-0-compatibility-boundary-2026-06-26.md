@@ -50,11 +50,11 @@ Commands run:
 
 ```sh
 cargo check --workspace --no-default-features
-cargo test -p pdfrust-render black_point -- --nocapture
-cargo test -p pdfrust-native pdf20 -- --nocapture
+cargo test -p ferrugo-render black_point -- --nocapture
+cargo test -p ferrugo-native pdf20 -- --nocapture
 cargo test --workspace --no-default-features
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/pdf20-compatibility-manifest.tsv --include-family accepted-office --include-family accepted-associated-file --fail-on-fallback --max-edge 160 --output target/pdf20-0162-supported-gate.json
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/pdf20-compatibility-manifest.tsv --include-family accepted-office --include-family accepted-associated-file --include-family unsupported-color-management --max-edge 160 --output target/pdf20-0162-classification.json
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --include-family browser-print --include-family office-export --include-family form --fail-on-fallback --max-edge 160 --output target/pdf20-0162-affected-supported-gate.json
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/pdf20-compatibility-manifest.tsv --include-family accepted-office --include-family accepted-associated-file --fail-on-fallback --max-edge 160 --output target/pdf20-0162-supported-gate.json
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/pdf20-compatibility-manifest.tsv --include-family accepted-office --include-family accepted-associated-file --include-family unsupported-color-management --max-edge 160 --output target/pdf20-0162-classification.json
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --include-family browser-print --include-family office-export --include-family form --fail-on-fallback --max-edge 160 --output target/pdf20-0162-affected-supported-gate.json
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 ```

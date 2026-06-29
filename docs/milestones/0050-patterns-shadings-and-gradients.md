@@ -97,15 +97,15 @@ Completed:
   - `git diff --check`
   - `cargo check`
   - `cargo test --quiet`
-  - `cargo test -p pdfrust-render pattern -- --nocapture`
-  - `cargo test -p pdfrust-native tiling_pattern -- --nocapture`
-  - `cargo test -p pdfrust-native axial_gradient -- --nocapture`
-  - `cargo test -p pdfrust-native radial_gradient -- --nocapture`
-  - `cargo test -p pdfrust-render shading -- --nocapture`
-  - `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render fixtures/generated/axial-gradient.pdf --max-edge 120 --output target/pdfrust-thumbnails/axial-gradient-pdfium-0050.png`
-  - `cargo run -p pdfrust-cli -- render-native fixtures/generated/axial-gradient.pdf --max-edge 120 --output target/pdfrust-thumbnails/axial-gradient-native-0050.png`
-  - `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render fixtures/generated/radial-gradient.pdf --max-edge 120 --output target/pdfrust-thumbnails/radial-gradient-pdfium-0050.png`
-  - `cargo run -p pdfrust-cli -- render-native fixtures/generated/radial-gradient.pdf --max-edge 120 --output target/pdfrust-thumbnails/radial-gradient-native-0050.png`
-  - `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render fixtures/generated/tiling-pattern.pdf --max-edge 120 --output target/pdfrust-thumbnails/tiling-pattern-pdfium-0050.png`
-  - `cargo run -p pdfrust-cli -- render-native fixtures/generated/tiling-pattern.pdf --max-edge 120 --output target/pdfrust-thumbnails/tiling-pattern-native-0050.png`
+  - `cargo test -p ferrugo-render pattern -- --nocapture`
+  - `cargo test -p ferrugo-native tiling_pattern -- --nocapture`
+  - `cargo test -p ferrugo-native axial_gradient -- --nocapture`
+  - `cargo test -p ferrugo-native radial_gradient -- --nocapture`
+  - `cargo test -p ferrugo-render shading -- --nocapture`
+  - `FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli -- render fixtures/generated/axial-gradient.pdf --max-edge 120 --output target/ferrugo-thumbnails/axial-gradient-pdfium-0050.png`
+  - `cargo run -p ferrugo-cli -- render-native fixtures/generated/axial-gradient.pdf --max-edge 120 --output target/ferrugo-thumbnails/axial-gradient-native-0050.png`
+  - `FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli -- render fixtures/generated/radial-gradient.pdf --max-edge 120 --output target/ferrugo-thumbnails/radial-gradient-pdfium-0050.png`
+  - `cargo run -p ferrugo-cli -- render-native fixtures/generated/radial-gradient.pdf --max-edge 120 --output target/ferrugo-thumbnails/radial-gradient-native-0050.png`
+  - `FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli -- render fixtures/generated/tiling-pattern.pdf --max-edge 120 --output target/ferrugo-thumbnails/tiling-pattern-pdfium-0050.png`
+  - `cargo run -p ferrugo-cli -- render-native fixtures/generated/tiling-pattern.pdf --max-edge 120 --output target/ferrugo-thumbnails/tiling-pattern-native-0050.png`
   - `cargo clippy --all-targets --all-features -- -D warnings`

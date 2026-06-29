@@ -14,7 +14,7 @@ renderer behavior yet.
 
 - Add crates for syntax, object model, content interpretation, rendering, and
   the Rust backend adapter.
-- Keep public thumbnail API types in `pdfrust-thumbnail`.
+- Keep public thumbnail API types in `ferrugo-thumbnail`.
 - Start implementation crates with `#![forbid(unsafe_code)]`.
 - Define crate ownership boundaries and dependency direction.
 - Add empty smoke tests so the workspace shape is validated by Cargo.
@@ -50,8 +50,8 @@ renderer behavior yet.
 Completed on 2026-06-24.
 
 - Added Rust-native workspace crates:
-  `pdfrust-syntax`, `pdfrust-object`, `pdfrust-content`, `pdfrust-render`, and
-  `pdfrust-native`.
+  `ferrugo-syntax`, `ferrugo-object`, `ferrugo-content`, `ferrugo-render`, and
+  `ferrugo-native`.
 - Added `#![forbid(unsafe_code)]` to each Rust-native implementation crate.
 - Added compile-time smoke tests for crate roles and dependency direction.
 - Added `docs/architecture/rust-native-crates.md` to document ownership

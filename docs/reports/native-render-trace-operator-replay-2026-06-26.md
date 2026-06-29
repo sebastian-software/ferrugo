@@ -17,8 +17,8 @@ document payload data.
 
 Added:
 
-- `pdfrust-cli trace-native <input.pdf>`
-- `pdfrust-cli replay-operators <trace.json>`
+- `ferrugo-cli trace-native <input.pdf>`
+- `ferrugo-cli replay-operators <trace.json>`
 
 Trace options:
 
@@ -35,7 +35,7 @@ Trace options:
 Trace command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- trace-native fixtures/generated/vector-paths.pdf \
+cargo run -p ferrugo-cli --no-default-features -- trace-native fixtures/generated/vector-paths.pdf \
   --max-edge 160 \
   --max-events 8 \
   --output target/trace-0175-vector.json
@@ -44,7 +44,7 @@ cargo run -p pdfrust-cli --no-default-features -- trace-native fixtures/generate
 Replay command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- replay-operators target/trace-0175-vector.json \
+cargo run -p ferrugo-cli --no-default-features -- replay-operators target/trace-0175-vector.json \
   --output target/replay-0175-vector.json
 ```
 
@@ -91,7 +91,7 @@ Tracing is opt-in. The disabled comparison used the existing native benchmark
 command, which does not call the trace path:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated \
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated \
   --manifest fixtures/corpus-manifest.tsv \
   --include-family report \
   --max-edge 160 \
@@ -115,8 +115,8 @@ Report-family timing:
 
 ## Validation
 
-- `cargo test -p pdfrust-cli trace -- --nocapture`
-- `cargo test -p pdfrust-cli replay_operator -- --nocapture`
+- `cargo test -p ferrugo-cli trace -- --nocapture`
+- `cargo test -p ferrugo-cli replay_operator -- --nocapture`
 - Trace smoke command on `fixtures/generated/vector-paths.pdf`.
 - Replay smoke command on the generated trace.
 - Privacy review of the trace output.

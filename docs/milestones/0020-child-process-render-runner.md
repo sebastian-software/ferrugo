@@ -52,15 +52,15 @@ process.
 
 Completed on 2026-06-24.
 
-- Added `pdfrust-cli render-isolated` as the parent command for hard timeout
+- Added `ferrugo-cli render-isolated` as the parent command for hard timeout
   enforcement.
-- Added private `pdfrust-cli render-worker` execution for one direct PDFium
+- Added private `ferrugo-cli render-worker` execution for one direct PDFium
   render job.
 - The parent writes through a temporary output path, renames only after worker
   success, and removes temporary output on failure.
 - Worker timeout maps to `render error [timeout]: thumbnail rendering timed out`.
 - Live validation against the local PDFium dylib:
-  - success: `target/pdfrust-thumbnails/text-page-isolated-256.png`, 256x137,
+  - success: `target/ferrugo-thumbnails/text-page-isolated-256.png`, 256x137,
     SHA-256 `1711931704d73467a89f35f4ff523dabecd3b1bf4f4716924e350c4dfc957593`.
   - timeout: `--timeout 0` exits with `timeout` and leaves no final output
     artifact.

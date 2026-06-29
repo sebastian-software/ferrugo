@@ -49,7 +49,7 @@ where full font rendering is not ready.
 Completed with the `feat: capture positioned text runs` change.
 
 - Added `TextDisplayItem`, `FontDescriptor`, `FontResources`, and
-  `build_text_display_list` to `pdfrust-render`.
+  `build_text_display_list` to `ferrugo-render`.
 - Implemented text-state handling for `BT`, `ET`, `Tf`, `Td`, `Tm`, `Tj`, and
   `TJ`.
 - Added lightweight ASCII literal-string decoding with explicit unsupported
@@ -61,4 +61,4 @@ Completed with the `feat: capture positioned text runs` change.
   unsupported hex text, and text-run limits.
 - Validation:
   - `cargo fmt --check`
-  - `cargo test -p pdfrust-render`
+  - `cargo test -p ferrugo-render`

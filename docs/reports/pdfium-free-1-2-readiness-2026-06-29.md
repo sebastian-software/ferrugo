@@ -101,7 +101,7 @@ Result: passed.
 This covered native-only check/test, plugin-free distribution, PDFium
 quarantine, CLI package file inspection, leaf package dry-runs, and all-features
 Clippy. Registry-backed workspace verification remains optional and was skipped
-because `PDFRUST_NATIVE_RELEASE_VERIFY_REGISTRY` was not set.
+because `FERRUGO_NATIVE_RELEASE_VERIFY_REGISTRY` was not set.
 
 The plugin-free scan initially produced a false positive by matching
 `hyperlink` as the `hyper` crate. The script now uses word boundaries for

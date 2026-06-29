@@ -87,13 +87,13 @@ chart-callout geometry.
 
 ```text
 cargo fmt --check
-git diff --check -- crates/pdfrust-native/src/lib.rs fixtures/corpus-manifest.tsv fixtures/presentation-slide-manifest.tsv scripts/generate_fixtures.py
+git diff --check -- crates/ferrugo-native/src/lib.rs fixtures/corpus-manifest.tsv fixtures/presentation-slide-manifest.tsv scripts/generate_fixtures.py
 cargo check --workspace
-cargo test -p pdfrust-native presentation_slide -- --nocapture
+cargo test -p ferrugo-native presentation_slide -- --nocapture
 cargo test --workspace
 cargo test --workspace --no-default-features
 cargo clippy --workspace --all-targets --all-features -- -D warnings
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/presentation-slide-manifest.tsv --include-family title-slide --include-family image-slide --include-family chart-slide --include-family notes-page --fail-on-fallback --max-edge 160 --output target/presentation-0122-supported-gate.json
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/presentation-slide-manifest.tsv --include-family title-slide --include-family image-slide --include-family chart-slide --include-family notes-page --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/presentation-0122-benchmark.json
-PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/presentation-slide-manifest.tsv --include-family title-slide --include-family image-slide --include-family chart-slide --include-family notes-page --max-edge 160 --max-mae 2.0 --max-p95 16 --max-changed-ratio 0.05 --output target/presentation-0122-visual-diff.json
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/presentation-slide-manifest.tsv --include-family title-slide --include-family image-slide --include-family chart-slide --include-family notes-page --fail-on-fallback --max-edge 160 --output target/presentation-0122-supported-gate.json
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/presentation-slide-manifest.tsv --include-family title-slide --include-family image-slide --include-family chart-slide --include-family notes-page --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/presentation-0122-benchmark.json
+FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/presentation-slide-manifest.tsv --include-family title-slide --include-family image-slide --include-family chart-slide --include-family notes-page --max-edge 160 --max-mae 2.0 --max-p95 16 --max-changed-ratio 0.05 --output target/presentation-0122-visual-diff.json
 ```

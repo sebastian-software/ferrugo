@@ -5,7 +5,7 @@ Milestone: 0174
 ## Summary
 
 Promoted the native unsupported-feature buckets into the backend-neutral
-`pdfrust-thumbnail` facade as stable diagnostic constants. The high-level public
+`ferrugo-thumbnail` facade as stable diagnostic constants. The high-level public
 error class remains `unsupported`; the bucket refines it for telemetry,
 support decisions, and explicit alternate-renderer routing.
 
@@ -16,8 +16,8 @@ so runtime behavior and documentation share one source of truth.
 
 Added:
 
-- `pdfrust_thumbnail::unsupported_feature_buckets`
-- `pdfrust_thumbnail::STABLE_UNSUPPORTED_FEATURE_BUCKETS`
+- `ferrugo_thumbnail::unsupported_feature_buckets`
+- `ferrugo_thumbnail::STABLE_UNSUPPORTED_FEATURE_BUCKETS`
 
 The stable bucket set covers:
 
@@ -67,7 +67,7 @@ representative unsupported boundaries:
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated \
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated \
   --manifest fixtures/corpus-manifest.tsv \
   --include-family scan \
   --include-family mixed-layout \
@@ -99,8 +99,8 @@ Fallback buckets:
 
 ## Validation
 
-- `cargo test -p pdfrust-thumbnail unsupported_feature_buckets -- --nocapture`
-- `cargo test -p pdfrust-native typed_unsupported_boundary -- --nocapture`
+- `cargo test -p ferrugo-thumbnail unsupported_feature_buckets -- --nocapture`
+- `cargo test -p ferrugo-native typed_unsupported_boundary -- --nocapture`
 - Unsupported corpus classification with `summarize-fallbacks`.
 - `cargo test --workspace --no-default-features`
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`

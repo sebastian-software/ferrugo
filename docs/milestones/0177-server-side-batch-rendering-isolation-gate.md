@@ -77,6 +77,6 @@ Recorded the gate evidence in
 
 Validation completed:
 
-- `cargo test -p pdfrust-cli batch_benchmark -- --nocapture`
+- `cargo test -p ferrugo-cli batch_benchmark -- --nocapture`
 - server batch isolation gate with `--fail-on-budget`
 - server batch cancellation gate with `--cancel-after-jobs 5`

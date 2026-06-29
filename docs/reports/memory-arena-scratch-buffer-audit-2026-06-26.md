@@ -68,11 +68,11 @@ scratch-retention slice does not attempt to change visual fidelity.
 
 ```text
 cargo fmt --check
-cargo test -p pdfrust-render text_raster_scratch -- --nocapture
-cargo test -p pdfrust-render rasterize_text -- --nocapture
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/low-memory-profile-manifest.tsv --include-family common --include-family scan --include-family vector-stress --include-family repeated-resources --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --native-profile low-memory --output target/scratch-0158-low-memory-benchmark.json
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/low-memory-profile-manifest.tsv --include-family common --include-family scan --include-family vector-stress --include-family repeated-resources --fail-on-fallback --max-edge 160 --native-profile low-memory --output target/scratch-0158-supported-gate.json
-PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/low-memory-profile-manifest.tsv --include-family common --include-family repeated-resources --max-edge 160 --max-mae 2.0 --max-p95 16 --max-changed-ratio 0.05 --output target/scratch-0158-visual-diff.json
+cargo test -p ferrugo-render text_raster_scratch -- --nocapture
+cargo test -p ferrugo-render rasterize_text -- --nocapture
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/low-memory-profile-manifest.tsv --include-family common --include-family scan --include-family vector-stress --include-family repeated-resources --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --native-profile low-memory --output target/scratch-0158-low-memory-benchmark.json
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/low-memory-profile-manifest.tsv --include-family common --include-family scan --include-family vector-stress --include-family repeated-resources --fail-on-fallback --max-edge 160 --native-profile low-memory --output target/scratch-0158-supported-gate.json
+FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/low-memory-profile-manifest.tsv --include-family common --include-family repeated-resources --max-edge 160 --max-mae 2.0 --max-p95 16 --max-changed-ratio 0.05 --output target/scratch-0158-visual-diff.json
 cargo test --workspace --no-default-features
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 ```

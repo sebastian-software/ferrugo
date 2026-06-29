@@ -60,8 +60,8 @@ Completed 2026-06-26.
 
 Validation:
 
-- `cargo test -p pdfrust-native high_dpi -- --nocapture`
-- `cargo test -p pdfrust-native native_page_cache_key_should_isolate_high_dpi_scale -- --nocapture`
+- `cargo test -p ferrugo-native high_dpi -- --nocapture`
+- `cargo test -p ferrugo-native native_page_cache_key_should_isolate_high_dpi_scale -- --nocapture`
 - High-DPI native supported gate, benchmark, batch memory profile, and visual
   comparison subset.
 - `cargo test --workspace --no-default-features`

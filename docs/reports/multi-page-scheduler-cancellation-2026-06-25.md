@@ -63,13 +63,13 @@ Focused behavior covered by tests:
 - `cargo fmt --check`
 - `cargo check --workspace`
 - `cargo check --workspace --no-default-features`
-- `cargo test -p pdfrust-native parallel -- --nocapture`
-- `cargo test -p pdfrust-native`
+- `cargo test -p ferrugo-native parallel -- --nocapture`
+- `cargo test -p ferrugo-native`
 - `cargo test --workspace`
 - `cargo test --workspace --no-default-features`
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
-- `cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/multipage-0115-benchmark.json`
-- `cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --include-family browser-print --include-family office-export --include-family form --fail-on-fallback --max-edge 160 --output target/multipage-0115-supported-gate.json`
+- `cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/multipage-0115-benchmark.json`
+- `cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --include-family browser-print --include-family office-export --include-family form --fail-on-fallback --max-edge 160 --output target/multipage-0115-supported-gate.json`
 
 ## Follow-Ups
 

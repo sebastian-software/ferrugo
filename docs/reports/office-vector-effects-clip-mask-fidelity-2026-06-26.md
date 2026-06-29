@@ -46,7 +46,7 @@ The four new generated PDFs are also included in the main corpus manifest under
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated \
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated \
   --manifest fixtures/office-vector-effects-manifest.tsv \
   --include-family grouped-shapes \
   --include-family nested-clips \
@@ -68,7 +68,7 @@ Result:
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated \
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated \
   --manifest fixtures/office-vector-effects-manifest.tsv \
   --include-family nested-clips \
   --include-family clipped-transparency \
@@ -91,9 +91,9 @@ Result:
 Command:
 
 ```sh
-PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib \
-DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib \
-cargo run -p pdfrust-cli --features pdfium -- visual-diff fixtures/generated \
+FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib \
+DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib \
+cargo run -p ferrugo-cli --features pdfium -- visual-diff fixtures/generated \
   --manifest fixtures/office-vector-effects-manifest.tsv \
   --include-family grouped-shapes \
   --include-family nested-clips \
@@ -125,8 +125,8 @@ for luminosity soft masks or unsupported blend behavior.
 
 Passed:
 
-- `cargo test -p pdfrust-native office_vector -- --nocapture`
-- `cargo test -p pdfrust-native clip_transparency -- --nocapture`
+- `cargo test -p ferrugo-native office_vector -- --nocapture`
+- `cargo test -p ferrugo-native clip_transparency -- --nocapture`
 - Native supported gate above.
 - Clip/memory benchmark above.
 - Maintainer PDFium visual comparison above.

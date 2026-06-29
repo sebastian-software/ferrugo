@@ -108,15 +108,15 @@ Commands run:
 
 ```sh
 cargo fmt --check
-cargo test -p pdfrust-render ext_graphics_state_resources -- --nocapture
-cargo test -p pdfrust-native transparency -- --nocapture
-cargo test -p pdfrust-native blend_mode -- --nocapture
-cargo test -p pdfrust-native isolated_alpha_group -- --nocapture
-cargo test -p pdfrust-native extgstate_luminosity -- --nocapture
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/transparency-conformance-manifest.tsv --include-family alpha --include-family group --include-family blend --include-family image-soft-mask --fail-on-fallback --max-edge 160 --output target/transparency-0138-supported-gate.json
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/transparency-conformance-manifest.tsv --include-family unsupported-soft-mask --include-family unsupported-blend --max-edge 160 --output target/transparency-0138-unsupported-gate.json
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/transparency-conformance-manifest.tsv --include-family alpha --include-family group --include-family blend --include-family image-soft-mask --include-family unsupported-soft-mask --include-family unsupported-blend --iterations 2 --max-edge 160 --max-ms 1000 --max-output-bytes 1048576 --output target/transparency-0138-benchmark.json
-PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/transparency-conformance-manifest.tsv --include-family alpha --include-family group --include-family blend --include-family image-soft-mask --include-family unsupported-soft-mask --include-family unsupported-blend --max-edge 160 --max-mae 2.0 --max-p95 16 --max-changed-ratio 0.05 --output target/transparency-0138-visual-diff.json
+cargo test -p ferrugo-render ext_graphics_state_resources -- --nocapture
+cargo test -p ferrugo-native transparency -- --nocapture
+cargo test -p ferrugo-native blend_mode -- --nocapture
+cargo test -p ferrugo-native isolated_alpha_group -- --nocapture
+cargo test -p ferrugo-native extgstate_luminosity -- --nocapture
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/transparency-conformance-manifest.tsv --include-family alpha --include-family group --include-family blend --include-family image-soft-mask --fail-on-fallback --max-edge 160 --output target/transparency-0138-supported-gate.json
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/transparency-conformance-manifest.tsv --include-family unsupported-soft-mask --include-family unsupported-blend --max-edge 160 --output target/transparency-0138-unsupported-gate.json
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/transparency-conformance-manifest.tsv --include-family alpha --include-family group --include-family blend --include-family image-soft-mask --include-family unsupported-soft-mask --include-family unsupported-blend --iterations 2 --max-edge 160 --max-ms 1000 --max-output-bytes 1048576 --output target/transparency-0138-benchmark.json
+FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/transparency-conformance-manifest.tsv --include-family alpha --include-family group --include-family blend --include-family image-soft-mask --include-family unsupported-soft-mask --include-family unsupported-blend --max-edge 160 --max-mae 2.0 --max-p95 16 --max-changed-ratio 0.05 --output target/transparency-0138-visual-diff.json
 cargo check --workspace
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace

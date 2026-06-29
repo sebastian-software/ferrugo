@@ -3,8 +3,8 @@
 Status: supported for generated fixture coverage.
 Date: 2026-06-24.
 
-The Rust-native backend lives in `crates/pdfrust-native` and implements the same
-`pdfrust-thumbnail` facade traits as the PDFium backend:
+The Rust-native backend lives in `crates/ferrugo-native` and implements the same
+`ferrugo-thumbnail` facade traits as the PDFium backend:
 
 - `ThumbnailBackend` for single-page RGBA thumbnail rendering.
 - `DocumentMetadataBackend` for page-count and page-size inspection.
@@ -12,7 +12,7 @@ The Rust-native backend lives in `crates/pdfrust-native` and implements the same
 Callers can switch between `PdfiumBackend` and `NativeBackend` without changing
 the facade input or output types. The native backend returns raw RGBA thumbnail
 buffers through `Thumbnail::rgba`; CLI PNG encoding remains owned by
-`pdfrust-cli`, matching the PDFium backend path.
+`ferrugo-cli`, matching the PDFium backend path.
 
 ## Supported Contract
 
@@ -29,8 +29,8 @@ buffers through `Thumbnail::rgba`; CLI PNG encoding remains owned by
 
 ## API And Semver Policy
 
-The native consumer API is the `pdfrust-thumbnail` facade plus
-`pdfrust-native::NativeBackend`. PDFium types, handles, and fallback state are
+The native consumer API is the `ferrugo-thumbnail` facade plus
+`ferrugo-native::NativeBackend`. PDFium types, handles, and fallback state are
 not part of this boundary. Public error classes, default thumbnail options, and
 native preview entry points are covered by the API policy in
 `docs/policies/native-renderer-api-semver.md`.
@@ -609,8 +609,8 @@ documents should stay diagnosable.
 Use native directly:
 
 ```sh
-cargo run -p pdfrust-cli -- render-native fixtures/generated/text-page.pdf \
-  --output target/pdfrust-thumbnails/text-page-native.png \
+cargo run -p ferrugo-cli -- render-native fixtures/generated/text-page.pdf \
+  --output target/ferrugo-thumbnails/text-page-native.png \
   --page-index 0 \
   --max-edge 1024 \
   --background '#ffffff' \
@@ -620,8 +620,8 @@ cargo run -p pdfrust-cli -- render-native fixtures/generated/text-page.pdf \
 Use native-first automatic rendering for supported categories:
 
 ```sh
-cargo run -p pdfrust-cli -- render fixtures/generated/text-page.pdf \
-  --output target/pdfrust-thumbnails/text-page-auto.png \
+cargo run -p ferrugo-cli -- render fixtures/generated/text-page.pdf \
+  --output target/ferrugo-thumbnails/text-page-auto.png \
   --page-index 0 \
   --max-edge 1024 \
   --background '#ffffff' \
@@ -645,10 +645,10 @@ commands are maintainer comparison tooling, not runtime fallback paths.
 Summarize a local corpus without rendering PDFium output:
 
 ```sh
-cargo run -p pdfrust-cli -- summarize-fallbacks fixtures/generated \
+cargo run -p ferrugo-cli -- summarize-fallbacks fixtures/generated \
   --manifest fixtures/corpus-manifest.tsv \
   --max-edge 120 \
-  --output target/pdfrust-thumbnails/fallback-summary.json
+  --output target/ferrugo-thumbnails/fallback-summary.json
 ```
 
 The summary counts `native_rendered`, `fallback_required`,
@@ -658,7 +658,7 @@ native-only. Add one or more `--include-family <family>` arguments with a
 manifest to run a supported-category native-only gate:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated \
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated \
   --manifest fixtures/corpus-manifest.tsv \
   --include-family browser-print \
   --include-family office-export \
@@ -680,16 +680,16 @@ outside the document trust boundary. See
 Extract committed fixture metadata with page sizes and manifest tags:
 
 ```sh
-cargo run -p pdfrust-cli -- extract-corpus-metadata fixtures/generated \
+cargo run -p ferrugo-cli -- extract-corpus-metadata fixtures/generated \
   --manifest fixtures/corpus-manifest.tsv \
-  --output target/pdfrust-thumbnails/corpus-metadata.json
+  --output target/ferrugo-thumbnails/corpus-metadata.json
 ```
 
 Compare metadata with PDFium when the local PDFium environment is available:
 
 ```sh
-cargo run -p pdfrust-cli --features pdfium -- compare-metadata fixtures/generated/text-page.pdf \
-  --output target/pdfrust-thumbnails/text-page-metadata-comparison.json
+cargo run -p ferrugo-cli --features pdfium -- compare-metadata fixtures/generated/text-page.pdf \
+  --output target/ferrugo-thumbnails/text-page-metadata-comparison.json
 ```
 
 The comparison JSON includes `rust_native_memory`, which records the default

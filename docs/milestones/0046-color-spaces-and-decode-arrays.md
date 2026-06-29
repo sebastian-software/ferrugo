@@ -56,7 +56,7 @@ typical thumbnails.
 - Added deterministic `cmyk-image.pdf` and `indexed-image.pdf` fixtures with
   native backend coverage.
 - Validation: `cargo fmt --check`, `cargo check`, `cargo test`,
-  `cargo test -p pdfrust-render -p pdfrust-native`,
+  `cargo test -p ferrugo-render -p ferrugo-native`,
   `cargo clippy --all-targets --all-features -- -D warnings`, native CLI
   smokes for `cmyk-image.pdf` and `indexed-image.pdf`, and PDFium/native pixel
   comparisons:

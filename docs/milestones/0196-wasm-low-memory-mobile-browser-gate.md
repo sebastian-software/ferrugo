@@ -64,7 +64,7 @@ Validation:
 
 - `cargo fmt --check`
 - `cargo check --workspace --no-default-features`
-- `cargo test -p pdfrust-wasm-smoke --no-default-features -- --nocapture`
-- `PDFRUST_WASM_REPORT=target/wasm-0196-mobile-smoke.json bash scripts/check_wasm_smoke.sh`
+- `cargo test -p ferrugo-wasm-smoke --no-default-features -- --nocapture`
+- `FERRUGO_WASM_REPORT=target/wasm-0196-mobile-smoke.json bash scripts/check_wasm_smoke.sh`
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
 - `cargo test --workspace --no-default-features`

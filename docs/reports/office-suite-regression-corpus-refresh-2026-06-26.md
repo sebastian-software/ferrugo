@@ -23,7 +23,7 @@ New fixtures:
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --include-family office-export --fail-on-fallback --max-edge 160 --output target/office-0145-supported-gate.json
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --include-family office-export --fail-on-fallback --max-edge 160 --output target/office-0145-supported-gate.json
 ```
 
 Result:
@@ -37,7 +37,7 @@ Result:
 Command:
 
 ```sh
-PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/corpus-manifest.tsv --include-family office-export --max-edge 120 --max-mae 2.0 --max-p95 16 --max-changed-ratio 0.05 --output target/office-0145-visual-diff.json
+FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/corpus-manifest.tsv --include-family office-export --max-edge 120 --max-mae 2.0 --max-p95 16 --max-changed-ratio 0.05 --output target/office-0145-visual-diff.json
 ```
 
 Result:
@@ -90,9 +90,9 @@ Commands run:
 
 ```sh
 python3 scripts/generate_fixtures.py
-cargo test -p pdfrust-cli corpus_manifest -- --nocapture
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --include-family office-export --fail-on-fallback --max-edge 160 --output target/office-0145-supported-gate.json
-PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/corpus-manifest.tsv --include-family office-export --max-edge 120 --max-mae 2.0 --max-p95 16 --max-changed-ratio 0.05 --output target/office-0145-visual-diff.json
+cargo test -p ferrugo-cli corpus_manifest -- --nocapture
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --include-family office-export --fail-on-fallback --max-edge 160 --output target/office-0145-supported-gate.json
+FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/corpus-manifest.tsv --include-family office-export --max-edge 120 --max-mae 2.0 --max-p95 16 --max-changed-ratio 0.05 --output target/office-0145-visual-diff.json
 find fixtures/generated -name '*.pdf' -size +512k -print
 wc -c fixtures/generated/office-report-header-footer-link.pdf fixtures/generated/office-spreadsheet-chart-comments.pdf fixtures/generated/office-presentation-handout.pdf
 ```

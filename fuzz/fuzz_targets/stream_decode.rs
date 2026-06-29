@@ -1,6 +1,6 @@
-use pdfrust_fuzz::run_target;
-use pdfrust_object::{parse_indirect_object, ObjectValue, StreamDecodeOptions};
-use pdfrust_syntax::PdfBytes;
+use ferrugo_fuzz::run_target;
+use ferrugo_object::{parse_indirect_object, ObjectValue, StreamDecodeOptions};
+use ferrugo_syntax::PdfBytes;
 
 fn main() {
     run_target(

@@ -30,7 +30,7 @@ family for broader corpus coverage.
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/font-subset-manifest.tsv --include-family truetype-subset --include-family cff-subset --include-family cid-subset --include-family type3-subset --include-family missing-font-subset --fail-on-fallback --max-edge 160 --output target/font-subset-0136-supported-gate.json
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/font-subset-manifest.tsv --include-family truetype-subset --include-family cff-subset --include-family cid-subset --include-family type3-subset --include-family missing-font-subset --fail-on-fallback --max-edge 160 --output target/font-subset-0136-supported-gate.json
 ```
 
 Summary:
@@ -50,7 +50,7 @@ Every family reported one native render and a pass rate of `1.000`.
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/font-subset-manifest.tsv --include-family truetype-subset --include-family cff-subset --include-family cid-subset --include-family type3-subset --include-family missing-font-subset --iterations 2 --max-edge 160 --max-ms 1000 --max-output-bytes 1048576 --output target/font-subset-0136-benchmark.json
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/font-subset-manifest.tsv --include-family truetype-subset --include-family cff-subset --include-family cid-subset --include-family type3-subset --include-family missing-font-subset --iterations 2 --max-edge 160 --max-ms 1000 --max-output-bytes 1048576 --output target/font-subset-0136-benchmark.json
 ```
 
 Summary:
@@ -80,9 +80,9 @@ path rendering, but it remains well under the 1000 ms budget.
 ## Validation
 
 - `cargo fmt --check`
-- `cargo test -p pdfrust-native font_subset_regression -- --nocapture`
-- `cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks ...`
-- `cargo run -p pdfrust-cli --no-default-features -- benchmark-native ...`
+- `cargo test -p ferrugo-native font_subset_regression -- --nocapture`
+- `cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks ...`
+- `cargo run -p ferrugo-cli --no-default-features -- benchmark-native ...`
 - `cargo check --workspace`
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
 - `cargo test --workspace`

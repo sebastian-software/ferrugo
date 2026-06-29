@@ -60,9 +60,9 @@ artifacts across repeated thumbnail requests.
 - Report: `docs/reports/page-cache-reuse-policy-2026-06-25.md`.
 - Validation:
   - `cargo fmt --check`
-  - `cargo test -p pdfrust-native native_page_cache -- --nocapture`
-  - `cargo test -p pdfrust-cli repeat_benchmark -- --nocapture`
-  - `cargo run -p pdfrust-cli --no-default-features -- benchmark-repeat-native fixtures/generated --manifest fixtures/page-cache-policy-manifest.tsv --include-family small --include-family business --include-family repeated-resources --include-family vector-stress --repetitions 3 --max-edge 160 --max-first-ms 1000 --max-repeat-mean-ms 1000 --max-errors 0 --fail-on-budget --output target/page-cache-0134-repeat-benchmark.json`
+  - `cargo test -p ferrugo-native native_page_cache -- --nocapture`
+  - `cargo test -p ferrugo-cli repeat_benchmark -- --nocapture`
+  - `cargo run -p ferrugo-cli --no-default-features -- benchmark-repeat-native fixtures/generated --manifest fixtures/page-cache-policy-manifest.tsv --include-family small --include-family business --include-family repeated-resources --include-family vector-stress --repetitions 3 --max-edge 160 --max-first-ms 1000 --max-repeat-mean-ms 1000 --max-errors 0 --fail-on-budget --output target/page-cache-0134-repeat-benchmark.json`
   - `cargo check --workspace`
   - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
   - `cargo test --workspace`

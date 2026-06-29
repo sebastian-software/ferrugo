@@ -76,16 +76,16 @@ Completed:
   are documented in `docs/policies/acroform-appearances.md`; native unsupported
   diagnostics can use the `form.acroform` bucket recorded in `docs/errors.md`.
 - Current validation:
-  - `cargo test -p pdfrust-native acroform_text_field -- --nocapture`
-  - `cargo test -p pdfrust-native acroform_checkbox -- --nocapture`
-  - `cargo test -p pdfrust-native acroform_signature -- --nocapture`
+  - `cargo test -p ferrugo-native acroform_text_field -- --nocapture`
+  - `cargo test -p ferrugo-native acroform_checkbox -- --nocapture`
+  - `cargo test -p ferrugo-native acroform_signature -- --nocapture`
   - `cargo fmt --check`
   - `cargo check`
   - `cargo clippy --all-targets --all-features -- -D warnings`
   - `cargo test --quiet`
-  - `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render fixtures/generated/acroform-text-field.pdf --max-edge 140 --output target/pdfrust-thumbnails/acroform-text-field-pdfium-0053.png`
-  - `cargo run -p pdfrust-cli -- render-native fixtures/generated/acroform-text-field.pdf --max-edge 140 --output target/pdfrust-thumbnails/acroform-text-field-native-0053.png`
-  - `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render fixtures/generated/acroform-checkbox.pdf --max-edge 80 --output target/pdfrust-thumbnails/acroform-checkbox-pdfium-0053.png`
-  - `cargo run -p pdfrust-cli -- render-native fixtures/generated/acroform-checkbox.pdf --max-edge 80 --output target/pdfrust-thumbnails/acroform-checkbox-native-0053.png`
-  - `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render fixtures/generated/acroform-signature-placeholder.pdf --max-edge 160 --output target/pdfrust-thumbnails/acroform-signature-placeholder-pdfium-0053.png`
-  - `cargo run -p pdfrust-cli -- render-native fixtures/generated/acroform-signature-placeholder.pdf --max-edge 160 --output target/pdfrust-thumbnails/acroform-signature-placeholder-native-0053.png`
+  - `FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli -- render fixtures/generated/acroform-text-field.pdf --max-edge 140 --output target/ferrugo-thumbnails/acroform-text-field-pdfium-0053.png`
+  - `cargo run -p ferrugo-cli -- render-native fixtures/generated/acroform-text-field.pdf --max-edge 140 --output target/ferrugo-thumbnails/acroform-text-field-native-0053.png`
+  - `FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli -- render fixtures/generated/acroform-checkbox.pdf --max-edge 80 --output target/ferrugo-thumbnails/acroform-checkbox-pdfium-0053.png`
+  - `cargo run -p ferrugo-cli -- render-native fixtures/generated/acroform-checkbox.pdf --max-edge 80 --output target/ferrugo-thumbnails/acroform-checkbox-native-0053.png`
+  - `FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli -- render fixtures/generated/acroform-signature-placeholder.pdf --max-edge 160 --output target/ferrugo-thumbnails/acroform-signature-placeholder-pdfium-0053.png`
+  - `cargo run -p ferrugo-cli -- render-native fixtures/generated/acroform-signature-placeholder.pdf --max-edge 160 --output target/ferrugo-thumbnails/acroform-signature-placeholder-native-0053.png`

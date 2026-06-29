@@ -62,7 +62,7 @@ Added a native-only corpus dashboard maintainer flow:
 Validation completed:
 
 - `bash scripts/generate_corpus_dashboard.sh target/corpus-dashboard-0179`
-- `cargo run -p pdfrust-cli --no-default-features -- validate-local-corpus fixtures/local-corpus.example.toml --allow-missing`
+- `cargo run -p ferrugo-cli --no-default-features -- validate-local-corpus fixtures/local-corpus.example.toml --allow-missing`
 - `cargo test --workspace --no-default-features`
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
 - `cargo fmt --check`

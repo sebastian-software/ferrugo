@@ -36,7 +36,7 @@ structure-heavy, metadata-baseline, and warning-boundary cases.
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- extract-corpus-metadata fixtures/generated \
+cargo run -p ferrugo-cli --no-default-features -- extract-corpus-metadata fixtures/generated \
   --manifest fixtures/tagged-pdf-visual-manifest.tsv \
   --output target/tagged-0182-metadata.json
 ```
@@ -58,7 +58,7 @@ Focused results:
 Supported render gate:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated \
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated \
   --manifest fixtures/tagged-pdf-visual-manifest.tsv \
   --include-family tagged-report \
   --include-family tagged-form \
@@ -77,7 +77,7 @@ Result: 7 total, 7 native rendered, 0 fallback required, 0 errors.
 Benchmark gate:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated \
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated \
   --manifest fixtures/tagged-pdf-visual-manifest.tsv \
   --include-family tagged-report \
   --include-family tagged-form \
@@ -100,15 +100,15 @@ failures.
 
 The tagged visual-diff command was executed, but the local PDFium oracle library
 was not available at
-`/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib`.
+`/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib`.
 The generated artifact therefore reports 7 PDFium errors and no native errors.
 
 Command attempted:
 
 ```sh
-PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib \
-DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib \
-cargo run -p pdfrust-cli --features pdfium -- visual-diff fixtures/generated \
+FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib \
+DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib \
+cargo run -p ferrugo-cli --features pdfium -- visual-diff fixtures/generated \
   --manifest fixtures/tagged-pdf-visual-manifest.tsv \
   --include-family tagged-report \
   --include-family tagged-form \
@@ -151,7 +151,7 @@ oracle availability.
 Poppler command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- visual-diff-poppler fixtures/generated \
+cargo run -p ferrugo-cli --no-default-features -- visual-diff-poppler fixtures/generated \
   --manifest fixtures/tagged-pdf-visual-manifest.tsv \
   --include-family tagged-report \
   --include-family tagged-form \
@@ -232,7 +232,7 @@ reference path while avoiding false blockers from aspect-ratio rounding.
 Final tagged command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- visual-diff-poppler fixtures/generated \
+cargo run -p ferrugo-cli --no-default-features -- visual-diff-poppler fixtures/generated \
   --manifest fixtures/tagged-pdf-visual-manifest.tsv \
   --include-family tagged-report \
   --include-family tagged-form \
@@ -265,7 +265,7 @@ Result: 7 total, 0 exact, 7 accepted drift, 0 blockers, 0 native errors,
 Paired 0183 mixed vector/raster transparency regression command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- visual-diff-poppler fixtures/generated \
+cargo run -p ferrugo-cli --no-default-features -- visual-diff-poppler fixtures/generated \
   --manifest fixtures/mixed-vector-raster-transparency-manifest.tsv \
   --include-family browser-raster-vector \
   --include-family high-dpi-preview \
@@ -293,14 +293,14 @@ Commands run:
 ```sh
 python3 scripts/generate_fixtures.py
 cargo fmt
-cargo test -p pdfrust-native tagged_visual -- --nocapture
-cargo test -p pdfrust-native reading_order -- --nocapture
-cargo test -p pdfrust-native accessibility -- --nocapture
-cargo test -p pdfrust-cli corpus_metadata_json_should_include_manifest_and_page_size -- --nocapture
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/tagged-pdf-visual-manifest.tsv --include-family tagged-report --include-family tagged-form --include-family tagged-office --include-family tagged-invoice --include-family reading-order-warning --include-family structure-heavy --include-family metadata-baseline --fail-on-fallback --max-edge 160 --output target/tagged-0182-supported-gate.json
-cargo run -p pdfrust-cli --no-default-features -- extract-corpus-metadata fixtures/generated --manifest fixtures/tagged-pdf-visual-manifest.tsv --output target/tagged-0182-metadata.json
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/tagged-pdf-visual-manifest.tsv --include-family tagged-report --include-family tagged-form --include-family tagged-office --include-family tagged-invoice --include-family reading-order-warning --include-family structure-heavy --include-family metadata-baseline --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/tagged-0182-benchmark.json
-cargo run -p pdfrust-cli --no-default-features -- visual-diff-poppler fixtures/generated --manifest fixtures/tagged-pdf-visual-manifest.tsv --include-family tagged-report --include-family tagged-form --include-family tagged-office --include-family tagged-invoice --include-family reading-order-warning --include-family structure-heavy --include-family metadata-baseline --max-edge 160 --timeout 20 --max-mae 2.0 --max-p95 16 --max-changed-ratio 0.05 --output target/tagged-0182-poppler-visual-diff.json
+cargo test -p ferrugo-native tagged_visual -- --nocapture
+cargo test -p ferrugo-native reading_order -- --nocapture
+cargo test -p ferrugo-native accessibility -- --nocapture
+cargo test -p ferrugo-cli corpus_metadata_json_should_include_manifest_and_page_size -- --nocapture
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/tagged-pdf-visual-manifest.tsv --include-family tagged-report --include-family tagged-form --include-family tagged-office --include-family tagged-invoice --include-family reading-order-warning --include-family structure-heavy --include-family metadata-baseline --fail-on-fallback --max-edge 160 --output target/tagged-0182-supported-gate.json
+cargo run -p ferrugo-cli --no-default-features -- extract-corpus-metadata fixtures/generated --manifest fixtures/tagged-pdf-visual-manifest.tsv --output target/tagged-0182-metadata.json
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/tagged-pdf-visual-manifest.tsv --include-family tagged-report --include-family tagged-form --include-family tagged-office --include-family tagged-invoice --include-family reading-order-warning --include-family structure-heavy --include-family metadata-baseline --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/tagged-0182-benchmark.json
+cargo run -p ferrugo-cli --no-default-features -- visual-diff-poppler fixtures/generated --manifest fixtures/tagged-pdf-visual-manifest.tsv --include-family tagged-report --include-family tagged-form --include-family tagged-office --include-family tagged-invoice --include-family reading-order-warning --include-family structure-heavy --include-family metadata-baseline --max-edge 160 --timeout 20 --max-mae 2.0 --max-p95 16 --max-changed-ratio 0.05 --output target/tagged-0182-poppler-visual-diff.json
 wc -c fixtures/generated/tagged-invoice-reading-order.pdf fixtures/generated/tagged-reading-order-missing-page-context.pdf
 find fixtures/generated -name '*.pdf' -size +512k -print
 ```

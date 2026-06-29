@@ -44,7 +44,7 @@ Added `fixtures/shared-resource-cache-manifest.tsv`.
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/shared-resource-cache-manifest.tsv --include-family long-document-shared --include-family repeated-font-image --include-family repeated-image-xobject --include-family repeated-font-program --include-family shared-icc --fail-on-fallback --max-edge 160 --output target/shared-resource-cache-0188-supported-gate.json
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/shared-resource-cache-manifest.tsv --include-family long-document-shared --include-family repeated-font-image --include-family repeated-image-xobject --include-family repeated-font-program --include-family shared-icc --fail-on-fallback --max-edge 160 --output target/shared-resource-cache-0188-supported-gate.json
 ```
 
 Result:
@@ -58,7 +58,7 @@ Result:
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/shared-resource-cache-manifest.tsv --include-family long-document-shared --include-family repeated-font-image --include-family repeated-image-xobject --include-family repeated-font-program --include-family shared-icc --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/shared-resource-cache-0188-benchmark.json
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/shared-resource-cache-manifest.tsv --include-family long-document-shared --include-family repeated-font-image --include-family repeated-image-xobject --include-family repeated-font-program --include-family shared-icc --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/shared-resource-cache-0188-benchmark.json
 ```
 
 Result:
@@ -76,7 +76,7 @@ Result:
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- benchmark-batch-native fixtures/generated --manifest fixtures/shared-resource-cache-manifest.tsv --include-family long-document-shared --include-family repeated-font-image --include-family repeated-image-xobject --include-family repeated-font-program --include-family shared-icc --repetitions 2 --max-workers 2 --max-in-flight-pixels 51200 --max-p95-ms 1000 --max-errors 0 --fail-on-budget --output target/shared-resource-cache-0188-batch.json
+cargo run -p ferrugo-cli --no-default-features -- benchmark-batch-native fixtures/generated --manifest fixtures/shared-resource-cache-manifest.tsv --include-family long-document-shared --include-family repeated-font-image --include-family repeated-image-xobject --include-family repeated-font-program --include-family shared-icc --repetitions 2 --max-workers 2 --max-in-flight-pixels 51200 --max-p95-ms 1000 --max-errors 0 --fail-on-budget --output target/shared-resource-cache-0188-batch.json
 ```
 
 Result: 5 inputs, 10 jobs, 10 native rendered, 0 fallbacks, 0 errors, 0 budget
@@ -101,9 +101,9 @@ The next decoded-resource cache step should be a document-session cache with:
 Commands run:
 
 ```sh
-cargo test -p pdfrust-native parallel_renderer -- --nocapture
-cargo test -p pdfrust-native preview_partial -- --nocapture
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/shared-resource-cache-manifest.tsv --include-family long-document-shared --include-family repeated-font-image --include-family repeated-image-xobject --include-family repeated-font-program --include-family shared-icc --fail-on-fallback --max-edge 160 --output target/shared-resource-cache-0188-supported-gate.json
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/shared-resource-cache-manifest.tsv --include-family long-document-shared --include-family repeated-font-image --include-family repeated-image-xobject --include-family repeated-font-program --include-family shared-icc --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/shared-resource-cache-0188-benchmark.json
-cargo run -p pdfrust-cli --no-default-features -- benchmark-batch-native fixtures/generated --manifest fixtures/shared-resource-cache-manifest.tsv --include-family long-document-shared --include-family repeated-font-image --include-family repeated-image-xobject --include-family repeated-font-program --include-family shared-icc --repetitions 2 --max-workers 2 --max-in-flight-pixels 51200 --max-p95-ms 1000 --max-errors 0 --fail-on-budget --output target/shared-resource-cache-0188-batch.json
+cargo test -p ferrugo-native parallel_renderer -- --nocapture
+cargo test -p ferrugo-native preview_partial -- --nocapture
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/shared-resource-cache-manifest.tsv --include-family long-document-shared --include-family repeated-font-image --include-family repeated-image-xobject --include-family repeated-font-program --include-family shared-icc --fail-on-fallback --max-edge 160 --output target/shared-resource-cache-0188-supported-gate.json
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/shared-resource-cache-manifest.tsv --include-family long-document-shared --include-family repeated-font-image --include-family repeated-image-xobject --include-family repeated-font-program --include-family shared-icc --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/shared-resource-cache-0188-benchmark.json
+cargo run -p ferrugo-cli --no-default-features -- benchmark-batch-native fixtures/generated --manifest fixtures/shared-resource-cache-manifest.tsv --include-family long-document-shared --include-family repeated-font-image --include-family repeated-image-xobject --include-family repeated-font-program --include-family shared-icc --repetitions 2 --max-workers 2 --max-in-flight-pixels 51200 --max-p95-ms 1000 --max-errors 0 --fail-on-budget --output target/shared-resource-cache-0188-batch.json
 ```

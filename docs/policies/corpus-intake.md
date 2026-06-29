@@ -136,14 +136,14 @@ outputs from private samples.
 Validate local metadata with:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- validate-local-corpus \
+cargo run -p ferrugo-cli --no-default-features -- validate-local-corpus \
   fixtures/local-corpus/metadata.toml --allow-missing
 ```
 
 Use the committed synthetic-realistic manifest for shareable replacement checks:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks \
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks \
   fixtures/generated --manifest fixtures/real-world-style-manifest.tsv \
-  --max-edge 160 --output target/pdfrust-thumbnails/real-world-style-fallbacks.json
+  --max-edge 160 --output target/ferrugo-thumbnails/real-world-style-fallbacks.json
 ```

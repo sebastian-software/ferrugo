@@ -60,8 +60,8 @@ viewer-side form preview without becoming a PDF form editor.
 - Report:
   `docs/reports/form-appearance-mutation-boundary-2026-06-29.md`.
 - Validation:
-  - `cargo test -p pdfrust-native acroform -- --nocapture`
-  - `cargo test -p pdfrust-native appearance -- --nocapture`
-  - `cargo test -p pdfrust-native mutation -- --nocapture`
-  - `cargo run -p pdfrust-cli -- summarize-fallbacks fixtures/generated --manifest fixtures/form-appearance-mutation-manifest.tsv --include-family existing-appearance --include-family stale-appearance --include-family synthesized-static --fail-on-fallback --output target/form-appearance-0194-supported-gate.json`
-  - `cargo run -p pdfrust-cli -- visual-diff-poppler fixtures/generated --manifest fixtures/form-appearance-mutation-manifest.tsv --include-family existing-appearance --include-family stale-appearance --max-mae 8 --max-p95 32 --max-changed-ratio 0.15 --output target/form-appearance-0194-document-state-poppler-diff.json`
+  - `cargo test -p ferrugo-native acroform -- --nocapture`
+  - `cargo test -p ferrugo-native appearance -- --nocapture`
+  - `cargo test -p ferrugo-native mutation -- --nocapture`
+  - `cargo run -p ferrugo-cli -- summarize-fallbacks fixtures/generated --manifest fixtures/form-appearance-mutation-manifest.tsv --include-family existing-appearance --include-family stale-appearance --include-family synthesized-static --fail-on-fallback --output target/form-appearance-0194-supported-gate.json`
+  - `cargo run -p ferrugo-cli -- visual-diff-poppler fixtures/generated --manifest fixtures/form-appearance-mutation-manifest.tsv --include-family existing-appearance --include-family stale-appearance --max-mae 8 --max-p95 32 --max-changed-ratio 0.15 --output target/form-appearance-0194-document-state-poppler-diff.json`

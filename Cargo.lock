@@ -24,6 +24,77 @@ dependencies = [
 ]
 
 [[package]]
+name = "ferrugo-cli"
+version = "0.1.0"
+dependencies = [
+ "ferrugo-native",
+ "ferrugo-pdfium",
+ "ferrugo-thumbnail",
+]
+
+[[package]]
+name = "ferrugo-content"
+version = "0.1.0"
+dependencies = [
+ "ferrugo-object",
+ "ferrugo-syntax",
+]
+
+[[package]]
+name = "ferrugo-native"
+version = "0.1.0"
+dependencies = [
+ "ferrugo-content",
+ "ferrugo-object",
+ "ferrugo-render",
+ "ferrugo-syntax",
+ "ferrugo-thumbnail",
+]
+
+[[package]]
+name = "ferrugo-object"
+version = "0.1.0"
+dependencies = [
+ "ferrugo-syntax",
+ "flate2",
+]
+
+[[package]]
+name = "ferrugo-pdfium"
+version = "0.1.0"
+dependencies = [
+ "ferrugo-thumbnail",
+]
+
+[[package]]
+name = "ferrugo-render"
+version = "0.1.0"
+dependencies = [
+ "ferrugo-content",
+ "ferrugo-object",
+ "ferrugo-syntax",
+ "ferrugo-thumbnail",
+ "ttf-parser",
+ "zune-jpeg",
+]
+
+[[package]]
+name = "ferrugo-syntax"
+version = "0.1.0"
+
+[[package]]
+name = "ferrugo-thumbnail"
+version = "0.1.0"
+
+[[package]]
+name = "ferrugo-wasm-smoke"
+version = "0.1.0"
+dependencies = [
+ "ferrugo-native",
+ "ferrugo-thumbnail",
+]
+
+[[package]]
 name = "flate2"
 version = "1.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -41,77 +112,6 @@ checksum = "1fa76a2c86f704bdb222d66965fb3d63269ce38518b83cb0575fca855ebb6316"
 dependencies = [
  "adler2",
  "simd-adler32",
-]
-
-[[package]]
-name = "pdfrust-cli"
-version = "0.1.0"
-dependencies = [
- "pdfrust-native",
- "pdfrust-pdfium",
- "pdfrust-thumbnail",
-]
-
-[[package]]
-name = "pdfrust-content"
-version = "0.1.0"
-dependencies = [
- "pdfrust-object",
- "pdfrust-syntax",
-]
-
-[[package]]
-name = "pdfrust-native"
-version = "0.1.0"
-dependencies = [
- "pdfrust-content",
- "pdfrust-object",
- "pdfrust-render",
- "pdfrust-syntax",
- "pdfrust-thumbnail",
-]
-
-[[package]]
-name = "pdfrust-object"
-version = "0.1.0"
-dependencies = [
- "flate2",
- "pdfrust-syntax",
-]
-
-[[package]]
-name = "pdfrust-pdfium"
-version = "0.1.0"
-dependencies = [
- "pdfrust-thumbnail",
-]
-
-[[package]]
-name = "pdfrust-render"
-version = "0.1.0"
-dependencies = [
- "pdfrust-content",
- "pdfrust-object",
- "pdfrust-syntax",
- "pdfrust-thumbnail",
- "ttf-parser",
- "zune-jpeg",
-]
-
-[[package]]
-name = "pdfrust-syntax"
-version = "0.1.0"
-
-[[package]]
-name = "pdfrust-thumbnail"
-version = "0.1.0"
-
-[[package]]
-name = "pdfrust-wasm-smoke"
-version = "0.1.0"
-dependencies = [
- "pdfrust-native",
- "pdfrust-thumbnail",
 ]
 
 [[package]]

@@ -76,10 +76,10 @@ Validation:
 - `scripts/generate_coverage_scorecard.sh target/readiness-0220-scorecard`
 - `bash scripts/check_native_only_release.sh`
 - `bash scripts/check_fuzz_smoke.sh`
-- `env PDFRUST_SERVERLESS_OUTPUT=target/serverless-profile-0220.json PDFRUST_SERVERLESS_PACKAGE_LIST=target/serverless-profile-0220-pdfrust-cli-package-files.txt scripts/measure_serverless_profile.sh`
+- `env FERRUGO_SERVERLESS_OUTPUT=target/serverless-profile-0220.json FERRUGO_SERVERLESS_PACKAGE_LIST=target/serverless-profile-0220-ferrugo-cli-package-files.txt scripts/measure_serverless_profile.sh`
 - `bash scripts/check_scheduler_tuning_matrix.sh`
 - `bash scripts/check_low_end_reliability_matrix.sh`
 - `bash scripts/check_wasm_smoke.sh`
-- `cargo run -p pdfrust-cli --no-default-features -- visual-diff-poppler fixtures/generated --manifest fixtures/cross-producer-fusion-manifest.tsv --include-family fused-report --include-family fused-table-statement --include-family fused-form --include-family fused-scan --include-family fused-dashboard-map --max-edge 120 --max-mae 12 --max-p95 96 --max-changed-ratio 0.30 --timeout 30 --output target/readiness-0220-cross-producer-poppler.json`
+- `cargo run -p ferrugo-cli --no-default-features -- visual-diff-poppler fixtures/generated --manifest fixtures/cross-producer-fusion-manifest.tsv --include-family fused-report --include-family fused-table-statement --include-family fused-form --include-family fused-scan --include-family fused-dashboard-map --max-edge 120 --max-mae 12 --max-p95 96 --max-changed-ratio 0.30 --timeout 30 --output target/readiness-0220-cross-producer-poppler.json`
 - `cargo fmt --check`
 - `git diff --check -- docs/milestones/0220-pdfium-free-1-4-readiness-gate.md docs/milestones/README.md docs/reports/pdfium-free-1-4-readiness-2026-06-29.md`

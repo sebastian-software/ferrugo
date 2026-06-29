@@ -53,10 +53,10 @@ behavior for typical documents.
 ## Completion Notes
 
 - Completed on 2026-06-28 as a secondary WASM viewer-profile gate.
-- Reused the PDFium-free `pdfrust-wasm-smoke` package from 0132 as the current
-  viewer integration boundary. It exports `pdfrust_wasm_smoke_status` and
+- Reused the PDFium-free `ferrugo-wasm-smoke` package from 0132 as the current
+  viewer integration boundary. It exports `ferrugo_wasm_smoke_status` and
   renders a supported low-memory thumbnail without depending on PDFium,
-  native plugins, or `pdfrust-cli`.
+  native plugins, or `ferrugo-cli`.
 - Fresh gate run passed with artifact size 723687 bytes, compile 2.231 ms,
   instantiate 0.096 ms, smoke render 5.970 ms, and 96x51 output.
 - 0176 report copy: `target/wasm-0176-smoke.json` measured compile 1.028 ms,

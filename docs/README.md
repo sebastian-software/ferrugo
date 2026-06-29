@@ -1,6 +1,6 @@
 # Documentation guide
 
-This directory has a lot of history. If you are new to `pdfrust`, start with
+This directory has a lot of history. If you are new to `ferrugo`, start with
 the current runtime docs and readiness reports before reading the older planning
 material.
 
@@ -31,7 +31,7 @@ Read:
 Useful commands:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- \
+cargo run -p ferrugo-cli --no-default-features -- \
   render fixtures/generated/text-page.pdf \
   --max-edge 256 \
   --output target/text-page.png

@@ -1,6 +1,6 @@
-# pdfrust
+# ferrugo
 
-`pdfrust` is a Rust-native PDF rendering project, focused first on server-side
+`ferrugo` is a Rust-native PDF rendering project, focused first on server-side
 thumbnails and preview images.
 
 The goal is simple to say and hard to finish: render common PDFs from Rust
@@ -18,7 +18,7 @@ comparison and debugging.
 
 The native-only path is the default development and packaging target.
 
-- `pdfrust-cli` builds without PDFium by default.
+- `ferrugo-cli` builds without PDFium by default.
 - `render` and `render-auto` use the Rust-native backend.
 - PDFium runtime fallback has been removed from normal rendering.
 - PDFium comparison commands remain available behind `--features pdfium`.
@@ -65,7 +65,7 @@ cargo test --workspace --no-default-features
 Render a generated fixture with the native backend:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- \
+cargo run -p ferrugo-cli --no-default-features -- \
   render fixtures/generated/text-page.pdf \
   --max-edge 256 \
   --output target/text-page.png
@@ -74,7 +74,7 @@ cargo run -p pdfrust-cli --no-default-features -- \
 Force the native backend explicitly:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- \
+cargo run -p ferrugo-cli --no-default-features -- \
   render-native fixtures/generated/text-page.pdf \
   --max-edge 256 \
   --output target/text-page-native.png
@@ -95,15 +95,15 @@ The workspace is split into small crates so each layer can be tested on its own.
 
 | Crate | Role |
 | --- | --- |
-| `pdfrust-thumbnail` | Public thumbnail facade, shared errors, options, and output types. |
-| `pdfrust-native` | Rust-native PDF backend for metadata inspection and thumbnail rendering. |
-| `pdfrust-syntax` | Low-level PDF byte parsing. |
-| `pdfrust-object` | Object graph, xref, streams, and document structure. |
-| `pdfrust-content` | Content stream tokenization and operator handling. |
-| `pdfrust-render` | Display-list and raster rendering pieces. |
-| `pdfrust-cli` | Local CLI for rendering, corpus analysis, benchmarks, and reports. |
-| `pdfrust-pdfium` | Optional PDFium backend for maintainer comparison workflows. |
-| `pdfrust-wasm-smoke` | Small WASM smoke crate for secondary compatibility checks. |
+| `ferrugo-thumbnail` | Public thumbnail facade, shared errors, options, and output types. |
+| `ferrugo-native` | Rust-native PDF backend for metadata inspection and thumbnail rendering. |
+| `ferrugo-syntax` | Low-level PDF byte parsing. |
+| `ferrugo-object` | Object graph, xref, streams, and document structure. |
+| `ferrugo-content` | Content stream tokenization and operator handling. |
+| `ferrugo-render` | Display-list and raster rendering pieces. |
+| `ferrugo-cli` | Local CLI for rendering, corpus analysis, benchmarks, and reports. |
+| `ferrugo-pdfium` | Optional PDFium backend for maintainer comparison workflows. |
+| `ferrugo-wasm-smoke` | Small WASM smoke crate for secondary compatibility checks. |
 
 The public boundary is the thumbnail facade and native backend. PDFium handles,
 fallback state, and comparison-only commands are not part of the normal runtime
@@ -113,7 +113,7 @@ API.
 
 PDFium is treated as a behavior oracle, not as the architecture to copy.
 
-That distinction matters. `pdfrust` uses Rust ownership, typed errors, explicit
+That distinction matters. `ferrugo` uses Rust ownership, typed errors, explicit
 budgets, and narrow unsafe boundaries. When PDFium or Poppler are used, they are
 used to answer "what should this document look like?" or "where did the native
 renderer drift?", not to define the public Rust API.
@@ -121,14 +121,14 @@ renderer drift?", not to define the public Rust API.
 To build and run PDFium comparison commands, enable the feature explicitly:
 
 ```sh
-cargo build -p pdfrust-cli --features pdfium
-cargo test -p pdfrust-cli --features pdfium
+cargo build -p ferrugo-cli --features pdfium
+cargo test -p ferrugo-cli --features pdfium
 ```
 
 Then point the CLI at a local PDFium dynamic library:
 
 ```sh
-export PDFRUST_PDFIUM_LIBRARY="/path/to/libpdfium.dylib"
+export FERRUGO_PDFIUM_LIBRARY="/path/to/libpdfium.dylib"
 export DYLD_LIBRARY_PATH="/path/to/pdfium/lib"
 ```
 

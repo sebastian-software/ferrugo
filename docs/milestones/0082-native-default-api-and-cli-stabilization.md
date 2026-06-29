@@ -63,8 +63,8 @@ Validation passed:
 - `cargo fmt --check`
 - `cargo check`
 - `cargo test`
-- `cargo test -p pdfrust-cli --no-default-features`
-- `cargo test -p pdfrust-cli --features pdfium`
+- `cargo test -p ferrugo-cli --no-default-features`
+- `cargo test -p ferrugo-cli --features pdfium`
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
 
 Implementation commit:

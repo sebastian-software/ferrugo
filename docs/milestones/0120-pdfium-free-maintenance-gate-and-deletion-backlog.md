@@ -46,10 +46,10 @@ kept as maintainer-only tooling, or retained for unsupported categories.
 
 ## Completion Notes
 
-- Confirmed `cargo tree -p pdfrust-cli --no-default-features` has no
-  `pdfrust-pdfium` dependency edge.
-- Confirmed `cargo tree -p pdfrust-cli --features pdfium` adds
-  `pdfrust-pdfium` only through the explicit feature.
+- Confirmed `cargo tree -p ferrugo-cli --no-default-features` has no
+  `ferrugo-pdfium` dependency edge.
+- Confirmed `cargo tree -p ferrugo-cli --features pdfium` adds
+  `ferrugo-pdfium` only through the explicit feature.
 - Added `docs/backlogs/pdfium-free-maintenance-backlog.md` with keep, delete,
   and deferred-deletion decisions plus rollback notes.
 - Updated `docs/packaging.md` with the 0120 native-only maintenance gate and
@@ -57,6 +57,6 @@ kept as maintainer-only tooling, or retained for unsupported categories.
 - Native supported-family gate passed with 46/46 native renders, 0 fallbacks,
   and 0 errors.
 - CLI package dry-run is blocked by unpublished internal crates, not by PDFium;
-  `pdfrust-syntax` and `pdfrust-thumbnail` leaf package dry-runs pass.
+  `ferrugo-syntax` and `ferrugo-thumbnail` leaf package dry-runs pass.
 - PDFium-enabled benchmark remains maintainer evidence only.
 - Report: `docs/reports/pdfium-free-maintenance-gate-2026-06-25.md`.

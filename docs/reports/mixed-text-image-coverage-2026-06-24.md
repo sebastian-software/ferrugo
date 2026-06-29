@@ -8,21 +8,21 @@ text, image XObjects, and vector marks in one content stream.
 ## Commands
 
 ```sh
-PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib \
-DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib \
-cargo run -p pdfrust-cli -- summarize-fallbacks fixtures/generated \
+FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib \
+DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib \
+cargo run -p ferrugo-cli -- summarize-fallbacks fixtures/generated \
   --manifest fixtures/corpus-manifest.tsv \
   --max-edge 120 \
-  --output target/pdfrust-thumbnails/fallback-summary-0067.json
+  --output target/ferrugo-thumbnails/fallback-summary-0067.json
 
-cargo run -p pdfrust-cli -- render-native fixtures/generated/mixed-text-image.pdf \
-  --output target/pdfrust-thumbnails/mixed-text-image-native.png \
+cargo run -p ferrugo-cli -- render-native fixtures/generated/mixed-text-image.pdf \
+  --output target/ferrugo-thumbnails/mixed-text-image-native.png \
   --max-edge 220
 
-PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib \
-DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib \
-cargo run -p pdfrust-cli -- render-pdfium fixtures/generated/mixed-text-image.pdf \
-  --output target/pdfrust-thumbnails/mixed-text-image-pdfium.png \
+FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib \
+DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib \
+cargo run -p ferrugo-cli -- render-pdfium fixtures/generated/mixed-text-image.pdf \
+  --output target/ferrugo-thumbnails/mixed-text-image-pdfium.png \
   --max-edge 220
 ```
 

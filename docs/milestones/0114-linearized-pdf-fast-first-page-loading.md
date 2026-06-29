@@ -49,7 +49,7 @@ preserving safe fallback behavior for malformed files.
 Completed 2026-06-25.
 
 - Added typed linearization dictionary metadata and loader metrics in
-  `pdfrust-object`.
+  `ferrugo-object`.
 - Added a bounded first-page classic loader that only parses objects before the
   validated `/E` boundary.
 - Wired native page-zero rendering to try the first-page loader and fall back

@@ -48,7 +48,7 @@ Parse the core PDF primitive syntax needed by later object loading.
 Completed on 2026-06-24.
 
 - Added `PdfPrimitive`, `PdfNumber`, `PdfName`, and `PdfString` in
-  `pdfrust-syntax`.
+  `ferrugo-syntax`.
 - Added `parse_primitive` for null, booleans, integers, reals, names, literal
   strings, hexadecimal strings, arrays, and dictionaries.
 - Added whitespace and comment skipping for primitive parsing.

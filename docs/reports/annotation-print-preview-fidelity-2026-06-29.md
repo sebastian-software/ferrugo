@@ -24,7 +24,7 @@ with the public `annotation.appearance` bucket.
 The CLI exposes this for direct rendering through:
 
 ```sh
-cargo run -p pdfrust-cli -- render-native \
+cargo run -p ferrugo-cli -- render-native \
   fixtures/generated/annotation-print-preview-flags.pdf \
   --output target/annotation-print-preview.png \
   --annotation-mode print
@@ -48,9 +48,9 @@ cargo run -p pdfrust-cli -- render-native \
 Focused tests:
 
 ```sh
-cargo test -p pdfrust-native annotation -- --nocapture
-cargo test -p pdfrust-native freetext -- --nocapture
-cargo test -p pdfrust-cli annotation_mode -- --nocapture
+cargo test -p ferrugo-native annotation -- --nocapture
+cargo test -p ferrugo-native freetext -- --nocapture
+cargo test -p ferrugo-cli annotation_mode -- --nocapture
 ```
 
 Results: annotation tests 11 passed, FreeText boundary test 1 passed, CLI
@@ -59,7 +59,7 @@ annotation-mode parser test 1 passed.
 Supported native fallback gate:
 
 ```sh
-cargo run -p pdfrust-cli -- summarize-fallbacks fixtures/generated \
+cargo run -p ferrugo-cli -- summarize-fallbacks fixtures/generated \
   --manifest fixtures/annotation-print-preview-manifest.tsv \
   --include-family flags \
   --include-family appearance-stream \
@@ -73,7 +73,7 @@ Result: 7 total, 7 native rendered, 0 fallback required.
 Unsupported boundary gate:
 
 ```sh
-cargo run -p pdfrust-cli -- summarize-fallbacks fixtures/generated \
+cargo run -p ferrugo-cli -- summarize-fallbacks fixtures/generated \
   --manifest fixtures/annotation-print-preview-manifest.tsv \
   --include-family unsupported-synthesis
 ```
@@ -84,7 +84,7 @@ Result: 1 total, 1 fallback required, categorized as
 Visual comparison for supported families:
 
 ```sh
-cargo run -p pdfrust-cli -- visual-diff-poppler fixtures/generated \
+cargo run -p ferrugo-cli -- visual-diff-poppler fixtures/generated \
   --manifest fixtures/annotation-print-preview-manifest.tsv \
   --include-family flags \
   --include-family appearance-stream \

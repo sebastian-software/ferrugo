@@ -76,10 +76,10 @@ Completed with:
   - `git diff --check`
   - `cargo check`
   - `cargo test --quiet`
-  - `cargo test -p pdfrust-native blend_modes -- --nocapture`
-  - `cargo test -p pdfrust-render ext_graphics_state -- --nocapture`
-  - `cargo test -p pdfrust-render blend_source_with_backdrop -- --nocapture`
-  - `cargo test -p pdfrust-render display_list_should_apply_external_graphics_state_blend_mode -- --nocapture`
-  - `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render fixtures/generated/blend-modes.pdf --max-edge 120 --output target/pdfrust-thumbnails/blend-modes-pdfium-0049.png`
-  - `cargo run -p pdfrust-cli -- render-native fixtures/generated/blend-modes.pdf --max-edge 120 --output target/pdfrust-thumbnails/blend-modes-native-0049.png`
+  - `cargo test -p ferrugo-native blend_modes -- --nocapture`
+  - `cargo test -p ferrugo-render ext_graphics_state -- --nocapture`
+  - `cargo test -p ferrugo-render blend_source_with_backdrop -- --nocapture`
+  - `cargo test -p ferrugo-render display_list_should_apply_external_graphics_state_blend_mode -- --nocapture`
+  - `FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli -- render fixtures/generated/blend-modes.pdf --max-edge 120 --output target/ferrugo-thumbnails/blend-modes-pdfium-0049.png`
+  - `cargo run -p ferrugo-cli -- render-native fixtures/generated/blend-modes.pdf --max-edge 120 --output target/ferrugo-thumbnails/blend-modes-native-0049.png`
   - `cargo clippy --all-targets --all-features -- -D warnings`

@@ -105,16 +105,16 @@ In progress:
   max channel delta `0`, native non-white pixels `800`. Filled and outside
   sample pixels match PDFium exactly.
 - Current validation:
-  - `cargo test -p pdfrust-native annotation_appearance -- --nocapture`
-  - `cargo test -p pdfrust-native annotation_without_appearance -- --nocapture`
-  - `cargo test -p pdfrust-native link_annotation_appearance -- --nocapture`
-  - `cargo test -p pdfrust-native highlight_annotation_appearance -- --nocapture`
-  - `cargo test -p pdfrust-native widget_annotation_appearance -- --nocapture`
-  - `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render fixtures/generated/annotation-appearance.pdf --max-edge 120 --output target/pdfrust-thumbnails/annotation-appearance-pdfium-0052.png`
-  - `cargo run -p pdfrust-cli -- render-native fixtures/generated/annotation-appearance.pdf --max-edge 120 --output target/pdfrust-thumbnails/annotation-appearance-native-0052.png`
-  - `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render fixtures/generated/link-annotation-appearance.pdf --max-edge 120 --output target/pdfrust-thumbnails/link-annotation-appearance-pdfium-0052.png`
-  - `cargo run -p pdfrust-cli -- render-native fixtures/generated/link-annotation-appearance.pdf --max-edge 120 --output target/pdfrust-thumbnails/link-annotation-appearance-native-0052.png`
-  - `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render fixtures/generated/highlight-annotation-appearance.pdf --max-edge 120 --output target/pdfrust-thumbnails/highlight-annotation-appearance-pdfium-0052.png`
-  - `cargo run -p pdfrust-cli -- render-native fixtures/generated/highlight-annotation-appearance.pdf --max-edge 120 --output target/pdfrust-thumbnails/highlight-annotation-appearance-native-0052.png`
-  - `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render fixtures/generated/widget-annotation-appearance.pdf --max-edge 120 --output target/pdfrust-thumbnails/widget-annotation-appearance-pdfium-0052.png`
-  - `cargo run -p pdfrust-cli -- render-native fixtures/generated/widget-annotation-appearance.pdf --max-edge 120 --output target/pdfrust-thumbnails/widget-annotation-appearance-native-0052.png`
+  - `cargo test -p ferrugo-native annotation_appearance -- --nocapture`
+  - `cargo test -p ferrugo-native annotation_without_appearance -- --nocapture`
+  - `cargo test -p ferrugo-native link_annotation_appearance -- --nocapture`
+  - `cargo test -p ferrugo-native highlight_annotation_appearance -- --nocapture`
+  - `cargo test -p ferrugo-native widget_annotation_appearance -- --nocapture`
+  - `FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli -- render fixtures/generated/annotation-appearance.pdf --max-edge 120 --output target/ferrugo-thumbnails/annotation-appearance-pdfium-0052.png`
+  - `cargo run -p ferrugo-cli -- render-native fixtures/generated/annotation-appearance.pdf --max-edge 120 --output target/ferrugo-thumbnails/annotation-appearance-native-0052.png`
+  - `FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli -- render fixtures/generated/link-annotation-appearance.pdf --max-edge 120 --output target/ferrugo-thumbnails/link-annotation-appearance-pdfium-0052.png`
+  - `cargo run -p ferrugo-cli -- render-native fixtures/generated/link-annotation-appearance.pdf --max-edge 120 --output target/ferrugo-thumbnails/link-annotation-appearance-native-0052.png`
+  - `FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli -- render fixtures/generated/highlight-annotation-appearance.pdf --max-edge 120 --output target/ferrugo-thumbnails/highlight-annotation-appearance-pdfium-0052.png`
+  - `cargo run -p ferrugo-cli -- render-native fixtures/generated/highlight-annotation-appearance.pdf --max-edge 120 --output target/ferrugo-thumbnails/highlight-annotation-appearance-native-0052.png`
+  - `FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli -- render fixtures/generated/widget-annotation-appearance.pdf --max-edge 120 --output target/ferrugo-thumbnails/widget-annotation-appearance-pdfium-0052.png`
+  - `cargo run -p ferrugo-cli -- render-native fixtures/generated/widget-annotation-appearance.pdf --max-edge 120 --output target/ferrugo-thumbnails/widget-annotation-appearance-native-0052.png`

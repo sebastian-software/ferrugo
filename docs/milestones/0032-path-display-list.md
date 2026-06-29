@@ -47,7 +47,7 @@ Convert basic path construction and painting operators into a display list.
 
 Completed with the `feat: build path display lists` change.
 
-- Added bounded display-list types in `pdfrust-render`: `DisplayList`,
+- Added bounded display-list types in `ferrugo-render`: `DisplayList`,
   `DisplayItem`, `PathDisplayItem`, `PathSegment`, `PaintMode`, `FillRule`,
   `PathBounds`, and `DisplayListOptions`.
 - Added `build_path_display_list` for supported path construction and painting
@@ -62,4 +62,4 @@ Completed with the `feat: build path display lists` change.
   current point errors, and both complexity limits.
 - Validation:
   - `cargo fmt --check`
-  - `cargo test -p pdfrust-render`
+  - `cargo test -p ferrugo-render`

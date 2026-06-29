@@ -46,7 +46,7 @@ change so native renderer coverage can improve without manual guesswork.
 
 Completed on 2026-06-29.
 
-- Added `producer-regression-report` to `pdfrust-cli`.
+- Added `producer-regression-report` to `ferrugo-cli`.
 - The report groups native render outcomes by manifest producer tags,
   manifest family, and feature flags.
 - Private or local-only fixture paths are redacted to local fixture IDs.

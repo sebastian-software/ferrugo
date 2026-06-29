@@ -36,9 +36,9 @@ private/local-only manifest entry. It verifies that bundles:
 ## Validation Commands
 
 ```text
-cargo test -p pdfrust-cli diagnostic_bundles -- --nocapture
+cargo test -p ferrugo-cli diagnostic_bundles -- --nocapture
 cargo fmt --check
-git diff --check -- crates/pdfrust-cli/src/main.rs docs/backend/native.md docs/policies/native-render-trace.md docs/policies/telemetry-diagnostics-privacy.md docs/milestones/0198-native-renderer-telemetry-privacy-and-diagnostics-policy.md docs/milestones/README.md docs/reports/native-renderer-telemetry-privacy-2026-06-29.md
+git diff --check -- crates/ferrugo-cli/src/main.rs docs/backend/native.md docs/policies/native-render-trace.md docs/policies/telemetry-diagnostics-privacy.md docs/milestones/0198-native-renderer-telemetry-privacy-and-diagnostics-policy.md docs/milestones/README.md docs/reports/native-renderer-telemetry-privacy-2026-06-29.md
 cargo test --workspace --no-default-features
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 ```

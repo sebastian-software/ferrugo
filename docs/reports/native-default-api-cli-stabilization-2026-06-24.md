@@ -4,7 +4,7 @@ Milestone: 0082.
 
 ## Decision
 
-`pdfrust-cli render` and `render-auto` are native-default. PDFium is no longer
+`ferrugo-cli render` and `render-auto` are native-default. PDFium is no longer
 selected silently for unsupported native documents, even in a PDFium-enabled
 build. Callers must opt in with `--allow-pdfium-fallback`.
 
@@ -38,7 +38,7 @@ PDFium-specific workflows:
 Native default supported fixture:
 
 ```text
-cargo run -p pdfrust-cli --no-default-features -- render fixtures/generated/vector-paths.pdf --max-edge 120 --output target/0082-default-native-vector.png
+cargo run -p ferrugo-cli --no-default-features -- render fixtures/generated/vector-paths.pdf --max-edge 120 --output target/0082-default-native-vector.png
 ```
 
 Result: `render backend: native`.
@@ -46,7 +46,7 @@ Result: `render backend: native`.
 Unsupported fixture without fallback opt-in:
 
 ```text
-PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli --features pdfium -- render-auto fixtures/generated/optional-content-ocmd.pdf --max-edge 120 --output target/0082-should-require-fallback.png
+FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli --features pdfium -- render-auto fixtures/generated/optional-content-ocmd.pdf --max-edge 120 --output target/0082-should-require-fallback.png
 ```
 
 Result: failed with `PDFium fallback not enabled for graphics.optional-content`.
@@ -54,7 +54,7 @@ Result: failed with `PDFium fallback not enabled for graphics.optional-content`.
 Unsupported fixture with explicit fallback opt-in:
 
 ```text
-PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli --features pdfium -- render-auto fixtures/generated/optional-content-ocmd.pdf --allow-pdfium-fallback --max-edge 120 --output target/0082-explicit-fallback.png
+FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli --features pdfium -- render-auto fixtures/generated/optional-content-ocmd.pdf --allow-pdfium-fallback --max-edge 120 --output target/0082-explicit-fallback.png
 ```
 
 Result: `render backend: pdfium fallback_reason=graphics.optional-content`.
@@ -65,8 +65,8 @@ Result: `render backend: pdfium fallback_reason=graphics.optional-content`.
 cargo fmt --check
 cargo check
 cargo test
-cargo test -p pdfrust-cli --no-default-features
-cargo test -p pdfrust-cli --features pdfium
+cargo test -p ferrugo-cli --no-default-features
+cargo test -p ferrugo-cli --features pdfium
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 ```
 

@@ -3,14 +3,14 @@
 Status: accepted.
 Date: 2026-06-24.
 
-`pdfrust` is licensed under either MIT or Apache-2.0 at the user's option.
+`ferrugo` is licensed under either MIT or Apache-2.0 at the user's option.
 Project code should remain compatible with that dual-license intent unless a
 future decision document explicitly changes the policy.
 
 ## Reference Categories
 
 - Behavioral reference: external output, test cases, public documentation, or
-  manually observed behavior used to decide how `pdfrust` should behave.
+  manually observed behavior used to decide how `ferrugo` should behave.
 - Architecture inspiration: broad design patterns learned from another project
   without copying protected implementation details.
 - Code porting: translating or adapting implementation logic, algorithms, or
@@ -33,6 +33,6 @@ comparison, compatibility research, and architecture-level context.
 
 ## Phase 0 Defaults
 
-Phase 0 may compare `pdfrust` output to PDFium output and record PDFium build
+Phase 0 may compare `ferrugo` output to PDFium output and record PDFium build
 metadata. It must not commit PDFium source, MuPDF source, Poppler source, or
 private corpus PDFs.

@@ -50,7 +50,7 @@ Added `fixtures/layout-stress-manifest.tsv` with these families:
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/layout-stress-manifest.tsv --include-family layout-stress --include-family dense-business-table --include-family spreadsheet-grid --include-family two-column --include-family footnotes --include-family page-furniture --fail-on-fallback --max-edge 160 --output target/layout-stress-0189-supported-gate.json
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/layout-stress-manifest.tsv --include-family layout-stress --include-family dense-business-table --include-family spreadsheet-grid --include-family two-column --include-family footnotes --include-family page-furniture --fail-on-fallback --max-edge 160 --output target/layout-stress-0189-supported-gate.json
 ```
 
 Result:
@@ -75,7 +75,7 @@ Family pass rates:
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/layout-stress-manifest.tsv --include-family layout-stress --include-family dense-business-table --include-family spreadsheet-grid --include-family two-column --include-family footnotes --include-family page-furniture --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/layout-stress-0189-benchmark.json
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/layout-stress-manifest.tsv --include-family layout-stress --include-family dense-business-table --include-family spreadsheet-grid --include-family two-column --include-family footnotes --include-family page-furniture --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/layout-stress-0189-benchmark.json
 ```
 
 Result:
@@ -94,7 +94,7 @@ Result:
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- operator-coverage fixtures/generated --manifest fixtures/layout-stress-manifest.tsv --include-family layout-stress --include-family dense-business-table --include-family spreadsheet-grid --include-family two-column --include-family footnotes --include-family page-furniture --output target/layout-stress-0189-operator-coverage.json
+cargo run -p ferrugo-cli --no-default-features -- operator-coverage fixtures/generated --manifest fixtures/layout-stress-manifest.tsv --include-family layout-stress --include-family dense-business-table --include-family spreadsheet-grid --include-family two-column --include-family footnotes --include-family page-furniture --output target/layout-stress-0189-operator-coverage.json
 ```
 
 Result: 7 fixtures scanned, 0 errors, 1,332 total operators, 1,332 implemented,
@@ -106,7 +106,7 @@ Result: 7 fixtures scanned, 0 errors, 1,332 total operators, 1,332 implemented,
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- visual-diff-poppler fixtures/generated --manifest fixtures/layout-stress-manifest.tsv --include-family layout-stress --include-family dense-business-table --include-family spreadsheet-grid --include-family two-column --include-family footnotes --include-family page-furniture --max-edge 160 --max-mae 6.0 --max-p95 24 --max-changed-ratio 0.18 --timeout 30 --output target/layout-stress-0189-poppler-visual-diff.json
+cargo run -p ferrugo-cli --no-default-features -- visual-diff-poppler fixtures/generated --manifest fixtures/layout-stress-manifest.tsv --include-family layout-stress --include-family dense-business-table --include-family spreadsheet-grid --include-family two-column --include-family footnotes --include-family page-furniture --max-edge 160 --max-mae 6.0 --max-p95 24 --max-changed-ratio 0.18 --timeout 30 --output target/layout-stress-0189-poppler-visual-diff.json
 ```
 
 Thresholds reviewed:
@@ -150,12 +150,12 @@ relaxation.
 
 ```text
 cargo fmt --check
-git diff --check -- crates/pdfrust-native/src/lib.rs scripts/generate_fixtures.py fixtures/corpus-manifest.tsv fixtures/layout-stress-manifest.tsv docs/corpus-taxonomy.md docs/milestones/0189-layout-stress-corpus-for-tables-columns-and-footnotes.md docs/milestones/README.md docs/reports/layout-stress-corpus-2026-06-29.md
-cargo test -p pdfrust-native scientific_report -- --nocapture
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/layout-stress-manifest.tsv --include-family layout-stress --include-family dense-business-table --include-family spreadsheet-grid --include-family two-column --include-family footnotes --include-family page-furniture --fail-on-fallback --max-edge 160 --output target/layout-stress-0189-supported-gate.json
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/layout-stress-manifest.tsv --include-family layout-stress --include-family dense-business-table --include-family spreadsheet-grid --include-family two-column --include-family footnotes --include-family page-furniture --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/layout-stress-0189-benchmark.json
-cargo run -p pdfrust-cli --no-default-features -- operator-coverage fixtures/generated --manifest fixtures/layout-stress-manifest.tsv --include-family layout-stress --include-family dense-business-table --include-family spreadsheet-grid --include-family two-column --include-family footnotes --include-family page-furniture --output target/layout-stress-0189-operator-coverage.json
-cargo run -p pdfrust-cli --no-default-features -- visual-diff-poppler fixtures/generated --manifest fixtures/layout-stress-manifest.tsv --include-family layout-stress --include-family dense-business-table --include-family spreadsheet-grid --include-family two-column --include-family footnotes --include-family page-furniture --max-edge 160 --max-mae 6.0 --max-p95 24 --max-changed-ratio 0.18 --timeout 30 --output target/layout-stress-0189-poppler-visual-diff.json
+git diff --check -- crates/ferrugo-native/src/lib.rs scripts/generate_fixtures.py fixtures/corpus-manifest.tsv fixtures/layout-stress-manifest.tsv docs/corpus-taxonomy.md docs/milestones/0189-layout-stress-corpus-for-tables-columns-and-footnotes.md docs/milestones/README.md docs/reports/layout-stress-corpus-2026-06-29.md
+cargo test -p ferrugo-native scientific_report -- --nocapture
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/layout-stress-manifest.tsv --include-family layout-stress --include-family dense-business-table --include-family spreadsheet-grid --include-family two-column --include-family footnotes --include-family page-furniture --fail-on-fallback --max-edge 160 --output target/layout-stress-0189-supported-gate.json
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/layout-stress-manifest.tsv --include-family layout-stress --include-family dense-business-table --include-family spreadsheet-grid --include-family two-column --include-family footnotes --include-family page-furniture --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/layout-stress-0189-benchmark.json
+cargo run -p ferrugo-cli --no-default-features -- operator-coverage fixtures/generated --manifest fixtures/layout-stress-manifest.tsv --include-family layout-stress --include-family dense-business-table --include-family spreadsheet-grid --include-family two-column --include-family footnotes --include-family page-furniture --output target/layout-stress-0189-operator-coverage.json
+cargo run -p ferrugo-cli --no-default-features -- visual-diff-poppler fixtures/generated --manifest fixtures/layout-stress-manifest.tsv --include-family layout-stress --include-family dense-business-table --include-family spreadsheet-grid --include-family two-column --include-family footnotes --include-family page-furniture --max-edge 160 --max-mae 6.0 --max-p95 24 --max-changed-ratio 0.18 --timeout 30 --output target/layout-stress-0189-poppler-visual-diff.json
 cargo check --workspace --no-default-features
 cargo test --workspace --no-default-features
 cargo clippy --workspace --all-targets --all-features -- -D warnings

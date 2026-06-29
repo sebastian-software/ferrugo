@@ -14,7 +14,7 @@ explicit PDFium maintainer coverage or native backlog work.
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated \
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated \
   --manifest fixtures/corpus-manifest.tsv \
   --include-family browser-print \
   --include-family office-export \
@@ -40,7 +40,7 @@ The supported-category gate passes without invoking or requiring PDFium.
 Full corpus summary:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated \
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated \
   --manifest fixtures/corpus-manifest.tsv \
   --max-edge 160 \
   --output target/drill-0099-all-families.json
@@ -72,13 +72,13 @@ Fallback categories:
 | --- | --- | --- |
 | Production native-only supported families | Delete fallback usage from deployment/CI config | `browser-print`, `office-export`, and `form` pass the native-only supported gate. |
 | `render` / `render-auto --allow-pdfium-fallback` | Keep for explicit maintainer and unsupported-category probes | Remaining unsupported categories still need oracle fallback while native support is incomplete. |
-| `PDFRUST_ALLOW_PDFIUM_FALLBACK=1` | Defer removal | Useful for local maintainer sweeps; should not be enabled in production native-only gates. |
+| `FERRUGO_ALLOW_PDFIUM_FALLBACK=1` | Defer removal | Useful for local maintainer sweeps; should not be enabled in production native-only gates. |
 | `render-pdfium`, `compare-metadata`, `benchmark-pdfium`, `visual-diff` | Keep | These are comparison tools and are explicitly out of scope for deletion. |
 | Native-only disabled PDFium commands | Keep | Clear errors prevent accidental PDFium packaging while preserving script diagnosability. |
 
 ## Validation
 
-- `cargo test -p pdfrust-cli fallback_summary -- --nocapture`
-- `cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --include-family browser-print --include-family office-export --include-family form --fail-on-fallback --max-edge 160 --output target/drill-0099-supported-gate.json`
-- `cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --output target/drill-0099-all-families.json`
-- `cargo test -p pdfrust-cli --features pdfium`
+- `cargo test -p ferrugo-cli fallback_summary -- --nocapture`
+- `cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --include-family browser-print --include-family office-export --include-family form --fail-on-fallback --max-edge 160 --output target/drill-0099-supported-gate.json`
+- `cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --output target/drill-0099-all-families.json`
+- `cargo test -p ferrugo-cli --features pdfium`

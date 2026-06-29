@@ -52,7 +52,7 @@ Completed on 2026-06-26.
 - Added `scripts/check_native_only_release.sh` as the local CI-equivalent
   native-only release gate.
 - Added package file inspection for the consumer CLI artifact list at
-  `target/native-only-release-pdfrust-cli-package-files.txt`.
+  `target/native-only-release-ferrugo-cli-package-files.txt`.
 - Updated `docs/packaging.md` with the release-candidate validation command.
 - Added
   `docs/reports/native-only-ci-release-hardening-2026-06-26.md`.

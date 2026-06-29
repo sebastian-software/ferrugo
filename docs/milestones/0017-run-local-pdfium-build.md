@@ -15,7 +15,7 @@ Run the pinned PDFium checkout and minimal GN/Ninja build on a machine with
 - Install or point to `depot_tools`.
 - Run the checkout recipe.
 - Run GN generation with the Phase 0 args.
-- Build the PDFium target needed by `pdfrust-pdfium`.
+- Build the PDFium target needed by `ferrugo-pdfium`.
 - Record the exact dynamic-library path.
 
 ## Non-Goals
@@ -27,7 +27,7 @@ Run the pinned PDFium checkout and minimal GN/Ninja build on a machine with
 ## Deliverables
 
 - Updated `docs/measurements/pdfium-build-baseline.md`.
-- Confirmed `PDFRUST_PDFIUM_LIBRARY` value.
+- Confirmed `FERRUGO_PDFIUM_LIBRARY` value.
 - Build failure log if the build does not complete.
 
 ## Acceptance Criteria
@@ -48,14 +48,14 @@ Completed on 2026-06-24.
 - Checked out and synced PDFium revision
   `573758fe2dd928279cd52b5a4bc955a6938aab39`.
 - Built the complete static target:
-  `/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-thumb/obj/libpdfium.a`
+  `/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-thumb/obj/libpdfium.a`
   at 264M.
 - Built the runtime component target:
-  `/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib`
+  `/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib`
   at 5.4M plus colocated `@rpath` dylibs.
 - Confirmed runtime config:
-  `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib`
+  `FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib`
   and
-  `DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib`.
-- Added and ran `cargo run -p pdfrust-pdfium --example smoke`, which reported
+  `DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib`.
+- Added and ran `cargo run -p ferrugo-pdfium --example smoke`, which reported
   `initialized=true last_error=0`.

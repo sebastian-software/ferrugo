@@ -46,8 +46,8 @@ longer part of normal runtime behavior.
 
 Completed on 2026-06-26.
 
-- Audited the public Rust-native consumer boundary across `pdfrust-thumbnail`
-  and `pdfrust-native`; PDFium remains outside normal runtime APIs.
+- Audited the public Rust-native consumer boundary across `ferrugo-thumbnail`
+  and `ferrugo-native`; PDFium remains outside normal runtime APIs.
 - Added `docs/policies/native-renderer-api-semver.md` with stable, internal,
   maintainer, error, diagnostics, option-default, and migration rules.
 - Added `docs/backlogs/native-renderer-api-cleanup-backlog.md` to track

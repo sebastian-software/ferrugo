@@ -12,13 +12,13 @@ application changes.
 
 The stable consumer boundary is:
 
-- `pdfrust-thumbnail`: backend-neutral source, options, thumbnail, metadata,
+- `ferrugo-thumbnail`: backend-neutral source, options, thumbnail, metadata,
   backend trait, and error taxonomy types.
-- `pdfrust-native::NativeBackend`: native backend construction, render limits,
+- `ferrugo-native::NativeBackend`: native backend construction, render limits,
   memory diagnostics, single-page rendering through `ThumbnailBackend`,
   metadata inspection through `DocumentMetadataBackend`, first-page preview,
   and partial multi-page preview entry points.
-- `pdfrust-cli` default commands: native-only `render`, `render-auto`, and
+- `ferrugo-cli` default commands: native-only `render`, `render-auto`, and
   `render-native` behavior for smoke tests and operational automation.
 
 Consumer APIs must not expose PDFium handles, PDFium-specific error values, or
@@ -29,14 +29,14 @@ PDFium fallback state. PDFium remains an optional maintainer oracle behind the
 
 The following surfaces are not committed as stable application APIs:
 
-- `pdfrust-content`, `pdfrust-object`, `pdfrust-render`, and `pdfrust-syntax`
+- `ferrugo-content`, `ferrugo-object`, `ferrugo-render`, and `ferrugo-syntax`
   low-level parser, object, display-list, and raster internals.
-- `pdfrust-pdfium` and PDFium-specific CLI commands such as `render-pdfium`,
+- `ferrugo-pdfium` and PDFium-specific CLI commands such as `render-pdfium`,
   `render-isolated`, `compare-metadata`, `benchmark-pdfium`, and `visual-diff`.
 - Exact visual-diff thresholds, fixture manifests, benchmark JSON shape, and
   conformance triage reports.
 - Low-level renderer diagnostics beyond the stable unsupported-feature buckets
-  exposed by `pdfrust-thumbnail`.
+  exposed by `ferrugo-thumbnail`.
 
 Internal crates can change between milestones as long as the public consumer
 boundary above continues to build, test, and preserve documented behavior.
@@ -75,7 +75,7 @@ are safe for logs, CLI automation, and baseline metadata.
 `UnsupportedFeature(&'static str)` bucket gives consumers and maintainers a more
 precise native boundary while preserving the public `unsupported` class through
 `ThumbnailError::class()`. The bucket constants in
-`pdfrust_thumbnail::unsupported_feature_buckets` and the
+`ferrugo_thumbnail::unsupported_feature_buckets` and the
 `STABLE_UNSUPPORTED_FEATURE_BUCKETS` list are stable diagnostic strings.
 Consumers should branch on `class()` for coarse fallback behavior and use
 `unsupported_feature_bucket()` only for feature-specific telemetry, support
@@ -108,7 +108,7 @@ when the supported corpus, benchmark budget, and low-memory gates remain green.
 
 Consumers should migrate to native-only runtime behavior by:
 
-1. Depending on `pdfrust-thumbnail` plus `pdfrust-native` for library usage.
+1. Depending on `ferrugo-thumbnail` plus `ferrugo-native` for library usage.
 2. Using `NativeBackend::new()` or `NativeBackend::low_memory()` and the
    backend-neutral `ThumbnailBackend` / `DocumentMetadataBackend` traits.
 3. Treating `ThumbnailError::class()` as the stable failure key.

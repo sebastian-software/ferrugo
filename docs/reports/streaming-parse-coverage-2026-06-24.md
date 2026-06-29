@@ -44,14 +44,14 @@ The final page-0 CLI render measurement reported:
 ## Validation
 
 ```text
-cargo test -p pdfrust-native page_streams -- --nocapture
+cargo test -p ferrugo-native page_streams -- --nocapture
 cargo fmt --check
 cargo check
 cargo test
 cargo clippy --all-targets --all-features -- -D warnings
-cargo run -p pdfrust-cli -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --output target/streaming-summary-0076.json
-/usr/bin/time -l cargo run -p pdfrust-cli -- render-native fixtures/generated/page-targeted-stream.pdf --page-index 0 --max-edge 120 --output target/pdfrust-thumbnails/page-targeted-stream-page0-native.png
-cargo run -p pdfrust-cli -- render-native fixtures/generated/page-targeted-stream.pdf --page-index 1 --max-edge 120 --output target/pdfrust-thumbnails/page-targeted-stream-page1-native.png
+cargo run -p ferrugo-cli -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --output target/streaming-summary-0076.json
+/usr/bin/time -l cargo run -p ferrugo-cli -- render-native fixtures/generated/page-targeted-stream.pdf --page-index 0 --max-edge 120 --output target/ferrugo-thumbnails/page-targeted-stream-page0-native.png
+cargo run -p ferrugo-cli -- render-native fixtures/generated/page-targeted-stream.pdf --page-index 1 --max-edge 120 --output target/ferrugo-thumbnails/page-targeted-stream-page1-native.png
 ```
 
 All success-path commands completed successfully. The page-1 render command

@@ -13,18 +13,18 @@ endobj
 << /Type /Pages /Kids [2 0 R] /Count 1 >>
 endobj
 4 0 obj
-<< /Type /Font /Subtype /Type1 /BaseFont /PdfrustTypeOne /FontDescriptor 6 0 R >>
+<< /Type /Font /Subtype /Type1 /BaseFont /FerrugoTypeOne /FontDescriptor 6 0 R >>
 endobj
 5 0 obj
 << /Type /Catalog /Pages 3 0 R >>
 endobj
 6 0 obj
-<< /Type /FontDescriptor /FontName /PdfrustTypeOne /FontFile 7 0 R >>
+<< /Type /FontDescriptor /FontName /FerrugoTypeOne /FontFile 7 0 R >>
 endobj
 7 0 obj
 << /Length 141 >>
 stream
-%!PS-AdobeFont-1.0: PdfrustTypeOne 1.0
+%!PS-AdobeFont-1.0: FerrugoTypeOne 1.0
 /CharStrings 2 dict dup begin
 /.notdef <0e> def
 /A <8bef0d8b8b15ef8b058bef05278b058b2705090e> def

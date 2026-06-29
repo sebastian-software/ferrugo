@@ -7,7 +7,7 @@ node --input-type=module <<'NODE'
 import fs from "node:fs";
 import path from "node:path";
 
-const source = fs.readFileSync("crates/pdfrust-thumbnail/src/lib.rs", "utf8");
+const source = fs.readFileSync("crates/ferrugo-thumbnail/src/lib.rs", "utf8");
 const constants = [...source.matchAll(/pub const [A-Z0-9_]+: &str = "([^"]+)";/g)]
   .map((match) => match[1])
   .filter((bucket) => bucket.includes("."));

@@ -17,7 +17,7 @@ malformed accessibility metadata does not become a rendering prerequisite.
 
 ## Implementation
 
-- Added `AccessibilityMetadata` to `pdfrust-thumbnail::DocumentMetadata`.
+- Added `AccessibilityMetadata` to `ferrugo-thumbnail::DocumentMetadata`.
 - Added native metadata extraction for catalog `/Lang`, `/MarkInfo /Marked`,
   `/StructTreeRoot /RoleMap`, structure element roles, and marked-content
   references.
@@ -34,16 +34,16 @@ malformed accessibility metadata does not become a rendering prerequisite.
 - `cargo fmt --check`
 - `cargo check --workspace`
 - `cargo check --workspace --no-default-features`
-- `cargo test -p pdfrust-native accessibility -- --nocapture`
-- `cargo test -p pdfrust-native malformed_tagged -- --nocapture`
-- `cargo test -p pdfrust-cli corpus_metadata_json_should_include_manifest_and_page_size -- --nocapture`
+- `cargo test -p ferrugo-native accessibility -- --nocapture`
+- `cargo test -p ferrugo-native malformed_tagged -- --nocapture`
+- `cargo test -p ferrugo-cli corpus_metadata_json_should_include_manifest_and_page_size -- --nocapture`
 - `cargo test --workspace`
 - `cargo test --workspace --no-default-features`
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
-- `cargo run -p pdfrust-cli --no-default-features -- extract-corpus-metadata fixtures/generated --manifest fixtures/corpus-manifest.tsv --output target/tagged-0117-metadata.json`
-- `cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --include-family browser-print --include-family office-export --include-family form --fail-on-fallback --max-edge 160 --output target/tagged-0117-supported-gate.json`
-- `cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/tagged-0117-benchmark.json`
-- `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium/out/pdfrust-dylib:/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --max-mae 2.0 --max-p95 16 --max-changed-ratio 0.05 --output target/tagged-0117-visual-diff.json`
+- `cargo run -p ferrugo-cli --no-default-features -- extract-corpus-metadata fixtures/generated --manifest fixtures/corpus-manifest.tsv --output target/tagged-0117-metadata.json`
+- `cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --include-family browser-print --include-family office-export --include-family form --fail-on-fallback --max-edge 160 --output target/tagged-0117-supported-gate.json`
+- `cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/tagged-0117-benchmark.json`
+- `FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium/out/ferrugo-dylib:/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --max-mae 2.0 --max-p95 16 --max-changed-ratio 0.05 --output target/tagged-0117-visual-diff.json`
 
 ## Results
 

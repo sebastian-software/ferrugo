@@ -19,11 +19,11 @@ cargo fmt --check
 cargo check
 cargo test
 cargo clippy --all-targets --all-features -- -D warnings
-cargo test -p pdfrust-native multi_page_report -- --nocapture
-cargo run -p pdfrust-cli -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --output target/report-summary-0073.json
-cargo run -p pdfrust-cli -- render-native fixtures/generated/multi-page-report.pdf --max-edge 260 --output target/pdfrust-thumbnails/multi-page-report-native.png
-PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render-pdfium fixtures/generated/multi-page-report.pdf --max-edge 260 --output target/pdfrust-thumbnails/multi-page-report-pdfium.png
-PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- compare-metadata fixtures/generated/multi-page-report.pdf --output target/pdfrust-thumbnails/multi-page-report-metadata-0073.json
+cargo test -p ferrugo-native multi_page_report -- --nocapture
+cargo run -p ferrugo-cli -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --output target/report-summary-0073.json
+cargo run -p ferrugo-cli -- render-native fixtures/generated/multi-page-report.pdf --max-edge 260 --output target/ferrugo-thumbnails/multi-page-report-native.png
+FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli -- render-pdfium fixtures/generated/multi-page-report.pdf --max-edge 260 --output target/ferrugo-thumbnails/multi-page-report-pdfium.png
+FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli -- compare-metadata fixtures/generated/multi-page-report.pdf --output target/ferrugo-thumbnails/multi-page-report-metadata-0073.json
 ```
 
 All commands completed successfully.

@@ -45,7 +45,7 @@ Result:
 Command:
 
 ```bash
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/transparency-stack-memory-manifest.tsv --include-family alpha-stack --include-family group-stack --include-family soft-mask-stack --include-family office-transparency-stack --include-family presentation-transparency-stack --include-family chart-transparency-stack --fail-on-fallback --max-edge 160 --output target/transparency-stack-0213-supported-gate.json
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/transparency-stack-memory-manifest.tsv --include-family alpha-stack --include-family group-stack --include-family soft-mask-stack --include-family office-transparency-stack --include-family presentation-transparency-stack --include-family chart-transparency-stack --fail-on-fallback --max-edge 160 --output target/transparency-stack-0213-supported-gate.json
 ```
 
 ## Low-Memory Benchmark
@@ -65,15 +65,15 @@ Result:
 Command:
 
 ```bash
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/transparency-stack-memory-manifest.tsv --include-family alpha-stack --include-family group-stack --include-family soft-mask-stack --include-family office-transparency-stack --include-family presentation-transparency-stack --include-family chart-transparency-stack --native-profile low-memory --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/transparency-stack-0213-low-memory-benchmark.json
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/transparency-stack-memory-manifest.tsv --include-family alpha-stack --include-family group-stack --include-family soft-mask-stack --include-family office-transparency-stack --include-family presentation-transparency-stack --include-family chart-transparency-stack --native-profile low-memory --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/transparency-stack-0213-low-memory-benchmark.json
 ```
 
 ## Focused Tests
 
 ```bash
-cargo test -p pdfrust-render form_transparency_group_should_reuse_same_sized_scratch_surface -- --nocapture
-cargo test -p pdfrust-render transparency_group -- --nocapture
-cargo test -p pdfrust-native transparency -- --nocapture
+cargo test -p ferrugo-render form_transparency_group_should_reuse_same_sized_scratch_surface -- --nocapture
+cargo test -p ferrugo-render transparency_group -- --nocapture
+cargo test -p ferrugo-native transparency -- --nocapture
 ```
 
 All focused tests passed locally.
@@ -82,7 +82,7 @@ All focused tests passed locally.
 
 ```bash
 cargo fmt --check
-git diff --check -- crates/pdfrust-render/src/lib.rs docs/backend/native.md docs/milestones/README.md docs/milestones/0213-transparency-stack-memory-optimization.md docs/reports/transparency-stack-memory-2026-06-29.md fixtures/transparency-stack-memory-manifest.tsv
+git diff --check -- crates/ferrugo-render/src/lib.rs docs/backend/native.md docs/milestones/README.md docs/milestones/0213-transparency-stack-memory-optimization.md docs/reports/transparency-stack-memory-2026-06-29.md fixtures/transparency-stack-memory-manifest.tsv
 cargo check --workspace --no-default-features
 cargo test --workspace --no-default-features
 cargo clippy --workspace --all-targets --all-features -- -D warnings

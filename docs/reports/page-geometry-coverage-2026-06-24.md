@@ -37,7 +37,7 @@ The blockers are visual-fidelity differences, not page-size mismatches.
 Command:
 
 ```text
-PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --output target/0085-geometry-visual-diff.json
+FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --output target/0085-geometry-visual-diff.json
 ```
 
 Corpus summary:
@@ -60,7 +60,7 @@ Geometry fixture details:
 cargo fmt --check
 cargo check
 cargo test
-cargo test -p pdfrust-cli --features pdfium
+cargo test -p ferrugo-cli --features pdfium
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 ```
 

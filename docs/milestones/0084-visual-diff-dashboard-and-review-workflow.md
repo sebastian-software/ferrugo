@@ -48,7 +48,7 @@ turning every small pixel delta into manual work.
 
 Completed on 2026-06-24.
 
-- Commit `faed727`: added `pdfrust-cli visual-diff` behind the `pdfium`
+- Commit `faed727`: added `ferrugo-cli visual-diff` behind the `pdfium`
   feature.
 - Added per-fixture visual metrics, exact/accepted-drift/blocker
   classification, family grouping, and renderer-subsystem grouping.
@@ -65,7 +65,7 @@ Validation completed:
 cargo fmt --check
 cargo check
 cargo test
-cargo test -p pdfrust-cli --features pdfium
+cargo test -p ferrugo-cli --features pdfium
 cargo clippy --workspace --all-targets --all-features -- -D warnings
-PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/real-world-style-manifest.tsv --max-edge 120 --output target/0084-visual-diff.json
+FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/real-world-style-manifest.tsv --max-edge 120 --output target/0084-visual-diff.json
 ```

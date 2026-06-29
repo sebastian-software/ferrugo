@@ -48,12 +48,12 @@ Result:
 Commands:
 
 ```sh
-cargo test -p pdfrust-syntax excessive_nesting -- --nocapture
-cargo test -p pdfrust-content adversarial_unterminated_inline_image -- --nocapture
-cargo test -p pdfrust-native adversarial_truncated_header -- --nocapture
-cargo test -p pdfrust-native huge_image_dimensions -- --nocapture
-cargo test -p pdfrust-render image_resources_should_enforce_declared_image_byte_budget -- --nocapture
-cargo test -p pdfrust-render image_resources_should_enforce_image_byte_budget -- --nocapture
+cargo test -p ferrugo-syntax excessive_nesting -- --nocapture
+cargo test -p ferrugo-content adversarial_unterminated_inline_image -- --nocapture
+cargo test -p ferrugo-native adversarial_truncated_header -- --nocapture
+cargo test -p ferrugo-native huge_image_dimensions -- --nocapture
+cargo test -p ferrugo-render image_resources_should_enforce_declared_image_byte_budget -- --nocapture
+cargo test -p ferrugo-render image_resources_should_enforce_image_byte_budget -- --nocapture
 ```
 
 All targeted checks passed.

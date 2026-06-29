@@ -23,7 +23,7 @@ maintainer-only tooling behind `--features pdfium`.
 Do not use PDFium as:
 
 - a runtime fallback for `render`, `render-auto`, or native library consumers;
-- a default dependency of `pdfrust-cli`;
+- a default dependency of `ferrugo-cli`;
 - a release prerequisite for the supported native rendering slice;
 - a committed runtime asset or package artifact.
 
@@ -35,8 +35,8 @@ records for disputed behavior.
 
 | Surface | Current role | Decision | Reason |
 | --- | --- | --- | --- |
-| `crates/pdfrust-pdfium` | Optional local oracle backend. | Retain, maintainer-only. | Still useful for metadata and pixel triage; not in default CLI dependency graph. |
-| `pdfrust-cli` `pdfium` feature | Enables optional PDFium dependency. | Retain, opt-in only. | Keeps comparison code available without affecting native-only builds. |
+| `crates/ferrugo-pdfium` | Optional local oracle backend. | Retain, maintainer-only. | Still useful for metadata and pixel triage; not in default CLI dependency graph. |
+| `ferrugo-cli` `pdfium` feature | Enables optional PDFium dependency. | Retain, opt-in only. | Keeps comparison code available without affecting native-only builds. |
 | `render-pdfium` | Direct oracle render. | Retain, maintainer-only. | Useful for disputed raster output and debugging. |
 | `render-isolated` / private `render-worker` | Process-isolated oracle probe. | Retain, maintainer-only. | Needed when the external oracle may hang or fault; direct worker invocation remains guarded. |
 | `compare-metadata` | Page-count and page-size oracle. | Retain, maintainer-only. | Metadata parity still benefits from a second engine during expansion. |
@@ -92,8 +92,8 @@ cargo fmt --check
 cargo check --workspace --no-default-features
 cargo test --workspace --no-default-features
 bash scripts/check_pdfium_quarantine.sh
-cargo package -p pdfrust-cli --allow-dirty --no-verify --list
-cargo run -p pdfrust-cli --no-default-features -- visual-diff-poppler fixtures/generated --manifest fixtures/transparency-stack-memory-manifest.tsv --include-family alpha-stack --include-family group-stack --include-family soft-mask-stack --max-edge 120 --max-mae 8 --max-p95 64 --max-changed-ratio 0.20 --output target/pdfium-removal-0215-poppler.json
+cargo package -p ferrugo-cli --allow-dirty --no-verify --list
+cargo run -p ferrugo-cli --no-default-features -- visual-diff-poppler fixtures/generated --manifest fixtures/transparency-stack-memory-manifest.tsv --include-family alpha-stack --include-family group-stack --include-family soft-mask-stack --max-edge 120 --max-mae 8 --max-p95 64 --max-changed-ratio 0.20 --output target/pdfium-removal-0215-poppler.json
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 git diff --check -- scripts/check_pdfium_quarantine.sh fixtures/scanner-ocr-workflow-manifest.tsv fixtures/transparency-conformance-manifest.tsv fixtures/mobile-scan-manifest.tsv fixtures/optional-content-ui-state-manifest.tsv fixtures/annotation-print-preview-manifest.tsv fixtures/government-form-manifest.tsv fixtures/real-world-style-manifest.tsv fixtures/map-rendering-manifest.tsv fixtures/corpus-manifest.tsv docs/backend/native.md docs/backend/pdfium.md docs/corpus-taxonomy.md docs/policies/corpus-intake.md docs/policies/reference-oracle-strategy.md docs/backlogs/reference-oracle-tooling-backlog.md docs/milestones/README.md docs/milestones/0215-pdfium-comparison-tool-removal-decision-gate.md docs/reports/pdfium-comparison-tool-removal-decision-2026-06-29.md
 ```
@@ -106,7 +106,7 @@ Results:
 - Native-only `cargo check` passed.
 - Native-only `cargo test` passed.
 - PDFium quarantine check passed.
-- `pdfrust-cli` package listing contained only `.cargo_vcs_info.json`,
+- `ferrugo-cli` package listing contained only `.cargo_vcs_info.json`,
   `Cargo.lock`, `Cargo.toml`, `Cargo.toml.orig`, and `src/main.rs`.
 - Poppler visual oracle summary: 5 fixtures, 5 accepted drift, 0 blockers,
   0 native errors, 0 reference errors.

@@ -51,7 +51,7 @@ Result:
 Command:
 
 ```bash
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/object-cache-fusion-manifest.tsv --include-family linearized-navigation --include-family linearized-recovery --include-family incremental-navigation --include-family hybrid-navigation --include-family recovery-navigation --include-family long-document-navigation --fail-on-fallback --max-edge 160 --output target/object-cache-0214-supported-gate.json
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/object-cache-fusion-manifest.tsv --include-family linearized-navigation --include-family linearized-recovery --include-family incremental-navigation --include-family hybrid-navigation --include-family recovery-navigation --include-family long-document-navigation --fail-on-fallback --max-edge 160 --output target/object-cache-0214-supported-gate.json
 ```
 
 ## Navigation Benchmark
@@ -71,14 +71,14 @@ Result:
 Command:
 
 ```bash
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/object-cache-fusion-manifest.tsv --include-family linearized-navigation --include-family linearized-recovery --include-family incremental-navigation --include-family hybrid-navigation --include-family recovery-navigation --include-family long-document-navigation --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/object-cache-0214-benchmark.json
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/object-cache-fusion-manifest.tsv --include-family linearized-navigation --include-family linearized-recovery --include-family incremental-navigation --include-family hybrid-navigation --include-family recovery-navigation --include-family long-document-navigation --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/object-cache-0214-benchmark.json
 ```
 
 ## Focused Tests
 
 ```bash
-cargo test -p pdfrust-object load_modern_document_should_load_xref_stream_and_object_stream -- --nocapture
-cargo test -p pdfrust-object incremental -- --nocapture
+cargo test -p ferrugo-object load_modern_document_should_load_xref_stream_and_object_stream -- --nocapture
+cargo test -p ferrugo-object incremental -- --nocapture
 ```
 
 All focused tests passed locally.
@@ -87,7 +87,7 @@ All focused tests passed locally.
 
 ```bash
 cargo fmt --check
-git diff --check -- crates/pdfrust-object/src/lib.rs docs/policies/incremental-and-hybrid-references.md docs/milestones/README.md docs/milestones/0214-incremental-parser-and-object-cache-fusion.md docs/reports/object-cache-fusion-2026-06-29.md fixtures/object-cache-fusion-manifest.tsv
+git diff --check -- crates/ferrugo-object/src/lib.rs docs/policies/incremental-and-hybrid-references.md docs/milestones/README.md docs/milestones/0214-incremental-parser-and-object-cache-fusion.md docs/reports/object-cache-fusion-2026-06-29.md fixtures/object-cache-fusion-manifest.tsv
 cargo check --workspace --no-default-features
 cargo test --workspace --no-default-features
 cargo clippy --workspace --all-targets --all-features -- -D warnings

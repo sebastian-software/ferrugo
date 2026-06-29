@@ -46,7 +46,7 @@ Interpret Form XObjects with explicit recursion and resource budgets.
 ## Completion Notes
 
 - Added `FormResources`, `FormXObject`, and `build_form_display_list` in
-  `pdfrust-render`.
+  `ferrugo-render`.
 - Form resolution now walks page-level `/XObject` dictionaries and nested local
   form `/Resources /XObject` dictionaries by indirect reference, so local names
   can resolve nested forms that are not exposed on the page.
@@ -67,7 +67,7 @@ Interpret Form XObjects with explicit recursion and resource budgets.
   - `cargo fmt --check`
   - `cargo check`
   - `cargo test`
-  - `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- compare-metadata fixtures/generated/form-xobject.pdf --output target/pdfrust-thumbnails/form-xobject-metadata-comparison.json`
+  - `FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli -- compare-metadata fixtures/generated/form-xobject.pdf --output target/ferrugo-thumbnails/form-xobject-metadata-comparison.json`
     produced `status: match` with one 120x120 page for both PDFium and
     Rust-native.
   - `cargo clippy --all-targets --all-features -- -D warnings`

@@ -47,7 +47,7 @@ Define the backend-neutral Rust thumbnail API facade.
 Completed on 2026-06-24.
 
 - Added backend-neutral input, option, output, backend trait, and error types
-  to `pdfrust-thumbnail`.
+  to `ferrugo-thumbnail`.
 - Added tests for Phase 0 defaults, buffer layout validation, and stable error
   display.
 - Kept PDFium-specific handles and naming out of the public API.

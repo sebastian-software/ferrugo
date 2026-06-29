@@ -45,16 +45,16 @@ browser/report-style thumbnails do not silently drop `BI`/`ID`/`EI` image data.
 - Run `cargo fmt --check`.
 - Run `cargo check`.
 - Run `cargo test`.
-- Run `cargo run -p pdfrust-cli -- render-native fixtures/generated/inline-image.pdf --max-edge 256 --output target/pdfrust-thumbnails/coverage-inline-image-native.png`.
+- Run `cargo run -p ferrugo-cli -- render-native fixtures/generated/inline-image.pdf --max-edge 256 --output target/ferrugo-thumbnails/coverage-inline-image-native.png`.
 - Confirm the native PNG contains non-white pixels.
 - Run `cargo clippy --all-targets --all-features -- -D warnings`.
 
 ## Completion Notes
 
-- Added `ContentToken::InlineImage` so `pdfrust-content` parses inline image
+- Added `ContentToken::InlineImage` so `ferrugo-content` parses inline image
   dictionaries and raw image bytes as one token.
 - Added unfiltered 8-bit `DeviceRGB`/`DeviceGray` inline image execution in
-  `pdfrust-render`, reusing `DisplayItem::Image` and `rasterize_images`.
+  `ferrugo-render`, reusing `DisplayItem::Image` and `rasterize_images`.
 - Added native backend test coverage proving `inline-image.pdf` now renders
   the expected RGB quadrants.
 - Left filtered inline images as explicit `UnsupportedImageFilter` cases for
@@ -65,8 +65,8 @@ browser/report-style thumbnails do not silently drop `BI`/`ID`/`EI` image data.
   - `cargo check`
   - `cargo test`
   - `cargo clippy --all-targets --all-features -- -D warnings`
-  - `cargo test -p pdfrust-content -p pdfrust-render -p pdfrust-native`
-  - `cargo run -p pdfrust-cli -- render-native fixtures/generated/inline-image.pdf --max-edge 256 --output target/pdfrust-thumbnails/coverage-inline-image-native.png`
+  - `cargo test -p ferrugo-content -p ferrugo-render -p ferrugo-native`
+  - `cargo run -p ferrugo-cli -- render-native fixtures/generated/inline-image.pdf --max-edge 256 --output target/ferrugo-thumbnails/coverage-inline-image-native.png`
   - PNG probe: `dimensions=120x120 nonwhite=4096`,
     `sample_44_44=(255, 0, 0, 255)`,
     `sample_76_44=(0, 255, 0, 255)`,

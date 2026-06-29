@@ -70,7 +70,7 @@ artifact for release and milestone reviews.
 
 ## Producer Regression Flow
 
-`pdfrust-cli producer-regression-report` is the native-only local report for
+`ferrugo-cli producer-regression-report` is the native-only local report for
 producer-scoped regression triage. It requires a manifest and groups render
 outcomes by `producer:*` feature tags, manifest family, and feature flags.
 

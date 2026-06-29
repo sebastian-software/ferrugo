@@ -27,7 +27,7 @@ Existing signature baselines remain in the focused manifest:
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/e-signature-workflow-manifest.tsv --include-family contract-workflow --include-family audit-trail --include-family incremental-signature --include-family signature-appearance --fail-on-fallback --max-edge 160 --output target/e-signature-0153-supported-gate.json
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/e-signature-workflow-manifest.tsv --include-family contract-workflow --include-family audit-trail --include-family incremental-signature --include-family signature-appearance --fail-on-fallback --max-edge 160 --output target/e-signature-0153-supported-gate.json
 ```
 
 Result:
@@ -50,7 +50,7 @@ Family result:
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/e-signature-workflow-manifest.tsv --include-family contract-workflow --include-family audit-trail --include-family incremental-signature --include-family signature-appearance --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/e-signature-0153-benchmark.json
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/e-signature-workflow-manifest.tsv --include-family contract-workflow --include-family audit-trail --include-family incremental-signature --include-family signature-appearance --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/e-signature-0153-benchmark.json
 ```
 
 Result:
@@ -67,7 +67,7 @@ Result:
 Command:
 
 ```sh
-PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/e-signature-workflow-manifest.tsv --include-family contract-workflow --include-family audit-trail --include-family incremental-signature --include-family signature-appearance --max-edge 160 --max-mae 2.0 --max-p95 16 --max-changed-ratio 0.05 --output target/e-signature-0153-visual-diff.json
+FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/e-signature-workflow-manifest.tsv --include-family contract-workflow --include-family audit-trail --include-family incremental-signature --include-family signature-appearance --max-edge 160 --max-mae 2.0 --max-p95 16 --max-changed-ratio 0.05 --output target/e-signature-0153-visual-diff.json
 ```
 
 Result:
@@ -128,13 +128,13 @@ Commands run:
 
 ```sh
 python3 scripts/generate_fixtures.py
-cargo test -p pdfrust-native e_signature -- --nocapture
-cargo test -p pdfrust-native signature_presence -- --nocapture
-cargo test -p pdfrust-native annotation_appearance -- --nocapture
-cargo test -p pdfrust-native incremental -- --nocapture
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/e-signature-workflow-manifest.tsv --include-family contract-workflow --include-family audit-trail --include-family incremental-signature --include-family signature-appearance --fail-on-fallback --max-edge 160 --output target/e-signature-0153-supported-gate.json
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/e-signature-workflow-manifest.tsv --include-family contract-workflow --include-family audit-trail --include-family incremental-signature --include-family signature-appearance --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/e-signature-0153-benchmark.json
-PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/e-signature-workflow-manifest.tsv --include-family contract-workflow --include-family audit-trail --include-family incremental-signature --include-family signature-appearance --max-edge 160 --max-mae 2.0 --max-p95 16 --max-changed-ratio 0.05 --output target/e-signature-0153-visual-diff.json
+cargo test -p ferrugo-native e_signature -- --nocapture
+cargo test -p ferrugo-native signature_presence -- --nocapture
+cargo test -p ferrugo-native annotation_appearance -- --nocapture
+cargo test -p ferrugo-native incremental -- --nocapture
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/e-signature-workflow-manifest.tsv --include-family contract-workflow --include-family audit-trail --include-family incremental-signature --include-family signature-appearance --fail-on-fallback --max-edge 160 --output target/e-signature-0153-supported-gate.json
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/e-signature-workflow-manifest.tsv --include-family contract-workflow --include-family audit-trail --include-family incremental-signature --include-family signature-appearance --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/e-signature-0153-benchmark.json
+FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/e-signature-workflow-manifest.tsv --include-family contract-workflow --include-family audit-trail --include-family incremental-signature --include-family signature-appearance --max-edge 160 --max-mae 2.0 --max-p95 16 --max-changed-ratio 0.05 --output target/e-signature-0153-visual-diff.json
 wc -c fixtures/generated/e-signature-contract-workflow.pdf fixtures/generated/e-signature-audit-certificate.pdf fixtures/generated/e-signature-incremental-revision.pdf
 find fixtures/generated -name '*.pdf' -size +512k -print
 ```

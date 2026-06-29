@@ -49,7 +49,7 @@ incorrect monochrome fallback.
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated \
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated \
   --manifest fixtures/font-fallback-script-mixing-manifest.tsv \
   --include-family cjk \
   --include-family rtl \
@@ -72,7 +72,7 @@ Result:
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated \
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated \
   --manifest fixtures/font-fallback-script-mixing-manifest.tsv \
   --include-family cjk \
   --include-family rtl \
@@ -97,7 +97,7 @@ All other families rendered natively.
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated \
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated \
   --manifest fixtures/font-fallback-script-mixing-manifest.tsv \
   --include-family cjk \
   --include-family rtl \
@@ -126,9 +126,9 @@ Result:
 Command:
 
 ```sh
-PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib \
-DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib \
-cargo run -p pdfrust-cli --features pdfium -- visual-diff fixtures/generated \
+FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib \
+DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib \
+cargo run -p ferrugo-cli --features pdfium -- visual-diff fixtures/generated \
   --manifest fixtures/font-fallback-script-mixing-manifest.tsv \
   --include-family cjk \
   --include-family rtl \
@@ -157,10 +157,10 @@ Blockers are fidelity work, not native support failures:
 
 ## Validation
 
-- `cargo test -p pdfrust-render emoji -- --nocapture`
-- `cargo test -p pdfrust-native emoji -- --nocapture`
-- `cargo test -p pdfrust-render glyph_bitmap_cache -- --nocapture`
-- `cargo test -p pdfrust-render font_resources_should_bound_fallback_resolution_cache -- --nocapture`
-- `cargo test -p pdfrust-render font_resources_should_resolve_missing_embedded_font_deterministically -- --nocapture`
+- `cargo test -p ferrugo-render emoji -- --nocapture`
+- `cargo test -p ferrugo-native emoji -- --nocapture`
+- `cargo test -p ferrugo-render glyph_bitmap_cache -- --nocapture`
+- `cargo test -p ferrugo-render font_resources_should_bound_fallback_resolution_cache -- --nocapture`
+- `cargo test -p ferrugo-render font_resources_should_resolve_missing_embedded_font_deterministically -- --nocapture`
 - Native supported gate, boundary summary, benchmark, and visual comparison
   commands listed above.

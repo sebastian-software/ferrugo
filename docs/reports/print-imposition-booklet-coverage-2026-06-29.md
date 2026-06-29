@@ -99,12 +99,12 @@ small text rasterization, not missing geometry.
 
 ```text
 cargo fmt --check
-git diff --check -- crates/pdfrust-cli/src/main.rs crates/pdfrust-native/src/lib.rs fixtures/corpus-manifest.tsv fixtures/print-imposition-manifest.tsv scripts/generate_fixtures.py docs/corpus-taxonomy.md docs/backend/native.md docs/milestones/README.md docs/milestones/0184-print-shop-imposition-and-booklet-pdf-coverage.md docs/reports/print-imposition-booklet-coverage-2026-06-29.md
-cargo test -p pdfrust-native print_imposition -- --nocapture
-cargo test -p pdfrust-cli poppler --no-default-features
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/print-imposition-manifest.tsv --include-family booklet-spread --include-family n-up --include-family trim-bleed --include-family registration --fail-on-fallback --max-edge 160 --output target/print-imposition-0184-supported-gate.json
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/print-imposition-manifest.tsv --include-family booklet-spread --include-family n-up --include-family trim-bleed --include-family registration --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/print-imposition-0184-benchmark.json
-cargo run -p pdfrust-cli --no-default-features -- visual-diff-poppler fixtures/generated --manifest fixtures/print-imposition-manifest.tsv --include-family booklet-spread --include-family n-up --max-edge 160 --max-mae 5.5 --max-p95 16 --max-changed-ratio 0.13 --timeout 30 --output target/print-imposition-0184-poppler-visual-diff.json
+git diff --check -- crates/ferrugo-cli/src/main.rs crates/ferrugo-native/src/lib.rs fixtures/corpus-manifest.tsv fixtures/print-imposition-manifest.tsv scripts/generate_fixtures.py docs/corpus-taxonomy.md docs/backend/native.md docs/milestones/README.md docs/milestones/0184-print-shop-imposition-and-booklet-pdf-coverage.md docs/reports/print-imposition-booklet-coverage-2026-06-29.md
+cargo test -p ferrugo-native print_imposition -- --nocapture
+cargo test -p ferrugo-cli poppler --no-default-features
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/print-imposition-manifest.tsv --include-family booklet-spread --include-family n-up --include-family trim-bleed --include-family registration --fail-on-fallback --max-edge 160 --output target/print-imposition-0184-supported-gate.json
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/print-imposition-manifest.tsv --include-family booklet-spread --include-family n-up --include-family trim-bleed --include-family registration --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/print-imposition-0184-benchmark.json
+cargo run -p ferrugo-cli --no-default-features -- visual-diff-poppler fixtures/generated --manifest fixtures/print-imposition-manifest.tsv --include-family booklet-spread --include-family n-up --max-edge 160 --max-mae 5.5 --max-p95 16 --max-changed-ratio 0.13 --timeout 30 --output target/print-imposition-0184-poppler-visual-diff.json
 cargo check --workspace --no-default-features
 cargo test --workspace --no-default-features
 cargo clippy --workspace --all-targets --all-features -- -D warnings

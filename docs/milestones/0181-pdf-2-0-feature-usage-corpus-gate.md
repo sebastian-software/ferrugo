@@ -48,7 +48,7 @@ renderer.
 
 Completed on 2026-06-28.
 
-- Added `classify-pdf20-usage` to `pdfrust-cli` for privacy-safe PDF 2.0
+- Added `classify-pdf20-usage` to `ferrugo-cli` for privacy-safe PDF 2.0
   corpus classification by version evidence, manifest feature flags,
   visual-impact policy, native render outcome, and ranked follow-ups.
 - Added `docs/reports/pdf-2-0-feature-usage-corpus-2026-06-28.md` and
@@ -61,6 +61,6 @@ Completed on 2026-06-28.
   errors.
 - Full PDF 2.0 classification: 3 total, 2 native rendered, 1 fallback required
   under `graphics.color-management`, 0 errors.
-- Validation: `cargo fmt`, focused `cargo test -p pdfrust-cli pdf20_usage`,
+- Validation: `cargo fmt`, focused `cargo test -p ferrugo-cli pdf20_usage`,
   PDF 2.0 usage classifier, supported subset fallback gate, and full PDF 2.0
   fallback classification.

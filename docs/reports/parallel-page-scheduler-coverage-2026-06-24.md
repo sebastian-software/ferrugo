@@ -37,17 +37,17 @@ effective worker count is reduced.
 ## Validation
 
 ```text
-cargo test -p pdfrust-native native_parallel_renderer -- --nocapture
+cargo test -p ferrugo-native native_parallel_renderer -- --nocapture
 cargo fmt --check
 cargo check
 cargo test
 cargo clippy --all-targets --all-features -- -D warnings
-/usr/bin/time -l cargo test -p pdfrust-native native_parallel_renderer_should_match_sequential_page_outputs -- --nocapture
+/usr/bin/time -l cargo test -p ferrugo-native native_parallel_renderer_should_match_sequential_page_outputs -- --nocapture
 ```
 
 All commands completed successfully.
 
-The full test suite reported 68 `pdfrust-native` tests passing, including five
+The full test suite reported 68 `ferrugo-native` tests passing, including five
 parallel scheduler tests. The targeted scheduler timing command reported:
 
 ```text

@@ -88,13 +88,13 @@ The same diagnostics path exposes the active limits through
 
 ```text
 cargo fmt --check
-git diff --check -- crates/pdfrust-native/src/lib.rs crates/pdfrust-cli/src/main.rs fixtures/low-memory-profile-manifest.tsv
+git diff --check -- crates/ferrugo-native/src/lib.rs crates/ferrugo-cli/src/main.rs fixtures/low-memory-profile-manifest.tsv
 cargo check --workspace
 cargo clippy --workspace --all-targets --all-features -- -D warnings
-cargo test -p pdfrust-native low_memory -- --nocapture
-cargo test -p pdfrust-cli benchmark_config_should_accept_low_memory_native_profile -- --nocapture
+cargo test -p ferrugo-native low_memory -- --nocapture
+cargo test -p ferrugo-cli benchmark_config_should_accept_low_memory_native_profile -- --nocapture
 cargo test --workspace
 cargo test --workspace --no-default-features
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/low-memory-profile-manifest.tsv --include-family common --include-family scan --include-family vector-stress --include-family repeated-resources --fail-on-fallback --max-edge 160 --native-profile low-memory --output target/low-memory-0131-supported-gate.json
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/low-memory-profile-manifest.tsv --include-family common --include-family scan --include-family vector-stress --include-family repeated-resources --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --native-profile low-memory --output target/low-memory-0131-benchmark.json
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/low-memory-profile-manifest.tsv --include-family common --include-family scan --include-family vector-stress --include-family repeated-resources --fail-on-fallback --max-edge 160 --native-profile low-memory --output target/low-memory-0131-supported-gate.json
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/low-memory-profile-manifest.tsv --include-family common --include-family scan --include-family vector-stress --include-family repeated-resources --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --native-profile low-memory --output target/low-memory-0131-benchmark.json
 ```

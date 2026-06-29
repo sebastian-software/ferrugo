@@ -67,7 +67,7 @@ Implemented:
 
 Validation:
 
-- `cargo test -p pdfrust-native email -- --nocapture`
+- `cargo test -p ferrugo-native email -- --nocapture`
 - Email/web-archive native support gate: 7 total, 7 native rendered, 0
   fallbacks, 0 errors.
 - Email/web-archive benchmark: 7 total, 7 native rendered, 0 fallbacks, 0

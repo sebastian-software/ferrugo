@@ -29,7 +29,7 @@ Artifact: `target/readiness-0160-core-supported-gate.json`
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --include-family browser-print --include-family office-export --include-family form --fail-on-fallback --max-edge 160 --output target/readiness-0160-core-supported-gate.json
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --include-family browser-print --include-family office-export --include-family form --fail-on-fallback --max-edge 160 --output target/readiness-0160-core-supported-gate.json
 ```
 
 | Family | Total | Native rendered | Fallback required | Errors |
@@ -140,7 +140,7 @@ PDFium.
 The PDFium-free installation gate passed:
 
 - `scripts/check_plugin_free_distribution.sh` confirms the native CLI graph has
-  no `pdfrust-pdfium` dependency edge, no hidden fetch/plugin hooks, and no
+  no `ferrugo-pdfium` dependency edge, no hidden fetch/plugin hooks, and no
   committed binary artifacts under `crates/`.
 - `scripts/check_pdfium_quarantine.sh` confirms PDFium remains quarantined in
   explicit maintainer-only paths.
@@ -188,10 +188,10 @@ cargo run --manifest-path fuzz/Cargo.toml --bin xref_load -- --smoke
 cargo run --manifest-path fuzz/Cargo.toml --bin stream_decode -- --smoke
 cargo run --manifest-path fuzz/Cargo.toml --bin content_tokenize -- --smoke
 cargo run --manifest-path fuzz/Cargo.toml --bin render_setup -- --smoke
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --include-family browser-print --include-family office-export --include-family form --fail-on-fallback --max-edge 160 --output target/readiness-0160-core-supported-gate.json
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --output target/readiness-0160-full-fallback-summary.json
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --iterations 1 --max-ms 1000 --max-output-bytes 1048576 --output target/readiness-0160-benchmark-native.json
-cargo run -p pdfrust-cli --no-default-features -- benchmark-batch-native fixtures/generated --manifest fixtures/server-batch-manifest.tsv --include-family small --include-family mixed-size --include-family image-heavy --include-family repeated-resources --include-family vector-stress --repetitions 2 --max-workers 2 --max-in-flight-pixels 51200 --max-edge 160 --max-p95-ms 1000 --max-errors 0 --fail-on-budget --output target/readiness-0160-batch-memory.json
-PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/corpus-manifest.tsv --include-family browser-print --include-family office-export --include-family form --max-edge 120 --max-mae 2.0 --max-p95 16 --max-changed-ratio 0.05 --output target/readiness-0160-core-visual-diff.json
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --include-family browser-print --include-family office-export --include-family form --fail-on-fallback --max-edge 160 --output target/readiness-0160-core-supported-gate.json
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --output target/readiness-0160-full-fallback-summary.json
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --iterations 1 --max-ms 1000 --max-output-bytes 1048576 --output target/readiness-0160-benchmark-native.json
+cargo run -p ferrugo-cli --no-default-features -- benchmark-batch-native fixtures/generated --manifest fixtures/server-batch-manifest.tsv --include-family small --include-family mixed-size --include-family image-heavy --include-family repeated-resources --include-family vector-stress --repetitions 2 --max-workers 2 --max-in-flight-pixels 51200 --max-edge 160 --max-p95-ms 1000 --max-errors 0 --fail-on-budget --output target/readiness-0160-batch-memory.json
+FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/corpus-manifest.tsv --include-family browser-print --include-family office-export --include-family form --max-edge 120 --max-mae 2.0 --max-p95 16 --max-changed-ratio 0.05 --output target/readiness-0160-core-visual-diff.json
 cargo fmt --check
 ```

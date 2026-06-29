@@ -50,10 +50,10 @@ Completed on 2026-06-26.
 
 Implemented opt-in CLI maintainer tooling:
 
-- `pdfrust-cli trace-native` emits bounded native render traces with metadata,
+- `ferrugo-cli trace-native` emits bounded native render traces with metadata,
   render outcome, aggregate operator coverage, typed unsupported outcomes, and
   capped operator events.
-- `pdfrust-cli replay-operators` reads native trace JSON and emits compact
+- `ferrugo-cli replay-operators` reads native trace JSON and emits compact
   operator replay counts for reduced fixture triage.
 - `docs/policies/native-render-trace.md` defines the trace format, privacy
   boundary, size limits, and replay boundary.
@@ -62,7 +62,7 @@ Implemented opt-in CLI maintainer tooling:
 
 Validation completed:
 
-- `cargo test -p pdfrust-cli trace -- --nocapture`
-- `cargo test -p pdfrust-cli replay_operator -- --nocapture`
+- `cargo test -p ferrugo-cli trace -- --nocapture`
+- `cargo test -p ferrugo-cli replay_operator -- --nocapture`
 - Trace/replay smoke commands on `fixtures/generated/vector-paths.pdf`.
 - Disabled native benchmark on the report corpus family.

@@ -67,7 +67,7 @@ Added:
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated \
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated \
   --manifest fixtures/corrupt-recovery-manifest.tsv \
   --include-family recoverable-xref-drift \
   --include-family recoverable-linearized-hints \
@@ -88,7 +88,7 @@ Result:
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated \
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated \
   --manifest fixtures/corrupt-recovery-manifest.tsv \
   --include-family recoverable-xref-drift \
   --include-family recoverable-linearized-hints \
@@ -116,7 +116,7 @@ covered by direct metadata-inspection tests.
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated \
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated \
   --manifest fixtures/corrupt-recovery-manifest.tsv \
   --include-family recoverable-xref-drift \
   --include-family recoverable-linearized-hints \
@@ -148,9 +148,9 @@ Result:
 ## Validation
 
 - `python3 scripts/generate_fixtures.py`
-- `cargo test -p pdfrust-native corrupt -- --nocapture`
-- `cargo test -p pdfrust-native malformed_metadata -- --nocapture`
-- `cargo test -p pdfrust-native xref_offset_drift -- --nocapture`
+- `cargo test -p ferrugo-native corrupt -- --nocapture`
+- `cargo test -p ferrugo-native malformed_metadata -- --nocapture`
+- `cargo test -p ferrugo-native xref_offset_drift -- --nocapture`
 - Recoverable supported gate, full classification, and benchmark commands
   listed above.
 - Fuzz smoke commands listed above.

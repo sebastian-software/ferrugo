@@ -58,7 +58,7 @@ should behave in native rendering and viewer integration.
   `docs/backend/native.md`, and
   `docs/reports/optional-content-ui-state-2026-06-29.md`.
 - Validation completed on 2026-06-29:
-  `cargo test -p pdfrust-native optional_content -- --nocapture`, supported
+  `cargo test -p ferrugo-native optional_content -- --nocapture`, supported
   optional-content fallback gate, unsupported boundary gate, Poppler visual diff
   for default-on/default-off/nested fixtures, single-file metadata extraction,
   and broad workspace gates.

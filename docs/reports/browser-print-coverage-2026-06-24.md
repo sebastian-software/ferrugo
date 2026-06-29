@@ -23,7 +23,7 @@ Committed browser-print coverage currently includes:
 Command:
 
 ```sh
-cargo run -p pdfrust-cli -- summarize-fallbacks fixtures/generated \
+cargo run -p ferrugo-cli -- summarize-fallbacks fixtures/generated \
   --manifest fixtures/corpus-manifest.tsv \
   --max-edge 120 \
   --output target/browser-print-summary.json
@@ -39,7 +39,7 @@ Result:
 
 Native and direct PDFium rendering were run at `--max-edge 260` using the local
 PDFium dylib at
-`/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib`.
+`/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib`.
 
 | Fixture | Native | PDFium | Native size | PDFium size |
 | --- | --- | --- | --- | --- |

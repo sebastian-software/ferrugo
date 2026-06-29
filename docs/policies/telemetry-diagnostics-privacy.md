@@ -4,7 +4,7 @@ Status: accepted for 0198.
 Date: 2026-06-29.
 
 Renderer diagnostics are opt-in artifacts controlled by the embedding
-application or maintainer CLI command. `pdfrust` does not collect hosted
+application or maintainer CLI command. `ferrugo` does not collect hosted
 telemetry, does not enable background upload, and must not require diagnostics
 for successful rendering.
 

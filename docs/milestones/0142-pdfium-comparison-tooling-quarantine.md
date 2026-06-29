@@ -50,7 +50,7 @@ normal consumers cannot accidentally depend on it.
 - Kept PDFium commands available only as explicit maintainer tooling behind the
   `pdfium` feature.
 - Guarded the private `render-worker` command with the internal
-  `PDFRUST_PDFIUM_RENDER_WORKER` marker; direct CLI invocation now fails with a
+  `FERRUGO_PDFIUM_RENDER_WORKER` marker; direct CLI invocation now fails with a
   usage error.
 - Verified one opt-in PDFium `visual-diff` oracle job still runs and reports
   `accepted_drift` with no blockers.

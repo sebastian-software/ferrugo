@@ -20,14 +20,14 @@ cargo fmt --check
 cargo check
 cargo test
 cargo clippy --all-targets --all-features -- -D warnings
-cargo test -p pdfrust-render form_transparency_group_should_enforce_intermediate_pixel_budget -- --nocapture
-cargo run -p pdfrust-cli -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --output target/transparency-summary-0071.json
-cargo run -p pdfrust-cli -- render-native fixtures/generated/transparency-alpha.pdf --max-edge 120 --output target/pdfrust-thumbnails/transparency-alpha-native.png
-PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render-pdfium fixtures/generated/transparency-alpha.pdf --max-edge 120 --output target/pdfrust-thumbnails/transparency-alpha-pdfium.png
+cargo test -p ferrugo-render form_transparency_group_should_enforce_intermediate_pixel_budget -- --nocapture
+cargo run -p ferrugo-cli -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --output target/transparency-summary-0071.json
+cargo run -p ferrugo-cli -- render-native fixtures/generated/transparency-alpha.pdf --max-edge 120 --output target/ferrugo-thumbnails/transparency-alpha-native.png
+FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli -- render-pdfium fixtures/generated/transparency-alpha.pdf --max-edge 120 --output target/ferrugo-thumbnails/transparency-alpha-pdfium.png
 ```
 
 All commands completed successfully. A direct `render-pdfium` run without
-`PDFRUST_PDFIUM_LIBRARY` failed first with the expected environment error, then
+`FERRUGO_PDFIUM_LIBRARY` failed first with the expected environment error, then
 passed with the documented local PDFium dylib.
 
 The generated corpus summary reported 46 fixtures total, 44 native renders, 1

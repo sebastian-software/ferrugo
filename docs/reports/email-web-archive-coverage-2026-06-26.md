@@ -46,7 +46,7 @@ Regression coverage:
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated \
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated \
   --manifest fixtures/email-web-archive-manifest.tsv \
   --include-family email-thread \
   --include-family inline-image-link \
@@ -68,7 +68,7 @@ Result:
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated \
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated \
   --manifest fixtures/email-web-archive-manifest.tsv \
   --include-family email-thread \
   --include-family inline-image-link \
@@ -95,7 +95,7 @@ Result:
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated \
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated \
   --manifest fixtures/email-web-archive-manifest.tsv \
   --include-family email-thread \
   --max-edge 160 \
@@ -121,9 +121,9 @@ scheduler.
 Command:
 
 ```sh
-PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib \
-DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib \
-cargo run -p pdfrust-cli --features pdfium -- visual-diff fixtures/generated \
+FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib \
+DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib \
+cargo run -p ferrugo-cli --features pdfium -- visual-diff fixtures/generated \
   --manifest fixtures/email-web-archive-manifest.tsv \
   --include-family email-thread \
   --include-family inline-image-link \
@@ -153,8 +153,8 @@ These are fidelity follow-ups, not native support or policy failures.
 
 ## Validation
 
-- `cargo test -p pdfrust-native email -- --nocapture`
-- `cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks ...`
-- `cargo run -p pdfrust-cli --no-default-features -- benchmark-native ...`
-- `cargo run -p pdfrust-cli --no-default-features -- benchmark-native ... --native-profile low-memory`
-- `cargo run -p pdfrust-cli --features pdfium -- visual-diff ...`
+- `cargo test -p ferrugo-native email -- --nocapture`
+- `cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks ...`
+- `cargo run -p ferrugo-cli --no-default-features -- benchmark-native ...`
+- `cargo run -p ferrugo-cli --no-default-features -- benchmark-native ... --native-profile low-memory`
+- `cargo run -p ferrugo-cli --features pdfium -- visual-diff ...`

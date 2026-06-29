@@ -63,11 +63,11 @@ Implemented:
 
 Validation:
 
-- `cargo test -p pdfrust-render emoji -- --nocapture`
-- `cargo test -p pdfrust-native emoji -- --nocapture`
-- `cargo test -p pdfrust-render glyph_bitmap_cache -- --nocapture`
-- `cargo test -p pdfrust-render font_resources_should_bound_fallback_resolution_cache -- --nocapture`
-- `cargo test -p pdfrust-render font_resources_should_resolve_missing_embedded_font_deterministically -- --nocapture`
+- `cargo test -p ferrugo-render emoji -- --nocapture`
+- `cargo test -p ferrugo-native emoji -- --nocapture`
+- `cargo test -p ferrugo-render glyph_bitmap_cache -- --nocapture`
+- `cargo test -p ferrugo-render font_resources_should_bound_fallback_resolution_cache -- --nocapture`
+- `cargo test -p ferrugo-render font_resources_should_resolve_missing_embedded_font_deterministically -- --nocapture`
 - Supported mixed-script native gate: 12 total, 12 native rendered, 0 fallbacks,
   0 errors.
 - Full mixed-script boundary summary: emoji boundary returns 1

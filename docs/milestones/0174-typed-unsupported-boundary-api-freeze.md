@@ -49,7 +49,7 @@ reliable fallback, reporting, and retry behavior around the native renderer.
 Completed 2026-06-26.
 
 - Promoted unsupported-feature bucket names into
-  `pdfrust_thumbnail::unsupported_feature_buckets` plus
+  `ferrugo_thumbnail::unsupported_feature_buckets` plus
   `STABLE_UNSUPPORTED_FEATURE_BUCKETS`.
 - Updated the native backend to emit the facade bucket constants instead of
   private duplicate strings.
@@ -62,8 +62,8 @@ Completed 2026-06-26.
 
 Validation:
 
-- `cargo test -p pdfrust-thumbnail unsupported_feature_buckets -- --nocapture`
-- `cargo test -p pdfrust-native typed_unsupported_boundary -- --nocapture`
+- `cargo test -p ferrugo-thumbnail unsupported_feature_buckets -- --nocapture`
+- `cargo test -p ferrugo-native typed_unsupported_boundary -- --nocapture`
 - Unsupported corpus classification with `summarize-fallbacks`.
 - `cargo test --workspace --no-default-features`
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`

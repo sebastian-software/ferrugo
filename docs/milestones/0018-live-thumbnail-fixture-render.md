@@ -45,7 +45,7 @@ Completed on 2026-06-24.
 
 - Rendered `fixtures/generated/text-page.pdf` through the release CLI with the
   live PDFium backend.
-- Wrote PNG artifacts under `target/pdfrust-thumbnails/`.
+- Wrote PNG artifacts under `target/ferrugo-thumbnails/`.
 - Recorded dimensions, file hashes, decoded RGBA hashes, wall time, CPU time,
   and max RSS for `max-edge` 256, 512, and 1024 in
   `docs/measurements/pdfium-build-baseline.md`.

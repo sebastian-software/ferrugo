@@ -27,7 +27,7 @@ Milestone: 0086.
 Command:
 
 ```text
-PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --output target/type3-visual-diff-0086.json
+FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --output target/type3-visual-diff-0086.json
 ```
 
 Corpus summary:
@@ -49,7 +49,7 @@ Type3 fixture details:
 Command:
 
 ```text
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --output target/type3-summary-0086.json
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --output target/type3-summary-0086.json
 ```
 
 The generated corpus reported 58 fixtures total: 56 native renders, 1 optional
@@ -61,10 +61,10 @@ of 14 native renders after adding the Type3 fixtures.
 ```text
 cargo fmt --check
 cargo check --workspace --no-default-features
-cargo test -p pdfrust-render type3
-cargo test -p pdfrust-native type3
+cargo test -p ferrugo-render type3
+cargo test -p ferrugo-native type3
 cargo test --workspace --no-default-features
-cargo clippy -p pdfrust-render --no-default-features -- -D warnings
+cargo clippy -p ferrugo-render --no-default-features -- -D warnings
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 ```
 

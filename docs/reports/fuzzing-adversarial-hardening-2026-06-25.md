@@ -58,9 +58,9 @@ Observed smoke case counts:
 
 ## Malformed Corpus Checks
 
-- `cargo test -p pdfrust-syntax excessive_nesting -- --nocapture`
-- `cargo test -p pdfrust-content adversarial_unterminated_inline_image -- --nocapture`
-- `cargo test -p pdfrust-native adversarial_truncated_header -- --nocapture`
+- `cargo test -p ferrugo-syntax excessive_nesting -- --nocapture`
+- `cargo test -p ferrugo-content adversarial_unterminated_inline_image -- --nocapture`
+- `cargo test -p ferrugo-native adversarial_truncated_header -- --nocapture`
 
 All targeted malformed checks passed.
 

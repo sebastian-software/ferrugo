@@ -44,7 +44,7 @@ facade.
 
 Completed on 2026-06-24.
 
-- Implemented PDFium page rendering to RGBA in `pdfrust-pdfium`.
+- Implemented PDFium page rendering to RGBA in `ferrugo-pdfium`.
 - Added bounded `max_edge` scaling and BGRA-to-RGBA conversion.
 - Added a typed missing-file failure test.
 - A live fixture render was not run because no local PDFium library is

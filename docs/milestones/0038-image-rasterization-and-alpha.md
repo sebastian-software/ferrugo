@@ -45,14 +45,14 @@ handling.
 
 ## Completion Notes
 
-- Added `rasterize_images` in `pdfrust-render` for decoded Image XObject
+- Added `rasterize_images` in `ferrugo-render` for decoded Image XObject
   display-list items.
 - Image rasterization composes the page transform with the image placement
   matrix, inverts it for nearest-neighbor unit-square sampling, and draws
   opaque `DeviceRGB` and `DeviceGray` samples into the RGBA raster.
 - Added `Matrix::inverse` and a typed `SingularImageTransform` raster error for
   non-invertible image placements.
-- Wired `pdfrust-native::NativeBackend::render` to resolve page
+- Wired `ferrugo-native::NativeBackend::render` to resolve page
   `/Resources /XObject` image dictionaries, build image display lists, and draw
   images after path rasterization.
 - Added generated `fixtures/generated/image-xobject.pdf` through
@@ -62,10 +62,10 @@ handling.
 - Validation:
   - `cargo fmt --check`
   - `cargo check`
-  - `cargo test -p pdfrust-render -p pdfrust-native`
+  - `cargo test -p ferrugo-render -p ferrugo-native`
   - `cargo test`
-  - `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- render fixtures/generated/image-xobject.pdf --max-edge 120 --output target/pdfrust-thumbnails/image-xobject-pdfium-0038.png`
-  - `cargo run -p pdfrust-cli -- render-native fixtures/generated/image-xobject.pdf --max-edge 120 --output target/pdfrust-thumbnails/image-xobject-native-0038.png`
+  - `FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli -- render fixtures/generated/image-xobject.pdf --max-edge 120 --output target/ferrugo-thumbnails/image-xobject-pdfium-0038.png`
+  - `cargo run -p ferrugo-cli -- render-native fixtures/generated/image-xobject.pdf --max-edge 120 --output target/ferrugo-thumbnails/image-xobject-native-0038.png`
   - Pixel comparison for those PNGs produced `dimensions=120x120 mae=0.000
     p95=0 max=0 native_nonwhite_pixels=4096`.
   - `cargo clippy --all-targets --all-features -- -D warnings`

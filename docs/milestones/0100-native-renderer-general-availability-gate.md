@@ -67,7 +67,7 @@ Completed on 2026-06-25.
   blockers, 5 native errors, 0 PDFium errors, 1 both-error case.
 - Fuzz smoke targets completed: `primitive_parse` 165, `xref_load` 154,
   `stream_decode` 154, `content_tokenize` 165, `render_setup` 165.
-- Package dry-runs completed for `pdfrust-syntax` and `pdfrust-thumbnail`.
+- Package dry-runs completed for `ferrugo-syntax` and `ferrugo-thumbnail`.
 - Validation completed with native-only fmt/check/test, supported corpus gate,
   benchmark, PDFium visual baseline, PDFium feature test, and all-feature
   clippy.

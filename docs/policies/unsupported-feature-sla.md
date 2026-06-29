@@ -23,8 +23,8 @@ Consumers must route first by `ThumbnailError::class()`:
 
 When the class is `unsupported`, consumers may additionally read
 `ThumbnailError::unsupported_feature_bucket()`. Bucket names are stable
-diagnostics exposed by `pdfrust_thumbnail::unsupported_feature_buckets` and
-listed in `pdfrust_thumbnail::STABLE_UNSUPPORTED_FEATURE_BUCKETS`.
+diagnostics exposed by `ferrugo_thumbnail::unsupported_feature_buckets` and
+listed in `ferrugo_thumbnail::STABLE_UNSUPPORTED_FEATURE_BUCKETS`.
 
 Do not parse `Display` messages for control flow. Message text can improve
 without a semver-major API change as long as class and bucket behavior remains

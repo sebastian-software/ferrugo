@@ -1,5 +1,5 @@
-use pdfrust_fuzz::run_target;
-use pdfrust_syntax::{parse_primitive, parse_primitive_prefix, PdfBytes};
+use ferrugo_fuzz::run_target;
+use ferrugo_syntax::{parse_primitive, parse_primitive_prefix, PdfBytes};
 
 fn main() {
     run_target(

@@ -44,6 +44,6 @@ Create the smallest Rust workspace needed for the Phase 0 CLI/library probe.
 Completed on 2026-06-24.
 
 - Added a Cargo workspace.
-- Added `pdfrust-thumbnail` for backend-neutral library code.
-- Added `pdfrust-cli` as the local command shell.
+- Added `ferrugo-thumbnail` for backend-neutral library code.
+- Added `ferrugo-cli` as the local command shell.
 - Added workspace lint and rustfmt defaults.

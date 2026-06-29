@@ -26,7 +26,7 @@ revision while avoiding retention of deleted historical objects.
 Command:
 
 ```text
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --output target/incremental-hardening-summary-0093.json
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --output target/incremental-hardening-summary-0093.json
 ```
 
 Corpus summary:
@@ -56,7 +56,7 @@ The remaining mixed-layout error is the existing encrypted placeholder.
 Command:
 
 ```text
-PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --output target/incremental-hardening-visual-diff-0093.json
+FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --output target/incremental-hardening-visual-diff-0093.json
 ```
 
 Corpus summary:
@@ -83,7 +83,7 @@ Incremental fixture details:
 Command:
 
 ```text
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/incremental-hardening-benchmark-0093.json
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/incremental-hardening-benchmark-0093.json
 ```
 
 Corpus summary:
@@ -110,8 +110,8 @@ Incremental fixture outcomes:
 ```text
 python3 scripts/generate_fixtures.py
 cargo fmt
-cargo test -p pdfrust-object incremental -- --nocapture
-cargo test -p pdfrust-native incremental -- --nocapture
+cargo test -p ferrugo-object incremental -- --nocapture
+cargo test -p ferrugo-native incremental -- --nocapture
 cargo fmt --check
 cargo check --workspace --no-default-features
 cargo test --workspace --no-default-features

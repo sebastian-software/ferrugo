@@ -48,16 +48,16 @@ PDFium oracle.
 Completed with the `feat: compare native metadata with pdfium` change.
 
 - Added backend-neutral `DocumentMetadataBackend`, `DocumentMetadata`,
-  `PageMetadata`, and `PageSize` types to `pdfrust-thumbnail`.
-- Implemented metadata inspection in `pdfrust-pdfium` using `FPDF_GetPageCount`
+  `PageMetadata`, and `PageSize` types to `ferrugo-thumbnail`.
+- Implemented metadata inspection in `ferrugo-pdfium` using `FPDF_GetPageCount`
   plus PDFium page width and height APIs.
-- Implemented metadata inspection in `pdfrust-native` through the Rust object
+- Implemented metadata inspection in `ferrugo-native` through the Rust object
   loader and `page_tree()` API while leaving pixel rendering unsupported.
-- Added `pdfrust-cli compare-metadata` to compare PDFium oracle metadata against
+- Added `ferrugo-cli compare-metadata` to compare PDFium oracle metadata against
   Rust-native metadata and emit compact JSON diagnostics.
 - Added `baselines/examples/text-page-metadata-comparison.json` as the first
   metadata-only comparison baseline.
 - Validation:
-  - `cargo test -p pdfrust-thumbnail -p pdfrust-native -p pdfrust-pdfium -p pdfrust-cli`
+  - `cargo test -p ferrugo-thumbnail -p ferrugo-native -p ferrugo-pdfium -p ferrugo-cli`
   - Live PDFium comparison:
-    `PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli -- compare-metadata fixtures/generated/text-page.pdf --output target/pdfrust-thumbnails/text-page-metadata-comparison.json`
+    `FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli -- compare-metadata fixtures/generated/text-page.pdf --output target/ferrugo-thumbnails/text-page-metadata-comparison.json`

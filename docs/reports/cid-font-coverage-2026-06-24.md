@@ -8,21 +8,21 @@ CID descendant font metadata.
 ## Commands
 
 ```sh
-PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib \
-DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib \
-cargo run -p pdfrust-cli -- summarize-fallbacks fixtures/generated \
+FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib \
+DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib \
+cargo run -p ferrugo-cli -- summarize-fallbacks fixtures/generated \
   --manifest fixtures/corpus-manifest.tsv \
   --max-edge 120 \
-  --output target/pdfrust-thumbnails/fallback-summary-0068.json
+  --output target/ferrugo-thumbnails/fallback-summary-0068.json
 
-cargo run -p pdfrust-cli -- render-native fixtures/generated/cid-font-text.pdf \
-  --output target/pdfrust-thumbnails/cid-font-text-native.png \
+cargo run -p ferrugo-cli -- render-native fixtures/generated/cid-font-text.pdf \
+  --output target/ferrugo-thumbnails/cid-font-text-native.png \
   --max-edge 180
 
-PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib \
-DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib \
-cargo run -p pdfrust-cli -- render-pdfium fixtures/generated/cid-font-text.pdf \
-  --output target/pdfrust-thumbnails/cid-font-text-pdfium.png \
+FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib \
+DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib \
+cargo run -p ferrugo-cli -- render-pdfium fixtures/generated/cid-font-text.pdf \
+  --output target/ferrugo-thumbnails/cid-font-text-pdfium.png \
   --max-edge 180
 ```
 

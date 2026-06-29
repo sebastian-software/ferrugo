@@ -3,59 +3,59 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-profile="${PDFRUST_SERVERLESS_PROFILE:-serverless}"
-binary="target/${profile}/pdfrust-cli"
-fixture="${PDFRUST_SERVERLESS_FIXTURE:-fixtures/generated/text-page.pdf}"
-output="${PDFRUST_SERVERLESS_OUTPUT:-target/serverless-profile-0197.json}"
-package_list="${PDFRUST_SERVERLESS_PACKAGE_LIST:-target/serverless-profile-pdfrust-cli-package-files.txt}"
-iterations="${PDFRUST_SERVERLESS_ITERATIONS:-7}"
-max_binary_bytes="${PDFRUST_SERVERLESS_MAX_BINARY_BYTES:-8388608}"
-max_startup_p95_ms="${PDFRUST_SERVERLESS_MAX_STARTUP_P95_MS:-500}"
-max_first_render_p95_ms="${PDFRUST_SERVERLESS_MAX_FIRST_RENDER_P95_MS:-250}"
-max_render_output_bytes="${PDFRUST_SERVERLESS_MAX_RENDER_OUTPUT_BYTES:-1048576}"
-max_edge="${PDFRUST_SERVERLESS_MAX_EDGE:-160}"
+profile="${FERRUGO_SERVERLESS_PROFILE:-serverless}"
+binary="target/${profile}/ferrugo-cli"
+fixture="${FERRUGO_SERVERLESS_FIXTURE:-fixtures/generated/text-page.pdf}"
+output="${FERRUGO_SERVERLESS_OUTPUT:-target/serverless-profile-0197.json}"
+package_list="${FERRUGO_SERVERLESS_PACKAGE_LIST:-target/serverless-profile-ferrugo-cli-package-files.txt}"
+iterations="${FERRUGO_SERVERLESS_ITERATIONS:-7}"
+max_binary_bytes="${FERRUGO_SERVERLESS_MAX_BINARY_BYTES:-8388608}"
+max_startup_p95_ms="${FERRUGO_SERVERLESS_MAX_STARTUP_P95_MS:-500}"
+max_first_render_p95_ms="${FERRUGO_SERVERLESS_MAX_FIRST_RENDER_P95_MS:-250}"
+max_render_output_bytes="${FERRUGO_SERVERLESS_MAX_RENDER_OUTPUT_BYTES:-1048576}"
+max_edge="${FERRUGO_SERVERLESS_MAX_EDGE:-160}"
 
 mkdir -p target
 
 echo "==> serverless native-only build (${profile})"
-cargo build --profile "${profile}" -p pdfrust-cli --no-default-features
+cargo build --profile "${profile}" -p ferrugo-cli --no-default-features
 
-echo "==> pdfrust-cli package file inspection"
-cargo package -p pdfrust-cli --allow-dirty --no-verify --list > "${package_list}"
-if rg -n '\.(dylib|so|dll|a|framework)(/|$)|libpdfium|pdfium\.dll|PDFRUST_PDFIUM_LIBRARY' "${package_list}"; then
-  echo "PDFium runtime asset or native binary found in pdfrust-cli package file list" >&2
+echo "==> ferrugo-cli package file inspection"
+cargo package -p ferrugo-cli --allow-dirty --no-verify --list > "${package_list}"
+if rg -n '\.(dylib|so|dll|a|framework)(/|$)|libpdfium|pdfium\.dll|FERRUGO_PDFIUM_LIBRARY' "${package_list}"; then
+  echo "PDFium runtime asset or native binary found in ferrugo-cli package file list" >&2
   exit 1
 fi
 
 echo "==> startup and first-render measurement"
-PDFRUST_SERVERLESS_BINARY="${binary}" \
-PDFRUST_SERVERLESS_PROFILE="${profile}" \
-PDFRUST_SERVERLESS_FIXTURE="${fixture}" \
-PDFRUST_SERVERLESS_OUTPUT="${output}" \
-PDFRUST_SERVERLESS_ITERATIONS="${iterations}" \
-PDFRUST_SERVERLESS_MAX_BINARY_BYTES="${max_binary_bytes}" \
-PDFRUST_SERVERLESS_MAX_STARTUP_P95_MS="${max_startup_p95_ms}" \
-PDFRUST_SERVERLESS_MAX_FIRST_RENDER_P95_MS="${max_first_render_p95_ms}" \
-PDFRUST_SERVERLESS_MAX_RENDER_OUTPUT_BYTES="${max_render_output_bytes}" \
-PDFRUST_SERVERLESS_MAX_EDGE="${max_edge}" \
+FERRUGO_SERVERLESS_BINARY="${binary}" \
+FERRUGO_SERVERLESS_PROFILE="${profile}" \
+FERRUGO_SERVERLESS_FIXTURE="${fixture}" \
+FERRUGO_SERVERLESS_OUTPUT="${output}" \
+FERRUGO_SERVERLESS_ITERATIONS="${iterations}" \
+FERRUGO_SERVERLESS_MAX_BINARY_BYTES="${max_binary_bytes}" \
+FERRUGO_SERVERLESS_MAX_STARTUP_P95_MS="${max_startup_p95_ms}" \
+FERRUGO_SERVERLESS_MAX_FIRST_RENDER_P95_MS="${max_first_render_p95_ms}" \
+FERRUGO_SERVERLESS_MAX_RENDER_OUTPUT_BYTES="${max_render_output_bytes}" \
+FERRUGO_SERVERLESS_MAX_EDGE="${max_edge}" \
 node --input-type=module <<'NODE'
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 
-const binary = process.env.PDFRUST_SERVERLESS_BINARY;
-const fixture = process.env.PDFRUST_SERVERLESS_FIXTURE;
-const output = process.env.PDFRUST_SERVERLESS_OUTPUT;
-const iterations = Number.parseInt(process.env.PDFRUST_SERVERLESS_ITERATIONS, 10);
-const maxBinaryBytes = Number.parseInt(process.env.PDFRUST_SERVERLESS_MAX_BINARY_BYTES, 10);
-const maxStartupP95Ms = Number.parseFloat(process.env.PDFRUST_SERVERLESS_MAX_STARTUP_P95_MS);
-const maxFirstRenderP95Ms = Number.parseFloat(process.env.PDFRUST_SERVERLESS_MAX_FIRST_RENDER_P95_MS);
-const maxRenderOutputBytes = Number.parseInt(process.env.PDFRUST_SERVERLESS_MAX_RENDER_OUTPUT_BYTES, 10);
-const maxEdge = process.env.PDFRUST_SERVERLESS_MAX_EDGE;
+const binary = process.env.FERRUGO_SERVERLESS_BINARY;
+const fixture = process.env.FERRUGO_SERVERLESS_FIXTURE;
+const output = process.env.FERRUGO_SERVERLESS_OUTPUT;
+const iterations = Number.parseInt(process.env.FERRUGO_SERVERLESS_ITERATIONS, 10);
+const maxBinaryBytes = Number.parseInt(process.env.FERRUGO_SERVERLESS_MAX_BINARY_BYTES, 10);
+const maxStartupP95Ms = Number.parseFloat(process.env.FERRUGO_SERVERLESS_MAX_STARTUP_P95_MS);
+const maxFirstRenderP95Ms = Number.parseFloat(process.env.FERRUGO_SERVERLESS_MAX_FIRST_RENDER_P95_MS);
+const maxRenderOutputBytes = Number.parseInt(process.env.FERRUGO_SERVERLESS_MAX_RENDER_OUTPUT_BYTES, 10);
+const maxEdge = process.env.FERRUGO_SERVERLESS_MAX_EDGE;
 
 if (!Number.isInteger(iterations) || iterations <= 0) {
-  throw new Error("PDFRUST_SERVERLESS_ITERATIONS must be greater than zero");
+  throw new Error("FERRUGO_SERVERLESS_ITERATIONS must be greater than zero");
 }
 
 const binarySizeBytes = fs.statSync(binary).size;
@@ -147,7 +147,7 @@ if (renderOutputBytes > maxRenderOutputBytes) {
 
 const report = {
   schema_version: 1,
-  profile: process.env.PDFRUST_SERVERLESS_PROFILE ?? "serverless",
+  profile: process.env.FERRUGO_SERVERLESS_PROFILE ?? "serverless",
   binary,
   fixture,
   platform: {

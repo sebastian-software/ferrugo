@@ -108,14 +108,14 @@ The blockers are visual-fidelity work, not native coverage failures:
 
 ```text
 cargo fmt --check
-git diff --check -- crates/pdfrust-native/src/lib.rs fixtures/corpus-manifest.tsv fixtures/mobile-scan-manifest.tsv scripts/generate_fixtures.py
+git diff --check -- crates/ferrugo-native/src/lib.rs fixtures/corpus-manifest.tsv fixtures/mobile-scan-manifest.tsv scripts/generate_fixtures.py
 cargo check --workspace
 cargo clippy --workspace --all-targets --all-features -- -D warnings
-cargo test -p pdfrust-native mobile -- --nocapture
+cargo test -p ferrugo-native mobile -- --nocapture
 cargo test --workspace
 cargo test --workspace --no-default-features
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/mobile-scan-manifest.tsv --include-family rotation --include-family crop --include-family ocr-layer --include-family compression --fail-on-fallback --max-edge 160 --output target/mobile-scan-0129-supported-gate.json
-cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/mobile-scan-manifest.tsv --include-family unsupported-filter --max-edge 160 --output target/mobile-scan-0129-unsupported-backlog.json
-cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/mobile-scan-manifest.tsv --include-family rotation --include-family crop --include-family ocr-layer --include-family compression --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/mobile-scan-0129-benchmark.json
-PDFRUST_PDFIUM_LIBRARY=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/pdfrust-tools/pdfium-work/pdfium/out/pdfrust-dylib cargo run -p pdfrust-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/mobile-scan-manifest.tsv --include-family rotation --include-family crop --include-family ocr-layer --include-family compression --max-edge 160 --max-mae 2.0 --max-p95 16 --max-changed-ratio 0.05 --output target/mobile-scan-0129-visual-diff.json
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/mobile-scan-manifest.tsv --include-family rotation --include-family crop --include-family ocr-layer --include-family compression --fail-on-fallback --max-edge 160 --output target/mobile-scan-0129-supported-gate.json
+cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/mobile-scan-manifest.tsv --include-family unsupported-filter --max-edge 160 --output target/mobile-scan-0129-unsupported-backlog.json
+cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/mobile-scan-manifest.tsv --include-family rotation --include-family crop --include-family ocr-layer --include-family compression --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/mobile-scan-0129-benchmark.json
+FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib cargo run -p ferrugo-cli --features pdfium -- visual-diff fixtures/generated --manifest fixtures/mobile-scan-manifest.tsv --include-family rotation --include-family crop --include-family ocr-layer --include-family compression --max-edge 160 --max-mae 2.0 --max-p95 16 --max-changed-ratio 0.05 --output target/mobile-scan-0129-visual-diff.json
 ```

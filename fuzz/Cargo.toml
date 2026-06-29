@@ -1,5 +1,5 @@
 [package]
-name = "pdfrust-fuzz"
+name = "ferrugo-fuzz"
 version = "0.0.0"
 edition = "2021"
 publish = false
@@ -7,11 +7,11 @@ publish = false
 [workspace]
 
 [dependencies]
-pdfrust-content = { path = "../crates/pdfrust-content" }
-pdfrust-native = { path = "../crates/pdfrust-native" }
-pdfrust-object = { path = "../crates/pdfrust-object" }
-pdfrust-syntax = { path = "../crates/pdfrust-syntax" }
-pdfrust-thumbnail = { path = "../crates/pdfrust-thumbnail" }
+ferrugo-content = { path = "../crates/ferrugo-content" }
+ferrugo-native = { path = "../crates/ferrugo-native" }
+ferrugo-object = { path = "../crates/ferrugo-object" }
+ferrugo-syntax = { path = "../crates/ferrugo-syntax" }
+ferrugo-thumbnail = { path = "../crates/ferrugo-thumbnail" }
 
 [[bin]]
 name = "primitive_parse"

@@ -1,7 +1,7 @@
 # Visual Diff Thresholds And Review Workflow
 
 This policy covers local native-versus-reference visual review runs produced by
-`pdfrust-cli visual-diff` and `pdfrust-cli visual-diff-poppler`. It is a
+`ferrugo-cli visual-diff` and `ferrugo-cli visual-diff-poppler`. It is a
 maintainer comparison policy, not a runtime or release-gate requirement. The
 release/oracle split is defined in `docs/policies/reference-oracle-strategy.md`.
 

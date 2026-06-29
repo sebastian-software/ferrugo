@@ -40,7 +40,7 @@ produces 250 page jobs.
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- benchmark-batch-native fixtures/generated \
+cargo run -p ferrugo-cli --no-default-features -- benchmark-batch-native fixtures/generated \
   --manifest fixtures/high-page-count-batch-manifest.tsv \
   --include-family long-document \
   --include-family book \
@@ -78,7 +78,7 @@ JSON artifact.
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- benchmark-batch-native fixtures/generated \
+cargo run -p ferrugo-cli --no-default-features -- benchmark-batch-native fixtures/generated \
   --manifest fixtures/high-page-count-batch-manifest.tsv \
   --include-family long-document \
   --include-family book \
@@ -110,7 +110,7 @@ results and deterministic ordering.
 Command:
 
 ```sh
-cargo run -p pdfrust-cli --no-default-features -- benchmark-batch-native fixtures/generated \
+cargo run -p ferrugo-cli --no-default-features -- benchmark-batch-native fixtures/generated \
   --manifest fixtures/high-page-count-batch-manifest.tsv \
   --include-family long-document \
   --include-family book \
@@ -144,7 +144,7 @@ Result:
 Targeted tests:
 
 ```sh
-cargo test -p pdfrust-cli batch -- --nocapture
+cargo test -p ferrugo-cli batch -- --nocapture
 ```
 
 Results:
