@@ -47,11 +47,11 @@ profiles, and regressions teach us where the real bottlenecks are.
 - [ ] Do not update public README performance claims until at least two stable
   matrix runs agree.
 
-## Decisions To Settle
+## Settled Questions For The First Optimization Wave
 
-These questions should be answered before we turn local measurements into
-claims, CI gates, or broad architecture changes. The current answer is the
-working default until this section is edited.
+These questions are settled for the first performance wave. Reopen a decision
+only when benchmark evidence or product requirements change. The goal is to
+keep the work decisive without pretending the first numbers are public claims.
 
 | Question | Working answer | Acceptance impact |
 | --- | --- | --- |
@@ -69,6 +69,17 @@ working default until this section is edited.
 | Can `SmallVec` replace hot `Vec`s broadly? | No. It is a measured tool for short, hot, high-frequency collections only. | A `SmallVec` PR needs length histograms and must show that stack growth does not hurt cache locality. |
 | Can bulk-copy or `memcpy` style changes be optimized directly? | Prefer safe slice APIs first; let LLVM lower obvious contiguous copies. | Raw pointer copies require a benchmark win, a local safety invariant, and a safe implementation that was insufficient. |
 | What metric decides allocation wins? | Allocation count, allocation bytes, peak RSS, or explicit scratch-buffer high-water, depending on the block. | The metric must be named before implementation and reported after the benchmark run. |
+
+Not settled globally:
+
+- Public speed or memory claims against PDFium, Poppler, or MuPDF. Those wait
+  for repeated reference-renderer runs on a documented host.
+- CI performance budgets. The benchmark matrix should stabilize first; early
+  CI gates would mostly encode local variance.
+- WASM-first constraints. Server-side native rendering is the current product
+  shape; WASM can be revisited when it becomes a concrete delivery target.
+- Broad dependency policy. Each performance dependency is still a local
+  decision with local evidence.
 
 ## Questions To Close Before The Next Optimization Wave
 
@@ -101,6 +112,21 @@ wave. Reopen them only when benchmark evidence or product requirements change.
 
 These criteria apply to every optimization block unless a narrower follow-up
 document explicitly overrides them.
+
+Definition of done for one optimization commit:
+
+- The commit changes one bottleneck class: for example path rasterization,
+  image decode, output encoding, object loading, or allocation churn.
+- The plan records the baseline artifact, the profile finding, the chosen
+  metric, and the before/after result.
+- The result clears the threshold: at least 10% p95 or wall-time improvement on
+  target fixtures, or at least 10% lower peak RSS/allocation volume/scratch
+  high-water. A 5-10% result needs repeated confirmation and must be described
+  as marginal until then.
+- The focused fixture set has no new crash, timeout, fallback bucket, error
+  class, output-dimension change, or obvious visual drift.
+- The validation commands relevant to the touched surface pass before the next
+  optimization starts.
 
 Baseline acceptance:
 
@@ -465,6 +491,16 @@ Current profile after accepted vector optimizations:
 Goal: use Rust's memory model and the host CPU well without prematurely
 outsmarting the compiler.
 
+Short version:
+
+- Prefer fewer operations over faster operations.
+- Prefer borrowing and buffer reuse over copying.
+- Prefer safe contiguous slice operations over handwritten pointer loops.
+- Prefer measured, fixture-specific data structure changes over broad
+  "performance crate" rewrites.
+- Prefer scalar clarity first; add SIMD only after the cleaned-up scalar path is
+  still the profile hotspot.
+
 Working model:
 
 - First make the renderer do less work: cull outside device bounds, intersect
@@ -482,6 +518,9 @@ Default choices and modern Rust toolbox:
 - Use `Vec<T>` for large or genuinely dynamic contiguous data. Prefer
   `with_capacity` when the upper bound is known, reuse buffers across phases,
   and avoid repeated grow/copy cycles inside pixel or path loops.
+- Keep `Vec<T>` when the data often escapes the current loop or lives inside
+  long-lived display-list/resource structures. Removing one allocation is not a
+  win if every stored item becomes wider and hurts cache locality.
 - Use `Box<[T]>` when a buffer becomes immutable and should not carry spare
   capacity. This can make ownership and memory accounting clearer after build
   phases such as display-list construction.
@@ -494,6 +533,8 @@ Default choices and modern Rust toolbox:
 - Prefer safe bulk-copy APIs such as `copy_from_slice`, `copy_within`,
   `clone_from_slice`, and `extend_from_slice`. LLVM can lower these to optimized
   `memcpy`/`memmove` patterns for the target CPU.
+- Prefer `chunks_exact`, `array_chunks`, and slice splitting helpers when they
+  make row or pixel structure explicit without indexing ambiguity.
 - Prefer squared-distance comparisons over `sqrt`/`hypot` in inner loops when
   the math allows it.
 - Prefer separating rare cases from hot loops. For example, handle complex
@@ -534,6 +575,13 @@ Candidate crates and when to consider them:
   request-local arenas only when allocation profiles show many short-lived
   objects with the same lifetime. Arena memory must be bounded by request
   budgets.
+- [`rayon`](https://docs.rs/rayon/latest/rayon/): defer for now. It can help
+  batch-level or page-level parallelism later, but hidden per-page parallelism
+  needs scheduler, cancellation, and RSS evidence first.
+- [`wide`](https://docs.rs/wide/latest/wide/) or explicit
+  `std::arch` intrinsics: consider only after the scalar inner loop is clean,
+  branch-light, and still dominant in profiles. Keep the scalar fallback as the
+  reference implementation.
 
 Copy, `memcpy`, and pointer rules:
 
@@ -559,6 +607,8 @@ Small buffer rules:
 - Pick `N` to cover the common case without bloating every item. For hot
   display-list items, a larger inline size can hurt cache locality even when it
   removes allocations.
+- Prefer a small local `SmallVec` inside a hot builder over storing `SmallVec`
+  in persistent renderer data unless the persistent size increase is measured.
 - Keep `Vec<T>` when sizes are usually large, highly variable, or stored inside
   long-lived structs.
 - Prefer `ArrayVec<T, N>` only when overflow has clear semantics and `N` is a
