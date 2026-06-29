@@ -324,6 +324,39 @@ The manifest uses families `long-document-shared`, `repeated-font-image`,
 `repeated-image-xobject`, `repeated-font-program`, and `shared-icc`. It does
 not imply a global cache or a decoded-resource cache across tenants.
 
+## Layout Stress Manifest
+
+`fixtures/layout-stress-manifest.tsv` is the focused gate for dense
+report-style pages where tables, columns, footnotes, small text, and repeated
+page furniture interact on the same page. It combines one generated stress
+fixture with existing business, spreadsheet, scientific, footnote, and
+office-report fixtures so regressions are visible across both common documents
+and intentionally crowded layouts.
+
+The manifest uses families `layout-stress`, `dense-business-table`,
+`spreadsheet-grid`, `two-column`, `footnotes`, and `page-furniture`.
+`summarize-fallbacks` is the native support gate; `visual-diff-poppler` is a
+fidelity review gate and is expected to expose text-placement and dense-layout
+drift until the font/text renderer reaches visual parity. This manifest does
+not claim semantic table extraction or reading-order recovery.
+
+Use this manifest when a change may affect table ruling, text placement,
+column layout, small footnote text, or page furniture:
+
+```sh
+cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks \
+  fixtures/generated \
+  --manifest fixtures/layout-stress-manifest.tsv \
+  --include-family layout-stress \
+  --include-family dense-business-table \
+  --include-family spreadsheet-grid \
+  --include-family two-column \
+  --include-family footnotes \
+  --include-family page-furniture \
+  --fail-on-fallback \
+  --max-edge 160
+```
+
 ## Mobile Scan Manifest
 
 `fixtures/mobile-scan-manifest.tsv` is the focused gate for PDFs produced by

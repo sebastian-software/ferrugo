@@ -1,6 +1,6 @@
 # 0189: Layout Stress Corpus For Tables Columns And Footnotes
 
-Status: todo
+Status: done
 Phase: 35
 Size: medium
 Depends on: 0188
@@ -46,4 +46,22 @@ footnotes, headers, and repeated page furniture.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-29.
+
+- Added `fixtures/generated/layout-columns-footnotes-table-stress.pdf`, a
+  deterministic dense report page with two text columns, header/footer
+  furniture, a figure interrupt, ruled table geometry, and footnote-region
+  small text.
+- Added `fixtures/layout-stress-manifest.tsv` so dense tables, spreadsheet
+  grids, two-column pages, footnotes, and page furniture can be gated together.
+- Added focused native render coverage for the new stress page and classified
+  it in the main corpus manifest as `office-export` with
+  `expected:native`.
+- Recorded support and fidelity evidence in
+  `docs/reports/layout-stress-corpus-2026-06-29.md`.
+
+Native rendering is supported for the focused layout-stress set. The Poppler
+visual oracle still reports dense-layout fidelity blockers for table text,
+two-column text placement, and footnote-region drift, so the support matrix
+separates renderability from visual parity and from out-of-scope semantic table
+or reading-order extraction.

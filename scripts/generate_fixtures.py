@@ -6561,6 +6561,51 @@ def reference_footnote_layout_pdf() -> bytes:
     return page_pdf("[0 0 320 260]", " ".join(ops))
 
 
+def layout_columns_footnotes_table_stress_pdf() -> bytes:
+    ops: list[str] = [
+        "q 1 1 1 rg 0 0 400 520 re f Q",
+        "q 0.07 0.10 0.16 rg 0 482 400 38 re f Q",
+        "q 0.13 0.16 0.21 RG 0.5 w 28 456 m 372 456 l 28 96 m 372 96 l S Q",
+        "BT /F1 13 Tf 34 498 Td (Dense Layout Stress Report) Tj ET",
+        "BT /F1 6 Tf 308 498 Td (Header 1 / 4) Tj ET",
+        "BT /F1 8 Tf 32 464 Td (Executive Summary) Tj ET",
+    ]
+    for row in range(20):
+        y = 442 - row * 13
+        left_width = 132 - (row % 5) * 12
+        right_width = 128 - ((row + 2) % 5) * 10
+        ops.append(f"q 0.16 0.16 0.16 rg 32 {y} {left_width} 2 re f Q")
+        ops.append(f"q 0.16 0.16 0.16 rg 214 {y} {right_width} 2 re f Q")
+    ops.extend(
+        [
+            "q 0.90 0.94 0.98 rg 214 246 126 62 re f Q",
+            "q 0.12 0.24 0.40 RG 0.8 w 224 260 m 244 290 l 268 270 l 292 298 l 326 258 l S Q",
+            "BT /F1 6 Tf 222 316 Td (Figure A. Column interrupt) Tj ET",
+            "q 0.15 0.16 0.18 RG 0.45 w 32 118 336 96 re S",
+            "32 190 m 368 190 l 32 166 m 368 166 l 32 142 m 368 142 l",
+            "98 118 m 98 214 l 178 118 m 178 214 l 258 118 m 258 214 l S Q",
+            "BT /F1 7 Tf 42 198 Td (Metric) Tj 68 0 Td (Q1) Tj 80 0 Td (Q2) Tj 80 0 Td (Q3) Tj ET",
+        ]
+    )
+    for row in range(3):
+        y = 174 - row * 24
+        ops.append(
+            f"BT /F1 6 Tf 42 {y} Td (Line {row + 1}) Tj "
+            f"68 0 Td ({120 + row * 7}) Tj 80 0 Td ({142 + row * 11}) Tj "
+            f"80 0 Td ({160 + row * 13}) Tj ET"
+        )
+    for row in range(5):
+        y = 78 - row * 9
+        ops.append(f"q 0.28 0.28 0.28 rg 34 {y} {300 - row * 28} 1.4 re f Q")
+    ops.extend(
+        [
+            "BT /F1 6 Tf 34 86 Td (1 Footnote region tracks small text below table rule.) Tj ET",
+            "BT /F1 6 Tf 34 20 Td (Footer furniture repeats across dense report exports.) Tj ET",
+        ]
+    )
+    return page_pdf("[0 0 400 520]", " ".join(ops))
+
+
 def academic_publisher_first_page_pdf() -> bytes:
     ops: list[str] = [
         "q 1 1 1 rg 0 0 360 480 re f Q",
@@ -7469,6 +7514,10 @@ def main() -> None:
     write("scientific-two-column-paper.pdf", scientific_two_column_paper_pdf())
     write("scientific-equation-figure.pdf", scientific_equation_figure_pdf())
     write("reference-footnote-layout.pdf", reference_footnote_layout_pdf())
+    write(
+        "layout-columns-footnotes-table-stress.pdf",
+        layout_columns_footnotes_table_stress_pdf(),
+    )
     write("academic-publisher-first-page.pdf", academic_publisher_first_page_pdf())
     write("academic-equation-symbols-page.pdf", academic_equation_symbols_page_pdf())
     write("academic-references-appendix.pdf", academic_references_appendix_pdf())

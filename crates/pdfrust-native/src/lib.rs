@@ -7833,6 +7833,15 @@ mod tests {
                 6_000,
             ),
             (
+                include_bytes!(
+                    "../../../fixtures/generated/layout-columns-footnotes-table-stress.pdf"
+                ) as &[u8],
+                400,
+                520,
+                "columns footnotes table stress layout",
+                12_000,
+            ),
+            (
                 include_bytes!("../../../fixtures/generated/academic-references-appendix.pdf")
                     as &[u8],
                 340,
