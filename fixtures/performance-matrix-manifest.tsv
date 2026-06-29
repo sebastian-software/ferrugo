@@ -1,0 +1,12 @@
+path	family	source	license	page_count	features	notes
+fixtures/generated/text-page.pdf	small-text	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,small,baseline	Small text baseline for startup and hot-render overhead.
+fixtures/generated/office-report-header-footer-link.pdf	office-export	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	office,header,footer,link,text	Common office-export report page with text and simple annotation structure.
+fixtures/generated/scanned-page.pdf	scan	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	scan,image,baseline	Simple scan-style image fixture.
+fixtures/generated/browser-chromium-article-print.pdf	browser-print	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	browser,chromium,article,table,image	Browser print fixture with text, table, image, and link appearance.
+fixtures/generated/acroform-text-field.pdf	form	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	acroform,text-field,appearance	AcroForm appearance baseline.
+fixtures/generated/slide-title-gradient.pdf	presentation	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	slide,gradient,text	Presentation slide baseline with vector and text content.
+fixtures/generated/vector-stress.pdf	report/vector	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	vector,stress,linework	Known vector hot-path stress case.
+fixtures/generated/technical-hatch-clipping.pdf	report/vector	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	technical,hatch,clipping,linework	Technical drawing with hatch and clipping pressure.
+fixtures/generated/technical-linework-dimensions.pdf	report/vector	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	technical,linework,dimensions,hairlines	Linework and dimension-marker stress case.
+fixtures/generated/prepress-trim-bleed-marks.pdf	report/vector	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	prepress,trim,bleed,marks	Prepress mark fixture for thin vector paths.
+fixtures/generated/mixed-text-image.pdf	mixed-layout	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	text,image,mixed-layout	Mixed raster/text page for broad layout behavior.
