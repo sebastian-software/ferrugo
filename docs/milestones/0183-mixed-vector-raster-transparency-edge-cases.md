@@ -172,6 +172,12 @@ Native baseline slice started on 2026-06-28.
   summary remains 6 accepted drift and 2 blockers, while
   `high-dpi-preview-fidelity.pdf` improves from MAE 2.003 to 1.881 with p95 7,
   changed ratio 0.087760, and max delta 196.
+- Added a narrow forward-fraction snap mode for 0.25-0.32 device-pixel
+  axis-aligned hairlines. This matches Poppler's placement for the 0.7pt map
+  grid without moving wider 0.8pt and 1.0pt decorative linework: the 0183
+  summary remains 6 accepted drift and 2 blockers, while
+  `map-transparent-zoning-overlay.pdf` improves from MAE 4.986, p95 31,
+  changed ratio 0.285608 to MAE 3.207, p95 6, changed ratio 0.273394.
 
 ## Completion Notes
 

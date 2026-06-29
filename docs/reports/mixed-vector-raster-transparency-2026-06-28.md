@@ -510,3 +510,36 @@ The targeted improvement is `high-dpi-preview-fidelity.pdf`: MAE
 `0.087760`, and `196`. A scoped 0182 tagged sanity run stayed at 7 total,
 0 exact, 3 accepted drift, and 4 blockers, so this image-edge change did not
 shift the tagged text-heavy slice.
+
+## Narrow Forward-Fraction Hairline Snap
+
+Map grid linework exposed a remaining one-pixel placement split for very thin
+axis-aligned strokes: the 0.7pt grid in `map-transparent-zoning-overlay.pdf`
+rasterizes to about 0.294 device pixels and lands at high subpixel fractions.
+The renderer now forwards only 0.25-0.32 device-pixel hairlines whose coordinate
+fraction is at least two-thirds. Wider 0.8pt and 1.0pt decorative linework keeps
+the existing nearest-pixel-center path; broader rounded-coordinate probes
+regressed `image-heavy-rotated-mask-sheet.pdf` and
+`office-vector-repeated-effects.pdf`.
+
+Full 0183 Poppler follow-up result remains 8 total, 0 exact, 6 accepted drift,
+2 blockers, 0 native errors, 0 reference errors, 0 both errors.
+
+| Fixture | Status | MAE | P95 delta | Changed ratio | Max delta |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `browser-print-raster-vector-mix.pdf` | accepted drift | 0.396 | 0 | 0.018945 | 202 |
+| `high-dpi-preview-fidelity.pdf` | blocker | 1.881 | 7 | 0.087760 | 196 |
+| `image-heavy-rotated-mask-sheet.pdf` | accepted drift | 0.849 | 4 | 0.358728 | 111 |
+| `map-transparent-zoning-overlay.pdf` | blocker | 3.207 | 6 | 0.273394 | 142 |
+| `office-vector-clipped-transparency-group.pdf` | accepted drift | 0.553 | 1 | 0.232045 | 118 |
+| `office-vector-repeated-effects.pdf` | accepted drift | 1.707 | 4 | 0.094334 | 123 |
+| `slide-layered-image-shadow.pdf` | accepted drift | 2.744 | 4 | 0.139861 | 216 |
+| `soft-mask-image.pdf` | accepted drift | 0.829 | 0 | 0.011181 | 255 |
+
+The targeted improvement is `map-transparent-zoning-overlay.pdf`: MAE
+`4.986 -> 3.207`, p95 `31 -> 6`, and changed ratio
+`0.285608 -> 0.273394`. The fixture remains above the strict MAE and changed
+ratio thresholds, but the high-amplitude gridline tail is now inside the p95
+threshold. A scoped 0182 tagged sanity run improved to 7 total, 0 exact,
+4 accepted drift, and 3 blockers, with `tagged-office-alt-text.pdf` moving to
+accepted drift.

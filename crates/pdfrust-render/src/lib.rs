@@ -9787,12 +9787,17 @@ fn should_snap_axis_aligned_hairline(line_width: f64, ctm_scale: f64) -> bool {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum HairlineSnapMode {
     NearestPixelCenter,
+    ForwardHighFraction,
     RoundedDeviceCoordinate,
 }
 
 fn hairline_snap_mode(line_width: f64, ctm_scale: f64) -> HairlineSnapMode {
     if ctm_scale > 1.0 + f64::EPSILON && (0.15..0.25).contains(&line_width) {
         HairlineSnapMode::RoundedDeviceCoordinate
+    } else if (0.25..=0.32).contains(&line_width) {
+        // Match Poppler's forward placement for very thin unscaled map/grid
+        // strokes without moving wider 0.35-0.45px decorative rectangles.
+        HairlineSnapMode::ForwardHighFraction
     } else {
         HairlineSnapMode::NearestPixelCenter
     }
@@ -9861,6 +9866,14 @@ fn snap_hairline_coordinate(value: f64, mode: HairlineSnapMode) -> f64 {
     // keep those near-ties on the forward pixel center instead of the previous one.
     match mode {
         HairlineSnapMode::NearestPixelCenter => (value - 0.5 + 1e-9).round() + 0.5,
+        HairlineSnapMode::ForwardHighFraction => {
+            let fraction = value - value.floor();
+            if fraction >= (2.0 / 3.0) - 1e-9 {
+                (value + 1e-9).round() + 0.5
+            } else {
+                (value - 0.5 + 1e-9).round() + 0.5
+            }
+        }
         HairlineSnapMode::RoundedDeviceCoordinate => (value + 1e-9).round() + 0.5,
     }
 }
@@ -15395,6 +15408,10 @@ mod tests {
             HairlineSnapMode::RoundedDeviceCoordinate
         );
         assert_eq!(
+            hairline_snap_mode(0.294, 1.0),
+            HairlineSnapMode::ForwardHighFraction
+        );
+        assert_eq!(
             hairline_snap_mode(0.355, 1.0),
             HairlineSnapMode::NearestPixelCenter
         );
@@ -15456,6 +15473,14 @@ mod tests {
         assert_eq!(
             snap_hairline_coordinate(30.6666666667, HairlineSnapMode::NearestPixelCenter),
             30.5
+        );
+        assert_eq!(
+            snap_hairline_coordinate(134.7368421053, HairlineSnapMode::ForwardHighFraction),
+            135.5
+        );
+        assert_eq!(
+            snap_hairline_coordinate(134.25, HairlineSnapMode::ForwardHighFraction),
+            134.5
         );
         assert_eq!(
             snap_hairline_coordinate(30.6666666667, HairlineSnapMode::RoundedDeviceCoordinate),

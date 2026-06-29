@@ -97,6 +97,11 @@ Native slice committed toward 0182 on 2026-06-28.
   0 exact, 3 accepted drift, and 4 blockers: metadata-baseline,
   tagged-form, and reading-order-warning are accepted, while invoice, office
   alt-text, report, and structure-heavy fixtures remain visual blockers.
+- Re-ran the tagged Poppler oracle after the later 0183 narrow hairline
+  forward-snap tuning. The strict tagged visual gate now reports 7 total,
+  0 exact, 4 accepted drift, and 3 blockers: tagged office alt-text moved to
+  accepted drift, while invoice, report, and structure-heavy fixtures remain
+  visual blockers.
 
 ## Completion Notes
 

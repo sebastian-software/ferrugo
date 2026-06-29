@@ -183,6 +183,23 @@ Fixture split:
 | `tagged-report-visual-integrity.pdf` | blocker | MAE 12.486, p95 175, changed ratio 0.123976, max delta 201. |
 | `tagged-structure-heavy-report.pdf` | blocker | MAE 15.283, p95 102, changed ratio 0.220207, max delta 204. |
 
+## Follow-up After 0183 Narrow Hairline Snap
+
+The 0183 narrow forward-fraction hairline snap was rechecked against the tagged
+visual slice because the tagged office/report fixtures also contain thin vector
+rules. The strict tagged visual gate now reports 7 total, 0 exact, 4 accepted
+drift, 3 blockers, 0 native errors, 0 reference errors, and 0 both errors.
+
+| Fixture | Status | Evidence |
+| --- | --- | --- |
+| `tagged-accessibility-metadata.pdf` | accepted drift | MAE 0.319, p95 1, changed ratio 0.156373, max delta 172. |
+| `tagged-form-visual-integrity.pdf` | accepted drift | MAE 2.341, p95 1, changed ratio 0.090245, max delta 209. |
+| `tagged-invoice-reading-order.pdf` | blocker | MAE 5.281, p95 20, changed ratio 0.119231, max delta 209. |
+| `tagged-office-alt-text.pdf` | accepted drift | MAE 1.073, p95 0, changed ratio 0.078388, max delta 155. |
+| `tagged-reading-order-missing-page-context.pdf` | accepted drift | MAE 1.793, p95 0, changed ratio 0.024425, max delta 178. |
+| `tagged-report-visual-integrity.pdf` | blocker | MAE 5.074, p95 23, changed ratio 0.111422, max delta 201. |
+| `tagged-structure-heavy-report.pdf` | blocker | MAE 15.294, p95 102, changed ratio 0.220536, max delta 204. |
+
 ## Validation
 
 Commands run:
