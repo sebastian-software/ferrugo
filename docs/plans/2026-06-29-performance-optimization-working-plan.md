@@ -524,6 +524,32 @@ Rejected candidate from 2026-06-29:
 - Decision: below the 5% noise threshold and not enough evidence for a
   cumulative track, so the code change was reverted.
 
+Rejected candidate from 2026-06-30:
+
+- Change tested locally but not kept: compute pixel-center bounds once for the
+  axis-aligned rectangle fill fast path, and skip `point_in_active_clips` inside
+  that loop when no active clips exist.
+- Rationale: this targeted table, dashboard, and office-export pages that use
+  many simple filled rectangles, while preserving the existing center-sample
+  semantics for rectangle coverage.
+- Baselines:
+  `target/benchmark-native-office-table-rect-baseline.json`,
+  `target/benchmark-native-spreadsheet-grid-rect-baseline.json`, and
+  `target/benchmark-native-dashboard-rect-baseline.json`, each
+  `benchmark-native`, `--max-edge 160`, 3000 iterations.
+- Candidate:
+  `target/benchmark-native-office-table-rect-center-bounds.json`,
+  `target/benchmark-native-spreadsheet-grid-rect-center-bounds.json`, and
+  `target/benchmark-native-dashboard-rect-center-bounds.json`, same command
+  shape and host.
+- Result: `office-table.pdf` mean improved `0.289 ms` -> `0.282 ms` (~2.4%),
+  `spreadsheet-dense-numeric-grid.pdf` improved `0.778 ms` -> `0.761 ms`
+  (~2.2%), and `browser-firefox-dashboard-print.pdf` improved `0.730 ms` ->
+  `0.708 ms` (~3.0%).
+- Decision: consistent but below the 5% acceptance threshold, so the code
+  change was reverted and should not be treated as a cumulative optimization
+  unless future fixtures show a larger rectangle-fill bottleneck.
+
 Rejected candidate from 2026-06-29:
 
 - Change tested locally but not kept: cull path display items before
