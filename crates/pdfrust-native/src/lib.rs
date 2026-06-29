@@ -7931,6 +7931,63 @@ mod tests {
     }
 
     #[test]
+    fn native_backend_should_render_generated_print_imposition_fixtures() {
+        type PrintFixture = (&'static [u8], u32, u32, u32, &'static str, usize);
+
+        let fixtures: &[PrintFixture] = &[
+            (
+                include_bytes!("../../../fixtures/generated/print-booklet-spread.pdf") as &[u8],
+                460,
+                280,
+                460,
+                "print booklet spread",
+                20_000,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/print-nup-imposed-sheet.pdf")
+                    as &[u8],
+                420,
+                300,
+                420,
+                "print n-up imposed sheet",
+                25_000,
+            ),
+        ];
+
+        for &(bytes, expected_width, expected_height, max_edge, label, min_visible_pixels) in
+            fixtures
+        {
+            let thumbnail = ThumbnailBackend::render(
+                &NativeBackend::new(),
+                PdfSource::from_bytes(bytes),
+                &ThumbnailOptions {
+                    max_edge,
+                    ..ThumbnailOptions::default()
+                },
+            )
+            .unwrap_or_else(|error| panic!("{label} fixture should render: {error}"));
+
+            assert_eq!(
+                thumbnail.width, expected_width,
+                "{label} fixture width should match the selected imposed sheet geometry"
+            );
+            assert_eq!(
+                thumbnail.height, expected_height,
+                "{label} fixture height should match the selected imposed sheet geometry"
+            );
+            let visible_pixels = thumbnail
+                .bytes
+                .chunks_exact(4)
+                .filter(|pixel| *pixel != [255, 255, 255, 255])
+                .count();
+            assert!(
+                visible_pixels >= min_visible_pixels,
+                "{label} fixture should preserve imposed page frames and print marks"
+            );
+        }
+    }
+
+    #[test]
     fn native_backend_should_render_generated_multi_page_report_first_page() {
         let bytes = include_bytes!("../../../fixtures/generated/multi-page-report.pdf");
         let thumbnail = ThumbnailBackend::render(

@@ -384,6 +384,20 @@ visible and diagnosable while leaving device-separation compositing, full CMYK
 knockout behavior, and prepress conformance for later print-production
 milestones. See `docs/reports/overprint-simulation-2026-06-25.md`.
 
+## Print Imposition Thumbnails
+
+Static print-imposed PDFs such as booklet spreads and n-up sheets render
+natively as thumbnails when their content is expressed as ordinary page
+geometry, vector marks, text, and page boxes. The native thumbnail policy uses
+CropBox as the visible page boundary when present and MediaBox otherwise;
+BleedBox and TrimBox remain metadata/context unless a future API adds explicit
+page-box selection.
+
+The renderer does not build imposed sheets, interpret printer marks
+semantically, perform trapping, run preflight validation, or provide
+color-managed proofing. See
+`docs/reports/print-imposition-booklet-coverage-2026-06-29.md`.
+
 ## Digital Signature Boundary
 
 Visible signature widgets use the same static AcroForm appearance rendering as

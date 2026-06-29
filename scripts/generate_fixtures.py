@@ -6961,6 +6961,92 @@ def prepress_spot_overprint_boundary_pdf() -> bytes:
     return pdf.render(catalog)
 
 
+def print_booklet_spread_pdf() -> bytes:
+    pdf = Pdf()
+    ops: list[str] = [
+        "q 0.99 0.985 0.96 rg 0 0 500 320 re f Q",
+        "q 0.05 0.06 0.08 RG 0.5 w",
+    ]
+    for x, y, dx, dy in [
+        (12, 40, 32, 0),
+        (456, 40, 32, 0),
+        (12, 280, 32, 0),
+        (456, 280, 32, 0),
+        (40, 12, 0, 32),
+        (460, 12, 0, 32),
+        (40, 276, 0, 32),
+        (460, 276, 0, 32),
+    ]:
+        ops.append(f"{x} {y} m {x + dx} {y + dy} l S")
+    ops.extend(
+        [
+            "Q",
+            "q 0.86 0.89 0.92 rg 40 40 200 240 re f Q",
+            "q 0.94 0.90 0.82 rg 260 40 200 240 re f Q",
+            "q 0.10 0.12 0.16 RG 0.8 w 40 40 200 240 re S 260 40 200 240 re S Q",
+            "q 0.44 0.44 0.44 RG 0.4 w 250 32 m 250 288 l S Q",
+            "q 0.12 0.26 0.45 rg 58 226 164 20 re f Q",
+            "q 0.55 0.18 0.12 rg 278 226 164 20 re f Q",
+            "BT /F1 12 Tf 70 232 Td (Back cover) Tj 292 0 Td (Front cover) Tj ET",
+            "BT /F1 8 Tf 68 204 Td (Spine fold and crop marks stay visible) Tj ET",
+            "BT /F1 8 Tf 284 204 Td (Booklet spread thumbnail) Tj ET",
+        ]
+    )
+    content = " ".join(ops).encode("ascii")
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 500 320] "
+        "/CropBox [20 20 480 300] /BleedBox [10 10 490 310] /TrimBox [40 40 460 280] "
+        f"/Resources << /Font << /F1 4 0 R >> >> /Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    font = pdf.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert font == 4
+    return pdf.render(catalog)
+
+
+def print_nup_imposed_sheet_pdf() -> bytes:
+    ops: list[str] = [
+        "q 1 1 1 rg 0 0 420 300 re f Q",
+        "q 0.08 0.10 0.14 RG 0.6 w",
+    ]
+    for x in (24, 210, 396):
+        ops.append(f"{x} 18 m {x} 282 l S")
+    for y in (18, 150, 282):
+        ops.append(f"24 {y} m 396 {y} l S")
+    ops.append("Q")
+    cells = [
+        (34, 160, 164, 108, "0.88 0.93 0.98", "Page 4"),
+        (222, 160, 164, 108, "0.96 0.91 0.84", "Page 1"),
+        (34, 30, 164, 108, "0.92 0.96 0.88", "Page 2"),
+        (222, 30, 164, 108, "0.96 0.88 0.90", "Page 3"),
+    ]
+    for x, y, width, height, color, label in cells:
+        ops.extend(
+            [
+                f"q {color} rg {x} {y} {width} {height} re f Q",
+                f"q 0.18 0.22 0.30 RG 0.5 w {x} {y} {width} {height} re S Q",
+                f"BT /F1 10 Tf {x + 12} {y + height - 24} Td ({label}) Tj ET",
+                f"BT /F1 6 Tf {x + 12} {y + 18} Td (N-up imposed frame) Tj ET",
+            ]
+        )
+    ops.extend(
+        [
+            "q 0.12 0.34 0.50 rg 84 214 64 16 re f Q",
+            "q 0.48 0.16 0.12 rg 272 84 64 16 re f Q",
+            "q 0.16 0.16 0.16 rg 192 132 36 36 re f Q",
+            "q 0.12 0.12 0.12 RG 0.5 w 210 120 m 210 180 l S 180 150 m 240 150 l S Q",
+            "q 0 1 -1 0 384 248 cm BT /F1 7 Tf 0 0 Td (rotated slug) Tj ET Q",
+        ]
+    )
+    return page_pdf("[0 0 420 300]", " ".join(ops))
+
+
 def page_targeted_stream_pdf() -> bytes:
     pdf = Pdf()
     content_1 = b"q 0.1 0.6 0.2 rg 20 20 80 40 re f Q"
@@ -7280,6 +7366,8 @@ def main() -> None:
     write("prepress-output-intent-page-boxes.pdf", prepress_output_intent_page_boxes_pdf())
     write("prepress-registration-color-bars.pdf", prepress_registration_color_bars_pdf())
     write("prepress-spot-overprint-boundary.pdf", prepress_spot_overprint_boundary_pdf())
+    write("print-booklet-spread.pdf", print_booklet_spread_pdf())
+    write("print-nup-imposed-sheet.pdf", print_nup_imposed_sheet_pdf())
     write("page-targeted-stream.pdf", page_targeted_stream_pdf())
 
 

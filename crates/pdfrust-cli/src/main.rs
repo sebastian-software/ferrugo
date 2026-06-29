@@ -4465,6 +4465,7 @@ fn render_poppler_ppm(
     let mut poppler = Command::new(&command);
     poppler
         .arg("-q")
+        .args(poppler_page_box_args())
         .arg("-f")
         .arg(page_number.as_str())
         .arg("-l")
@@ -4501,6 +4502,10 @@ fn render_poppler_ppm(
     let _ = fs::remove_file(&output_path);
     let _ = fs::remove_dir(&temp_dir);
     decode_ppm_rgb_as_rgba(&ppm)
+}
+
+fn poppler_page_box_args() -> [OsString; 1] {
+    [OsString::from("-cropbox")]
 }
 
 fn poppler_scale_args(
@@ -8967,6 +8972,11 @@ status = "candidate"
             args,
             vec![OsString::from("-scale-to"), OsString::from("160")]
         );
+    }
+
+    #[test]
+    fn poppler_page_box_args_should_match_native_cropbox_policy() {
+        assert_eq!(poppler_page_box_args(), [OsString::from("-cropbox")]);
     }
 
     #[test]

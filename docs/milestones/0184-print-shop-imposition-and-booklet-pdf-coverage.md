@@ -1,6 +1,6 @@
 # 0184: Print Shop Imposition And Booklet PDF Coverage
 
-Status: todo
+Status: done
 Phase: 34
 Size: medium
 Depends on: 0183
@@ -45,4 +45,17 @@ the renderer depend on PDFium for print-preview workflows.
 
 ## Completion Notes
 
-Empty until done.
+Completed 2026-06-29.
+
+- Added `print-booklet-spread.pdf` and `print-nup-imposed-sheet.pdf` plus
+  `fixtures/print-imposition-manifest.tsv`.
+- Added native regression coverage for imposed sheet geometry:
+  `print-booklet-spread.pdf` renders to `460 x 280` from CropBox and
+  `print-nup-imposed-sheet.pdf` renders to `420 x 300` from MediaBox.
+- Updated the Poppler visual oracle to use `pdftoppm -cropbox`, matching the
+  native thumbnail page-box policy for page-box-sensitive fixtures.
+- Native supported gate: 4/4 native rendered, 0 fallbacks, 0 errors.
+- Benchmark gate: 4/4 native rendered, 0 errors, 0 budget failures.
+- Poppler visual gate for the two new fixtures: 2 accepted drift, 0 blockers,
+  0 native/reference errors.
+- Report: `docs/reports/print-imposition-booklet-coverage-2026-06-29.md`.

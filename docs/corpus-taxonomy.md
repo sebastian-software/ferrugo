@@ -237,6 +237,33 @@ cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks \
   --max-edge 160
 ```
 
+## Print Imposition Manifest
+
+`fixtures/print-imposition-manifest.tsv` is the focused gate for typical
+print-preview PDFs that have already been imposed into static sheets. It covers
+booklet spreads, n-up sheet grids, CropBox thumbnail selection,
+BleedBox/TrimBox context, crop marks, fold marks, registration marks, and
+rotated slug text.
+
+The manifest uses supported families `booklet-spread`, `n-up`, `trim-bleed`,
+and `registration`. It is not a print imposition tool and does not claim
+proofing, trapping, separations, or preflight validation support.
+
+Use this manifest when a change may affect page-box clipping, transformed page
+frames, print marks, or imposed-sheet thumbnail geometry:
+
+```sh
+cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks \
+  fixtures/generated \
+  --manifest fixtures/print-imposition-manifest.tsv \
+  --include-family booklet-spread \
+  --include-family n-up \
+  --include-family trim-bleed \
+  --include-family registration \
+  --fail-on-fallback \
+  --max-edge 160
+```
+
 ## Mobile Scan Manifest
 
 `fixtures/mobile-scan-manifest.tsv` is the focused gate for PDFs produced by

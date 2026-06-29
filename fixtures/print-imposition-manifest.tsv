@@ -1,0 +1,5 @@
+path	family	source	license	page_count	features	notes
+fixtures/generated/print-booklet-spread.pdf	booklet-spread	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	print-imposition,booklet,cropbox,bleedbox,trimbox,crop-marks,fold,expected:native	Generated booklet spread fixture with CropBox selection, BleedBox/TrimBox context, visible crop marks, and center fold geometry.
+fixtures/generated/print-nup-imposed-sheet.pdf	n-up	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	print-imposition,n-up,imposed-sheet,grid,rotated-content,expected:native	Generated four-up imposed sheet with page frames, registration cross, and rotated slug text.
+fixtures/generated/prepress-trim-bleed-marks.pdf	trim-bleed	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	prepress,trim,bleed,cropbox,trimbox,registration,expected:native	Existing trim/bleed fixture used as a page-box and crop-mark baseline.
+fixtures/generated/prepress-registration-color-bars.pdf	registration	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	prepress,registration,color-bars,trim-marks,expected:native	Existing registration fixture used as a print mark baseline.
