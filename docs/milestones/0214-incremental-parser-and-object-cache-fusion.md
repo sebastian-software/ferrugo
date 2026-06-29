@@ -1,6 +1,6 @@
 # 0214: Incremental Parser And Object Cache Fusion
 
-Status: todo
+Status: done
 Phase: 40
 Size: medium
 Depends on: 0213
@@ -49,4 +49,16 @@ linearized, and partially accessed PDFs avoid unnecessary memory and I/O work.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-29.
+
+- Added a document-local compressed-object lookup index for xref-stream
+  documents so `ModernDocument::get_object` avoids repeated scans across all
+  loaded object streams.
+- Kept compressed object values parsed on demand from validated decoded object
+  stream bytes instead of retaining every indirect object value.
+- Documented cache invalidation and recovery rules in
+  `docs/policies/incremental-and-hybrid-references.md`.
+- Added `fixtures/object-cache-fusion-manifest.tsv` covering linearized,
+  malformed linearization fallback, incremental update, deleted incremental
+  object, hybrid reference, recoverable xref drift, and long-document navigation
+  fixtures.

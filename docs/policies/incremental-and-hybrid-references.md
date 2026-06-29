@@ -19,6 +19,10 @@ or repair arbitrary damaged update chains.
 - Hybrid-reference files whose current classic trailer contains `/XRefStm`.
 - Direct in-use type-1 xref-stream entries from `/XRefStm` when they do not
   conflict with already selected classic entries.
+- Xref-stream documents may build a document-local compressed-object lookup
+  index from validated type-2 entries. The index stores object identifiers and
+  object-stream positions only; compressed object values are parsed on demand
+  from the already decoded object stream bytes.
 
 ## Unsupported
 
@@ -35,3 +39,12 @@ Repeated `/Prev` offsets return an incremental-update cycle error. Revision
 chains beyond the configured depth return an incremental-update depth error.
 Hybrid xref streams that are malformed, missing, or unsupported fail the load
 instead of silently rendering a partial document.
+
+## Cache Invalidation
+
+Object lookup indexes are scoped to one loaded document instance. Loading a new
+revision, retrying a corrupt recovery path, or falling back from a linearized
+first-page load to the full loader creates a new document instance and therefore
+a new index. Cached direct objects, decoded object streams, and compressed
+object indexes are never shared across input byte slices, documents, tenants, or
+render jobs.

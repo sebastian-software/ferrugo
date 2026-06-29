@@ -1,0 +1,8 @@
+path	family	source	license	page_count	features	notes
+fixtures/generated/linearized-first-page.pdf	linearized-navigation	scripts/generate_fixtures.py	MIT OR Apache-2.0	2	linearized,first-page,fast-load,object-cache,expected:native	Linearized first-page fixture for bounded first-page object retention.
+fixtures/generated/linearized-malformed-hints.pdf	linearized-recovery	scripts/generate_fixtures.py	MIT OR Apache-2.0	2	linearized,malformed-hints,full-loader-fallback,object-cache,expected:native	Malformed linearization hints that must fall back to the full loader deterministically.
+fixtures/generated/incremental-update.pdf	incremental-navigation	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	xref,incremental-update,object-cache,expected:native	Classic incremental update fixture using the latest revision.
+fixtures/generated/incremental-deleted-object.pdf	incremental-navigation	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	xref,incremental-update,deleted-object,object-cache,expected:native	Incremental update fixture with a newer free entry tombstoning an older object.
+fixtures/generated/hybrid-reference.pdf	hybrid-navigation	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	xref,hybrid-reference,object-cache,expected:native	Hybrid classic xref plus xref stream fixture.
+fixtures/generated/malformed-xref-offset-drift.pdf	recovery-navigation	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	xref,recovery,object-cache,expected:native	Recoverable xref offset drift fixture.
+fixtures/generated/long-document-navigation-deck.pdf	long-document-navigation	scripts/generate_fixtures.py	MIT OR Apache-2.0	12	long-document,navigation,object-cache,expected:native	Long document navigation deck for repeated page tree/resource access.

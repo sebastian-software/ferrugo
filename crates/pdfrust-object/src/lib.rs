@@ -451,6 +451,7 @@ pub struct ModernDocument<'a> {
     /// Direct indirect objects resolved through in-use xref entries.
     pub objects: ObjectTable<'a>,
     object_streams: Vec<LoadedObjectStream>,
+    compressed_object_index: Vec<CompressedObjectIndexEntry>,
 }
 
 impl<'a> ModernDocument<'a> {
@@ -463,10 +464,14 @@ impl<'a> ModernDocument<'a> {
         if let Some(object) = self.objects.get(id) {
             return Ok(Some(object.clone()));
         }
-        for object_stream in &self.object_streams {
-            if let Some(object) = object_stream.parse_object(id)? {
-                return Ok(Some(object));
-            }
+        if let Some(entry) = self
+            .compressed_object_index
+            .iter()
+            .find(|entry| entry.id == id)
+        {
+            let object = self.object_streams[entry.stream_index]
+                .parse_object_at_position(entry.object_position, id)?;
+            return Ok(Some(object));
         }
         Ok(None)
     }
@@ -480,6 +485,13 @@ impl<'a> ModernDocument<'a> {
     pub fn page_tree(&self) -> ObjectResult<PageTree> {
         resolve_page_tree(self)
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct CompressedObjectIndexEntry {
+    id: ObjectId,
+    stream_index: usize,
+    object_position: usize,
 }
 
 /// Resolved document page tree.
@@ -843,12 +855,14 @@ pub fn load_modern_document(input: PdfBytes<'_>) -> ObjectResult<ModernDocument<
 
     let object_streams = load_referenced_object_streams(&objects, xref.entries())?;
     validate_compressed_entries(&object_streams, xref.entries())?;
+    let compressed_object_index = compressed_object_index(&object_streams, xref.entries())?;
 
     let document = ModernDocument {
         xref,
         trailer,
         objects,
         object_streams,
+        compressed_object_index,
     };
     reject_encrypted_catalog(&document)?;
     Ok(document)
@@ -1722,17 +1736,34 @@ struct LoadedObjectStream {
 }
 
 impl LoadedObjectStream {
-    fn parse_object(&self, id: ObjectId) -> ObjectResult<Option<IndirectObject<'_>>> {
-        let Some(object) = self.objects.iter().find(|object| object.id == id) else {
-            return Ok(None);
+    fn parse_object_at_position(
+        &self,
+        position: usize,
+        expected_id: ObjectId,
+    ) -> ObjectResult<IndirectObject<'_>> {
+        let Some(object) = self.objects.get(position) else {
+            return Err(ObjectError::ObjectStreamMismatch {
+                expected: expected_id,
+                actual: None,
+                object_stream: self.id,
+                index: position,
+            });
         };
+        if object.id != expected_id {
+            return Err(ObjectError::ObjectStreamMismatch {
+                expected: expected_id,
+                actual: Some(object.id),
+                object_stream: self.id,
+                index: object.index,
+            });
+        }
         let value = parse_primitive(PdfBytes::new(
             &self.decoded[object.value_start..object.value_end],
         ))?;
-        Ok(Some(IndirectObject {
-            id,
+        Ok(IndirectObject {
+            id: expected_id,
             value: ObjectValue::Primitive(value),
-        }))
+        })
     }
 }
 
@@ -2125,6 +2156,47 @@ fn validate_compressed_entries(
         }
     }
     Ok(())
+}
+
+fn compressed_object_index(
+    object_streams: &[LoadedObjectStream],
+    entries: &[XrefStreamEntry],
+) -> ObjectResult<Vec<CompressedObjectIndexEntry>> {
+    let compressed_count = entries
+        .iter()
+        .filter(|entry| matches!(entry, XrefStreamEntry::Compressed { .. }))
+        .count();
+    let mut index = Vec::with_capacity(compressed_count);
+    for entry in entries {
+        let XrefStreamEntry::Compressed {
+            id,
+            object_stream,
+            index: compressed_index,
+        } = *entry
+        else {
+            continue;
+        };
+        let stream_index = object_streams
+            .iter()
+            .position(|loaded| loaded.id == object_stream)
+            .ok_or(ObjectError::MissingObjectStream { id: object_stream })?;
+        let object_position = object_streams[stream_index]
+            .objects
+            .iter()
+            .position(|object| object.index == compressed_index)
+            .ok_or(ObjectError::ObjectStreamMismatch {
+                expected: id,
+                actual: None,
+                object_stream,
+                index: compressed_index,
+            })?;
+        index.push(CompressedObjectIndexEntry {
+            id,
+            stream_index,
+            object_position,
+        });
+    }
+    Ok(index)
 }
 
 fn stream_filters(
@@ -2996,6 +3068,14 @@ mod tests {
 
         assert_eq!(document.xref.entries().len(), 6);
         assert_eq!(document.objects.len(), 5);
+        assert_eq!(document.compressed_object_index.len(), 1);
+        assert_eq!(
+            document.compressed_object_index[0].id,
+            ObjectId::new(
+                ObjectNumber::new(3).expect("object number"),
+                GenerationNumber::new(0)
+            )
+        );
         assert!(document
             .objects
             .get(ObjectId::new(
@@ -3014,6 +3094,14 @@ mod tests {
             page.value,
             ObjectValue::Primitive(PdfPrimitive::Dictionary(_))
         ));
+        let repeated_page = document
+            .get_object(ObjectId::new(
+                ObjectNumber::new(3).expect("object number"),
+                GenerationNumber::new(0),
+            ))
+            .expect("resolve compressed object again")
+            .expect("compressed page object");
+        assert_eq!(repeated_page.id, page.id);
         let contents = document
             .get_object(ObjectId::new(
                 ObjectNumber::new(4).expect("object number"),
