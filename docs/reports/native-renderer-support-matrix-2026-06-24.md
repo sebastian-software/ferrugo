@@ -210,3 +210,30 @@ Representative unsupported fixtures:
 New unsupported cases should use the report format in
 `docs/policies/native-conformance-triage.md` and must not route consumers back
 to runtime PDFium fallback.
+
+## 0199 Unsupported Feature Burn-Down Update
+
+Milestone 0199 reran the expanded corpus after the 0195-0198 gates. The full
+generated corpus has 227 fixtures: 211 native renders, 12 typed unsupported
+rows, 3 malformed recovery-policy errors, and 1 encrypted policy error.
+
+Artifact: `target/unsupported-0199-classification.json`.
+Fixture-level artifact: `target/unsupported-0199-benchmark-fixtures.json`.
+Report: `docs/reports/unsupported-feature-burn-down-2026-06-29.md`.
+
+| Bucket | Frequency | Families | 1.2 Decision | Owner route |
+| --- | ---: | --- | --- | --- |
+| `image.filter` | 3/227 | `scan` | Release blocker for broad scan/fax/archive claims; deferred from strict supported-family gate until codec policy is done. | 0209 codec policy |
+| `graphics.transparency` | 2/227 | `report` | Release blocker for dashboard/report visual-fidelity claims; keep typed until transparency reductions land. | 0213 transparency memory optimization |
+| `graphics.optional-content` | 2/227 | `presentation` | Documented unsupported boundary for OCMD/usage application beyond current layer policy. | 0192 policy, later 0204/0211 evidence |
+| `annotation.appearance` | 1/227 | `mixed-layout` | Documented boundary for FreeText synthesis without appearance. | 0207 annotation fidelity |
+| `form.xfa-dynamic` | 1/227 | `mixed-layout` | Accepted deferral; dynamic XFA runtime remains outside native renderer scope. | 0206 form policy |
+| `graphics.color-management` | 1/227 | `report` | Accepted PDF 2.0 boundary unless real-corpus frequency rises. | 0208 print preview color gate |
+| `graphics.pattern-shading` | 1/227 | `report` | Follow-up blocker for vector/chart fidelity, not a blocker for strict 1.2 supported-family gate. | 0204 vector effects |
+| `text.font-program` | 1/227 | `office-export` | Release blocker for broad office-export claims; needs font fallback/program triage. | 0203 dense office refinement |
+
+The strict 1.2 supported-family gate currently covers `browser-print`,
+`email-web-archive`, and `form`: 43/43 native rendered with 0 fallbacks and 0
+errors. Broader 1.2 readiness must make an explicit release decision for scan,
+report, presentation, mixed-layout, and office-export rather than hiding their
+typed unsupported outcomes.

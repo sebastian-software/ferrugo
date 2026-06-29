@@ -1,6 +1,6 @@
 # 0199: Unsupported Feature Burn-Down Release Candidate Gate
 
-Status: todo
+Status: done
 Phase: 37
 Size: medium
 Depends on: 0198
@@ -45,4 +45,20 @@ decision with explicit burn-down, deferral, and release-blocking categories.
 
 ## Completion Notes
 
-Empty until done.
+- Reran the expanded generated corpus unsupported classification:
+  227 total, 211 native rendered, 12 typed unsupported, 3 malformed policy
+  errors, and 1 encrypted policy error.
+- Added fixture-level benchmark evidence for all typed unsupported rows.
+- Added strict supported-family gate for `browser-print`, `email-web-archive`,
+  and `form`: 43/43 native rendered, 0 fallbacks, 0 errors.
+- Updated support matrix with 0199 release-blocker and deferral decisions.
+- Report:
+  `docs/reports/unsupported-feature-burn-down-2026-06-29.md`.
+- Validation:
+  - `cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --output target/unsupported-0199-classification.json`
+  - `cargo run -p pdfrust-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/corpus-manifest.tsv --max-edge 160 --iterations 1 --max-ms 1000 --max-output-bytes 1048576 --output target/unsupported-0199-benchmark-fixtures.json`
+  - `cargo run -p pdfrust-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/corpus-manifest.tsv --include-family browser-print --include-family email-web-archive --include-family form --fail-on-fallback --max-edge 160 --output target/unsupported-0199-supported-families.json`
+  - `cargo fmt --check`
+  - `git diff --check -- docs/reports/native-renderer-support-matrix-2026-06-24.md docs/milestones/0199-unsupported-feature-burn-down-release-candidate-gate.md docs/milestones/README.md docs/reports/unsupported-feature-burn-down-2026-06-29.md`
+  - `cargo test --workspace --no-default-features`
+  - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
