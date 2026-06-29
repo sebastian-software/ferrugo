@@ -53,6 +53,20 @@ Expected backend behavior is encoded in feature tags such as
 Use this manifest for retirement planning only as a first synthetic-realistic
 proxy. It does not replace real local corpus ingestion.
 
+## Cross-Producer Fusion Manifest
+
+`fixtures/cross-producer-fusion-manifest.tsv` groups equivalent workflows across
+multiple producer-style reductions. It keeps the standard seven-column manifest
+shape and adds `producer:*` plus `workflow:*` feature tags so native gates and
+producer reports can answer two questions at once:
+
+- whether a typical workflow remains native-only across several producers;
+- whether a producer-specific boundary routes to a typed native cause.
+
+The companion `fixtures/cross-producer-fusion-matrix.tsv` records workflow,
+producer, feature pressure, current status, owner route, and minimization notes.
+All rows must remain generated, privacy-safe, and reproducible.
+
 ## Business-Document Manifest
 
 `fixtures/business-document-manifest.tsv` is the focused gate for invoices,

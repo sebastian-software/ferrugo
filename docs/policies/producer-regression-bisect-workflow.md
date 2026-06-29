@@ -10,7 +10,8 @@ or recent code change.
 ## Inputs
 
 - A committed manifest with `producer:*` feature tags, such as
-  `fixtures/producer-compatibility-manifest.tsv`.
+  `fixtures/producer-compatibility-manifest.tsv` or
+  `fixtures/cross-producer-fusion-manifest.tsv`.
 - A native render gate output or failing command.
 - Optional local-only corpus aggregates under `fixtures/local-corpus/`.
 
@@ -85,3 +86,9 @@ from that application. A producer group becomes actionable when:
 
 Unsupported boundaries should stay visible. Do not remove or hide a fixture to
 improve headline pass rates.
+
+For cross-producer fusion gates, inspect the `workflow:*` feature groups before
+opening producer-specific follow-ups. A failure shared by several producers in
+the same workflow usually points to a renderer feature bucket; a failure limited
+to one producer row should be reduced further before it becomes a compatibility
+claim.
