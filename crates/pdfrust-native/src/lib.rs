@@ -335,6 +335,8 @@ pub struct NativeRenderLimits {
     pub max_icc_transform_cache_entries: usize,
     /// Maximum decoded bytes accepted for one embedded font program.
     pub max_font_program_bytes: usize,
+    /// Maximum resident decoded embedded-font bytes accepted for one page resource map.
+    pub max_total_font_program_bytes: usize,
     /// Maximum decoded bytes accepted for one ToUnicode CMap stream.
     pub max_cmap_bytes: usize,
     /// Maximum bytes accepted in one decoded text run.
@@ -375,6 +377,7 @@ impl NativeRenderLimits {
             max_icc_transform_workspace_bytes: 32 * 1024,
             max_icc_transform_cache_entries: 8,
             max_font_program_bytes: 4 * 1024 * 1024,
+            max_total_font_program_bytes: 8 * 1024 * 1024,
             max_cmap_bytes: 256 * 1024,
             max_text_run_bytes: 16 * 1024,
             max_display_items: 2_048,
@@ -397,6 +400,7 @@ impl NativeRenderLimits {
             max_icc_transform_workspace_bytes: self.max_icc_transform_workspace_bytes,
             max_icc_transform_cache_entries: self.max_icc_transform_cache_entries,
             max_font_program_bytes: self.max_font_program_bytes,
+            max_total_font_program_bytes: self.max_total_font_program_bytes,
             max_cmap_bytes: self.max_cmap_bytes,
             max_text_run_bytes: self.max_text_run_bytes,
             max_display_items: self.max_display_items,
@@ -416,6 +420,7 @@ impl NativeRenderLimits {
             max_text_run_bytes: self.max_text_run_bytes,
             max_cmap_bytes: self.max_cmap_bytes,
             max_font_program_bytes: self.max_font_program_bytes,
+            max_total_font_program_bytes: self.max_total_font_program_bytes,
             max_image_bytes: self.max_image_bytes,
             max_total_image_bytes: self.max_total_image_bytes,
             max_icc_profile_bytes: self.max_icc_profile_bytes,
@@ -456,6 +461,7 @@ impl Default for NativeRenderLimits {
             max_icc_transform_workspace_bytes: display.max_icc_transform_workspace_bytes,
             max_icc_transform_cache_entries: display.max_icc_transform_cache_entries,
             max_font_program_bytes: display.max_font_program_bytes,
+            max_total_font_program_bytes: display.max_total_font_program_bytes,
             max_cmap_bytes: display.max_cmap_bytes,
             max_text_run_bytes: display.max_text_run_bytes,
             max_display_items: display.max_display_items,
@@ -487,6 +493,8 @@ pub struct NativeMemoryDiagnostics {
     pub max_icc_transform_cache_entries: usize,
     /// Maximum decoded bytes accepted for one embedded font program.
     pub max_font_program_bytes: usize,
+    /// Maximum resident decoded embedded-font bytes accepted for one page resource map.
+    pub max_total_font_program_bytes: usize,
     /// Maximum decoded bytes accepted for one ToUnicode CMap stream.
     pub max_cmap_bytes: usize,
     /// Maximum bytes accepted in one decoded text run.
@@ -3339,6 +3347,8 @@ fn map_graphics_error(error: GraphicsError) -> ThumbnailError {
             unsupported_feature(BUCKET_GRAPHICS_STROKE_CLIP)
         }
         GraphicsErrorKind::UnsupportedFontProgram { .. }
+        | GraphicsErrorKind::FontProgramBytesOverflow { .. }
+        | GraphicsErrorKind::FontProgramResourceBytesOverflow { .. }
         | GraphicsErrorKind::UnsupportedTextEncoding
         | GraphicsErrorKind::UnsupportedTextEncodingFeature { .. }
         | GraphicsErrorKind::MissingTextMapping { .. }
@@ -4306,6 +4316,8 @@ mod tests {
         assert_eq!(diagnostics.max_icc_profile_bytes, 1024 * 1024);
         assert_eq!(diagnostics.max_icc_transform_workspace_bytes, 64 * 1024);
         assert_eq!(diagnostics.max_icc_transform_cache_entries, 32);
+        assert_eq!(diagnostics.max_font_program_bytes, 16 * 1024 * 1024);
+        assert_eq!(diagnostics.max_total_font_program_bytes, 64 * 1024 * 1024);
         assert_eq!(diagnostics.max_display_items, 8_192);
         assert_eq!(diagnostics.max_font_fallback_cache_entries, 128);
         assert_eq!(diagnostics.max_transparency_group_pixels, 16 * 1024 * 1024);
@@ -4325,10 +4337,12 @@ mod tests {
         assert!(low_memory.max_image_bytes < default.max_image_bytes);
         assert!(low_memory.max_total_image_bytes < default.max_total_image_bytes);
         assert!(low_memory.max_font_program_bytes < default.max_font_program_bytes);
+        assert!(low_memory.max_total_font_program_bytes < default.max_total_font_program_bytes);
         assert!(low_memory.max_display_items < default.max_display_items);
         assert!(low_memory.max_transparency_group_pixels < default.max_transparency_group_pixels);
         assert!(low_memory.max_page_pixels > 0);
         assert!(low_memory.max_total_image_bytes >= low_memory.max_image_bytes);
+        assert!(low_memory.max_total_font_program_bytes >= low_memory.max_font_program_bytes);
     }
 
     #[test]

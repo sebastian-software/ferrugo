@@ -120,6 +120,7 @@ compare the PDFium oracle against the Rust-native backend in one object:
     "max_page_pixels": 16777216,
     "max_image_bytes": 33554432,
     "max_font_program_bytes": 16777216,
+    "max_total_font_program_bytes": 67108864,
     "max_cmap_bytes": 1048576,
     "max_text_run_bytes": 65536,
     "max_display_items": 8192

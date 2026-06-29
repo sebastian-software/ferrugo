@@ -1,6 +1,6 @@
 # 0212: Rust-Native Font Cache Compaction
 
-Status: todo
+Status: done
 Phase: 40
 Size: medium
 Depends on: 0211
@@ -49,4 +49,16 @@ text geometry caches while preserving Rust-native text fidelity.
 
 ## Completion Notes
 
-Empty until done.
+Completed on 2026-06-29.
+
+- Added a resident total decoded embedded-font-program budget per page resource
+  map (`max_total_font_program_bytes`) in addition to the existing per-program
+  limit.
+- Preserved cache sharing for repeated references to the same embedded font
+  stream; shared streams count once against the total budget.
+- Added typed overflow reporting via `FontProgramResourceBytesOverflow` and
+  exposed the budget in native memory diagnostics and CLI diagnostic bundles.
+- Added `fixtures/font-cache-compaction-manifest.tsv` covering office, browser,
+  report, longform, CJK/CID, subset, and repeated Type3 font families.
+- Documented font cache invariants in `docs/backend/native.md` and the baseline
+  diagnostics schema in `docs/baselines.md`.

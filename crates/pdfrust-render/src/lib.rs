@@ -69,6 +69,9 @@ pub const DEFAULT_FONT_FALLBACK_CACHE_LIMIT: usize = 128;
 /// Default maximum decoded bytes for one embedded font program.
 pub const DEFAULT_FONT_PROGRAM_BYTES_LIMIT: usize = 16 * 1024 * 1024;
 
+/// Default maximum resident decoded embedded-font bytes for one page resource map.
+pub const DEFAULT_TOTAL_FONT_PROGRAM_BYTES_LIMIT: usize = 64 * 1024 * 1024;
+
 /// Default maximum decoded bytes for one image XObject.
 pub const DEFAULT_IMAGE_BYTES_LIMIT: usize = 32 * 1024 * 1024;
 
@@ -3313,6 +3316,7 @@ impl<'a> FontObjectResolver<'a> for ModernDocument<'a> {
 #[derive(Debug, Default)]
 struct FontProgramCache {
     programs: Vec<FontProgram>,
+    total_bytes: usize,
 }
 
 impl FontProgramCache {
@@ -3321,6 +3325,7 @@ impl FontProgramCache {
         key: FontProgramKey,
         stream: &StreamObject<'_>,
         max_font_program_bytes: usize,
+        max_total_font_program_bytes: usize,
     ) -> GraphicsResult<FontProgram> {
         if let Some(program) = self.programs.iter().find(|program| program.key == key) {
             return Ok(program.clone());
@@ -3351,10 +3356,27 @@ impl FontProgramCache {
                 },
             ));
         }
+        let total_bytes = self.total_bytes.checked_add(decoded.len()).ok_or_else(|| {
+            GraphicsError::new(
+                None,
+                GraphicsErrorKind::FontProgramResourceBytesOverflow {
+                    limit: max_total_font_program_bytes,
+                },
+            )
+        })?;
+        if total_bytes > max_total_font_program_bytes {
+            return Err(GraphicsError::new(
+                None,
+                GraphicsErrorKind::FontProgramResourceBytesOverflow {
+                    limit: max_total_font_program_bytes,
+                },
+            ));
+        }
         let program = FontProgram {
             key,
             bytes: Arc::from(decoded),
         };
+        self.total_bytes = total_bytes;
         self.programs.push(program.clone());
         Ok(program)
     }
@@ -3406,8 +3428,13 @@ where
 {
     let base_font = optional_name(dictionary, b"BaseFont");
     let subtype = optional_font_subtype(dictionary);
-    let (descriptor_reference, program) =
-        load_font_descriptor_program(dictionary, resolver, cache, options.max_font_program_bytes)?;
+    let (descriptor_reference, program) = load_font_descriptor_program(
+        dictionary,
+        resolver,
+        cache,
+        options.max_font_program_bytes,
+        options.max_total_font_program_bytes,
+    )?;
     let encoding = font_encoding(dictionary)?;
     let writing_mode = font_writing_mode(dictionary);
     let to_unicode = load_to_unicode_map(dictionary, resolver, options)?;
@@ -3630,6 +3657,7 @@ fn load_font_descriptor_program<'a, R>(
     resolver: &'a R,
     cache: &mut FontProgramCache,
     max_font_program_bytes: usize,
+    max_total_font_program_bytes: usize,
 ) -> GraphicsResult<(Option<Reference>, Option<FontProgram>)>
 where
     R: FontObjectResolver<'a> + ?Sized,
@@ -3659,6 +3687,7 @@ where
                 resolver,
                 cache,
                 max_font_program_bytes,
+                max_total_font_program_bytes,
             )?;
             Ok((Some(reference), program))
         }
@@ -3668,6 +3697,7 @@ where
                 resolver,
                 cache,
                 max_font_program_bytes,
+                max_total_font_program_bytes,
             )?;
             Ok((None, program))
         }
@@ -3680,6 +3710,7 @@ fn load_font_program_from_descriptor<'a, R>(
     resolver: &'a R,
     cache: &mut FontProgramCache,
     max_font_program_bytes: usize,
+    max_total_font_program_bytes: usize,
 ) -> GraphicsResult<Option<FontProgram>>
 where
     R: FontObjectResolver<'a> + ?Sized,
@@ -3704,7 +3735,14 @@ where
         None => font_file3_program_kind(stream.dictionary())?,
     };
     let key = FontProgramKey { reference, kind };
-    cache.load(key, &stream, max_font_program_bytes).map(Some)
+    cache
+        .load(
+            key,
+            &stream,
+            max_font_program_bytes,
+            max_total_font_program_bytes,
+        )
+        .map(Some)
 }
 
 fn load_to_unicode_map<'a, R>(
@@ -4588,6 +4626,8 @@ pub struct DisplayListOptions {
     pub max_cmap_entries: usize,
     /// Maximum decoded bytes accepted for one embedded font program.
     pub max_font_program_bytes: usize,
+    /// Maximum resident decoded embedded-font bytes accepted for one page resource map.
+    pub max_total_font_program_bytes: usize,
     /// Maximum decoded bytes accepted for one image XObject.
     pub max_image_bytes: usize,
     /// Maximum resident decoded image bytes accepted for one page resource map.
@@ -4620,6 +4660,7 @@ impl Default for DisplayListOptions {
             max_cmap_bytes: DEFAULT_CMAP_BYTES_LIMIT,
             max_cmap_entries: DEFAULT_CMAP_ENTRIES_LIMIT,
             max_font_program_bytes: DEFAULT_FONT_PROGRAM_BYTES_LIMIT,
+            max_total_font_program_bytes: DEFAULT_TOTAL_FONT_PROGRAM_BYTES_LIMIT,
             max_image_bytes: DEFAULT_IMAGE_BYTES_LIMIT,
             max_total_image_bytes: DEFAULT_TOTAL_IMAGE_BYTES_LIMIT,
             max_icc_profile_bytes: DEFAULT_ICC_PROFILE_BYTES_LIMIT,
@@ -12872,6 +12913,11 @@ pub enum GraphicsErrorKind {
         /// Configured decoded font program byte limit.
         limit: usize,
     },
+    /// Decoded embedded font programs exceed the configured resource-map limit.
+    FontProgramResourceBytesOverflow {
+        /// Configured decoded font program resource byte limit.
+        limit: usize,
+    },
     /// Font program kind cannot produce outlines in the current extractor.
     UnsupportedGlyphOutlineProgram {
         /// Unsupported font program kind.
@@ -13165,6 +13211,12 @@ impl fmt::Display for GraphicsErrorKind {
             ),
             Self::FontProgramBytesOverflow { limit } => {
                 write!(f, "decoded font program exceeds byte limit {limit}")
+            }
+            Self::FontProgramResourceBytesOverflow { limit } => {
+                write!(
+                    f,
+                    "decoded font programs exceed resource byte limit {limit}"
+                )
             }
             Self::UnsupportedGlyphOutlineProgram { kind } => {
                 write!(f, "unsupported glyph outline font program {kind:?}")
@@ -17118,8 +17170,15 @@ mod tests {
             b"<< /Length 4 >>",
             b"font",
         );
-        let resources = font_resources_from_document(&document, &[("F1", 4), ("F2", 4)])
-            .expect("valid font resources");
+        let resources = font_resources_from_document_with_options(
+            &document,
+            &[("F1", 4), ("F2", 4)],
+            DisplayListOptions {
+                max_total_font_program_bytes: 4,
+                ..DisplayListOptions::default()
+            },
+        )
+        .expect("shared font program should only count once");
         let first = resources
             .get(PdfName::new(b"F1"))
             .and_then(|font| font.program.as_ref())
@@ -17130,6 +17189,43 @@ mod tests {
             .expect("second program");
 
         assert!(Arc::ptr_eq(&first.bytes, &second.bytes));
+    }
+
+    #[test]
+    fn font_resources_should_enforce_total_program_byte_budget() {
+        let document = load_two_font_programs_pdf(
+            TestFontProgramResource {
+                font_dictionary:
+                    b"<< /Type /Font /Subtype /TrueType /BaseFont /FirstFont /FontDescriptor 6 0 R >>",
+                descriptor_dictionary:
+                    b"<< /Type /FontDescriptor /FontName /FirstFont /FontFile2 7 0 R >>",
+                stream_dictionary: b"<< /Length 4 >>",
+                stream: b"font",
+            },
+            TestFontProgramResource {
+                font_dictionary:
+                    b"<< /Type /Font /Subtype /TrueType /BaseFont /SecondFont /FontDescriptor 9 0 R >>",
+                descriptor_dictionary:
+                    b"<< /Type /FontDescriptor /FontName /SecondFont /FontFile2 10 0 R >>",
+                stream_dictionary: b"<< /Length 4 >>",
+                stream: b"data",
+            },
+        );
+        let error = font_resources_from_document_with_options(
+            &document,
+            &[("F1", 4), ("F2", 8)],
+            DisplayListOptions {
+                max_font_program_bytes: 4,
+                max_total_font_program_bytes: 7,
+                ..DisplayListOptions::default()
+            },
+        )
+        .expect_err("unique font programs should exceed the resource-map budget");
+
+        assert_eq!(
+            error.kind(),
+            &GraphicsErrorKind::FontProgramResourceBytesOverflow { limit: 7 }
+        );
     }
 
     #[test]
@@ -19513,6 +19609,39 @@ mod tests {
         let pdf = build_classic_pdf_from_objects(&objects);
         let leaked = Box::leak(pdf.into_boxed_slice());
         load_classic_document(PdfBytes::new(leaked)).expect("font program PDF should load")
+    }
+
+    fn load_two_font_programs_pdf(
+        first: TestFontProgramResource<'_>,
+        second: TestFontProgramResource<'_>,
+    ) -> ClassicDocument<'static> {
+        let content_stream = b"BT /F1 12 Tf 10 20 Td (Hi) Tj /F2 12 Tf (OK) Tj ET";
+        let content_dictionary = format!("<< /Length {} >>", content_stream.len());
+        let objects = vec![
+            stream_object_bytes(1, content_dictionary.as_bytes(), content_stream),
+            indirect_object_bytes(
+                2,
+                b"<< /Type /Page /Parent 3 0 R /MediaBox [0 0 120 120] /Resources << /Font << /F1 4 0 R /F2 8 0 R >> >> /Contents 1 0 R >>",
+            ),
+            indirect_object_bytes(3, b"<< /Type /Pages /Kids [2 0 R] /Count 1 >>"),
+            indirect_object_bytes(4, first.font_dictionary),
+            indirect_object_bytes(5, b"<< /Type /Catalog /Pages 3 0 R >>"),
+            indirect_object_bytes(6, first.descriptor_dictionary),
+            stream_object_bytes(7, first.stream_dictionary, first.stream),
+            indirect_object_bytes(8, second.font_dictionary),
+            indirect_object_bytes(9, second.descriptor_dictionary),
+            stream_object_bytes(10, second.stream_dictionary, second.stream),
+        ];
+        let pdf = build_classic_pdf_from_objects(&objects);
+        let leaked = Box::leak(pdf.into_boxed_slice());
+        load_classic_document(PdfBytes::new(leaked)).expect("two-font program PDF should load")
+    }
+
+    struct TestFontProgramResource<'a> {
+        font_dictionary: &'a [u8],
+        descriptor_dictionary: &'a [u8],
+        stream_dictionary: &'a [u8],
+        stream: &'a [u8],
     }
 
     fn load_tounicode_text_pdf(

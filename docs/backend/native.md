@@ -107,6 +107,21 @@ Explicit viewer-side form mutation preview requests are rejected with
 values, appearance dictionaries, or flattened page bytes during thumbnail
 rendering.
 
+## Font Resource Cache Policy
+
+Embedded font programs are decoded inside the page resource-map boundary. The
+renderer enforces both a per-program byte limit and a resident total decoded
+font-program byte limit for that map. Repeated references to the same embedded
+font stream reuse the existing decoded `Arc<[u8]>` and count once against the
+total. Unique subset fonts count independently and return a typed font-program
+budget error when the total limit is exceeded.
+
+Fallback font face resolution, fallback glyph bitmaps, glyph outlines,
+ToUnicode CMaps, text runs, and text raster scratch buffers remain bounded by
+existing entry, byte, or retained-capacity limits. Native memory diagnostics
+report the default and low-memory font budgets without exposing document text,
+font names, glyph strings, or decoded program bytes.
+
 The current repeated-render gate does not show enough improvement to justify
 shared persistent page artifacts as a default: the 0134 benchmark rendered four
 fixtures three times each with 0 fallbacks and 0 budget failures, while repeated
