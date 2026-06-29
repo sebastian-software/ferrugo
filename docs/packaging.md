@@ -134,6 +134,8 @@ pure Rust except for the Rust standard library and normal Cargo build tooling.
 - Remove `--allow-pdfium-fallback`; runtime PDFium fallback has been removed.
 - Treat `unsupported` feature buckets as native renderer backlog, not as a
   packaging signal to bundle PDFium again.
+- Follow `docs/guides/native-only-consumer-migration.md` and
+  `docs/policies/unsupported-feature-sla.md` for class/bucket routing.
 
 ## PDFium-Enabled Build
 

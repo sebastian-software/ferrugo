@@ -808,6 +808,36 @@ mod tests {
     }
 
     #[test]
+    fn consumer_migration_should_route_by_class_then_bucket() {
+        use unsupported_feature_buckets as buckets;
+
+        fn route(error: &ThumbnailError) -> &'static str {
+            match error.class() {
+                ThumbnailErrorClass::Unsupported => match error.unsupported_feature_bucket() {
+                    Some(buckets::IMAGE_FILTER) => "scan-codec-review",
+                    Some(buckets::FORM_XFA_DYNAMIC) => "producer-migration",
+                    Some(_) => "native-feature-backlog",
+                    None => "generic-native-unsupported",
+                },
+                ThumbnailErrorClass::Encrypted => "request-password-policy",
+                ThumbnailErrorClass::Malformed => "reject-or-repair-input",
+                ThumbnailErrorClass::Timeout => "retry-with-explicit-timeout-policy",
+                ThumbnailErrorClass::Internal => "renderer-defect",
+            }
+        }
+
+        assert_eq!(
+            route(&ThumbnailError::unsupported_feature(buckets::IMAGE_FILTER)),
+            "scan-codec-review"
+        );
+        assert_eq!(
+            route(&ThumbnailError::Unsupported),
+            "generic-native-unsupported"
+        );
+        assert_eq!(route(&ThumbnailError::Malformed), "reject-or-repair-input");
+    }
+
+    #[test]
     fn version_should_match_package_version() {
         assert_eq!(version(), env!("CARGO_PKG_VERSION"));
     }
