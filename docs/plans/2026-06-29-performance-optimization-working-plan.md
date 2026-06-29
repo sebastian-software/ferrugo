@@ -431,6 +431,23 @@ Rejected candidate from 2026-06-29:
 - Decision: below the 5% noise threshold and with a small regression on
   `technical-hatch-clipping`, so the code change was reverted.
 
+Rejected candidate from 2026-06-29:
+
+- Change tested locally but not kept: direct single-segment stroke hit-testing
+  for paths with exactly one line and no joins, bypassing the generic
+  line-slice iterator and empty join path inside `stroke_path`.
+- Result:
+  `target/benchmark-native-vector-stress-single-stroke-fast-path.json` mean
+  `6.507 ms` vs `target/benchmark-native-vector-stress-clip-bounds.json` mean
+  `6.595 ms`, about 1.3% faster on `vector-stress`.
+- Secondary results:
+  `target/benchmark-native-technical-hatch-single-stroke-fast-path.json` mean
+  `2.851 ms` vs `target/benchmark-native-technical-hatch-clip-bounds.json`
+  mean `2.842 ms`, effectively neutral to slightly slower; and
+  `target/benchmark-native-technical-linework-single-stroke-fast-path.json`
+  mean `0.897 ms`, only a small improvement on the linework fixture.
+- Decision: below the 5% noise threshold, so the code change was reverted.
+
 ## Hardware-Aware Rust Notes
 
 Goal: use Rust's memory model and the host CPU well without prematurely
