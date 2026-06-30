@@ -3790,6 +3790,30 @@ Rejected span row-write and sorted-range merge candidate from 2026-06-30:
   branches. The next vector attempt needs a broader algorithmic reduction in
   sampled stroke/range work, or it should switch to a different top family.
 
+Rejected lower join-bucket threshold candidate from 2026-06-30:
+
+- Profile basis: after repeated local `vector-stress` rejections,
+  `prepress-trim-bleed-marks.pdf` was the next slowest starter fixture.
+  `target/trace-current-post-axial-prepress-trim-bleed-marks.json` showed a
+  mixed profile with `raster_paths` `0.428 ms`, `resource_decode` `0.176 ms`,
+  and `display_list_build` `0.156 ms`. A longer sample,
+  `target/sample-prepress-current-post-axial.txt`, showed the raster part
+  dominated by `stroke_path` and especially `point_in_join`.
+- Change tested locally but not kept: lower `STROKE_JOIN_BUCKET_MIN_JOINS` from
+  `8` to `4`, so the small joined prepress stroke items could use join buckets
+  instead of scanning joins directly.
+- A/B artifacts:
+  `target/benchmark-native-prepress-current-post-axial-profile-run.json` and
+  `target/benchmark-native-prepress-join-bucket4-candidate.json`, both
+  `benchmark-native`, `fixtures/generated/prepress-trim-bleed-marks.pdf`,
+  `--max-edge 160`, 220,000 iterations.
+- Result: rejected as a regression. Mean moved `0.421 ms` -> `0.432 ms`
+  (`~2.6%` slower).
+- Decision: reverted. Even where `point_in_join` is prominent, the bucket
+  setup and query overhead is too high for these small joined strokes. Keep the
+  join-bucket threshold at `8` until a profile identifies larger joined stroke
+  items or a cheaper join-index representation.
+
 Repeat family phase-summary instrumentation from 2026-06-30:
 
 - Change: `benchmark-repeat-native` now aggregates record-level
