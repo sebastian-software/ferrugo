@@ -3814,6 +3814,45 @@ Rejected lower join-bucket threshold candidate from 2026-06-30:
   join-bucket threshold at `8` until a profile identifies larger joined stroke
   items or a cheaper join-index representation.
 
+Accepted streamed fallback text rasterization from 2026-06-30:
+
+- Profile basis: after the vector and axial-shading work, the next useful
+  non-vector sample targeted `fixtures/generated/office-report-header-footer-link.pdf`.
+  `target/trace-office-report-current.json` showed `raster_text` as the largest
+  single phase (`0.104 ms`), followed by `display_list_build` (`0.086 ms`) and
+  `content_tokenize` (`0.045 ms`). The matching macOS sample,
+  `target/sample-office-report-current.txt`, was dominated by `draw_text_run`
+  and showed allocation/grow samples around fallback text scratch and glyph
+  bitmap cache storage.
+- Change: fallback text rasterization now streams decoded glyph characters
+  directly from each `TextDisplayItem` instead of first building a temporary
+  `TextRasterScratch` atom vector. Combining-mark placement and ligature
+  expansion remain covered by raster behavior tests. The glyph bitmap cache also
+  lazily reserves its bounded entry capacity on the first cached glyph insert,
+  avoiding repeated growth without allocating on pages that never paint fallback
+  text.
+- Focused A/B artifacts:
+  `target/benchmark-native-office-report-text-cache-base.json`,
+  `target/benchmark-native-office-report-stream-text-candidate.json`,
+  `target/benchmark-native-ebook-stream-text-base.json`,
+  `target/benchmark-native-ebook-stream-text-candidate.json`, and
+  `target/benchmark-native-ebook-stream-text-candidate-repeat.json`, all
+  `benchmark-native`, `--max-edge 160`, 30,000 iterations.
+- Result: office text improved mean `0.230 ms` -> `0.222 ms` (`~3.5%`), which
+  was useful but below threshold on its own. The text-heavy
+  `ebook-narrow-longform.pdf` fixture improved mean `0.275 ms` -> `0.161 ms`
+  (`~41.5%`) and repeated at `0.161 ms`.
+- Protection: `target/performance-matrix-stream-text-candidate.json` ran the
+  generated fixture directory with performance-manifest classifications,
+  rendered `217` native records, preserved the existing fallback/error buckets,
+  and reported starter-family means including `office-export` `0.226 ms`,
+  `small-text` `0.040 ms`, `presentation` `0.321 ms`, and `report/vector`
+  `0.433 ms`.
+- Decision: accepted as a text/office-export performance win. The change removes
+  a per-run temporary allocation path rather than adding a new raster branch, so
+  it is low risk for non-text pages and directly addresses the sampled text
+  bottleneck.
+
 Repeat family phase-summary instrumentation from 2026-06-30:
 
 - Change: `benchmark-repeat-native` now aggregates record-level

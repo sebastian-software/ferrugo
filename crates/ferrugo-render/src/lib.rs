@@ -63,8 +63,6 @@ pub const DEFAULT_GLYPH_BITMAP_CACHE_LIMIT: usize = 256;
 
 const STANDARD_BASE_FONT_CELL_SCALE: f64 = 0.75;
 
-const DEFAULT_TEXT_RASTER_SCRATCH_RETAINED_ATOMS: usize = 4_096;
-
 /// Default maximum cached deterministic font fallback resolutions.
 pub const DEFAULT_FONT_FALLBACK_CACHE_LIMIT: usize = 128;
 
@@ -2804,6 +2802,9 @@ impl GlyphBitmapCache {
             self.entries.push(CachedGlyphBitmap { key, bitmap });
             return &self.entries[0].bitmap;
         }
+        if self.entries.capacity() == 0 {
+            self.entries.reserve(self.max_entries);
+        }
         if self.entries.len() >= self.max_entries {
             self.entries.remove(0);
         }
@@ -2828,75 +2829,6 @@ impl Default for GlyphBitmapCache {
     fn default() -> Self {
         Self::new(DEFAULT_GLYPH_BITMAP_CACHE_LIMIT)
     }
-}
-
-#[derive(Debug)]
-struct TextRasterScratch {
-    atoms: Vec<TextRasterAtom>,
-    max_retained_atoms: usize,
-}
-
-impl TextRasterScratch {
-    fn new(max_retained_atoms: usize) -> Self {
-        Self {
-            atoms: Vec::new(),
-            max_retained_atoms,
-        }
-    }
-
-    fn prepare(&mut self, text: &TextDisplayItem, cell: f64) {
-        self.reset_for(text.glyphs.len());
-        for (glyph, origin) in text.glyphs.iter().zip(text.glyph_origins.iter()) {
-            let mut pen_x = origin.x;
-            let mut last_base_x = origin.x;
-            for character in glyph.unicode.chars() {
-                if is_combining_mark(character) {
-                    self.atoms.push(TextRasterAtom {
-                        kind: TextRasterAtomKind::CombiningMark(character),
-                        x: last_base_x,
-                        baseline_y: origin.y,
-                    });
-                    continue;
-                }
-                self.atoms.push(TextRasterAtom {
-                    kind: TextRasterAtomKind::Glyph(character),
-                    x: pen_x,
-                    baseline_y: origin.y,
-                });
-                last_base_x = pen_x;
-                pen_x += fallback_glyph_advance(cell);
-            }
-        }
-    }
-
-    fn reset_for(&mut self, expected_atoms: usize) {
-        if self.atoms.capacity() > self.max_retained_atoms
-            && expected_atoms <= self.max_retained_atoms
-        {
-            self.atoms = Vec::with_capacity(expected_atoms);
-            return;
-        }
-        self.atoms.clear();
-    }
-}
-
-impl Default for TextRasterScratch {
-    fn default() -> Self {
-        Self::new(DEFAULT_TEXT_RASTER_SCRATCH_RETAINED_ATOMS)
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct TextRasterAtom {
-    kind: TextRasterAtomKind,
-    x: f64,
-    baseline_y: f64,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TextRasterAtomKind {
-    Glyph(char),
-    CombiningMark(char),
 }
 
 fn fallback_glyph_advance(cell: f64) -> f64 {
@@ -5705,7 +5637,6 @@ fn rasterize_display_list_into_with_scratch(
     let mut active_clips = Vec::new();
     let mut glyph_cache = GlyphBitmapCache::default();
     let mut pattern_cache = PatternCellCache::new(options.max_pattern_cell_cache_entries);
-    let mut text_scratch = TextRasterScratch::default();
     for item in display_list.items() {
         match item {
             DisplayItem::Path(path) => {
@@ -5777,14 +5708,7 @@ fn rasterize_display_list_into_with_scratch(
             }
             DisplayItem::Text(text) => {
                 record_raster_display_phase(&mut on_phase, RasterDisplayPhase::Text, || {
-                    draw_text_run(
-                        device,
-                        text,
-                        transform,
-                        options,
-                        &mut glyph_cache,
-                        &mut text_scratch,
-                    )
+                    draw_text_run(device, text, transform, options, &mut glyph_cache)
                 })?;
             }
         }
@@ -6386,7 +6310,6 @@ pub fn rasterize_text(
     transform: PageTransform,
 ) -> RasterResult<()> {
     let mut glyph_cache = GlyphBitmapCache::default();
-    let mut text_scratch = TextRasterScratch::default();
     for item in display_list.items() {
         let DisplayItem::Text(text) = item else {
             continue;
@@ -6397,7 +6320,6 @@ pub fn rasterize_text(
             transform,
             PathRasterOptions::default(),
             &mut glyph_cache,
-            &mut text_scratch,
         )?;
     }
     Ok(())
@@ -14209,7 +14131,6 @@ fn draw_text_run(
     page_transform: PageTransform,
     options: PathRasterOptions,
     glyph_cache: &mut GlyphBitmapCache,
-    text_scratch: &mut TextRasterScratch,
 ) -> RasterResult<()> {
     if !text.rendering_mode.paints_pixels() {
         return Ok(());
@@ -14229,24 +14150,21 @@ fn draw_text_run(
         source: FontFallbackSource::Unspecified,
     });
     let cell = scaled_fallback_text_cell(text.font_size, fallback, text.state);
-    text_scratch.prepare(text, cell);
-    for atom in &text_scratch.atoms {
-        let TextRasterAtomKind::Glyph(character) = atom.kind else {
-            draw_combining_mark(device, page_transform, atom.x, atom.baseline_y, cell, color)?;
-            continue;
-        };
-        if character == ' ' || character == '\u{00a0}' {
-            continue;
+    for (glyph, origin) in text.glyphs.iter().zip(text.glyph_origins.iter()) {
+        let mut pen_x = origin.x;
+        let mut last_base_x = origin.x;
+        for character in glyph.unicode.chars() {
+            if is_combining_mark(character) {
+                draw_combining_mark(device, page_transform, last_base_x, origin.y, cell, color)?;
+                continue;
+            }
+            if character != ' ' && character != '\u{00a0}' {
+                let bitmap = glyph_cache.bitmap_for(fallback, character, cell);
+                draw_ascii_glyph(device, page_transform, bitmap, pen_x, origin.y, color)?;
+            }
+            last_base_x = pen_x;
+            pen_x += fallback_glyph_advance(cell);
         }
-        let bitmap = glyph_cache.bitmap_for(fallback, character, cell);
-        draw_ascii_glyph(
-            device,
-            page_transform,
-            bitmap,
-            atom.x,
-            atom.baseline_y,
-            color,
-        )?;
     }
     Ok(())
 }
@@ -21572,9 +21490,16 @@ mod tests {
     }
 
     #[test]
-    fn text_raster_scratch_should_expand_ligature_mapping_without_losing_capacity() {
-        let mut scratch = TextRasterScratch::default();
-        let first = fallback_text_item(
+    fn rasterize_text_should_stream_ligature_expanded_chars() {
+        let single = fallback_text_item(
+            vec![TextGlyph {
+                character_code: 1,
+                unicode: "f".to_string(),
+                layout: TextLayoutStatus::Simple,
+            }],
+            vec![Point { x: 10.0, y: 20.0 }],
+        );
+        let expanded = fallback_text_item(
             vec![TextGlyph {
                 character_code: 1,
                 unicode: "fi".to_string(),
@@ -21583,79 +21508,23 @@ mod tests {
             vec![Point { x: 10.0, y: 20.0 }],
         );
 
-        scratch.prepare(&first, 2.0);
-        let capacity = scratch.atoms.capacity();
-
-        assert_eq!(
-            scratch.atoms,
-            vec![
-                TextRasterAtom {
-                    kind: TextRasterAtomKind::Glyph('f'),
-                    x: 10.0,
-                    baseline_y: 20.0,
-                },
-                TextRasterAtom {
-                    kind: TextRasterAtomKind::Glyph('i'),
-                    x: 22.0,
-                    baseline_y: 20.0,
-                },
-            ]
+        assert!(
+            rasterized_text_pixels(expanded) > rasterized_text_pixels(single),
+            "expanded ligature text should paint the second fallback glyph"
         );
-
-        let second = fallback_text_item(
-            vec![TextGlyph {
-                character_code: 2,
-                unicode: "A".to_string(),
-                layout: TextLayoutStatus::Simple,
-            }],
-            vec![Point { x: 0.0, y: 0.0 }],
-        );
-        scratch.prepare(&second, 2.0);
-
-        assert_eq!(scratch.atoms.capacity(), capacity);
     }
 
     #[test]
-    fn text_raster_scratch_should_release_oversized_capacity_before_small_run() {
-        let mut scratch = TextRasterScratch::new(1);
-        let large = fallback_text_item(
+    fn rasterize_text_should_stream_combining_marks_on_previous_base() {
+        let base = fallback_text_item(
             vec![TextGlyph {
                 character_code: 1,
-                unicode: "wide".to_string(),
-                layout: TextLayoutStatus::LigatureExpanded,
-            }],
-            vec![Point { x: 10.0, y: 20.0 }],
-        );
-
-        scratch.prepare(&large, 2.0);
-        let large_capacity = scratch.atoms.capacity();
-        assert!(large_capacity > 1);
-
-        let small = fallback_text_item(
-            vec![TextGlyph {
-                character_code: 2,
-                unicode: "A".to_string(),
+                unicode: "e".to_string(),
                 layout: TextLayoutStatus::Simple,
             }],
-            vec![Point { x: 0.0, y: 0.0 }],
+            vec![Point { x: 15.0, y: 25.0 }],
         );
-        scratch.prepare(&small, 2.0);
-
-        assert!(scratch.atoms.capacity() < large_capacity);
-        assert_eq!(
-            scratch.atoms,
-            vec![TextRasterAtom {
-                kind: TextRasterAtomKind::Glyph('A'),
-                x: 0.0,
-                baseline_y: 0.0,
-            }]
-        );
-    }
-
-    #[test]
-    fn text_raster_scratch_should_position_combining_marks_on_previous_base() {
-        let mut scratch = TextRasterScratch::default();
-        let text = fallback_text_item(
+        let marked = fallback_text_item(
             vec![TextGlyph {
                 character_code: 1,
                 unicode: "e\u{301}".to_string(),
@@ -21664,22 +21533,9 @@ mod tests {
             vec![Point { x: 15.0, y: 25.0 }],
         );
 
-        scratch.prepare(&text, 2.0);
-
-        assert_eq!(
-            scratch.atoms,
-            vec![
-                TextRasterAtom {
-                    kind: TextRasterAtomKind::Glyph('e'),
-                    x: 15.0,
-                    baseline_y: 25.0,
-                },
-                TextRasterAtom {
-                    kind: TextRasterAtomKind::CombiningMark('\u{301}'),
-                    x: 15.0,
-                    baseline_y: 25.0,
-                },
-            ]
+        assert!(
+            rasterized_text_pixels(marked) > rasterized_text_pixels(base),
+            "combining mark should paint in addition to the base glyph"
         );
     }
 
@@ -24574,6 +24430,33 @@ mod tests {
             rendering_mode: TextRenderingMode::Fill,
             state: GraphicsState::default(),
         }
+    }
+
+    fn rasterized_text_pixels(item: TextDisplayItem) -> usize {
+        let list = DisplayList::from_items(vec![DisplayItem::Text(item)]);
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 120.0,
+                    max_y: 60.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            120,
+        )
+        .expect("page transform");
+        let mut device = transform.create_device(Rgba::WHITE).expect("raster device");
+
+        rasterize_text(&list, &mut device, transform).expect("text should rasterize");
+
+        device
+            .pixels()
+            .chunks_exact(PixelFormat::Rgba8.bytes_per_pixel())
+            .filter(|pixel| *pixel != [255, 255, 255, 255])
+            .count()
     }
 
     fn glyph_bitmap_area(bitmap: &GlyphBitmap) -> f64 {
