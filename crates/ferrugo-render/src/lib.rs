@@ -6905,6 +6905,12 @@ struct AxisStrokeSpans {
     spans: Vec<AxisStrokeSpan>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+struct AxisStrokeRasterSpans {
+    coverage: AxisStrokeSpans,
+    raster: AxisStrokeSpans,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct AxisStrokeSpan {
     min_x: f64,
@@ -10436,7 +10442,7 @@ fn stroke_path(
         return Ok(());
     };
     let prepared_joins = prepare_stroke_joins(joins, radius, state.line_join, state.miter_limit);
-    let axis_spans = axis_stroke_spans(
+    let axis_spans = axis_stroke_raster_spans(
         stroke_lines,
         joins,
         radius,
@@ -10448,6 +10454,21 @@ fn stroke_path(
     let row_buckets = (axis_spans.is_none() && stroke_lines.len() >= STROKE_ROW_BUCKET_MIN_LINES)
         .then(|| stroke_row_buckets(stroke_lines, radius, dimensions, bounds))
         .flatten();
+    if let Some(spans) = axis_spans {
+        rasterize_axis_stroke_spans(
+            device,
+            spans,
+            joins,
+            &prepared_joins,
+            bounds,
+            state,
+            context,
+            samples,
+            sample_count,
+            source,
+        )?;
+        return Ok(());
+    }
     for y in bounds.min_y..bounds.max_y {
         for x in bounds.min_x..bounds.max_x {
             let mut covered = 0;
@@ -10455,23 +10476,18 @@ fn stroke_path(
                 for sample_x in 0..samples {
                     let point = sample_point(x, y, sample_x, sample_y, samples);
                     if point_in_active_clips(point, context.clips)
-                        && (axis_spans.as_ref().map_or_else(
-                            || {
-                                row_buckets.as_ref().map_or_else(
-                                    || point_in_stroke(point, stroke_lines, radius, state.line_cap),
-                                    |buckets| {
-                                        point_in_row_bucketed_stroke(
-                                            point,
-                                            x,
-                                            y,
-                                            buckets,
-                                            radius,
-                                            state.line_cap,
-                                        )
-                                    },
+                        && (row_buckets.as_ref().map_or_else(
+                            || point_in_stroke(point, stroke_lines, radius, state.line_cap),
+                            |buckets| {
+                                point_in_row_bucketed_stroke(
+                                    point,
+                                    x,
+                                    y,
+                                    buckets,
+                                    radius,
+                                    state.line_cap,
                                 )
                             },
-                            |spans| point_in_axis_stroke_spans(point, y, sample_y, spans),
                         ) || point_in_join(
                             point,
                             joins,
@@ -10497,6 +10513,110 @@ fn stroke_path(
         }
     }
     Ok(())
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "keeps stroke state at the callsite explicit"
+)]
+fn rasterize_axis_stroke_spans(
+    device: &mut RasterDevice,
+    spans: AxisStrokeRasterSpans,
+    joins: &[StrokeJoin],
+    prepared_joins: &[PreparedStrokeJoin],
+    bounds: PixelBounds,
+    state: StrokeRasterState,
+    context: PathRasterContext<'_>,
+    samples: u32,
+    sample_count: u32,
+    source: Rgba,
+) -> RasterResult<()> {
+    let radius = stroke_radius_for_device_line_width(state.line_width);
+    let mut x_ranges = Vec::new();
+    for y in bounds.min_y..bounds.max_y {
+        x_ranges.clear();
+        for sample_y in 0..samples {
+            append_axis_stroke_pixel_x_ranges(&spans.raster, bounds, y, sample_y, &mut x_ranges);
+        }
+        merge_pixel_ranges(&mut x_ranges);
+        for x_range in &x_ranges {
+            for x in x_range.clone() {
+                let mut covered = 0;
+                for sample_y in 0..samples {
+                    for sample_x in 0..samples {
+                        let point = sample_point(x, y, sample_x, sample_y, samples);
+                        if point_in_active_clips(point, context.clips)
+                            && (point_in_axis_stroke_spans(point, y, sample_y, &spans.coverage)
+                                || point_in_join(
+                                    point,
+                                    joins,
+                                    prepared_joins,
+                                    radius,
+                                    state.line_join,
+                                ))
+                        {
+                            covered += 1;
+                        }
+                    }
+                }
+                if covered > 0 {
+                    blend_pixel(
+                        device,
+                        x,
+                        y,
+                        source,
+                        state.blend_mode,
+                        state.alpha * f64::from(covered) / f64::from(sample_count),
+                    )?;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn append_axis_stroke_pixel_x_ranges(
+    spans: &AxisStrokeSpans,
+    bounds: PixelBounds,
+    y: u32,
+    sample_y: u32,
+    x_ranges: &mut Vec<Range<u32>>,
+) {
+    let sample_row = y
+        .saturating_mul(spans.samples)
+        .saturating_add(sample_y)
+        .saturating_sub(spans.min_sample_y);
+    let Some(row) = spans.rows.get(sample_row as usize) else {
+        return;
+    };
+    for span in &spans.spans[row.clone()] {
+        if let Some(range) = axis_stroke_span_pixel_range(*span, bounds) {
+            x_ranges.push(range);
+        }
+    }
+}
+
+fn axis_stroke_span_pixel_range(span: AxisStrokeSpan, bounds: PixelBounds) -> Option<Range<u32>> {
+    let start = (span.min_x.floor() as i64).max(i64::from(bounds.min_x));
+    let end = (span.max_x.ceil() as i64).min(i64::from(bounds.max_x));
+    (start < end).then_some(start as u32..end as u32)
+}
+
+fn merge_pixel_ranges(ranges: &mut Vec<Range<u32>>) {
+    if ranges.len() < 2 {
+        return;
+    }
+    ranges.sort_by_key(|range| range.start);
+    let mut write = 0;
+    for read in 1..ranges.len() {
+        if ranges[read].start <= ranges[write].end {
+            ranges[write].end = ranges[write].end.max(ranges[read].end);
+        } else {
+            write += 1;
+            ranges[write] = ranges[read].clone();
+        }
+    }
+    ranges.truncate(write + 1);
 }
 
 fn stroke_row_buckets(
@@ -10547,14 +10667,13 @@ fn stroke_row_buckets(
 
 fn axis_stroke_spans(
     lines: &[LineSegment],
-    joins: &[StrokeJoin],
     radius: f64,
     dimensions: RasterDimensions,
     stroke_bounds: PixelBounds,
     samples: u32,
     line_cap: LineCap,
 ) -> Option<AxisStrokeSpans> {
-    if !joins.is_empty() || lines.len() < STROKE_AXIS_SPAN_MIN_LINES || samples == 0 {
+    if samples == 0 {
         return None;
     }
     let row_count = (stroke_bounds.max_y - stroke_bounds.min_y).checked_mul(samples)? as usize;
@@ -10611,6 +10730,112 @@ fn axis_stroke_spans(
         rows,
         spans,
     })
+}
+
+fn axis_stroke_raster_spans(
+    lines: &[LineSegment],
+    joins: &[StrokeJoin],
+    radius: f64,
+    dimensions: RasterDimensions,
+    stroke_bounds: PixelBounds,
+    samples: u32,
+    line_cap: LineCap,
+) -> Option<AxisStrokeRasterSpans> {
+    if lines.len() < STROKE_AXIS_SPAN_MIN_LINES && joins.is_empty() {
+        return None;
+    }
+    let coverage = axis_stroke_spans(lines, radius, dimensions, stroke_bounds, samples, line_cap)?;
+    let mut raster_rows = axis_stroke_span_rows(&coverage);
+    append_axis_join_raster_spans(
+        &mut raster_rows,
+        joins,
+        radius,
+        dimensions,
+        stroke_bounds,
+        samples,
+    )?;
+    let raster = axis_stroke_spans_from_rows(
+        stroke_bounds.min_y.saturating_mul(samples),
+        samples,
+        raster_rows,
+    );
+    Some(AxisStrokeRasterSpans { coverage, raster })
+}
+
+fn append_axis_join_raster_spans(
+    rows: &mut [Vec<AxisStrokeSpan>],
+    joins: &[StrokeJoin],
+    radius: f64,
+    dimensions: RasterDimensions,
+    stroke_bounds: PixelBounds,
+    samples: u32,
+) -> Option<()> {
+    for join in joins {
+        if !is_axis_aligned_line(join.previous) || !is_axis_aligned_line(join.next) {
+            return None;
+        }
+        let bounds = device_pixel_bounds(
+            PathBounds {
+                min_x: join.point.x - radius,
+                min_y: join.point.y - radius,
+                max_x: join.point.x + radius,
+                max_y: join.point.y + radius,
+            },
+            dimensions,
+            0.0,
+        )
+        .and_then(|bounds| intersect_pixel_bounds(bounds, stroke_bounds))?;
+        let row_count = rows.len();
+        let start = (bounds.min_y - stroke_bounds.min_y).saturating_mul(samples) as usize;
+        let end = (bounds.max_y - stroke_bounds.min_y).saturating_mul(samples) as usize;
+        for row in rows.iter_mut().take(end.min(row_count)).skip(start) {
+            row.push(AxisStrokeSpan {
+                min_x: join.point.x - radius,
+                max_x: join.point.x + radius,
+            });
+        }
+    }
+    Some(())
+}
+
+fn axis_stroke_span_rows(spans: &AxisStrokeSpans) -> Vec<Vec<AxisStrokeSpan>> {
+    let mut per_row = vec![Vec::new(); spans.rows.len()];
+    for (row_index, row) in spans.rows.iter().enumerate() {
+        per_row[row_index].extend_from_slice(&spans.spans[row.clone()]);
+    }
+    per_row
+}
+
+fn axis_stroke_spans_from_rows(
+    min_sample_y: u32,
+    samples: u32,
+    per_row: Vec<Vec<AxisStrokeSpan>>,
+) -> AxisStrokeSpans {
+    let span_count = per_row.iter().map(Vec::len).sum();
+    let mut merged_spans = Vec::with_capacity(span_count);
+    let mut merged_rows = Vec::with_capacity(per_row.len());
+    for mut row in per_row {
+        row.sort_by(|a, b| a.min_x.total_cmp(&b.min_x));
+        let start = merged_spans.len();
+        for span in row {
+            if merged_spans.len() > start {
+                let last_index = merged_spans.len() - 1;
+                let last: &mut AxisStrokeSpan = &mut merged_spans[last_index];
+                if span.min_x <= last.max_x + f64::EPSILON {
+                    last.max_x = last.max_x.max(span.max_x);
+                    continue;
+                }
+            }
+            merged_spans.push(span);
+        }
+        merged_rows.push(start..merged_spans.len());
+    }
+    AxisStrokeSpans {
+        min_sample_y,
+        samples,
+        rows: merged_rows,
+        spans: merged_spans,
+    }
 }
 
 fn axis_stroke_span_for_sample_y(
@@ -15032,7 +15257,7 @@ mod tests {
         let radius = 0.5;
         let bounds = stroke_pixel_bounds(&lines, &[], radius, dimensions)
             .expect("stroke bounds should overlap");
-        let spans = axis_stroke_spans(&lines, &[], radius, dimensions, bounds, 2, LineCap::Butt)
+        let spans = axis_stroke_spans(&lines, radius, dimensions, bounds, 2, LineCap::Butt)
             .expect("axis spans");
 
         for y in bounds.min_y..bounds.max_y {
@@ -15045,6 +15270,90 @@ mod tests {
                             point_in_stroke(point, &lines, radius, LineCap::Butt),
                             "mismatch at pixel ({x},{y}) sample ({sample_x},{sample_y}) point {point:?}"
                         );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn axis_stroke_raster_spans_should_cover_joined_axis_strokes() {
+        let dimensions = RasterDimensions::new(32, 32).expect("valid dimensions");
+        let lines = [
+            LineSegment {
+                from: Point { x: 8.0, y: 8.0 },
+                to: Point { x: 24.0, y: 8.0 },
+            },
+            LineSegment {
+                from: Point { x: 24.0, y: 8.0 },
+                to: Point { x: 24.0, y: 24.0 },
+            },
+            LineSegment {
+                from: Point { x: 24.0, y: 24.0 },
+                to: Point { x: 8.0, y: 24.0 },
+            },
+            LineSegment {
+                from: Point { x: 8.0, y: 24.0 },
+                to: Point { x: 8.0, y: 8.0 },
+            },
+        ];
+        let joins = [
+            StrokeJoin {
+                previous: lines[0],
+                next: lines[1],
+                point: lines[0].to,
+            },
+            StrokeJoin {
+                previous: lines[1],
+                next: lines[2],
+                point: lines[1].to,
+            },
+            StrokeJoin {
+                previous: lines[2],
+                next: lines[3],
+                point: lines[2].to,
+            },
+        ];
+        let radius = 0.75;
+        let bounds = stroke_pixel_bounds(&lines, &joins, radius, dimensions)
+            .expect("stroke bounds should overlap");
+        let spans =
+            axis_stroke_raster_spans(&lines, &joins, radius, dimensions, bounds, 2, LineCap::Butt)
+                .expect("axis raster spans");
+        let prepared_joins = prepare_stroke_joins(&joins, radius, LineJoin::Miter, 10.0);
+
+        for y in bounds.min_y..bounds.max_y {
+            for x in bounds.min_x..bounds.max_x {
+                for sample_y in 0..2 {
+                    for sample_x in 0..2 {
+                        let point = sample_point(x, y, sample_x, sample_y, 2);
+                        let generic = point_in_stroke(point, &lines, radius, LineCap::Butt)
+                            || point_in_join(
+                                point,
+                                &joins,
+                                &prepared_joins,
+                                radius,
+                                LineJoin::Miter,
+                            );
+                        let sparse =
+                            point_in_axis_stroke_spans(point, y, sample_y, &spans.coverage)
+                                || point_in_join(
+                                    point,
+                                    &joins,
+                                    &prepared_joins,
+                                    radius,
+                                    LineJoin::Miter,
+                                );
+                        assert_eq!(
+                            sparse, generic,
+                            "coverage mismatch at pixel ({x},{y}) sample ({sample_x},{sample_y}) point {point:?}"
+                        );
+                        if generic {
+                            assert!(
+                                point_in_axis_stroke_spans(point, y, sample_y, &spans.raster),
+                                "raster span missed pixel ({x},{y}) sample ({sample_x},{sample_y}) point {point:?}"
+                            );
+                        }
                     }
                 }
             }

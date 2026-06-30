@@ -1400,6 +1400,57 @@ Post-span image and mobile impact from 2026-06-30:
   post-span attribution on the remaining scan/image top fixtures instead of
   relying on pre-span profiles.
 
+Accepted sparse axis-stroke raster result from 2026-06-30:
+
+- Profiling trigger: fresh post-span traces for the remaining image/mobile top
+  fixtures showed that `mobile-cropped-photo-scan.pdf` was still dominated by
+  `raster_paths`, not image decode. Its native trace moved from `1.523 ms`
+  total / `1.086 ms` `raster_paths` before the change to `0.510 ms` total /
+  `0.088 ms` `raster_paths` after the change.
+- Change: axis-aligned stroke rasterization now builds sparse per-row X spans
+  for the raster loop. Coverage still uses exact line spans plus the existing
+  join predicates, so joined rectangle/box strokes avoid scanning their full
+  path bounding box without replacing join geometry with an approximation.
+- Candidate artifacts:
+  `target/performance-matrix-sparse-axis-image-heavy.json`,
+  `target/performance-matrix-sparse-axis-mobile.json`, and
+  `target/trace-sparse-axis-mobile-cropped-photo-scan.json`.
+- Mobile result compared with
+  `target/performance-matrix-post-span-mobile.json`:
+  `mobile-cropped-photo-scan.pdf` p95 improved `1.338 ms` -> `0.226 ms`
+  (~83.1%), `mobile-mixed-compression-scan.pdf` improved `1.001 ms` ->
+  `0.228 ms` (~77.2%), and `rotated-office-export.pdf` improved `0.818 ms`
+  -> `0.220 ms` (~73.1%). `cropped-scan-page.pdf` improved ~9.3%. Small
+  compression/OCR fixtures moved within very small absolute budgets; the
+  largest p95 regressions were `dct-image.pdf` ~0.005 ms and
+  `predictor-image.pdf` ~0.004 ms.
+- Image-heavy result compared with
+  `target/performance-matrix-post-span-image-heavy.json`:
+  `mobile-mixed-compression-scan.pdf` p95 improved ~76.1%,
+  `image-heavy-rotated-mask-sheet.pdf` ~39.3%,
+  `image-heavy-repeated-xobject-report.pdf` ~34.0%, and
+  `scanner-large-image-budget.pdf` ~31.9%. `soft-mask-image.pdf` regressed
+  p95 by ~0.004 ms on a sub-0.1 ms case.
+- Correctness guard:
+  `axis_stroke_raster_spans_should_cover_joined_axis_strokes` compares sparse
+  coverage against the generic stroke-plus-join predicate for a joined
+  axis-aligned rectangle.
+- Decision: accept. This removes the full-bounding-box raster tax from common
+  scan/image frame strokes and produces repeated double-digit wins on the
+  profiled top fixtures. Keep the sub-0.1 ms compression/image-mask movements
+  as noise/watch items in the next broad matrix rather than blocking this
+  block.
+- Validation:
+  `cargo fmt --all --check`,
+  `git diff --check -- crates/ferrugo-render/src/lib.rs docs/plans/2026-06-29-performance-optimization-working-plan.md`,
+  `cargo check -p ferrugo-render --no-default-features`,
+  `cargo test -p ferrugo-render axis_stroke --no-default-features`,
+  `cargo test --workspace --no-default-features`,
+  `cargo clippy -p ferrugo-render --all-targets --no-default-features -- -D warnings`,
+  and
+  `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+  passed.
+
 ## Hardware-Aware Rust Notes
 
 Goal: use Rust's memory model and the host CPU well without prematurely
