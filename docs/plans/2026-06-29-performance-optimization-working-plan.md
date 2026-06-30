@@ -953,6 +953,38 @@ Post-row-bucket profile from 2026-06-30:
   with `technical-repeated-symbols`, `technical-large-coordinate-plan`, and
   `technical-linework-dimensions` kept in the protection set from the first run.
 
+Rejected row/X-tile bucket candidate from 2026-06-30:
+
+- Change tested locally but not kept: split each row bucket into coarse 16px
+  X-tiles so a pixel would only scan line indices overlapping its row and tile.
+  A second variant enabled the X-tile path only for strokes with at least 128
+  bounded lines and low tile-index duplication.
+- Candidate artifacts:
+  `target/performance-matrix-stroke-row-x-tiles-technical.json` and
+  `target/performance-matrix-stroke-row-x-tiles-threshold-technical.json`,
+  native hot-render, `fixtures/technical-drawing-manifest.tsv`, `--max-edge
+  160`.
+- Raw X-tile result against
+  `target/performance-matrix-stroke-row-buckets-xmiss-fix-technical-repeat.json`:
+  large engineering fixtures improved substantially
+  (`engineering-floorplan-precision.pdf` p95 ~31.9%,
+  `engineering-large-transform-detail.pdf` p95 ~25.3%, and
+  `technical-large-coordinate-plan.pdf` p95 ~35.1%), but protection fixtures
+  regressed too much: `clipped-paths.pdf` p95 ~13.3% slower,
+  `technical-hatch-clipping.pdf` p95 ~11.6% slower,
+  `engineering-schematic-symbols.pdf` p95 ~12.7% slower, and
+  `technical-repeated-symbols.pdf` p95 ~6.4% slower.
+- Thresholded result: the conservative gating removed the large wins and left
+  mostly overhead, with `vector-stress.pdf` p95 ~3.7% slower,
+  `technical-linework-dimensions.pdf` p95 ~9.5% slower, and no accepted target
+  improvement.
+- Decision: reverted. Coarse X-tiling is directionally useful for some large
+  engineering drawings, but the current design adds build/query overhead and
+  duplicates long-line indices in ways that hurt the protection set. Revisit
+  only with fixture-level stroke-shape histograms or a cheaper spatial index
+  that can choose between row-only and tiled indexing without extra work on the
+  row-only path.
+
 ## Hardware-Aware Rust Notes
 
 Goal: use Rust's memory model and the host CPU well without prematurely
@@ -1543,7 +1575,7 @@ The most likely high-value candidates are:
 
 1. device-bounds culling before raster work;
 2. broader stroke raster candidate reduction for dense linework;
-3. simple rect and hairline fast paths only when they affect the heavy fixtures;
+3. fixture-level stroke-shape histograms before another spatial-index variant;
 4. clip-before-loop checks.
 
 If deeper profiler samples point elsewhere inside path rasterization, this
