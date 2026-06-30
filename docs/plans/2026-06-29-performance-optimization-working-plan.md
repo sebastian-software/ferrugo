@@ -5653,6 +5653,38 @@ Row-bucket active counter instrumentation from 2026-06-30:
   especially the span-covered route where all visited pixels are partial and
   every pixel still pays sampled blending.
 
+Rejected merge presort-check candidate from 2026-06-30:
+
+- Rationale:
+  the release profile still showed `merge_pixel_ranges` and sort frames under
+  both row-bucket and span-covered stroke rasterization. Several callers often
+  append ranges in already sorted order, so the candidate tested whether a
+  cheap linear sortedness check could skip `sort_by_key` on hot rows.
+- Change tested locally but not kept:
+  add `ranges.windows(2).all(...)` before `ranges.sort_by_key(...)` in
+  `merge_pixel_ranges`, plus a focused unit test covering sorted and unsorted
+  range merging. No geometry, blending, clipping, output format, dependencies,
+  or unsafe code changed.
+- Correctness checks while the candidate was present:
+  `cargo fmt --all`, `cargo test -p ferrugo-render --no-default-features
+  merge_pixel_ranges_should_merge_sorted_and_unsorted_ranges`, and
+  `cargo test -p ferrugo-render --no-default-features row_bucket`.
+- A/B artifacts:
+  `target/benchmark-repeat-vector-stress-release-current-200k.json` versus
+  `target/benchmark-repeat-vector-stress-merge-presorted-candidate-release-200k.json`.
+- Result:
+  rejected. The focused release repeat regressed mean `0.575 ms` -> `0.614 ms`
+  (~6.8% slower), repeat mean `raster_paths` `0.487 ms` -> `0.526 ms`
+  (~8.0% slower), and p99 `0.721 ms` -> `0.739 ms`; p95 stayed effectively
+  neutral (`0.653 ms` -> `0.654 ms`). Output status, dimensions, and bytes
+  stayed unchanged.
+- Decision:
+  reverted. The extra sortedness scan costs more than the avoided sort on the
+  current release hot fixture. Do not retry generic pre-sort checks in
+  `merge_pixel_ranges`; future merge work needs a route-specific construction
+  that avoids producing duplicate/unsorted ranges in the first place, or a
+  profile showing sort as a larger standalone cost.
+
 ## Questions Closed For The Next Wave
 
 - [x] What family-specific standalone and cumulative thresholds should replace
