@@ -2500,6 +2500,43 @@ Rejected page XObject form-skip candidate from 2026-06-30:
   `resource_images` work that reduces decoded bytes, predictor work, or image
   sample processing.
 
+Image resource summary instrumentation from 2026-06-30:
+
+- Profiling trigger: after the opaque image raster wins and the rejected
+  stream-copy/form-skip candidates, `scanner-large-image-budget.pdf` remained
+  dominated by `resource_images` / Flate decode. The next optimization decision
+  needed byte-shape evidence rather than another generic stream-copy guess.
+- Change: `ImageResources` now records aggregate resource counters while image
+  XObjects are decoded: image count, raw/Flate/DCT/Predictor counts, color vs
+  stencil count, soft-mask count, encoded bytes, decoded sample bytes,
+  soft-mask bytes, Indexed lookup bytes, resident bytes, and max source
+  dimensions/pixels. `trace-native` exposes the counters as
+  `image_resource_summary`.
+- Trace artifacts:
+  `target/trace-scanner-large-image-resource-summary.json`,
+  `target/trace-mobile-mixed-image-resource-summary.json`, and
+  `target/trace-predictor-image-resource-summary.json`.
+- Initial readings:
+  `scanner-large-image-budget.pdf` has one Flate image with `4,653` encoded
+  bytes expanding to `563,200` decoded/resident bytes (`640 x 880` pixels);
+  `mobile-mixed-compression-scan.pdf` has one Flate image and one DCT image
+  with `1,345` encoded bytes expanding to `70,448` resident bytes; and
+  `predictor-image.pdf` correctly reports one Flate Predictor image.
+- Regression guard: this is instrumentation, not a speed claim. A sequential
+  100-iteration native hot-render repeat compared
+  `/private/tmp/pdfrust-image-summary-base/target/performance-matrix-image-summary-base-repeat.json`
+  with `target/performance-matrix-image-summary-candidate-repeat.json`.
+  `scanner-large-image-budget.pdf` stayed effectively neutral (`0.251 ms` ->
+  `0.252 ms` mean, `0.267 ms` -> `0.265 ms` p95), while
+  `mobile-mixed-compression-scan.pdf` improved within noise (`0.150 ms` ->
+  `0.147 ms` mean). Small fixture p95 values remained noisy; the largest watch
+  item is `image-heavy-rotated-mask-sheet.pdf` p95 (`0.332 ms` -> `0.375 ms`)
+  with only a smaller mean move (`0.319 ms` -> `0.329 ms`).
+- Decision: accept as Phase 4 profiling infrastructure. The scanner byte ratio
+  supports prioritizing downsample/crop-aware image decode or avoiding full
+  decoded sample materialization for oversized Flate scans over more
+  compressed-stream copy micro-optimizations.
+
 Rejected image raster candidate from 2026-06-30:
 
 - Change tested locally but not kept: apply the same row-slice compositing

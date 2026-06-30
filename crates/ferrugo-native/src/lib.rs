@@ -16,7 +16,6 @@ use ferrugo_object::{
     ObjectValue, PageBox, PageMetadata as ObjectPageMetadata, PageTree, Reference,
     StreamDecodeOptions,
 };
-pub use ferrugo_render::StrokeShapeSummary;
 use ferrugo_render::{
     build_form_display_list_with_graphics_resources, build_image_display_list,
     build_path_display_list_with_graphics_resources, build_text_display_list,
@@ -28,6 +27,7 @@ use ferrugo_render::{
     PathRasterOptions, Point, RasterDisplayPhase, RasterError, RasterErrorKind, ShadingResources,
     TextDisplayItem, TextWritingMode, TilingPatternResources,
 };
+pub use ferrugo_render::{ImageResourceSummary, StrokeShapeSummary};
 use ferrugo_syntax::{PdfBytes, PdfName, PdfNumber, PdfPrimitive, PdfReference, PdfString};
 use ferrugo_thumbnail::{
     unsupported_feature_buckets as buckets, AccessibilityMetadata, AnnotationMode,
@@ -123,6 +123,8 @@ pub struct NativeRenderTrace {
     pub timings: NativeRenderPhaseTimings,
     /// Request-local stroke geometry summary for renderer profiling.
     pub stroke_shapes: StrokeShapeSummary,
+    /// Request-local image resource summary for renderer profiling.
+    pub image_resources: ImageResourceSummary,
 }
 
 /// Explicit request/session-local native document state.
@@ -375,6 +377,7 @@ impl NativeBackend {
             ..NativeRenderPhaseTimings::default()
         };
         let mut stroke_shapes = StrokeShapeSummary::default();
+        let mut image_resources = ImageResourceSummary::default();
         let thumbnail = render_loaded_document_with_timings_and_stroke_shapes(
             &document,
             &page_tree,
@@ -382,12 +385,14 @@ impl NativeBackend {
             self.limits,
             &mut timings,
             &mut stroke_shapes,
+            &mut image_resources,
         )?;
         timings.total = total_started.elapsed();
         Ok(NativeRenderTrace {
             thumbnail,
             timings,
             stroke_shapes,
+            image_resources,
         })
     }
 
@@ -1361,7 +1366,7 @@ fn render_loaded_document(
     options: &ThumbnailOptions,
     limits: NativeRenderLimits,
 ) -> Result<Thumbnail, ThumbnailError> {
-    render_loaded_document_inner(document, page_tree, options, limits, None, None)
+    render_loaded_document_inner(document, page_tree, options, limits, None, None, None)
 }
 
 fn render_loaded_document_with_timings(
@@ -1371,7 +1376,15 @@ fn render_loaded_document_with_timings(
     limits: NativeRenderLimits,
     timings: &mut NativeRenderPhaseTimings,
 ) -> Result<Thumbnail, ThumbnailError> {
-    render_loaded_document_inner(document, page_tree, options, limits, Some(timings), None)
+    render_loaded_document_inner(
+        document,
+        page_tree,
+        options,
+        limits,
+        Some(timings),
+        None,
+        None,
+    )
 }
 
 fn render_loaded_document_with_timings_and_stroke_shapes(
@@ -1381,6 +1394,7 @@ fn render_loaded_document_with_timings_and_stroke_shapes(
     limits: NativeRenderLimits,
     timings: &mut NativeRenderPhaseTimings,
     stroke_shapes: &mut StrokeShapeSummary,
+    image_resource_summary: &mut ImageResourceSummary,
 ) -> Result<Thumbnail, ThumbnailError> {
     render_loaded_document_inner(
         document,
@@ -1389,6 +1403,7 @@ fn render_loaded_document_with_timings_and_stroke_shapes(
         limits,
         Some(timings),
         Some(stroke_shapes),
+        Some(image_resource_summary),
     )
 }
 
@@ -1399,6 +1414,7 @@ fn render_loaded_document_inner(
     limits: NativeRenderLimits,
     mut timings: Option<&mut NativeRenderPhaseTimings>,
     mut stroke_shapes: Option<&mut StrokeShapeSummary>,
+    mut image_resource_summary: Option<&mut ImageResourceSummary>,
 ) -> Result<Thumbnail, ThumbnailError> {
     enforce_xfa_render_policy(document)?;
     let page = page_tree
@@ -1466,6 +1482,10 @@ fn render_loaded_document_inner(
         record_render_phase(&mut timings, NativeRenderPhase::ResourceImages, || {
             page_image_resources(document, page, &xobject_invocations, display_options)
         })?;
+    record_image_resource_summary(
+        &mut image_resource_summary,
+        image_resources.resource_summary(),
+    );
     let image_list =
         record_render_phase(&mut timings, NativeRenderPhase::DisplayListBuild, || {
             build_image_display_list(
@@ -1640,6 +1660,16 @@ fn record_stroke_shapes(
         .map_err(map_raster_error)?;
     stroke_shapes.merge(summary);
     Ok(())
+}
+
+fn record_image_resource_summary(
+    image_resource_summary: &mut Option<&mut ImageResourceSummary>,
+    summary: ImageResourceSummary,
+) {
+    let Some(image_resource_summary) = image_resource_summary.as_deref_mut() else {
+        return;
+    };
+    *image_resource_summary = summary;
 }
 
 fn rasterize_ordered_display_list_with_phase_timings(
@@ -4723,6 +4753,11 @@ mod tests {
         assert!(trace.timings.raster_images > std::time::Duration::ZERO);
         assert!(trace.timings.resource_images > std::time::Duration::ZERO);
         assert!(trace.timings.resource_decode >= trace.timings.resource_images);
+        assert!(trace.image_resources.images > 0);
+        assert!(trace.image_resources.flate_images > 0);
+        assert!(trace.image_resources.encoded_bytes > 0);
+        assert!(trace.image_resources.decoded_sample_bytes > 0);
+        assert!(trace.image_resources.resident_bytes >= trace.image_resources.decoded_sample_bytes);
     }
 
     #[test]

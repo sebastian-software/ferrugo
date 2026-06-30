@@ -1518,6 +1518,7 @@ pub struct ImageResources {
     images: Vec<ImageXObject>,
     non_image_names: Vec<Vec<u8>>,
     icc_metrics: IccTransformMetrics,
+    summary: ImageResourceSummary,
 }
 
 impl ImageResources {
@@ -1528,16 +1529,19 @@ impl ImageResources {
             images: Vec::new(),
             non_image_names: Vec::new(),
             icc_metrics: IccTransformMetrics::EMPTY,
+            summary: ImageResourceSummary::EMPTY,
         }
     }
 
     /// Creates an image resource map from decoded images.
     #[must_use]
     pub fn new(images: Vec<ImageXObject>) -> Self {
+        let summary = ImageResourceSummary::from_decoded_images(&images);
         Self {
             images,
             non_image_names: Vec::new(),
             icc_metrics: IccTransformMetrics::EMPTY,
+            summary,
         }
     }
 
@@ -1580,6 +1584,7 @@ impl ImageResources {
         let mut images = Vec::new();
         let mut total_image_bytes = 0usize;
         let mut non_image_names = Vec::new();
+        let mut summary = ImageResourceSummary::EMPTY;
         let metrics_start = icc_cache.metrics();
         for (name, value) in dictionary {
             let Some(reference) = reference_from_primitive(value) else {
@@ -1625,12 +1630,14 @@ impl ImageResources {
                     },
                 ));
             }
+            summary.add_image(&image, stream)?;
             images.push(image);
         }
         Ok(Self {
             images,
             non_image_names,
             icc_metrics: icc_cache.metrics().saturating_sub(metrics_start),
+            summary,
         })
     }
 
@@ -1652,6 +1659,125 @@ impl ImageResources {
     #[must_use]
     pub const fn icc_transform_metrics(&self) -> IccTransformMetrics {
         self.icc_metrics
+    }
+
+    /// Returns aggregate image resource metrics captured while building this map.
+    #[must_use]
+    pub const fn resource_summary(&self) -> ImageResourceSummary {
+        self.summary
+    }
+}
+
+/// Aggregate image resource counters for profiling and trace output.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct ImageResourceSummary {
+    /// Image XObjects decoded into this map.
+    pub images: usize,
+    /// Raw, unfiltered image streams.
+    pub raw_images: usize,
+    /// Flate-decoded image streams.
+    pub flate_images: usize,
+    /// DCT/JPEG-decoded image streams.
+    pub dct_images: usize,
+    /// Flate image streams with PNG predictor parameters.
+    pub predictor_images: usize,
+    /// Color images decoded into sampled image resources.
+    pub color_images: usize,
+    /// One-bit stencil image masks decoded into image resources.
+    pub stencil_masks: usize,
+    /// Images with a soft mask attached.
+    pub soft_masks: usize,
+    /// Total encoded stream bytes for decoded top-level image resources.
+    pub encoded_bytes: usize,
+    /// Total decoded sample bytes for decoded image resources.
+    pub decoded_sample_bytes: usize,
+    /// Total resident soft-mask bytes attached to decoded image resources.
+    pub soft_mask_bytes: usize,
+    /// Total resident Indexed color lookup bytes attached to decoded image resources.
+    pub indexed_lookup_bytes: usize,
+    /// Total renderer-owned resident image bytes.
+    pub resident_bytes: usize,
+    /// Largest decoded image width.
+    pub max_width: u32,
+    /// Largest decoded image height.
+    pub max_height: u32,
+    /// Largest decoded image pixel count.
+    pub max_pixels: u64,
+}
+
+impl ImageResourceSummary {
+    const EMPTY: Self = Self {
+        images: 0,
+        raw_images: 0,
+        flate_images: 0,
+        dct_images: 0,
+        predictor_images: 0,
+        color_images: 0,
+        stencil_masks: 0,
+        soft_masks: 0,
+        encoded_bytes: 0,
+        decoded_sample_bytes: 0,
+        soft_mask_bytes: 0,
+        indexed_lookup_bytes: 0,
+        resident_bytes: 0,
+        max_width: 0,
+        max_height: 0,
+        max_pixels: 0,
+    };
+
+    fn from_decoded_images(images: &[ImageXObject]) -> Self {
+        let mut summary = Self::EMPTY;
+        for image in images {
+            summary.add_decoded_image(image);
+        }
+        summary
+    }
+
+    fn add_image(&mut self, image: &ImageXObject, stream: &StreamObject<'_>) -> GraphicsResult<()> {
+        self.add_decoded_image(image);
+        match image_filter(stream.dictionary())? {
+            ImageFilter::Raw => self.raw_images += 1,
+            ImageFilter::StreamDecoded => {
+                self.flate_images += 1;
+                if image_has_predictor(stream.dictionary())? {
+                    self.predictor_images += 1;
+                }
+            }
+            ImageFilter::DctDecode => self.dct_images += 1,
+        }
+        self.encoded_bytes = self.encoded_bytes.saturating_add(stream.raw().len());
+        Ok(())
+    }
+
+    fn add_decoded_image(&mut self, image: &ImageXObject) {
+        self.images += 1;
+        match image.kind {
+            ImageKind::Color => self.color_images += 1,
+            ImageKind::StencilMask { .. } => self.stencil_masks += 1,
+        }
+        if image.soft_mask.is_some() {
+            self.soft_masks += 1;
+        }
+        self.decoded_sample_bytes = self
+            .decoded_sample_bytes
+            .saturating_add(image.samples.len());
+        self.soft_mask_bytes = self
+            .soft_mask_bytes
+            .saturating_add(image.soft_mask.as_ref().map_or(0, |samples| samples.len()));
+        self.indexed_lookup_bytes = self.indexed_lookup_bytes.saturating_add(
+            image
+                .indexed_lookup
+                .as_ref()
+                .map_or(0, |lookup| lookup.len()),
+        );
+        self.resident_bytes = self
+            .resident_bytes
+            .saturating_add(image_resident_bytes(image));
+        self.max_width = self.max_width.max(image.width);
+        self.max_height = self.max_height.max(image.height);
+        self.max_pixels = self
+            .max_pixels
+            .max(u64::from(image.width) * u64::from(image.height));
     }
 }
 
@@ -9594,6 +9720,13 @@ fn image_predictor(
         decoded_len,
         encoded_len,
     }))
+}
+
+fn image_has_predictor(dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)]) -> GraphicsResult<bool> {
+    let Some(params) = image_decode_parms(dictionary)? else {
+        return Ok(false);
+    };
+    Ok(decode_parms_u32(params, b"Predictor")?.unwrap_or(1) != 1)
 }
 
 fn image_decode_parms<'a>(
@@ -20604,6 +20737,15 @@ mod tests {
         assert_eq!(image.height, 2);
         assert_eq!(image.color_space, ImageColorSpace::DeviceRgb);
         assert_eq!(image.samples.len(), 12);
+
+        let summary = resources.resource_summary();
+        assert_eq!(summary.images, 1);
+        assert_eq!(summary.flate_images, 1);
+        assert_eq!(summary.color_images, 1);
+        assert_eq!(summary.encoded_bytes, 16);
+        assert_eq!(summary.decoded_sample_bytes, 12);
+        assert_eq!(summary.resident_bytes, 12);
+        assert_eq!(summary.max_pixels, 4);
     }
 
     #[test]
@@ -20696,6 +20838,12 @@ mod tests {
             &*image.samples,
             &[255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 0]
         );
+
+        let summary = resources.resource_summary();
+        assert_eq!(summary.images, 1);
+        assert_eq!(summary.flate_images, 1);
+        assert_eq!(summary.predictor_images, 1);
+        assert_eq!(summary.decoded_sample_bytes, 12);
     }
 
     #[test]

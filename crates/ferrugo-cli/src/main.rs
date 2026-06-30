@@ -12,9 +12,10 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use ferrugo_native::{
-    scan_operator_coverage, NativeBackend, NativeDocumentSessionStats, NativeMemoryDiagnostics,
-    NativePageCacheKey, NativePageCachePolicy, NativeRenderPhaseTimings, NativeRenderTrace,
-    OperatorCoverageEntry, OperatorCoverageOptions, OperatorSupportStatus, StrokeShapeSummary,
+    scan_operator_coverage, ImageResourceSummary, NativeBackend, NativeDocumentSessionStats,
+    NativeMemoryDiagnostics, NativePageCacheKey, NativePageCachePolicy, NativeRenderPhaseTimings,
+    NativeRenderTrace, OperatorCoverageEntry, OperatorCoverageOptions, OperatorSupportStatus,
+    StrokeShapeSummary,
 };
 #[cfg(feature = "pdfium")]
 use ferrugo_pdfium::PdfiumBackend;
@@ -8501,6 +8502,9 @@ fn native_render_trace_json(config: &TraceNativeConfig) -> Result<String, CliErr
         trace_phase_timings_json(render_trace.as_ref().map(|trace| &trace.timings));
     let stroke_shape_summary_json =
         trace_stroke_shape_summary_json(render_trace.as_ref().map(|trace| &trace.stroke_shapes));
+    let image_resource_summary_json = trace_image_resource_summary_json(
+        render_trace.as_ref().map(|trace| &trace.image_resources),
+    );
     let render_json = trace_render_outcome_json(render_trace);
 
     Ok(format!(
@@ -8521,6 +8525,7 @@ fn native_render_trace_json(config: &TraceNativeConfig) -> Result<String, CliErr
             "  \"render\": {},\n",
             "  \"phase_timings_ms\": {},\n",
             "  \"stroke_shape_summary\": {},\n",
+            "  \"image_resource_summary\": {},\n",
             "  \"operator_coverage\": {},\n",
             "  \"operator_summary\": {},\n",
             "  \"events\": [{}]\n",
@@ -8538,6 +8543,7 @@ fn native_render_trace_json(config: &TraceNativeConfig) -> Result<String, CliErr
         render_json,
         phase_timings_json,
         stroke_shape_summary_json,
+        image_resource_summary_json,
         coverage_json,
         operator_summary,
         events_json
@@ -8654,6 +8660,57 @@ fn trace_stroke_shape_summary_json(
             summary.pixel_x_span_buckets.le_32,
             summary.pixel_x_span_buckets.le_64,
             summary.pixel_x_span_buckets.gt_64
+        ),
+        Err(error) => format!(
+            "{{\"status\":\"error\",\"class\":{},\"bucket\":{}}}",
+            json_string(error.class().as_str()),
+            optional_json_string(error.unsupported_feature_bucket())
+        ),
+    }
+}
+
+fn trace_image_resource_summary_json(
+    summary: Result<&ImageResourceSummary, &ThumbnailError>,
+) -> String {
+    match summary {
+        Ok(summary) => format!(
+            concat!(
+                "{{",
+                "\"status\":\"measured\",",
+                "\"images\":{},",
+                "\"raw_images\":{},",
+                "\"flate_images\":{},",
+                "\"dct_images\":{},",
+                "\"predictor_images\":{},",
+                "\"color_images\":{},",
+                "\"stencil_masks\":{},",
+                "\"soft_masks\":{},",
+                "\"encoded_bytes\":{},",
+                "\"decoded_sample_bytes\":{},",
+                "\"soft_mask_bytes\":{},",
+                "\"indexed_lookup_bytes\":{},",
+                "\"resident_bytes\":{},",
+                "\"max_width\":{},",
+                "\"max_height\":{},",
+                "\"max_pixels\":{}",
+                "}}"
+            ),
+            summary.images,
+            summary.raw_images,
+            summary.flate_images,
+            summary.dct_images,
+            summary.predictor_images,
+            summary.color_images,
+            summary.stencil_masks,
+            summary.soft_masks,
+            summary.encoded_bytes,
+            summary.decoded_sample_bytes,
+            summary.soft_mask_bytes,
+            summary.indexed_lookup_bytes,
+            summary.resident_bytes,
+            summary.max_width,
+            summary.max_height,
+            summary.max_pixels
         ),
         Err(error) => format!(
             "{{\"status\":\"error\",\"class\":{},\"bucket\":{}}}",
@@ -11538,6 +11595,9 @@ mod tests {
         assert!(json.contains("\"row_bucket_sample_x_misses\""));
         assert!(json.contains("\"span_raster_candidate_items\""));
         assert!(json.contains("\"pixel_x_span_buckets\""));
+        assert!(json.contains("\"image_resource_summary\""));
+        assert!(json.contains("\"encoded_bytes\""));
+        assert!(json.contains("\"resident_bytes\""));
         assert!(json.contains("\"operator_summary\""));
         assert!(!json.contains("stream\n"));
         assert!(!json.contains("ferrugo thumbnail fixture"));
