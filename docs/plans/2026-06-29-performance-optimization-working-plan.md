@@ -3087,6 +3087,28 @@ Accepted low-memory downsample decode result from 2026-06-30:
   --native-profile low-memory`. Existing masks, Predictor images, DCT images,
   Indexed color, and SoftMask cases remain outside this fast path.
 
+Rejected default-profile downsample retest from 2026-06-30:
+
+- Profiling trigger: after the `zlib-rs` Flate backend and opaque image raster
+  wins, the earlier low-memory downsample result needed a fresh default-profile
+  speed check. The goal was to see whether placement-aware downsample decode
+  had become speed-neutral or speed-positive enough to enable by default.
+- Change tested locally but not kept: enable `downsample_image_decode` in
+  `NativeRenderLimits::default()` while leaving the downsample algorithm and
+  low-memory profile unchanged.
+- A/B artifacts:
+  `target/benchmark-native-scanner-default-downsample-current-base.json` and
+  `target/benchmark-native-scanner-default-downsample-candidate.json`, both
+  `benchmark-native`, `fixtures/generated/scanner-large-image-budget.pdf`,
+  `--max-edge 160`, 100,000 iterations.
+- Result: default-profile downsample was still slower on the focused scanner
+  fixture: mean `0.133 ms` -> `0.184 ms` (~38.3% slower). Output dimensions and
+  bytes stayed unchanged, and the fixture rendered without fallback or errors.
+- Decision: reverted. Keep downsample-aware decode limited to the low-memory
+  profile for now. Reopen default-profile downsample only if the implementation
+  avoids full source decode or a broader scan workload proves a repeated
+  speed-neutral result.
+
 Accepted shared image sample Vec result from 2026-06-30:
 
 - Profiling trigger: `target/sample-scanner-large-post-interior.txt` showed a
