@@ -2323,6 +2323,44 @@ Accepted opaque normal blend shortcut from 2026-06-30:
   non-normal blend modes, transparent source pixels, and transparent
   destination pixels.
 
+Accepted flat row-bucket index build from 2026-06-30:
+
+- Profile basis: the fresh post-blend profile still spent almost all repeat
+  time in `stroke_path`, with allocator frames visible around row-bucket setup
+  and active row scanning. The stroke shape summary for `vector-stress.pdf`
+  showed only `2` row-bucket candidate items but `5688` row-index references,
+  making the per-row `Vec<Vec<usize>>` bucket build a plausible allocation
+  target.
+- Change: `stroke_row_buckets` and `stroke_join_buckets` now build bucket
+  indices in two passes. They first collect bounded lines or joins and count
+  row entries, then fill one contiguous `indices` buffer and sort each row
+  slice in place. This removes the many small per-row vector pushes without
+  changing bucket ordering, predicates, dependencies, or unsafe surface.
+- Correctness guards:
+  existing bucket tests cover row limiting, X-sort order, generic predicate
+  equivalence, active row candidates after X misses, and round/miter join
+  bucket predicates.
+- A/B artifacts:
+  `target/benchmark-repeat-vector-stress-after-opaque-blend-profile-run.json`,
+  `target/benchmark-repeat-vector-stress-flat-buckets-candidate.json`,
+  `target/performance-matrix-flat-buckets-starter.json`, and
+  `target/trace-native-vector-stress-flat-buckets.json`.
+- Result: accepted as another repeated 5-10% cumulative vector/report win.
+  Against the fresh post-blend repeat baseline, `vector-stress.pdf` moved
+  repeat mean `1.008 ms` -> `0.958 ms` (`~5.0%`) and computed p95
+  `1.176 ms` -> `1.071 ms` (`~8.9%`). Repeat `raster_paths` moved
+  `0.909 ms` -> `0.863 ms` (`~5.1%`).
+- Protection result:
+  `target/performance-matrix-flat-buckets-starter.json` rendered all `11`
+  native hot-render records with no fallback-required, missing-tool,
+  not-applicable, or error records. The vector family p95 was `1.085 ms`;
+  the next-slowest vector records remained rendered and the report carried the
+  same `rss-unavailable` and `pdfium-hot-reference-not-requested` caveats.
+- Decision: keep. This is an allocation-shape improvement on the same
+  row-bucket stroke-raster track. It keeps the existing `Vec` storage model,
+  uses no `SmallVec`, and avoids adding a performance dependency before a
+  length histogram justifies one.
+
 ## Hardware-Aware Rust Notes
 
 Goal: use Rust's memory model and the host CPU well without prematurely

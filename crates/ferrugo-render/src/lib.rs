@@ -11988,36 +11988,48 @@ fn stroke_row_buckets(
         return None;
     }
     let mut lines_with_bounds = Vec::with_capacity(lines.len());
-    let mut per_row = vec![Vec::new(); row_count];
+    let mut row_counts = vec![0usize; row_count];
     for line in lines {
         let bounds = line_pixel_bounds(*line, radius, dimensions)
             .and_then(|bounds| intersect_pixel_bounds(bounds, stroke_bounds));
         let Some(bounds) = bounds else {
             continue;
         };
-        let line_index = lines_with_bounds.len();
         lines_with_bounds.push(BoundedStrokeLine {
             line: *line,
             bounds,
         });
         for y in bounds.min_y..bounds.max_y {
-            per_row[(y - stroke_bounds.min_y) as usize].push(line_index);
+            row_counts[(y - stroke_bounds.min_y) as usize] += 1;
         }
     }
     if lines_with_bounds.is_empty() {
         return None;
     }
-    let index_count = per_row.iter().map(Vec::len).sum();
+    let index_count = row_counts.iter().sum();
     let mut indices = Vec::with_capacity(index_count);
     let mut rows = Vec::with_capacity(row_count);
-    for mut row in per_row {
-        row.sort_by_key(|&line_index| {
+    let mut start = 0;
+    for count in row_counts {
+        let end = start + count;
+        rows.push(start..end);
+        start = end;
+    }
+    indices.resize(index_count, 0);
+    let mut row_offsets: Vec<usize> = rows.iter().map(|row| row.start).collect();
+    for (line_index, bounded) in lines_with_bounds.iter().enumerate() {
+        for y in bounded.bounds.min_y..bounded.bounds.max_y {
+            let row_index = (y - stroke_bounds.min_y) as usize;
+            let write_index = row_offsets[row_index];
+            indices[write_index] = line_index;
+            row_offsets[row_index] += 1;
+        }
+    }
+    for row in &rows {
+        indices[row.clone()].sort_by_key(|&line_index| {
             let bounds = lines_with_bounds[line_index].bounds;
             (bounds.min_x, bounds.max_x)
         });
-        let start = indices.len();
-        indices.extend(row);
-        rows.push(start..indices.len());
     }
     Some(StrokeRowBuckets {
         min_y: stroke_bounds.min_y,
@@ -12040,7 +12052,7 @@ fn stroke_join_buckets(
         return None;
     }
     let mut bounded_joins = Vec::with_capacity(joins.len());
-    let mut per_row = vec![Vec::new(); row_count];
+    let mut row_counts = vec![0usize; row_count];
     match line_join {
         LineJoin::Round => {
             for join in joins {
@@ -12049,12 +12061,11 @@ fn stroke_join_buckets(
                 else {
                     continue;
                 };
-                let join_index = bounded_joins.len();
                 bounded_joins.push(BoundedStrokeJoin::Round {
                     join: *join,
                     bounds,
                 });
-                append_join_bucket_rows(&mut per_row, stroke_bounds.min_y, bounds, join_index);
+                count_bucket_rows(&mut row_counts, stroke_bounds.min_y, bounds);
             }
         }
         LineJoin::Bevel | LineJoin::Miter => {
@@ -12064,29 +12075,42 @@ fn stroke_join_buckets(
                 else {
                     continue;
                 };
-                let join_index = bounded_joins.len();
                 bounded_joins.push(BoundedStrokeJoin::Prepared {
                     join: *join,
                     bounds,
                 });
-                append_join_bucket_rows(&mut per_row, stroke_bounds.min_y, bounds, join_index);
+                count_bucket_rows(&mut row_counts, stroke_bounds.min_y, bounds);
             }
         }
     }
     if bounded_joins.is_empty() {
         return None;
     }
-    let index_count = per_row.iter().map(Vec::len).sum();
+    let index_count = row_counts.iter().sum();
     let mut indices = Vec::with_capacity(index_count);
     let mut rows = Vec::with_capacity(row_count);
-    for mut row in per_row {
-        row.sort_by_key(|&join_index| {
+    let mut start = 0;
+    for count in row_counts {
+        let end = start + count;
+        rows.push(start..end);
+        start = end;
+    }
+    indices.resize(index_count, 0);
+    let mut row_offsets: Vec<usize> = rows.iter().map(|row| row.start).collect();
+    for (join_index, bounded) in bounded_joins.iter().enumerate() {
+        let bounds = bounded_join_bounds(*bounded);
+        for y in bounds.min_y..bounds.max_y {
+            let row_index = (y - stroke_bounds.min_y) as usize;
+            let write_index = row_offsets[row_index];
+            indices[write_index] = join_index;
+            row_offsets[row_index] += 1;
+        }
+    }
+    for row in &rows {
+        indices[row.clone()].sort_by_key(|&join_index| {
             let bounds = bounded_join_bounds(bounded_joins[join_index]);
             (bounds.min_x, bounds.max_x)
         });
-        let start = indices.len();
-        indices.extend(row);
-        rows.push(start..indices.len());
     }
     Some(StrokeJoinBuckets {
         min_y: stroke_bounds.min_y,
@@ -12096,14 +12120,9 @@ fn stroke_join_buckets(
     })
 }
 
-fn append_join_bucket_rows(
-    per_row: &mut [Vec<usize>],
-    min_y: u32,
-    bounds: PixelBounds,
-    join_index: usize,
-) {
+fn count_bucket_rows(row_counts: &mut [usize], min_y: u32, bounds: PixelBounds) {
     for y in bounds.min_y..bounds.max_y {
-        per_row[(y - min_y) as usize].push(join_index);
+        row_counts[(y - min_y) as usize] += 1;
     }
 }
 
