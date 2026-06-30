@@ -5772,28 +5772,43 @@ fn rasterize_axial_shading(
     let dimensions = device.dimensions();
     let start_color = device_color_to_rgba(shading.start_color);
     let end_color = device_color_to_rgba(shading.end_color);
+    let linear_exponent = (shading.exponent - 1.0).abs() <= f64::EPSILON;
     for y in 0..dimensions.height {
         let sample_y = f64::from(y) + 0.5;
+        let (mut t, t_step) = projection.row_t_start_and_step(sample_y);
         if matches!(state.blend_mode, BlendMode::Normal) {
             let row = device.row_mut(y)?;
             for x in 0..dimensions.width {
-                let sample_x = f64::from(x) + 0.5;
-                let Some(t) = projection.t(sample_x, sample_y) else {
+                let Some(sample_t) = projection.clamp_t(t) else {
+                    t += t_step;
                     continue;
                 };
-                let source =
-                    sample_axial_color_from_rgba(start_color, end_color, shading.exponent, t);
+                let source = sample_axial_color_from_rgba(
+                    start_color,
+                    end_color,
+                    shading.exponent,
+                    linear_exponent,
+                    sample_t,
+                );
                 write_opaque_image_pixel_in_row(row, x, source);
+                t += t_step;
             }
             continue;
         }
         for x in 0..dimensions.width {
-            let sample_x = f64::from(x) + 0.5;
-            let Some(t) = projection.t(sample_x, sample_y) else {
+            let Some(sample_t) = projection.clamp_t(t) else {
+                t += t_step;
                 continue;
             };
-            let source = sample_axial_color_from_rgba(start_color, end_color, shading.exponent, t);
+            let source = sample_axial_color_from_rgba(
+                start_color,
+                end_color,
+                shading.exponent,
+                linear_exponent,
+                sample_t,
+            );
             blend_pixel(device, x, y, source, state.blend_mode, 1.0)?;
+            t += t_step;
         }
     }
     Ok(())
@@ -5810,9 +5825,14 @@ struct AxialShadingProjection {
 }
 
 impl AxialShadingProjection {
-    fn t(self, sample_x: f64, sample_y: f64) -> Option<f64> {
-        let mut t = ((sample_x - self.start.x) * self.dx + (sample_y - self.start.y) * self.dy)
+    fn row_t_start_and_step(self, sample_y: f64) -> (f64, f64) {
+        let start_t = ((0.5 - self.start.x) * self.dx + (sample_y - self.start.y) * self.dy)
             / self.length_squared;
+        let step = self.dx / self.length_squared;
+        (start_t, step)
+    }
+
+    fn clamp_t(self, mut t: f64) -> Option<f64> {
         if t < 0.0 {
             if !self.extend_start {
                 return None;
@@ -5879,13 +5899,15 @@ fn rasterize_radial_shading(
     Ok(())
 }
 
-fn sample_axial_color_from_rgba(start: Rgba, end: Rgba, exponent: f64, t: f64) -> Rgba {
+fn sample_axial_color_from_rgba(
+    start: Rgba,
+    end: Rgba,
+    exponent: f64,
+    linear_exponent: bool,
+    t: f64,
+) -> Rgba {
     let t = t.clamp(0.0, 1.0);
-    let ratio = if (exponent - 1.0).abs() <= f64::EPSILON {
-        t
-    } else {
-        t.powf(exponent)
-    };
+    let ratio = if linear_exponent { t } else { t.powf(exponent) };
     Rgba {
         r: interpolate_channel(start.r, end.r, ratio),
         g: interpolate_channel(start.g, end.g, ratio),
@@ -19414,6 +19436,7 @@ mod tests {
                     a: 255,
                 },
                 1.0,
+                true,
                 0.5,
             ),
             Rgba {
@@ -19423,6 +19446,26 @@ mod tests {
                 a: 255,
             }
         );
+    }
+
+    #[test]
+    fn axial_shading_projection_should_advance_linearly_across_row() {
+        let projection = AxialShadingProjection {
+            start: Point { x: 10.0, y: 4.0 },
+            dx: 20.0,
+            dy: 0.0,
+            length_squared: 400.0,
+            extend_start: false,
+            extend_end: false,
+        };
+
+        let (mut t, step) = projection.row_t_start_and_step(4.5);
+        assert_eq!(projection.clamp_t(t), None);
+        for _ in 0..10 {
+            t += step;
+        }
+        let advanced = projection.clamp_t(t).expect("advanced into range");
+        assert!((advanced - 0.025).abs() <= f64::EPSILON);
     }
 
     #[test]

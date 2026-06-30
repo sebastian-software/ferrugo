@@ -3731,6 +3731,43 @@ Accepted axial shading raster fast path from 2026-06-30:
 - Decision: keep. This is a profile-backed scalar raster fast path with no new
   dependency, unsafe code, global cache, or alternate shading semantics.
 
+Accepted row-incremental axial shading projection from 2026-06-30:
+
+- Profile basis: after the prepared join-bounds optimization,
+  `target/performance-matrix-post-prepared-join-bounds-current.json` still
+  showed `slide-title-gradient.pdf` as a top starter fixture at p95
+  `0.329 ms`, mean `0.301 ms`. The focused repeat artifact
+  `target/benchmark-repeat-slide-post-join-bounds-current.json` measured repeat
+  mean `0.294 ms`, with `raster_paths` at `0.245 ms`. The matching trace
+  `target/trace-slide-post-join-bounds-current.json` showed one axial `sh`
+  operation and no stroke work, so the hot path was axial shading rasterization.
+- Change: axial shading now computes the first projected `t` value for each
+  raster row plus a constant per-pixel step, then advances `t` by addition
+  inside the row loop. The existing extend/clip behavior remains centralized in
+  `AxialShadingProjection::clamp_t`, and exponent handling is preclassified so
+  the common linear exponent path avoids a per-pixel epsilon comparison.
+- Correctness guard:
+  `axial_shading_projection_should_advance_linearly_across_row` checks the
+  incremental row projection, and
+  `axial_shading_sampling_should_interpolate_colors` continues to cover linear
+  color interpolation.
+- Focused result:
+  `target/benchmark-repeat-slide-row-incremental-axial-candidate.json` improved
+  repeat mean `0.294 ms` -> `0.248 ms`, with `raster_paths` moving
+  `0.245 ms` -> `0.202 ms`. The repeat
+  `target/benchmark-repeat-slide-row-incremental-axial-candidate-repeat.json`
+  measured repeat mean `0.244 ms`, with `raster_paths` at `0.199 ms`.
+- Protection result:
+  `target/performance-matrix-row-incremental-axial-candidate.json` rendered all
+  `11` starter records with no fallback or errors. In that matrix,
+  `slide-title-gradient.pdf` moved p95 `0.329 ms` -> `0.305 ms` and mean
+  `0.301 ms` -> `0.264 ms`. `vector-stress.pdf` stayed neutral on mean
+  (`0.724 ms` -> `0.720 ms`), and other fixture movements were either positive
+  or small absolute timing noise.
+- Decision: keep. This is a narrow arithmetic reduction in the already sampled
+  axial shading bottleneck, with no dependency, unsafe code, cache, or visual
+  behavior change.
+
 Rejected prepared row-bucket line-metrics candidate from 2026-06-30:
 
 - Profile basis: after the axial-shading fast path,
