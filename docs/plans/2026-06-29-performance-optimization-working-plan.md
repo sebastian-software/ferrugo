@@ -4026,6 +4026,34 @@ Accepted row-slice text rectangle fill from 2026-06-30:
   existing coverage model, so visual semantics stay covered by the subpixel
   rectangle raster test.
 
+Rejected inline snapped-stroke scratch candidate from 2026-06-30:
+
+- Profiling basis: after the row-slice text rectangle fill, the next non-text
+  profile targeted `fixtures/generated/technical-hatch-clipping.pdf`.
+  `target/trace-technical-hatch-head-after-row-rect.json` measured
+  `raster_paths` as the dominant phase (`0.201 ms` first render). The focused
+  repeat artifact `target/benchmark-repeat-technical-hatch-head-sample-run.json`
+  measured repeat mean `0.262 ms`, with `raster_paths` `0.162 ms`; the matching
+  CPU sample `target/sample-technical-hatch-head-sample-run.txt` was dominated
+  by `stroke_path` and showed allocator samples around snapped hairline
+  `Vec<LineSegment>` / join scratch construction.
+- Change tested locally but not kept: use fixed inline arrays for up to eight
+  snapped hairline lines and joins before falling back to the existing
+  `Vec`-based path. This targeted the hatch fixture shape, where
+  `stroke_shape_summary` reported 92 stroked items, 90 snapped hairline items,
+  and at most six lines per item.
+- A/B artifacts:
+  `target/benchmark-repeat-technical-hatch-head-sample-run.json` and
+  `target/benchmark-repeat-technical-hatch-inline-snap-candidate.json`, both
+  `benchmark-repeat-native`, `--max-edge 160`, 140,000 iterations.
+- Result: rejected as noise. Repeat mean moved only `0.262 ms` -> `0.261 ms`;
+  `raster_paths` stayed `0.162 ms` -> `0.162 ms`.
+- Decision: reverted. The allocator samples are real, but inline scratch for
+  snapped hairline line/join vectors is too small a standalone win. Do not
+  retry this exact small-array replacement unless allocation counters show a
+  larger contribution or it is folded into a broader stroke scratch reuse
+  design.
+
 Repeat family phase-summary instrumentation from 2026-06-30:
 
 - Change: `benchmark-repeat-native` now aggregates record-level
