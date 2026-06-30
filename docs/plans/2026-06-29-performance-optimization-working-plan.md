@@ -2239,6 +2239,50 @@ Rejected post-axis-join candidates from 2026-06-30:
   algorithmic target, not another local branch around `blend_pixel`, joinless
   span copying, or rectangle-stroke detection.
 
+Accepted pixel-aligned rect-clip skip from 2026-06-30:
+
+- Profile basis: after the axis-join bucket result and rejected local
+  micro-specializations, the remaining `vector-stress.pdf` hot path still spent
+  most time in `stroke_path` with rectangular clips active for the page. The
+  earlier clip predicate fast path replaced generic path winding with
+  `point_in_rect`, but the inner stroke sample loops still evaluated the two
+  rectangle clips for every sample.
+- Change: stroke rasterization now computes once whether active clips can be
+  skipped inside the sample loops. The skip is enabled only when every active
+  clip is an axis-aligned rectangle with pixel-aligned edges. Raster bounds are
+  already intersected with active clip bounds before entering the loops, so
+  every sample inside those pixel bounds is inside the clip. Fractional
+  rectangle edges and all generic clip paths keep the existing
+  `point_in_active_clips` predicate.
+- Correctness guards:
+  `active_clip_checks_should_be_skippable_for_pixel_aligned_rects` and
+  `active_clip_checks_should_not_skip_fractional_or_generic_clips` cover the
+  gating rule. The fractional-edge rejection is intentional because
+  `intersect_active_clip_pixel_bounds` uses conservative floor/ceil bounds that
+  can include partially clipped sample positions.
+- A/B artifacts:
+  `target/performance-matrix-report-vector-axis-join-buckets-repeat.json`,
+  `target/performance-matrix-report-vector-rect-clip-skip-candidate.json`,
+  `target/performance-matrix-rect-clip-skip-starter.json`, and
+  `target/trace-native-vector-stress-rect-clip-skip.json`.
+- Result: accepted as a standalone vector/report improvement. Against the
+  axis-join focused repeat baseline, `vector-stress.pdf` moved p95
+  `1.356 ms` -> `1.153 ms` (`~15.0%`) and mean `1.239 ms` -> `1.038 ms`
+  (`~16.2%`). The trace moved `raster_paths` from `1.291 ms` to `1.036 ms`.
+- Protection result:
+  `target/performance-matrix-rect-clip-skip-starter.json` rendered all `11`
+  native hot-render records with no fallback-required, missing-tool,
+  not-applicable, or error records. Compared with
+  `target/performance-matrix-axis-join-buckets-starter.json`,
+  `technical-hatch-clipping.pdf` improved p95 `0.436 ms` -> `0.399 ms`,
+  `technical-linework-dimensions.pdf` stayed p95-neutral at `0.326 ms`, and
+  `prepress-trim-bleed-marks.pdf` moved only `0.606 ms` -> `0.608 ms` p95
+  while mean improved `0.536 ms` -> `0.523 ms`.
+- Decision: keep. This removes repeated clip predicate work from common
+  pixel-aligned rectangular PDF clips without changing fractional clip
+  behavior, generic clip behavior, allocation strategy, dependency surface, or
+  unsafe code.
+
 ## Hardware-Aware Rust Notes
 
 Goal: use Rust's memory model and the host CPU well without prematurely

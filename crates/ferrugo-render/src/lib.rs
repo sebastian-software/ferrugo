@@ -11158,6 +11158,7 @@ fn stroke_path(
     else {
         return Ok(());
     };
+    let skip_clip_checks = can_skip_active_clip_checks(context.clips);
     let axis_spans = axis_stroke_raster_spans(
         stroke_lines,
         joins,
@@ -11195,6 +11196,7 @@ fn stroke_path(
             samples,
             sample_count,
             source,
+            skip_clip_checks,
         )?;
         return Ok(());
     }
@@ -11217,6 +11219,7 @@ fn stroke_path(
                 samples,
                 sample_count,
                 source,
+                skip_clip_checks,
             )?;
             return Ok(());
         }
@@ -11251,6 +11254,7 @@ fn stroke_path(
                 samples,
                 sample_count,
                 source,
+                skip_clip_checks,
             )?;
             return Ok(());
         }
@@ -11262,7 +11266,7 @@ fn stroke_path(
             for sample_y in 0..samples {
                 for sample_x in 0..samples {
                     let point = sample_point(x, y, sample_x, sample_y, samples);
-                    if point_in_active_clips(point, context.clips)
+                    if (skip_clip_checks || point_in_active_clips(point, context.clips))
                         && (row_buckets.as_ref().map_or_else(
                             || point_in_stroke(point, stroke_lines, radius, state.line_cap),
                             |buckets| {
@@ -11331,6 +11335,7 @@ fn rasterize_row_bucketed_stroke_ranges(
     samples: u32,
     sample_count: u32,
     source: Rgba,
+    skip_clip_checks: bool,
 ) -> RasterResult<()> {
     if buckets.lines.len() >= STROKE_ROW_ACTIVE_MIN_BUCKET_LINES {
         return rasterize_active_row_bucketed_stroke_ranges(
@@ -11343,6 +11348,7 @@ fn rasterize_row_bucketed_stroke_ranges(
             samples,
             sample_count,
             source,
+            skip_clip_checks,
         );
     }
     let radius = stroke_radius_for_device_line_width(state.line_width);
@@ -11360,7 +11366,7 @@ fn rasterize_row_bucketed_stroke_ranges(
                 for sample_y in 0..samples {
                     for sample_x in 0..samples {
                         let point = sample_point(x, y, sample_x, sample_y, samples);
-                        if point_in_active_clips(point, context.clips)
+                        if (skip_clip_checks || point_in_active_clips(point, context.clips))
                             && (point_in_row_bucketed_stroke(
                                 point,
                                 x,
@@ -11413,6 +11419,7 @@ fn rasterize_active_row_bucketed_stroke_ranges(
     samples: u32,
     sample_count: u32,
     source: Rgba,
+    skip_clip_checks: bool,
 ) -> RasterResult<()> {
     let radius = stroke_radius_for_device_line_width(state.line_width);
     let mut x_ranges = Vec::new();
@@ -11465,7 +11472,7 @@ fn rasterize_active_row_bucketed_stroke_ranges(
                 for sample_y in 0..samples {
                     for sample_x in 0..samples {
                         let point = sample_point(x, y, sample_x, sample_y, samples);
-                        if point_in_active_clips(point, context.clips)
+                        if (skip_clip_checks || point_in_active_clips(point, context.clips))
                             && (point_in_row_bucketed_stroke_candidates(
                                 point,
                                 &active_line_indices,
@@ -11516,6 +11523,7 @@ fn rasterize_simple_line_stroke_spans(
     samples: u32,
     sample_count: u32,
     source: Rgba,
+    skip_clip_checks: bool,
 ) -> RasterResult<()> {
     let radius = stroke_radius_for_device_line_width(state.line_width);
     let radius_squared = radius * radius;
@@ -11532,7 +11540,7 @@ fn rasterize_simple_line_stroke_spans(
                 for sample_y in 0..samples {
                     for sample_x in 0..samples {
                         let point = sample_point(x, y, sample_x, sample_y, samples);
-                        if point_in_active_clips(point, context.clips)
+                        if (skip_clip_checks || point_in_active_clips(point, context.clips))
                             && point_in_single_stroke_line(
                                 point,
                                 line,
@@ -11578,6 +11586,7 @@ fn rasterize_axis_stroke_spans(
     samples: u32,
     sample_count: u32,
     source: Rgba,
+    skip_clip_checks: bool,
 ) -> RasterResult<()> {
     let radius = stroke_radius_for_device_line_width(state.line_width);
     let mut x_ranges = Vec::new();
@@ -11593,7 +11602,7 @@ fn rasterize_axis_stroke_spans(
                 for sample_y in 0..samples {
                     for sample_x in 0..samples {
                         let point = sample_point(x, y, sample_x, sample_y, samples);
-                        if point_in_active_clips(point, context.clips)
+                        if (skip_clip_checks || point_in_active_clips(point, context.clips))
                             && (point_in_axis_stroke_spans(point, y, sample_y, &spans.coverage)
                                 || (has_joins
                                     && join_buckets.map_or_else(
@@ -12636,6 +12645,23 @@ fn point_in_active_clips(point: Point, clips: &[ActiveClip]) -> bool {
         Some(rect) => point_in_rect(point, rect),
         None => point_in_path(point, &clip.path, clip.rule),
     })
+}
+
+fn can_skip_active_clip_checks(clips: &[ActiveClip]) -> bool {
+    clips.iter().all(|clip| {
+        clip.axis_aligned_rect
+            .is_some_and(rect_edges_are_pixel_aligned)
+    })
+}
+
+fn rect_edges_are_pixel_aligned(rect: PathBounds) -> bool {
+    [rect.min_x, rect.min_y, rect.max_x, rect.max_y]
+        .into_iter()
+        .all(is_nearly_integer)
+}
+
+fn is_nearly_integer(value: f64) -> bool {
+    (value - value.round()).abs() <= 1e-9
 }
 
 fn point_in_rect(point: Point, rect: PathBounds) -> bool {
@@ -17720,6 +17746,89 @@ mod tests {
         assert!(point_in_active_clips(Point { x: 4.0, y: 2.0 }, &clips));
         assert!(!point_in_active_clips(Point { x: 9.0, y: 7.5 }, &clips));
         assert!(!point_in_active_clips(Point { x: 8.5, y: 8.0 }, &clips));
+    }
+
+    #[test]
+    fn active_clip_checks_should_be_skippable_for_pixel_aligned_rects() {
+        let clips = vec![
+            ActiveClip {
+                path: FlattenedPath::default(),
+                bounds: Some(PathBounds {
+                    min_x: 2.0,
+                    min_y: 1.0,
+                    max_x: 14.0,
+                    max_y: 12.0,
+                }),
+                axis_aligned_rect: Some(PathBounds {
+                    min_x: 2.0,
+                    min_y: 1.0,
+                    max_x: 14.0,
+                    max_y: 12.0,
+                }),
+                rule: FillRule::Nonzero,
+                graphics_state_depth: 0,
+                graphics_state_scope_id: 0,
+            },
+            ActiveClip {
+                path: FlattenedPath::default(),
+                bounds: Some(PathBounds {
+                    min_x: 4.0,
+                    min_y: 3.0,
+                    max_x: 10.0,
+                    max_y: 9.0,
+                }),
+                axis_aligned_rect: Some(PathBounds {
+                    min_x: 4.0,
+                    min_y: 3.0,
+                    max_x: 10.0,
+                    max_y: 9.0,
+                }),
+                rule: FillRule::Nonzero,
+                graphics_state_depth: 0,
+                graphics_state_scope_id: 0,
+            },
+        ];
+
+        assert!(can_skip_active_clip_checks(&[]));
+        assert!(can_skip_active_clip_checks(&clips));
+    }
+
+    #[test]
+    fn active_clip_checks_should_not_skip_fractional_or_generic_clips() {
+        let fractional = vec![ActiveClip {
+            path: FlattenedPath::default(),
+            bounds: Some(PathBounds {
+                min_x: 2.25,
+                min_y: 1.0,
+                max_x: 14.0,
+                max_y: 12.0,
+            }),
+            axis_aligned_rect: Some(PathBounds {
+                min_x: 2.25,
+                min_y: 1.0,
+                max_x: 14.0,
+                max_y: 12.0,
+            }),
+            rule: FillRule::Nonzero,
+            graphics_state_depth: 0,
+            graphics_state_scope_id: 0,
+        }];
+        let generic = vec![ActiveClip {
+            path: FlattenedPath::default(),
+            bounds: Some(PathBounds {
+                min_x: 2.0,
+                min_y: 1.0,
+                max_x: 14.0,
+                max_y: 12.0,
+            }),
+            axis_aligned_rect: None,
+            rule: FillRule::Nonzero,
+            graphics_state_depth: 0,
+            graphics_state_scope_id: 0,
+        }];
+
+        assert!(!can_skip_active_clip_checks(&fractional));
+        assert!(!can_skip_active_clip_checks(&generic));
     }
 
     #[test]
