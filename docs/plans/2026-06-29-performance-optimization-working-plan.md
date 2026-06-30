@@ -3461,6 +3461,41 @@ Accepted decoded image-resource session cache from 2026-06-30:
   are clear" item for decoded image resources; font/form resource caches still
   require their own profile-backed fixture before being added.
 
+Accepted opaque rectangle row-fill shortcut from 2026-06-30:
+
+- Profiling trigger: after the image-resource cache work, the fresh
+  `sample` run on `image-heavy-repeated-xobject-report.pdf`,
+  `target/sample-repeated-xobject-current-refresh.txt`, still showed hot time
+  dominated by `fill_path` / `blend_pixel` inside path rasterization rather
+  than resource decode. The fixture generator confirms that the workload
+  contains large opaque normal rectangle fills plus repeated image placements.
+- Change: axis-aligned rectangle fills now write whole row slices directly when
+  the source is fully opaque, the blend mode is `Normal`, and the effective
+  fill alpha is full coverage. Fractional/antialiased fills, non-normal blend
+  modes, transparent sources, and non-rectangular clips continue through the
+  existing pixel blend path.
+- Correctness guard:
+  `fill_pixel_bounds_opaque_should_write_only_selected_rows` verifies the row
+  helper writes only the requested pixel bounds and leaves surrounding pixels
+  unchanged.
+- A/B artifacts:
+  `target/benchmark-native-repeated-xobject-rect-fill-row-base.json`,
+  `target/benchmark-native-repeated-xobject-rect-fill-row-candidate.json`,
+  `target/performance-matrix-image-heavy-rect-fill-row-candidate.json`, and
+  `target/performance-matrix-report-vector-rect-fill-row-protection.json`.
+- Focused result: `image-heavy-repeated-xobject-report.pdf` moved mean
+  `0.354 ms` -> `0.274 ms` over 300,000 iterations (`~22.6%`). The image-heavy
+  matrix moved the same fixture p95 `0.410 ms` -> `0.347 ms` versus
+  `target/performance-matrix-image-heavy-current-refresh.json`.
+- Protection result: the image-heavy matrix rendered all `8` records with no
+  fallback or errors. The report/vector protection matrix rendered all `4`
+  records with no fallback or errors; `vector-stress.pdf` p95 was `1.054 ms`,
+  consistent with the prior vector range after the opaque blend shortcut.
+- Decision: keep as a profile-backed path-raster optimization. It removes
+  repeated per-pixel blend work for the common opaque-rectangle case without
+  changing generic fill semantics, allocation strategy, dependency surface, or
+  unsafe-code policy.
+
 Repeat family phase-summary instrumentation from 2026-06-30:
 
 - Change: `benchmark-repeat-native` now aggregates record-level

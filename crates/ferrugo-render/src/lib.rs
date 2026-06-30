@@ -10651,6 +10651,10 @@ fn fill_axis_aligned_rect_path(
                 };
                 bounds = intersection;
             }
+            if can_direct_write_opaque_normal(source, blend_mode, alpha) {
+                fill_pixel_bounds_opaque(device, bounds, source)?;
+                return Ok(());
+            }
             for y in bounds.min_y..bounds.max_y {
                 for x in bounds.min_x..bounds.max_x {
                     blend_pixel(device, x, y, source, blend_mode, alpha)?;
@@ -10678,6 +10682,28 @@ fn fill_axis_aligned_rect_path(
             {
                 blend_pixel(device, x, y, source, blend_mode, alpha)?;
             }
+        }
+    }
+    Ok(())
+}
+
+fn can_direct_write_opaque_normal(source: Rgba, blend_mode: BlendMode, alpha: f64) -> bool {
+    matches!(blend_mode, BlendMode::Normal) && source.a == 255 && alpha >= 1.0
+}
+
+fn fill_pixel_bounds_opaque(
+    device: &mut RasterDevice,
+    bounds: PixelBounds,
+    source: Rgba,
+) -> RasterResult<()> {
+    let pixel = [source.r, source.g, source.b, source.a];
+    let start = bounds.min_x as usize * PixelFormat::Rgba8.bytes_per_pixel();
+    let end = bounds.max_x as usize * PixelFormat::Rgba8.bytes_per_pixel();
+    for y in bounds.min_y..bounds.max_y {
+        for chunk in
+            device.row_mut(y)?[start..end].chunks_exact_mut(PixelFormat::Rgba8.bytes_per_pixel())
+        {
+            chunk.copy_from_slice(&pixel);
         }
     }
     Ok(())
@@ -18893,6 +18919,42 @@ mod tests {
             .expect("opaque partial blend should write");
 
         assert_eq!(device.pixel(0, 0), Ok(source_over(source, dest, coverage)));
+    }
+
+    #[test]
+    fn fill_pixel_bounds_opaque_should_write_only_selected_rows() {
+        let background = Rgba {
+            r: 1,
+            g: 2,
+            b: 3,
+            a: 4,
+        };
+        let source = Rgba {
+            r: 9,
+            g: 8,
+            b: 7,
+            a: 255,
+        };
+        let mut device = RasterDevice::new(4, 3, background).expect("valid device");
+
+        fill_pixel_bounds_opaque(
+            &mut device,
+            PixelBounds {
+                min_x: 1,
+                min_y: 1,
+                max_x: 3,
+                max_y: 2,
+            },
+            source,
+        )
+        .expect("opaque row fill should write");
+
+        assert_eq!(device.pixel(1, 1), Ok(source));
+        assert_eq!(device.pixel(2, 1), Ok(source));
+        assert_eq!(device.pixel(0, 1), Ok(background));
+        assert_eq!(device.pixel(3, 1), Ok(background));
+        assert_eq!(device.pixel(1, 0), Ok(background));
+        assert_eq!(device.pixel(1, 2), Ok(background));
     }
 
     #[test]
