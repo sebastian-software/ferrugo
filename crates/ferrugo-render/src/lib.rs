@@ -1390,10 +1390,18 @@ pub struct StrokeShapeSummary {
     pub axis_aligned_lines: usize,
     /// Total row-index references a row-bucket build would create.
     pub row_index_refs: usize,
+    /// Estimated row-bucket line checks before X-bounds filtering.
+    pub row_bucket_sample_refs: usize,
+    /// Estimated row-bucket line checks that pass X-bounds filtering.
+    pub row_bucket_sample_x_hits: usize,
+    /// Estimated row-bucket line checks rejected by X-bounds filtering.
+    pub row_bucket_sample_x_misses: usize,
     /// Maximum flattened line count seen on one stroked item.
     pub max_lines_per_item: usize,
     /// Maximum row-index references seen on one stroked item.
     pub max_row_index_refs_per_item: usize,
+    /// Maximum estimated row-bucket line checks seen on one stroked item.
+    pub max_row_bucket_sample_refs_per_item: usize,
     /// Stroked item counts by flattened line count.
     pub line_count_buckets: StrokeLineCountBuckets,
     /// Flattened line counts by conservative device-pixel X span.
@@ -1409,10 +1417,16 @@ impl StrokeShapeSummary {
         self.flattened_lines += other.flattened_lines;
         self.axis_aligned_lines += other.axis_aligned_lines;
         self.row_index_refs += other.row_index_refs;
+        self.row_bucket_sample_refs += other.row_bucket_sample_refs;
+        self.row_bucket_sample_x_hits += other.row_bucket_sample_x_hits;
+        self.row_bucket_sample_x_misses += other.row_bucket_sample_x_misses;
         self.max_lines_per_item = self.max_lines_per_item.max(other.max_lines_per_item);
         self.max_row_index_refs_per_item = self
             .max_row_index_refs_per_item
             .max(other.max_row_index_refs_per_item);
+        self.max_row_bucket_sample_refs_per_item = self
+            .max_row_bucket_sample_refs_per_item
+            .max(other.max_row_bucket_sample_refs_per_item);
         self.line_count_buckets.add_assign(other.line_count_buckets);
         self.pixel_x_span_buckets
             .add_assign(other.pixel_x_span_buckets);
@@ -5153,7 +5167,15 @@ fn stroke_shape_summary_for_path(
     } else {
         flattened.lines.as_slice()
     };
-    let radius = stroke_radius_for_device_line_width(device_stroke_width(path.state, transform));
+    let line_width = device_stroke_width(path.state, transform);
+    let ctm_scale = device_stroke_scale(path.state, transform);
+    let radius = stroke_radius_for_device_line_width(line_width);
+    let samples = if should_snap_axis_aligned_hairline(line_width, ctm_scale) {
+        1usize
+    } else {
+        usize::from(options.supersample)
+    };
+    let sample_count = samples.saturating_mul(samples);
     let mut summary = StrokeShapeSummary {
         stroked_items: 1,
         dashed_items: usize::from(dashed),
@@ -5162,10 +5184,14 @@ fn stroke_shape_summary_for_path(
         ..StrokeShapeSummary::default()
     };
     summary.line_count_buckets.add_line_count(lines.len());
-    if lines.len() >= STROKE_ROW_BUCKET_MIN_LINES {
+    let row_bucket_candidate = lines.len() >= STROKE_ROW_BUCKET_MIN_LINES;
+    if row_bucket_candidate {
         summary.row_bucket_candidate_items = 1;
     }
     let stroke_bounds = stroke_pixel_bounds(lines, &flattened.joins, radius, transform.dimensions);
+    let stroke_width = stroke_bounds
+        .map(|bounds| (bounds.max_x - bounds.min_x) as usize)
+        .unwrap_or_default();
     for line in lines {
         if is_axis_aligned_line(*line) {
             summary.axis_aligned_lines += 1;
@@ -5179,11 +5205,27 @@ fn stroke_shape_summary_for_path(
         };
         let row_refs = (bounds.max_y - bounds.min_y) as usize;
         summary.row_index_refs += row_refs;
+        if row_bucket_candidate {
+            let x_span = (bounds.max_x - bounds.min_x) as usize;
+            let sample_refs = row_refs
+                .saturating_mul(stroke_width)
+                .saturating_mul(sample_count);
+            let sample_x_hits = row_refs.saturating_mul(x_span).saturating_mul(sample_count);
+            summary.row_bucket_sample_refs =
+                summary.row_bucket_sample_refs.saturating_add(sample_refs);
+            summary.row_bucket_sample_x_hits = summary
+                .row_bucket_sample_x_hits
+                .saturating_add(sample_x_hits);
+            summary.row_bucket_sample_x_misses = summary
+                .row_bucket_sample_x_misses
+                .saturating_add(sample_refs.saturating_sub(sample_x_hits));
+        }
         summary
             .pixel_x_span_buckets
             .add_span(bounds.max_x - bounds.min_x);
     }
     summary.max_row_index_refs_per_item = summary.row_index_refs;
+    summary.max_row_bucket_sample_refs_per_item = summary.row_bucket_sample_refs;
     Ok(summary)
 }
 
@@ -14792,8 +14834,66 @@ mod tests {
         assert_eq!(summary.dashed_items, 1);
         assert_eq!(summary.flattened_lines, 10);
         assert_eq!(summary.axis_aligned_lines, 10);
+        assert_eq!(summary.row_bucket_sample_refs, 0);
+        assert_eq!(summary.row_bucket_sample_x_hits, 0);
+        assert_eq!(summary.row_bucket_sample_x_misses, 0);
         assert_eq!(summary.line_count_buckets.lt_32, 1);
         assert_eq!(summary.pixel_x_span_buckets.le_16, 10);
+    }
+
+    #[test]
+    fn stroke_shape_summary_should_estimate_row_bucket_sample_checks() {
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 100.0,
+                    max_y: 100.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            100,
+        )
+        .expect("valid page transform");
+        let mut segments = Vec::new();
+        for y in 10..41 {
+            segments.push(PathSegment::MoveTo(Point {
+                x: 10.0,
+                y: f64::from(y),
+            }));
+            segments.push(PathSegment::LineTo(Point {
+                x: 20.0,
+                y: f64::from(y),
+            }));
+        }
+        segments.push(PathSegment::MoveTo(Point { x: 80.0, y: 41.0 }));
+        segments.push(PathSegment::LineTo(Point { x: 90.0, y: 41.0 }));
+        let display_list = DisplayList::from_items(vec![DisplayItem::Path(PathDisplayItem {
+            segments,
+            paint: PaintMode::Stroke,
+            state: GraphicsState::default(),
+            fill_pattern: None,
+        })]);
+
+        let summary = display_list_stroke_shape_summary(
+            &display_list,
+            transform,
+            PathRasterOptions::default(),
+        )
+        .expect("stroke shape summary should build");
+
+        assert_eq!(summary.stroked_items, 1);
+        assert_eq!(summary.row_bucket_candidate_items, 1);
+        assert_eq!(summary.flattened_lines, STROKE_ROW_BUCKET_MIN_LINES);
+        assert!(summary.row_bucket_sample_refs > 0);
+        assert!(summary.row_bucket_sample_x_hits > 0);
+        assert!(summary.row_bucket_sample_x_misses > summary.row_bucket_sample_x_hits);
+        assert_eq!(
+            summary.max_row_bucket_sample_refs_per_item,
+            summary.row_bucket_sample_refs
+        );
     }
 
     #[test]

@@ -8596,8 +8596,12 @@ fn trace_stroke_shape_summary_json(
                 "\"flattened_lines\":{},",
                 "\"axis_aligned_lines\":{},",
                 "\"row_index_refs\":{},",
+                "\"row_bucket_sample_refs\":{},",
+                "\"row_bucket_sample_x_hits\":{},",
+                "\"row_bucket_sample_x_misses\":{},",
                 "\"max_lines_per_item\":{},",
                 "\"max_row_index_refs_per_item\":{},",
+                "\"max_row_bucket_sample_refs_per_item\":{},",
                 "\"line_count_buckets\":{{",
                 "\"lt_32\":{},",
                 "\"from_32_to_127\":{},",
@@ -8617,8 +8621,12 @@ fn trace_stroke_shape_summary_json(
             summary.flattened_lines,
             summary.axis_aligned_lines,
             summary.row_index_refs,
+            summary.row_bucket_sample_refs,
+            summary.row_bucket_sample_x_hits,
+            summary.row_bucket_sample_x_misses,
             summary.max_lines_per_item,
             summary.max_row_index_refs_per_item,
+            summary.max_row_bucket_sample_refs_per_item,
             summary.line_count_buckets.lt_32,
             summary.line_count_buckets.from_32_to_127,
             summary.line_count_buckets.ge_128,
@@ -11495,6 +11503,8 @@ mod tests {
         assert!(json.contains("\"total\""));
         assert!(json.contains("\"stroke_shape_summary\""));
         assert!(json.contains("\"flattened_lines\""));
+        assert!(json.contains("\"row_bucket_sample_refs\""));
+        assert!(json.contains("\"row_bucket_sample_x_misses\""));
         assert!(json.contains("\"pixel_x_span_buckets\""));
         assert!(json.contains("\"operator_summary\""));
         assert!(!json.contains("stream\n"));

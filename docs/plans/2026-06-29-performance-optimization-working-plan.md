@@ -1120,6 +1120,36 @@ Rejected row-bucket copy candidate from 2026-06-30:
   row-bucket internals only with a larger structural reduction in candidate
   checks, not as an isolated copy-order tweak.
 
+Stroke row-work trace diagnostics from 2026-06-30:
+
+- Change: `trace-native` stroke summaries now include estimated row-bucket
+  sample-line checks, X-bound hits, X-bound misses, and max estimated
+  sample-line checks per stroked item. These are derived from conservative
+  device line bounds and stroke bounds; they do not inspect rendered pixels,
+  text, images, or PDF stream bytes.
+- Purpose: the macOS `sample` profile points at `stroke_path`, but not at the
+  internal reason. These counters expose whether row-bucket work is dominated
+  by useful line predicates or by X-bound rejection before another spatial
+  index is attempted.
+- Artifacts:
+  `target/trace-native-vector-stress-row-work.json`,
+  `target/trace-native-technical-large-coordinate-row-work.json`, and
+  `target/trace-native-engineering-floorplan-row-work.json`, generated with
+  `trace-native <fixture> --max-edge 160 --max-events 1`.
+- Observed estimates:
+  `vector-stress.pdf` reports `485376` row-bucket sample refs, `25672`
+  X-bound hits, and `459704` X-bound misses (~94.7% X-miss);
+  `technical-large-coordinate-plan.pdf` reports `2085696` refs, `96832` hits,
+  and `1988864` misses (~95.4% X-miss);
+  `engineering-floorplan-precision.pdf` reports `2872320` refs, `144960` hits,
+  and `2727360` misses (~95.0% X-miss).
+- Interpretation: the next substantial stroke win should reduce X-miss-heavy
+  row-bucket scans structurally. The previously rejected 16px X-tile path
+  proved the direction can help large plans but was too coarse and too costly
+  for protection fixtures. A better next candidate should use the new counters
+  to gate a narrower row subdivision or line-span grouping only where the
+  estimated X-miss ratio and per-item sample refs justify the overhead.
+
 ## Hardware-Aware Rust Notes
 
 Goal: use Rust's memory model and the host CPU well without prematurely
