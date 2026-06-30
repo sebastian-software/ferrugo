@@ -3588,6 +3588,33 @@ Accepted axis-aligned simple-line span routing from 2026-06-30:
   axis-aligned single-line grid strokes without adding dependencies, unsafe
   code, global state, or alternate stroke geometry.
 
+Rejected lower axis-aligned simple-line span threshold from 2026-06-30:
+
+- Profiling trigger: after the row-incremental axial shading win, the starter
+  matrix still showed technical linework fixtures with visible `raster_paths`
+  cost: `technical-hatch-clipping.pdf` repeat mean `0.266 ms` with
+  `raster_paths` `0.168 ms`, and `technical-linework-dimensions.pdf` repeat
+  mean `0.206 ms` with `raster_paths` `0.126 ms`. Their traces showed many
+  snapped hairline items, so a narrower axis-aligned single-line threshold was
+  tested before touching broader row-bucket logic.
+- Change tested locally but not kept: lower
+  `STROKE_AXIS_SIMPLE_LINE_SPAN_MIN_PIXELS` from `128` to `16`, so smaller
+  axis-aligned single-line strokes route through `simple_line_stroke_raster_spans`.
+- A/B artifacts:
+  `target/benchmark-repeat-technical-hatch-post-row-incremental-axial-current.json`,
+  `target/benchmark-repeat-technical-hatch-axis-simple-threshold16-candidate.json`,
+  `target/benchmark-repeat-technical-linework-post-row-incremental-axial-current.json`,
+  `target/benchmark-repeat-technical-linework-axis-simple-threshold16-candidate.json`,
+  `target/benchmark-repeat-vector-stress-post-join-bounds-current.json`,
+  and `target/benchmark-repeat-vector-stress-axis-simple-threshold16-candidate.json`.
+- Result: rejected as a regression. Hatch repeat mean moved `0.266 ms` ->
+  `0.274 ms`, linework `0.206 ms` -> `0.211 ms`, and vector-stress
+  `0.706 ms` -> `0.723 ms`. The matching `raster_paths` phase moved about
+  `+2.4%` on the three technical fixtures.
+- Decision: reverted. The current `128` pixel threshold remains the better
+  tradeoff; below that, span setup and range merging cost more than the reduced
+  sample checks.
+
 Rejected sampled-blend helper candidate from 2026-06-30:
 
 - Profile basis: after the axis-aligned simple-line span routing win,
