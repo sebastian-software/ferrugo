@@ -5715,6 +5715,42 @@ Current release profile after merge rejection from 2026-06-30:
   change route construction for a measured subcase; otherwise collect deeper
   line-level Instruments/Samply evidence before editing.
 
+Rejected Butt-cap row-bucket predicate candidate from 2026-06-30:
+
+- Rationale:
+  the current release profile still has `rasterize_row_bucketed_stroke_ranges`
+  as the largest top-of-stack symbol, and the hot row-bucket predicate receives
+  a constant `LineCap` per stroke item. The candidate tested whether routing
+  `LineCap::Butt` row-bucket predicates through a dedicated helper could avoid
+  repeated match dispatch in the inner candidate loop.
+- Change tested locally but not kept:
+  add `point_in_bounded_butt_stroke_line` and route
+  `point_in_row_bucketed_stroke`, traced row-bucket predicates, and active
+  row-bucket candidate predicates through it when `line_cap` is `Butt`.
+  Geometry math, clipping, blend behavior, output format, dependencies, and
+  unsafe usage stayed unchanged.
+- Correctness checks while the candidate was present:
+  `cargo fmt --all --check`,
+  `cargo test -p ferrugo-render --no-default-features
+  bounded_stroke_line_predicate_should_match_single_line_predicate`, and
+  `cargo test -p ferrugo-render --no-default-features row_bucket`.
+- A/B artifacts:
+  `target/benchmark-repeat-vector-stress-current-after-presort-reject-200k.json`
+  versus
+  `target/benchmark-repeat-vector-stress-butt-cap-candidate-release-200k.json`.
+- Result:
+  rejected. Against the fresh release baseline, repeat mean moved `0.586 ms`
+  -> `0.588 ms`, repeat mean `raster_paths` moved `0.497 ms` -> `0.500 ms`,
+  p95 moved only `0.663 ms` -> `0.656 ms` (~1.1%), and p99 regressed
+  `0.701 ms` -> `0.714 ms`. Output status, dimensions, and bytes stayed
+  unchanged. Against the older release baseline, the candidate was also slower
+  (`0.575 ms` mean, `0.487 ms` raster paths).
+- Decision:
+  reverted. The compiler/runtime branch shape is already good enough here, or
+  the added outer branch offsets any inner-loop simplification. Do not retry
+  line-cap-only predicate specialization unless a lower-level profile isolates
+  the `LineCap` match itself rather than the broader row-bucket loop.
+
 ## Questions Closed For The Next Wave
 
 - [x] What family-specific standalone and cumulative thresholds should replace
