@@ -5561,6 +5561,38 @@ Release-mode vector-stress profile from 2026-06-30:
   Avoid more profiling-build-only byte-write or arithmetic-spelling changes
   unless a release sample isolates the exact operation.
 
+Rejected active row-slice candidate from 2026-06-30:
+
+- Rationale:
+  the release profile still showed `rasterize_row_bucketed_stroke_ranges` as
+  the largest flat symbol, with allocator and `RawVec` frames visible below
+  active row-bucket work. The candidate tried to remove per-row copies of
+  already-sorted bucket indices by letting the active row-bucket raster loops
+  borrow row slices from `StrokeRowBuckets` and `StrokeJoinBuckets` directly.
+- Change tested locally but not kept:
+  replace `sorted_row_line_indices` / `sorted_row_join_indices` temporary
+  `Vec` copies in the active row-bucket raster paths with borrowed row slices.
+  Geometry predicates, blend math, bucket construction, output format,
+  dependencies, and unsafe usage stayed unchanged.
+- Correctness checks while the candidate was present:
+  `cargo fmt --all --check` and
+  `cargo test -p ferrugo-render --no-default-features row_bucket`.
+- A/B artifacts:
+  `target/benchmark-repeat-vector-stress-release-current-200k.json` versus
+  `target/benchmark-repeat-vector-stress-row-slice-candidate-release-200k.json`.
+- Result:
+  rejected. The focused release repeat moved mean `0.575 ms` -> `0.569 ms`
+  (~1.0%) and repeat mean `raster_paths` `0.487 ms` -> `0.483 ms` (~0.8%).
+  p95 moved `0.653 ms` -> `0.595 ms` (~8.9%), but the target phase and mean
+  movement are too small for a sub-millisecond fixture and likely reflect
+  tail-noise rather than a broad renderer win. Output status, dimensions, and
+  bytes stayed unchanged.
+- Decision:
+  reverted. Do not retry row-slice borrowing by itself; it does not remove
+  enough actual stroke raster work. A future active row-bucket attempt should
+  reduce visited candidate pixels/sample points or remove measured allocation
+  churn with stronger mean and phase support.
+
 ## Questions Closed For The Next Wave
 
 - [x] What family-specific standalone and cumulative thresholds should replace
