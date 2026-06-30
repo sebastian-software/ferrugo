@@ -2085,6 +2085,48 @@ Accepted pre-sorted row-bucket rows from 2026-06-30:
   `stroke_path` track without changing coverage decisions or adding new
   dependencies.
 
+Accepted rectangle clip fill bounds result from 2026-06-30:
+
+- Profile basis:
+  `target/sample-vector-stress-current.txt`, captured from a long release
+  `benchmark-repeat-native` run on `vector-stress.pdf`, showed `stroke_path`
+  still dominant but also showed `fill_path` as the second largest top-stack
+  block (`994` samples), ahead of blend and join predicates. The current trace
+  `target/trace-native-vector-stress-current-after-presort.json` reported
+  `2.876 ms` of `3.091 ms` in `raster_paths`. The fixture uses nested
+  rectangular clips and several axis-aligned rectangle fills, so the remaining
+  fill work was a profile-backed target.
+- Change: active clips now remember when their flattened path is a single
+  axis-aligned rectangle. `fill_axis_aligned_rect_path` uses exact
+  center-sampled pixel bounds for the filled rectangle and for all active
+  rectangular clips, then writes only the intersected pixels without calling
+  `point_in_active_clips` inside the per-pixel loop. Non-rectangular clips stay
+  on the existing predicate path, and the center-sample edge semantics are
+  preserved for fractional rectangle coordinates.
+- Correctness guards:
+  `center_sampled_rect_pixel_bounds_should_exclude_fractional_edges` protects
+  the center-sample edge rule, and
+  `center_sampled_axis_aligned_clip_bounds_should_intersect_rect_clips`
+  protects multi-clip intersection.
+- A/B artifacts:
+  `target/performance-matrix-report-vector-profile-current.json`,
+  `target/performance-matrix-report-vector-rect-clip-candidate.json`,
+  `target/performance-matrix-report-vector-rect-clip-repeat.json`,
+  `target/performance-matrix-rect-clip-starter.json`, and
+  `target/trace-native-vector-stress-rect-clip.json`.
+- Result: accepted as a standalone vector/report improvement. First run:
+  `vector-stress.pdf` p95 `3.013 ms` -> `2.564 ms` (`~14.9%`) and mean
+  `2.873 ms` -> `2.474 ms` (`~13.9%`). Repeat: p95 `3.013 ms` -> `2.574 ms`
+  (`~14.6%`) and mean `2.873 ms` -> `2.486 ms` (`~13.5%`). The trace moved
+  `raster_paths` from `2.876 ms` to `2.662 ms`.
+- Protection result:
+  `target/performance-matrix-rect-clip-starter.json` rendered all `11`
+  performance-manifest native hot-render records with no fallback-required,
+  missing-tool, not-applicable, or error records.
+- Decision: keep. This removes repeated clip path tests from a profile-visible
+  rectangle-fill hot path while preserving exact center-sampled rectangle and
+  clip semantics, with no new dependency or unsafe code.
+
 ## Hardware-Aware Rust Notes
 
 Goal: use Rust's memory model and the host CPU well without prematurely

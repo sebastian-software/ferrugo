@@ -7336,6 +7336,7 @@ struct PreparedStrokeJoin {
 struct ActiveClip {
     path: FlattenedPath,
     bounds: Option<PathBounds>,
+    axis_aligned_rect: Option<PathBounds>,
     rule: FillRule,
     graphics_state_depth: usize,
     graphics_state_scope_id: u64,
@@ -7385,9 +7386,11 @@ fn active_clip_from_segments(
 ) -> RasterResult<ActiveClip> {
     let path = flatten_path_segments(segments, matrix, max_flattened_segments)?;
     let bounds = flattened_bounds(&path);
+    let axis_aligned_rect = axis_aligned_rect_fill_bounds(&path);
     Ok(ActiveClip {
         path,
         bounds,
+        axis_aligned_rect,
         rule,
         graphics_state_depth: state.graphics_state_depth,
         graphics_state_scope_id: state.graphics_state_scope_id,
@@ -10638,6 +10641,24 @@ fn fill_axis_aligned_rect_path(
     context: PathRasterContext<'_>,
     dimensions: RasterDimensions,
 ) -> RasterResult<()> {
+    if let Some(mut bounds) = center_sampled_rect_pixel_bounds(rect, dimensions) {
+        if let Some(clip_bounds) =
+            center_sampled_axis_aligned_clip_bounds(context.clips, dimensions)
+        {
+            if let Some(clip_bounds) = clip_bounds {
+                let Some(intersection) = intersect_pixel_bounds(bounds, clip_bounds) else {
+                    return Ok(());
+                };
+                bounds = intersection;
+            }
+            for y in bounds.min_y..bounds.max_y {
+                for x in bounds.min_x..bounds.max_x {
+                    blend_pixel(device, x, y, source, blend_mode, alpha)?;
+                }
+            }
+            return Ok(());
+        }
+    }
     let Some(bounds) = device_pixel_bounds(rect, dimensions, 0.0)
         .and_then(|bounds| intersect_active_clip_pixel_bounds(bounds, context.clips, dimensions))
     else {
@@ -10660,6 +10681,41 @@ fn fill_axis_aligned_rect_path(
         }
     }
     Ok(())
+}
+
+fn center_sampled_axis_aligned_clip_bounds(
+    clips: &[ActiveClip],
+    dimensions: RasterDimensions,
+) -> Option<Option<PixelBounds>> {
+    let mut bounds = None;
+    for clip in clips {
+        let clip_bounds = center_sampled_rect_pixel_bounds(clip.axis_aligned_rect?, dimensions)?;
+        bounds = Some(match bounds {
+            Some(bounds) => intersect_pixel_bounds(bounds, clip_bounds)?,
+            None => clip_bounds,
+        });
+    }
+    Some(bounds)
+}
+
+fn center_sampled_rect_pixel_bounds(
+    rect: PathBounds,
+    dimensions: RasterDimensions,
+) -> Option<PixelBounds> {
+    let min_x = center_sampled_rect_edge(rect.min_x).clamp(0, i64::from(dimensions.width));
+    let min_y = center_sampled_rect_edge(rect.min_y).clamp(0, i64::from(dimensions.height));
+    let max_x = center_sampled_rect_edge(rect.max_x).clamp(0, i64::from(dimensions.width));
+    let max_y = center_sampled_rect_edge(rect.max_y).clamp(0, i64::from(dimensions.height));
+    (min_x < max_x && min_y < max_y).then_some(PixelBounds {
+        min_x: min_x as u32,
+        min_y: min_y as u32,
+        max_x: max_x as u32,
+        max_y: max_y as u32,
+    })
+}
+
+fn center_sampled_rect_edge(value: f64) -> i64 {
+    (value - 0.5).ceil() as i64
 }
 
 fn axis_aligned_rect_fill_bounds(path: &FlattenedPath) -> Option<PathBounds> {
@@ -17543,6 +17599,7 @@ mod tests {
                 max_x: 9.75,
                 max_y: 8.5,
             }),
+            axis_aligned_rect: None,
             rule: FillRule::Nonzero,
             graphics_state_depth: 0,
             graphics_state_scope_id: 0,
@@ -17571,6 +17628,7 @@ mod tests {
         let clips = vec![ActiveClip {
             path: FlattenedPath::default(),
             bounds: None,
+            axis_aligned_rect: None,
             rule: FillRule::Nonzero,
             graphics_state_depth: 0,
             graphics_state_scope_id: 0,
@@ -18399,6 +18457,74 @@ mod tests {
                 b: 127,
                 a: 255,
             }
+        );
+    }
+
+    #[test]
+    fn center_sampled_rect_pixel_bounds_should_exclude_fractional_edges() {
+        let dimensions = RasterDimensions::new(8, 8).expect("valid dimensions");
+        let bounds = center_sampled_rect_pixel_bounds(
+            PathBounds {
+                min_x: 0.75,
+                min_y: 1.25,
+                max_x: 4.5,
+                max_y: 5.51,
+            },
+            dimensions,
+        )
+        .expect("center-sampled bounds should overlap");
+
+        assert_eq!(
+            bounds,
+            PixelBounds {
+                min_x: 1,
+                min_y: 1,
+                max_x: 4,
+                max_y: 6,
+            }
+        );
+    }
+
+    #[test]
+    fn center_sampled_axis_aligned_clip_bounds_should_intersect_rect_clips() {
+        let dimensions = RasterDimensions::new(16, 16).expect("valid dimensions");
+        let clips = vec![
+            ActiveClip {
+                path: FlattenedPath::default(),
+                bounds: None,
+                axis_aligned_rect: Some(PathBounds {
+                    min_x: 2.0,
+                    min_y: 1.0,
+                    max_x: 12.0,
+                    max_y: 10.0,
+                }),
+                rule: FillRule::Nonzero,
+                graphics_state_depth: 0,
+                graphics_state_scope_id: 0,
+            },
+            ActiveClip {
+                path: FlattenedPath::default(),
+                bounds: None,
+                axis_aligned_rect: Some(PathBounds {
+                    min_x: 5.0,
+                    min_y: 3.0,
+                    max_x: 14.0,
+                    max_y: 8.0,
+                }),
+                rule: FillRule::Nonzero,
+                graphics_state_depth: 0,
+                graphics_state_scope_id: 0,
+            },
+        ];
+
+        assert_eq!(
+            center_sampled_axis_aligned_clip_bounds(&clips, dimensions),
+            Some(Some(PixelBounds {
+                min_x: 5,
+                min_y: 3,
+                max_x: 12,
+                max_y: 8,
+            }))
         );
     }
 
