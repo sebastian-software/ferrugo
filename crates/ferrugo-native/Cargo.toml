@@ -2,10 +2,13 @@
 name = "ferrugo-native"
 version = "0.1.0"
 edition.workspace = true
-description.workspace = true
+description = "Rust-native PDF thumbnail backend for Ferrugo."
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
+readme = "README.md"
+keywords = ["pdf", "thumbnail", "renderer", "rust"]
+include = ["src/**", "Cargo.toml", "README.md"]
 
 [dependencies]
 ferrugo-content = { version = "0.1.0", path = "../ferrugo-content" }

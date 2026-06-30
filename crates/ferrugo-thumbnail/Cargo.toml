@@ -2,10 +2,13 @@
 name = "ferrugo-thumbnail"
 version = "0.1.0"
 edition.workspace = true
-description.workspace = true
+description = "Backend-neutral PDF thumbnail facade for Ferrugo."
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
+readme = "README.md"
+keywords = ["pdf", "thumbnail", "preview", "rust"]
+include = ["src/**", "Cargo.toml", "README.md"]
 
 [lints]
 workspace = true

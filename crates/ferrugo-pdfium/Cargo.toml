@@ -2,10 +2,13 @@
 name = "ferrugo-pdfium"
 version = "0.1.0"
 edition.workspace = true
-description.workspace = true
+description = "Optional local PDFium backend for Ferrugo maintainer comparisons."
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
+readme = "README.md"
+keywords = ["pdf", "pdfium", "backend", "ffi"]
+include = ["src/**", "examples/**", "Cargo.toml", "README.md"]
 
 [dependencies]
 ferrugo-thumbnail = { version = "0.1.0", path = "../ferrugo-thumbnail" }

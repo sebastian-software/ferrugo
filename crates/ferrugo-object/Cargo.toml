@@ -2,10 +2,13 @@
 name = "ferrugo-object"
 version = "0.1.0"
 edition.workspace = true
-description.workspace = true
+description = "PDF object graph, xref, and stream decoding for Ferrugo."
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
+readme = "README.md"
+keywords = ["pdf", "object", "xref", "parser"]
+include = ["src/**", "Cargo.toml", "README.md"]
 
 [dependencies]
 flate2 = { version = "1.1.9", default-features = false, features = ["zlib-rs"] }

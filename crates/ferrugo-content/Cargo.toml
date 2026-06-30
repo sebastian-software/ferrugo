@@ -2,10 +2,13 @@
 name = "ferrugo-content"
 version = "0.1.0"
 edition.workspace = true
-description.workspace = true
+description = "PDF content stream tokenizer and operator model for Ferrugo."
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
+readme = "README.md"
+keywords = ["pdf", "content", "parser", "graphics"]
+include = ["src/**", "Cargo.toml", "README.md"]
 
 [dependencies]
 ferrugo-object = { version = "0.1.0", path = "../ferrugo-object" }
