@@ -1311,6 +1311,64 @@ Span-raster eligibility diagnostics from 2026-06-30:
   dashed lines and medium row-bucket candidates, while preserving single-blend
   union coverage semantics.
 
+Accepted axis-aligned span-row result from 2026-06-30:
+
+- Change: joinless axis-aligned strokes with at least `32` flattened lines now
+  build temporary per-supersample-row X spans instead of scanning row-bucket
+  line indices for every candidate sample. The spans are merged per sample row
+  and preserve the existing clip check, coverage counting, and once-per-pixel
+  blend behavior. Non-axis-aligned strokes, stroked joins, and small strokes
+  still use the existing row-bucket or generic path.
+- Rationale: the large engineering and plan fixtures are dominated by
+  axis-aligned linework with very high row-bucket X-miss rates. The earlier
+  X-tile and sorted-row candidates reduced some of that work but added too much
+  index overhead. Span rows remove the X-miss scan for the shape class that
+  actually dominates those documents.
+- Baseline artifact:
+  `target/performance-matrix-empty-join-baseline-technical.json`, native
+  hot-render, `fixtures/technical-drawing-manifest.tsv`, `--max-edge 160`, 200
+  measured iterations after 10 warmups.
+- Candidate artifacts:
+  `target/performance-matrix-axis-span-candidate-technical.json`,
+  `target/performance-matrix-axis-span-candidate-technical-repeat.json`,
+  `target/performance-matrix-axis-span-candidate-starter.json`, and
+  `target/performance-matrix-axis-span-candidate-starter-repeat.json`.
+- Technical repeat result: `technical-large-coordinate-plan.pdf` p95 improved
+  `1.973 ms` -> `1.131 ms` (~42.7%) and mean ~45.4%;
+  `engineering-large-transform-detail.pdf` p95 improved ~40.8%;
+  `engineering-floorplan-precision.pdf` p95 improved ~40.7%; and
+  `technical-linework-dimensions.pdf` p95 improved ~22.6%. `vector-stress.pdf`
+  regressed p95 ~2.0%, `technical-hatch-clipping.pdf` regressed p95 ~3.5%,
+  and `dashed-stroke.pdf` regressed p95 ~10.9% / mean ~6.0%. The dashed-stroke
+  fixture is sub-0.1 ms and does not exercise the target large-linework path,
+  so keep it as a watch item in the next technical repeat rather than rejecting
+  the block.
+- Starter protection result: the first starter run had p95-only regressions on
+  `browser-chromium-article-print.pdf` and `scanned-page.pdf`, but traces show
+  the span path does not activate for those fixtures (`browser` has only `11`
+  stroke lines, below the `32` line gate; `scanned-page` has no strokes). The
+  repeat starter run removed those regressions: no fixture regressed by 5% p95,
+  while `technical-linework-dimensions.pdf` improved p95 ~25.7% and mean
+  ~23.7%.
+- Correctness guards: `axis_stroke_spans_should_match_generic_axis_strokes`
+  compares span membership against the existing generic stroke predicate over
+  a supersampled raster window, and
+  `round_axis_stroke_span_should_shrink_beyond_vertical_endpoint` protects
+  round-cap span narrowing.
+- Decision: accept. This is the first structural stroke raster change after
+  row buckets that repeatedly moves the large engineering/plan fixtures by
+  more than 40% without broad protection-set regression.
+- Validation:
+  `cargo fmt --all --check`,
+  `cargo check -p ferrugo-render --no-default-features`,
+  `cargo test -p ferrugo-render axis_stroke --no-default-features`,
+  `cargo test --workspace --no-default-features`,
+  `cargo clippy -p ferrugo-render --all-targets --no-default-features -- -D warnings`,
+  `cargo clippy -p ferrugo-cli --all-targets --all-features -- -D warnings`,
+  and
+  `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+  passed.
+
 ## Hardware-Aware Rust Notes
 
 Goal: use Rust's memory model and the host CPU well without prematurely
