@@ -1388,6 +1388,16 @@ pub struct StrokeShapeSummary {
     pub flattened_lines: usize,
     /// Flattened stroke line segments that are axis-aligned in device space.
     pub axis_aligned_lines: usize,
+    /// Number of stroked items rendered with snapped hairline sampling.
+    pub snapped_hairline_items: usize,
+    /// Number of stroked items whose flattened stroke lines are all axis-aligned.
+    pub axis_aligned_items: usize,
+    /// Number of stroked items whose lines are all axis-aligned and whose joins are not rasterized.
+    pub joinless_axis_aligned_items: usize,
+    /// Number of stroked items that are plausible future span-raster candidates.
+    pub span_raster_candidate_items: usize,
+    /// Flattened line count covered by plausible future span-raster candidates.
+    pub span_raster_candidate_lines: usize,
     /// Total row-index references a row-bucket build would create.
     pub row_index_refs: usize,
     /// Estimated row-bucket line checks before X-bounds filtering.
@@ -1416,6 +1426,11 @@ impl StrokeShapeSummary {
         self.row_bucket_candidate_items += other.row_bucket_candidate_items;
         self.flattened_lines += other.flattened_lines;
         self.axis_aligned_lines += other.axis_aligned_lines;
+        self.snapped_hairline_items += other.snapped_hairline_items;
+        self.axis_aligned_items += other.axis_aligned_items;
+        self.joinless_axis_aligned_items += other.joinless_axis_aligned_items;
+        self.span_raster_candidate_items += other.span_raster_candidate_items;
+        self.span_raster_candidate_lines += other.span_raster_candidate_lines;
         self.row_index_refs += other.row_index_refs;
         self.row_bucket_sample_refs += other.row_bucket_sample_refs;
         self.row_bucket_sample_x_hits += other.row_bucket_sample_x_hits;
@@ -5167,19 +5182,37 @@ fn stroke_shape_summary_for_path(
     } else {
         flattened.lines.as_slice()
     };
+    let joins: &[StrokeJoin] = if dashed {
+        &[]
+    } else {
+        flattened.joins.as_slice()
+    };
     let line_width = device_stroke_width(path.state, transform);
     let ctm_scale = device_stroke_scale(path.state, transform);
     let radius = stroke_radius_for_device_line_width(line_width);
-    let samples = if should_snap_axis_aligned_hairline(line_width, ctm_scale) {
+    let snap_hairline = should_snap_axis_aligned_hairline(line_width, ctm_scale);
+    let samples = if snap_hairline {
         1usize
     } else {
         usize::from(options.supersample)
     };
     let sample_count = samples.saturating_mul(samples);
+    let all_axis_aligned = !lines.is_empty() && lines.iter().copied().all(is_axis_aligned_line);
+    let joinless_axis_aligned = all_axis_aligned && joins.is_empty();
+    let span_raster_candidate = snap_hairline && joinless_axis_aligned;
     let mut summary = StrokeShapeSummary {
         stroked_items: 1,
         dashed_items: usize::from(dashed),
         flattened_lines: lines.len(),
+        snapped_hairline_items: usize::from(snap_hairline),
+        axis_aligned_items: usize::from(all_axis_aligned),
+        joinless_axis_aligned_items: usize::from(joinless_axis_aligned),
+        span_raster_candidate_items: usize::from(span_raster_candidate),
+        span_raster_candidate_lines: if span_raster_candidate {
+            lines.len()
+        } else {
+            0
+        },
         max_lines_per_item: lines.len(),
         ..StrokeShapeSummary::default()
     };
@@ -5188,7 +5221,7 @@ fn stroke_shape_summary_for_path(
     if row_bucket_candidate {
         summary.row_bucket_candidate_items = 1;
     }
-    let stroke_bounds = stroke_pixel_bounds(lines, &flattened.joins, radius, transform.dimensions);
+    let stroke_bounds = stroke_pixel_bounds(lines, joins, radius, transform.dimensions);
     let stroke_width = stroke_bounds
         .map(|bounds| (bounds.max_x - bounds.min_x) as usize)
         .unwrap_or_default();
@@ -14834,6 +14867,9 @@ mod tests {
         assert_eq!(summary.dashed_items, 1);
         assert_eq!(summary.flattened_lines, 10);
         assert_eq!(summary.axis_aligned_lines, 10);
+        assert_eq!(summary.axis_aligned_items, 1);
+        assert_eq!(summary.joinless_axis_aligned_items, 1);
+        assert_eq!(summary.span_raster_candidate_items, 0);
         assert_eq!(summary.row_bucket_sample_refs, 0);
         assert_eq!(summary.row_bucket_sample_x_hits, 0);
         assert_eq!(summary.row_bucket_sample_x_misses, 0);
@@ -14887,6 +14923,8 @@ mod tests {
         assert_eq!(summary.stroked_items, 1);
         assert_eq!(summary.row_bucket_candidate_items, 1);
         assert_eq!(summary.flattened_lines, STROKE_ROW_BUCKET_MIN_LINES);
+        assert_eq!(summary.axis_aligned_items, 1);
+        assert_eq!(summary.joinless_axis_aligned_items, 1);
         assert!(summary.row_bucket_sample_refs > 0);
         assert!(summary.row_bucket_sample_x_hits > 0);
         assert!(summary.row_bucket_sample_x_misses > summary.row_bucket_sample_x_hits);

@@ -1284,6 +1284,33 @@ Rejected dashed-line capacity candidate from 2026-06-30:
   allocation/cache pressure more than it removes growth cost for these short
   dashed stroke buffers.
 
+Span-raster eligibility diagnostics from 2026-06-30:
+
+- Change: `trace-native` stroke summaries now report snapped-hairline item
+  counts, all-axis-aligned item counts, joinless-axis-aligned item counts, and
+  plausible future span-raster candidate item/line counts. The counters are
+  trace-only and do not affect normal rendering or benchmark paths.
+- Purpose: before building a new stroke raster path, measure whether the
+  obvious narrow version, snapped joinless axis-aligned hairlines, would cover
+  enough real linework to matter.
+- Artifacts:
+  `target/trace-span-eligibility-engineering-floorplan.json`,
+  `target/trace-span-eligibility-engineering-large-transform.json`,
+  `target/trace-span-eligibility-technical-large-coordinate.json`, and
+  `target/trace-span-eligibility-vector-stress.json`, generated with
+  `trace-native <fixture> --max-edge 160 --max-events 1`.
+- Result: the narrow snapped-hairline span candidate is not broad enough for
+  the remaining large-linework bottleneck. `engineering-floorplan-precision.pdf`
+  had only `6` span-candidate items and `50/2174` candidate lines;
+  `engineering-large-transform-detail.pdf` had `6/1618` candidate lines;
+  `technical-large-coordinate-plan.pdf` had `6/1380`; `vector-stress.pdf` had
+  no snapped span candidates.
+- Decision: keep the diagnostics, but do not implement a snapped-hairline-only
+  span rasterizer as the next optimization block. A useful structural stroke
+  change must cover general thin axis-aligned linework, including non-snapped
+  dashed lines and medium row-bucket candidates, while preserving single-blend
+  union coverage semantics.
+
 ## Hardware-Aware Rust Notes
 
 Goal: use Rust's memory model and the host CPU well without prematurely

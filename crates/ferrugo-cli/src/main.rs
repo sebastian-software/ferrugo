@@ -8595,6 +8595,11 @@ fn trace_stroke_shape_summary_json(
                 "\"row_bucket_candidate_items\":{},",
                 "\"flattened_lines\":{},",
                 "\"axis_aligned_lines\":{},",
+                "\"snapped_hairline_items\":{},",
+                "\"axis_aligned_items\":{},",
+                "\"joinless_axis_aligned_items\":{},",
+                "\"span_raster_candidate_items\":{},",
+                "\"span_raster_candidate_lines\":{},",
                 "\"row_index_refs\":{},",
                 "\"row_bucket_sample_refs\":{},",
                 "\"row_bucket_sample_x_hits\":{},",
@@ -8620,6 +8625,11 @@ fn trace_stroke_shape_summary_json(
             summary.row_bucket_candidate_items,
             summary.flattened_lines,
             summary.axis_aligned_lines,
+            summary.snapped_hairline_items,
+            summary.axis_aligned_items,
+            summary.joinless_axis_aligned_items,
+            summary.span_raster_candidate_items,
+            summary.span_raster_candidate_lines,
             summary.row_index_refs,
             summary.row_bucket_sample_refs,
             summary.row_bucket_sample_x_hits,
@@ -11505,6 +11515,7 @@ mod tests {
         assert!(json.contains("\"flattened_lines\""));
         assert!(json.contains("\"row_bucket_sample_refs\""));
         assert!(json.contains("\"row_bucket_sample_x_misses\""));
+        assert!(json.contains("\"span_raster_candidate_items\""));
         assert!(json.contains("\"pixel_x_span_buckets\""));
         assert!(json.contains("\"operator_summary\""));
         assert!(!json.contains("stream\n"));
