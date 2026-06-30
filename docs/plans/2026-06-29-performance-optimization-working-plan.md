@@ -3109,6 +3109,29 @@ Rejected default-profile downsample retest from 2026-06-30:
   avoids full source decode or a broader scan workload proves a repeated
   speed-neutral result.
 
+Current scanner profile after default-downsample retest from 2026-06-30:
+
+- Artifacts:
+  `target/benchmark-native-scanner-current-profile-run.json`,
+  `target/sample-scanner-current-post-default-retest.txt`, and
+  `target/trace-scanner-current-post-default-retest.json`.
+- Focused benchmark result:
+  `scanner-large-image-budget.pdf`, `benchmark-native`, `--max-edge 160`,
+  500,000 iterations, mean `0.135 ms`, rendered with no fallback or error.
+- Trace attribution: total `0.383 ms`, with `resource_decode` `0.203 ms`,
+  `resource_images` `0.197 ms`, `raster_paths` `0.036 ms`, and
+  `raster_images` `0.043 ms`.
+- CPU sample: the dominant stack is now
+  `decode_image_samples` -> `StreamObject::decode_with_options` ->
+  `flate2`/`zlib-rs` inflate. Raster image work and stroke overlay work are
+  materially smaller on this fixture after the accepted image-raster and
+  row-bucket wins.
+- Next direction: do not spend the next scanner block on image raster loops or
+  generic stream-copy staging. A credible next candidate must either reduce
+  actual Flate decoder work, avoid full source decode for downsample/crop
+  cases, or prove via a broader scan fixture that another phase has become
+  dominant.
+
 Accepted shared image sample Vec result from 2026-06-30:
 
 - Profiling trigger: `target/sample-scanner-large-post-interior.txt` showed a
