@@ -30,20 +30,20 @@ Adding a fixture requires:
 - provenance and license review;
 - expected native outcome or unsupported bucket;
 - family assignment that matches the intended coverage signal;
-- a clear milestone, issue, or report reference when the fixture represents a
+- a clear issue, report, or backlog reference when the fixture represents a
   regression.
 
 Removing a fixture requires:
 
 - confirming another fixture still covers the same feature or bug;
 - preserving historical report context when removal changes coverage numbers;
-- documenting the reason in the relevant milestone or report.
+- documenting the reason in the relevant report or backlog item.
 
 ## Regression Visibility
 
 Regression entries should remain visible with:
 
-- owner or milestone reference;
+- owner or backlog reference;
 - category: correctness, unsupported feature, malformed input, performance,
   memory, or privacy;
 - severity: blocker, release-risk, follow-up, or accepted boundary;
@@ -66,7 +66,7 @@ point. It writes only to `target/corpus-dashboard/` by default and produces:
 - `dashboard.json`.
 
 The dashboard is not a committed source of truth. It is a generated decision
-artifact for release and milestone reviews.
+artifact for release and backlog reviews.
 
 ## Producer Regression Flow
 

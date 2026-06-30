@@ -55,7 +55,7 @@ linework mismatches.
 
 Blockers must not be hidden by loosening thresholds. If a threshold change is
 needed, record the family, subsystem, before/after counts, and reason in the
-milestone report.
+review report.
 
 ## Subsystem Buckets
 
@@ -72,7 +72,7 @@ Each fixture is assigned one review bucket:
 - `transparency`
 - `vector-graphics`
 
-The buckets are coarse on purpose. They are for triage and milestone planning,
+The buckets are coarse on purpose. They are for triage and backlog planning,
 not a replacement for typed renderer errors.
 
 ## Review Workflow
@@ -86,6 +86,6 @@ not a replacement for typed renderer errors.
    subsystem.
 6. Keep encrypted or unsupported-category outcomes separate from pixel drift.
 
-The JSON report is comparison evidence for milestone notes. Generated PNG or
-diff-image artifacts should stay local unless a later milestone adds a bounded
+The JSON report is comparison evidence for review notes. Generated PNG or
+diff-image artifacts should stay local unless a later policy adds a bounded
 artifact retention policy.

@@ -43,7 +43,7 @@ fallback.
 | Pixel visual diff | `visual-diff` with an explicit maintainer oracle | Local or scheduled | No | A renderer subsystem needs triage against external output. |
 | Golden image comparison | Future committed baseline compare command | Yes after tooling lands | Yes for bounded fixture sets | A reviewed fixture has stable expected output independent from live PDFium. |
 | Multi-oracle review | PDFium, Poppler, MuPDF, PDF.js, or Ghostscript reports | Local or scheduled | No | Engines disagree or PDF semantics are underspecified for the fixture. |
-| Manual review record | Human-reviewed report linked from a milestone | Yes as recorded evidence | Yes for bounded exceptions | Pixel thresholds cannot express acceptability safely. |
+| Manual review record | Human-reviewed report linked from a report, ADR, or backlog item | Yes as recorded evidence | Yes for bounded exceptions | Pixel thresholds cannot express acceptability safely. |
 
 ## Document Family Routing
 
@@ -80,7 +80,7 @@ that cite PDFium should state whether the evidence is:
 
 - runtime evidence: must be native-only;
 - comparison evidence: may use explicit maintainer oracle tooling;
-- historical evidence: archived context from an earlier milestone.
+- historical evidence: archived context from an earlier report or implementation slice.
 
 ## Manual Review Fallback
 

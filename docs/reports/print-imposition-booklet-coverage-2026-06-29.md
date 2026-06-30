@@ -99,7 +99,7 @@ small text rasterization, not missing geometry.
 
 ```text
 cargo fmt --check
-git diff --check -- crates/ferrugo-cli/src/main.rs crates/ferrugo-native/src/lib.rs fixtures/corpus-manifest.tsv fixtures/print-imposition-manifest.tsv scripts/generate_fixtures.py docs/corpus-taxonomy.md docs/backend/native.md docs/milestones/README.md docs/milestones/0184-print-shop-imposition-and-booklet-pdf-coverage.md docs/reports/print-imposition-booklet-coverage-2026-06-29.md
+git diff --check -- crates/ferrugo-cli/src/main.rs crates/ferrugo-native/src/lib.rs fixtures/corpus-manifest.tsv fixtures/print-imposition-manifest.tsv scripts/generate_fixtures.py docs/corpus-taxonomy.md docs/backend/native.md docs/reports/print-imposition-booklet-coverage-2026-06-29.md
 cargo test -p ferrugo-native print_imposition -- --nocapture
 cargo test -p ferrugo-cli poppler --no-default-features
 cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/print-imposition-manifest.tsv --include-family booklet-spread --include-family n-up --include-family trim-bleed --include-family registration --fail-on-fallback --max-edge 160 --output target/print-imposition-0184-supported-gate.json

@@ -86,7 +86,7 @@ adding implementation work:
 | `frequency` | Count and denominator in the measured corpus or producer subset. |
 | `render_impact` | User-visible impact such as missing image, missing layer, blank page, degraded visual, or policy-only. |
 | `implementation_risk` | Security, memory, dependency, correctness, or API risk. |
-| `owner_route` | Next milestone, backlog slice, or policy owner. |
+| `owner_route` | Next backlog slice, issue, or policy owner. |
 | `runtime_pdfium` | Must stay `not required`; PDFium can only be archived oracle context. |
 | `validation_gate` | Small command set that proves the case stays typed or becomes supported. |
 

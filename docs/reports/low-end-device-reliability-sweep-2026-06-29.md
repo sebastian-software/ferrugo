@@ -137,5 +137,5 @@ bash scripts/check_wasm_smoke.sh
 cargo fmt --check
 cargo test --workspace --no-default-features
 cargo clippy --workspace --all-targets --all-features -- -D warnings
-git diff --check -- fixtures/low-end-reliability-profile-matrix.tsv scripts/check_low_end_reliability_matrix.sh docs/policies/renderer-memory-budgets.md docs/policies/server-batch-rendering.md docs/milestones/README.md docs/milestones/0217-low-end-device-reliability-sweep.md docs/reports/low-end-device-reliability-sweep-2026-06-29.md
+git diff --check -- fixtures/low-end-reliability-profile-matrix.tsv scripts/check_low_end_reliability_matrix.sh docs/policies/renderer-memory-budgets.md docs/policies/server-batch-rendering.md docs/reports/low-end-device-reliability-sweep-2026-06-29.md
 ```

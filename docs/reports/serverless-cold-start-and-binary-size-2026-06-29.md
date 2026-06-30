@@ -95,7 +95,7 @@ file list.
 ```text
 bash scripts/measure_serverless_profile.sh
 cargo fmt --check
-git diff --check -- Cargo.toml scripts/measure_serverless_profile.sh docs/packaging.md docs/benchmarks.md docs/milestones/0197-serverless-cold-start-and-binary-size-budget.md docs/milestones/README.md docs/reports/serverless-cold-start-and-binary-size-2026-06-29.md
+git diff --check -- Cargo.toml scripts/measure_serverless_profile.sh docs/packaging.md docs/benchmarks.md docs/reports/serverless-cold-start-and-binary-size-2026-06-29.md
 cargo test --workspace --no-default-features
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 ```

@@ -95,7 +95,7 @@ All focused tests passed locally.
 
 ```bash
 cargo fmt --check
-git diff --check -- crates/ferrugo-render/src/lib.rs crates/ferrugo-native/src/lib.rs crates/ferrugo-cli/src/main.rs fixtures/font-cache-compaction-manifest.tsv docs/backend/native.md docs/baselines.md docs/milestones/README.md docs/milestones/0212-rust-native-font-cache-compaction.md docs/reports/font-cache-compaction-2026-06-29.md
+git diff --check -- crates/ferrugo-render/src/lib.rs crates/ferrugo-native/src/lib.rs crates/ferrugo-cli/src/main.rs fixtures/font-cache-compaction-manifest.tsv docs/backend/native.md docs/baselines.md docs/reports/font-cache-compaction-2026-06-29.md
 cargo check --workspace --no-default-features
 cargo test --workspace --no-default-features
 cargo clippy --workspace --all-targets --all-features -- -D warnings

@@ -24,8 +24,8 @@ covered by native tests.
 
 BleedBox and TrimBox are accepted as document context in fixtures and reports,
 but they do not currently select the rendered thumbnail boundary. A later
-milestone can add explicit page-box selection if consumers need bleed or trim
-preview modes.
+decision point can add explicit page-box selection if consumers need bleed or
+trim preview modes.
 
 ## OutputIntents And Color
 
@@ -46,11 +46,11 @@ press-overprint proof.
 Spot-color visual review should use
 `fixtures/spot-color-visual-review-manifest.tsv` when changes affect
 Separation, DeviceN, DeviceCMYK alternate conversion, or tint-transform
-evaluation. Review thresholds must be recorded in the milestone report because
+evaluation. Review thresholds must be recorded in the review report because
 RGB approximation drift is expected and category-local.
 
 Prepress visual diffs may use broader thumbnail-oriented thresholds than the
-global defaults when the milestone report records the threshold values and the
+global defaults when the review report records the threshold values and the
 reason. Those thresholds are local evidence for this document category, not a
 global replacement for strict visual review.
 

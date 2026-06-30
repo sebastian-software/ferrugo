@@ -82,7 +82,7 @@ All focused tests passed locally.
 
 ```bash
 cargo fmt --check
-git diff --check -- crates/ferrugo-render/src/lib.rs docs/backend/native.md docs/milestones/README.md docs/milestones/0213-transparency-stack-memory-optimization.md docs/reports/transparency-stack-memory-2026-06-29.md fixtures/transparency-stack-memory-manifest.tsv
+git diff --check -- crates/ferrugo-render/src/lib.rs docs/backend/native.md docs/reports/transparency-stack-memory-2026-06-29.md fixtures/transparency-stack-memory-manifest.tsv
 cargo check --workspace --no-default-features
 cargo test --workspace --no-default-features
 cargo clippy --workspace --all-targets --all-features -- -D warnings

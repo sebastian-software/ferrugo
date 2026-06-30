@@ -106,7 +106,7 @@ edge/text rasterization.
 
 ```text
 cargo fmt --check
-git diff --check -- crates/ferrugo-cli/src/main.rs crates/ferrugo-native/src/lib.rs crates/ferrugo-thumbnail/src/lib.rs fixtures/corpus-manifest.tsv fixtures/archival-pdfa-manifest.tsv scripts/generate_fixtures.py docs/backend/native.md docs/corpus-taxonomy.md docs/milestones/README.md docs/milestones/0185-pdf-a-and-archival-document-conformance-boundary.md docs/policies/pdfa-archival-boundary.md docs/reports/pdfa-archival-boundary-2026-06-29.md
+git diff --check -- crates/ferrugo-cli/src/main.rs crates/ferrugo-native/src/lib.rs crates/ferrugo-thumbnail/src/lib.rs fixtures/corpus-manifest.tsv fixtures/archival-pdfa-manifest.tsv scripts/generate_fixtures.py docs/backend/native.md docs/corpus-taxonomy.md docs/policies/pdfa-archival-boundary.md docs/reports/pdfa-archival-boundary-2026-06-29.md
 cargo test -p ferrugo-native pdfa -- --nocapture
 cargo test -p ferrugo-cli metadata --no-default-features
 cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/archival-pdfa-manifest.tsv --include-family pdfa-profile --include-family embedded-font --include-family output-intent --include-family metadata --fail-on-fallback --max-edge 160 --output target/archival-pdfa-0185-supported-gate.json

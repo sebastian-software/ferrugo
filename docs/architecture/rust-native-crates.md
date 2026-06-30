@@ -43,11 +43,11 @@ Performance work can add isolated unsafe modules only after correctness,
 profiling, and review justify it. The default implementation style is borrowed
 input, typed IDs, checked offsets, bounded decoding, and explicit error values.
 
-## Milestone Boundary
+## Implementation Boundary
 
-This layout milestone does not parse or render PDFs. It creates stable crate
-ownership boundaries so milestones 0022 and later can add behavior in small,
-measurable slices against the PDFium baseline.
+This crate layout does not parse or render PDFs by itself. It creates stable
+ownership boundaries so later renderer work can add behavior in small,
+measurable slices against explicit reference baselines.
 
 ## Current Syntax Foundation
 
@@ -78,7 +78,8 @@ The modern document loader handles `startxref` values that point at `/XRef`
 stream objects. It decodes `/W` and `/Index` entries, loads direct objects from
 offset entries, and stores decoded `/ObjStm` buffers separately so compressed
 objects can be parsed on demand without self-referential borrows. Hybrid xref
-files, indirect stream lengths, and repair mode remain separate milestones.
+files, indirect stream lengths, and repair mode remain separate implementation
+slices.
 
 Both classic and modern document loaders expose `page_tree()`, which resolves
 the trailer `/Root`, catalog `/Pages`, page tree `Kids`, inherited page boxes,
@@ -122,8 +123,8 @@ Text display-list support interprets `BT`, `ET`, `Tf`, `Td`, `Tm`, `Tj`, and
 `TJ` into positioned `TextDisplayItem` values. Font descriptors carry simple
 single-byte encodings, Differences arrays, and bounded ToUnicode CMaps for the
 first character-code mapping layer. Embedded font shaping, glyph outlines, and
-searchable text extraction remain later milestones. Rasterization remains a
-later milestone.
+searchable text extraction remain later implementation slices. Rasterization
+remains separate implementation work.
 Image XObject support resolves `/XObject` resources from the object model,
 decodes unfiltered, `FlateDecode`, and first-slice `DCTDecode`
 `DeviceRGB`/`DeviceGray` image streams within an explicit byte budget, and
@@ -135,8 +136,8 @@ values `10..=15` when the predictor metadata matches the image dimensions and
 DeviceGray Image XObjects with dimensions matching the parent image; mask
 sample bytes are reference-counted and bounded by a dedicated soft-mask depth
 limit. Broader filter chains, CCITT/JPX, unsupported predictors, JBIG2, and
-full color management return typed unsupported errors until later corpus-driven
-image-filter and color-space milestones.
+full color management return typed unsupported errors until later
+corpus-driven image-filter and color-space work.
 Form XObject support resolves form streams from `/XObject` resource
 dictionaries, decodes form content, applies form matrices, emits bounding-box
 clip placeholders, and recursively reuses the path display-list interpreter
@@ -147,7 +148,7 @@ XObjects. Form XObjects with `/Group << /S /Transparency >>` are captured as
 path-only transparency-group display items, rasterized into bbox-bounded
 transparent intermediate buffers, and composited back into the page under an
 explicit pixel budget. Image and text execution inside forms will be wired into
-the combined renderer in later rasterization milestones.
+the combined renderer in later rasterization work.
 The native backend now resolves page-level Form XObjects and paints their path
 display-list items into the same page raster. Image and Form resource maps also
 track known opposite XObject subtype names so independent image and form passes
@@ -162,7 +163,7 @@ mapping media/crop boxes, rotation, and `max_edge` into device pixels. The
 dimension policy intentionally matches the PDFium backend's thumbnail scaling:
 scale down only when the rotated page's largest edge exceeds `max_edge`, then
 round each target dimension and clamp it to `1..=max_edge`. Actual path, image,
-and text rasterization remain later milestones.
+and text rasterization remain separate implementation work.
 Basic path rasterization now paints path display lists into RGBA rasters using
 bounded line-segment flattening and fixed supersampling. It supports nonzero
 and even-odd fills plus simple stroked line segments, composites opaque device
@@ -187,9 +188,9 @@ sample bytes do not flow through the generic operator tokenizer. The image
 interpreter supports bounded, unfiltered 8-bit `DeviceRGB`/`DeviceGray` inline
 images by converting them into the same image display items used for Image
 XObjects. Filtered inline images remain explicit unsupported cases until the
-image-filter milestone.
+image-filter backlog is implemented.
 Basic text rasterization uses an internal 5x7 ASCII fallback font for the first
-visible text milestone. It renders positioned text display-list runs using the
+visible text slice. It renders positioned text display-list runs using the
 captured text origin, font size, and fill color. `ferrugo-native` resolves page
 `/Resources /Font` entries into font descriptors, and the render layer loads
 bounded embedded Type1, TrueType, and CFF font program streams behind a small
@@ -203,4 +204,5 @@ Raw CFF streams are passed through
 `Face::from_raw_tables` with synthetic required OpenType tables so the native
 renderer does not take an extra CFF parser dependency. Type1 `/FontFile`
 outlines remain unsupported. The current rasterizer still uses the visible
-fallback font; true font-backed rasterization remains a later milestone.
+fallback font; true font-backed rasterization remains separate implementation
+work.

@@ -38,7 +38,7 @@ The report includes:
 - `feature_groups` from manifest feature flags;
 - per-record fixture IDs for committed fixtures or redacted local IDs for
   sensitive local-only rows;
-- milestone routes for non-native outcomes.
+- owner routes for non-native outcomes.
 
 ## Bisect Steps
 
@@ -46,8 +46,8 @@ The report includes:
    same checkout.
 2. Identify whether failures cluster by `producer_groups`, `family_groups`, or
    `feature_groups`.
-3. If a failure is typed unsupported, route it by `milestone_routes` before
-   treating it as a regression.
+3. If a failure is typed unsupported, route it by the owner route field
+   (`milestone_routes`) before treating it as a regression.
 4. If a previously native producer group now has a fallback or error, bisect the
    smallest renderer or parser range that changed since the last green commit.
 5. During `git bisect`, run the smallest command that reproduces the affected
@@ -69,7 +69,7 @@ Outcome before:
 Outcome after:
 Fallback/error bucket:
 Affected features:
-Milestone route:
+Owner route:
 Reproduction command:
 Privacy check: no private filenames, hashes, text, screenshots, or pixels.
 ```

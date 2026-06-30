@@ -2853,7 +2853,7 @@ Accepted opaque DeviceGray image sampling result from 2026-06-30:
   color, CMYK, and any image with a soft mask. Those remain on the generic
   sampler.
 - Live A/B artifacts: base worktree at `2632944` wrote
-  `/private/tmp/pdfrust-gray-base/target/performance-matrix-gray-base-live.json`;
+  `target/performance-matrix-gray-base-live.json`;
   the accepted candidate wrote
   `target/performance-matrix-opaque-gray-combined-repeat.json`.
 - Result against the live base matrix:
@@ -2895,8 +2895,8 @@ Accepted opaque image interior write result from 2026-06-30:
   writer. Soft masks, ImageMask/stencil images, Indexed color, CMYK, and
   rotated/non-axis-aligned images remain on existing paths.
 - Live A/B artifacts:
-  `/private/tmp/pdfrust-opaque-interior-base/target/performance-matrix-opaque-interior-base.json`,
-  `/private/tmp/pdfrust-opaque-interior-base/target/performance-matrix-opaque-interior-base-2.json`,
+  `target/performance-matrix-opaque-interior-base.json`,
+  `target/performance-matrix-opaque-interior-base-2.json`,
   `target/performance-matrix-opaque-interior-candidate.json`, and
   `target/performance-matrix-opaque-interior-candidate-2.json`. Final
   post-Clippy-fix verification artifact:
@@ -2942,7 +2942,7 @@ Rejected stream raw-copy candidate from 2026-06-30:
 - Rationale: this targeted a plausible compressed-byte copy before Flate
   decode, not the actual miniz transfer/decompression cost.
 - A/B artifacts:
-  `/private/tmp/pdfrust-stream-copy-base/target/benchmark-native-scanner-large-stream-copy-base.json`,
+  `target/benchmark-native-scanner-large-stream-copy-base.json`,
   `target/benchmark-native-scanner-large-stream-copy-candidate.json`,
   `target/benchmark-native-scanner-large-post-interior-long.json`, and
   `target/benchmark-native-scanner-large-skip-raw-copy.json`.
@@ -2972,13 +2972,13 @@ Rejected page XObject form-skip candidate from 2026-06-30:
 - Rationale: this removed duplicate page-level image stream lookup and subtype
   checks in the form-resource pass, without changing image decoding itself.
 - A/B artifacts:
-  `/private/tmp/pdfrust-xobject-form-base/target/performance-matrix-xobject-form-base.json`,
+  `target/performance-matrix-xobject-form-base.json`,
   `target/performance-matrix-xobject-form-candidate.json`,
-  `/private/tmp/pdfrust-xobject-form-base/target/performance-matrix-xobject-form-base-repeat.json`,
+  `target/performance-matrix-xobject-form-base-repeat.json`,
   `target/performance-matrix-xobject-form-candidate-repeat.json`,
-  `/private/tmp/pdfrust-xobject-form-base/target/performance-matrix-scanner-xobject-form-base-100.json`,
+  `target/performance-matrix-scanner-xobject-form-base-100.json`,
   `target/performance-matrix-scanner-xobject-form-candidate-100.json`,
-  `/private/tmp/pdfrust-xobject-form-base/target/performance-matrix-repeated-xobject-form-base-100.json`,
+  `target/performance-matrix-repeated-xobject-form-base-100.json`,
   and `target/performance-matrix-repeated-xobject-form-candidate-100.json`.
 - Result: rejected as a performance candidate. The initial 20-iteration runs
   were noisy and only showed a plausible p95 win on some fixtures. The
@@ -3016,7 +3016,7 @@ Image resource summary instrumentation from 2026-06-30:
   `predictor-image.pdf` correctly reports one Flate Predictor image.
 - Regression guard: this is instrumentation, not a speed claim. A sequential
   100-iteration native hot-render repeat compared
-  `/private/tmp/pdfrust-image-summary-base/target/performance-matrix-image-summary-base-repeat.json`
+  `target/performance-matrix-image-summary-base-repeat.json`
   with `target/performance-matrix-image-summary-candidate-repeat.json`.
   `scanner-large-image-budget.pdf` stayed effectively neutral (`0.251 ms` ->
   `0.252 ms` mean, `0.267 ms` -> `0.265 ms` p95), while
@@ -3175,11 +3175,11 @@ Accepted shared image sample Vec result from 2026-06-30:
   pixels are unchanged. `resident_bytes` now uses sample `Vec::capacity()` so
   trace memory accounting remains honest for the new storage shape.
 - A/B artifacts:
-  `/private/tmp/pdfrust-arc-vec-base/target/performance-matrix-arc-vec-base.json`,
+  `target/performance-matrix-arc-vec-base.json`,
   `target/performance-matrix-arc-vec-candidate.json`,
-  `/private/tmp/pdfrust-arc-vec-base/target/performance-matrix-arc-vec-base-repeat.json`,
+  `target/performance-matrix-arc-vec-base-repeat.json`,
   `target/performance-matrix-arc-vec-candidate-repeat.json`,
-  `/private/tmp/pdfrust-arc-vec-base/target/benchmark-native-arc-vec-scanner-base.json`,
+  `target/benchmark-native-arc-vec-scanner-base.json`,
   and `target/benchmark-native-arc-vec-scanner-candidate.json`.
 - Repeated image-heavy matrix result: `scanner-large-image-budget.pdf` improved
   mean `0.248 ms` -> `0.237 ms` (~4.4%) and p95 `0.274 ms` -> `0.256 ms`

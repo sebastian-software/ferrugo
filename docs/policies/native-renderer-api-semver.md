@@ -38,7 +38,7 @@ The following surfaces are not committed as stable application APIs:
 - Low-level renderer diagnostics beyond the stable unsupported-feature buckets
   exposed by `ferrugo-thumbnail`.
 
-Internal crates can change between milestones as long as the public consumer
+Internal crates can change between release slices as long as the public consumer
 boundary above continues to build, test, and preserve documented behavior.
 
 ## Semver Rules
@@ -47,7 +47,7 @@ Until the PDFium-free 1.0 release, each public crate stays on the `0.x` train:
 
 - Patch releases must not intentionally break public Rust signatures,
   `ThumbnailErrorClass::as_str()` values, or default native runtime behavior.
-- Minor releases may include planned public API cleanup only when the milestone
+- Minor releases may include planned public API cleanup only when the release slice
   includes migration notes and the package dry-run passes.
 - Public structs with public fields are treated as literal-construction
   compatible. Adding, removing, or renaming a field is a breaking change unless

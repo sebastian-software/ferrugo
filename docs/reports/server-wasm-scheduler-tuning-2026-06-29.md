@@ -154,5 +154,5 @@ bash scripts/check_wasm_smoke.sh
 cargo fmt --check
 cargo test --workspace --no-default-features
 cargo clippy --workspace --all-targets --all-features -- -D warnings
-git diff --check -- crates/ferrugo-cli/src/main.rs fixtures/scheduler-tuning-profile-matrix.tsv scripts/check_scheduler_tuning_matrix.sh docs/policies/server-batch-rendering.md docs/backend/native.md docs/milestones/README.md docs/milestones/0218-server-and-wasm-scheduler-tuning-gate.md docs/reports/server-wasm-scheduler-tuning-2026-06-29.md
+git diff --check -- crates/ferrugo-cli/src/main.rs fixtures/scheduler-tuning-profile-matrix.tsv scripts/check_scheduler_tuning_matrix.sh docs/policies/server-batch-rendering.md docs/backend/native.md docs/reports/server-wasm-scheduler-tuning-2026-06-29.md
 ```
