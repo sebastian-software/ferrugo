@@ -1948,6 +1948,41 @@ Rejected sorted row-bucket early-break candidate from 2026-06-30:
   performance commit. Revisit only as part of a larger interval-query or
   range-generation change that materially reduces candidate checks.
 
+Accepted gated active row-bucket candidate scan from 2026-06-30:
+
+- Profile basis: the rejected sorted early-break candidate proved that
+  X-ordering mattered but did not reduce enough predicate work on its own.
+  `vector-stress.pdf` remained dominated by `stroke_path` and
+  `point_in_row_bucketed_stroke`, with about 95% row-bucket X misses.
+- Change: the row-bucket X-range rasterizer now keeps the existing scan path
+  for smaller buckets, but uses an active candidate list for buckets with at
+  least `64` bounded lines. For those large rows, candidates are sorted by
+  conservative X bounds, activated as X advances, and removed once their
+  `max_x` no longer overlaps the current pixel. Exact stroke/join geometry
+  predicates are unchanged.
+- Gate rationale: `vector-stress.pdf` has two 64-line row-bucket items and is
+  X-miss dominated. `technical-linework-dimensions.pdf` has many smaller
+  row-bucket items with max `42` lines, so the old path remains better there.
+- Correctness guard:
+  `active_row_bucket_candidates_should_match_bucketed_stroke_predicate_after_x_misses`
+  checks that active candidates still find a later stroke hit after earlier
+  X-miss candidates.
+- A/B artifacts:
+  `target/benchmark-row-bucket-unsorted-report-vector-240.json`,
+  `target/benchmark-active-row-candidates-gated-report-vector-240.json`, and
+  `target/benchmark-active-row-candidates-gated-report-vector-repeat-240.json`,
+  same host, report/vector manifest, `--max-edge 160`, `240` iterations.
+- Result: accepted. First run: family mean `1.094 ms` -> `0.990 ms`
+  (~9.5% faster), `vector-stress.pdf` `3.243 ms` -> `2.825 ms`
+  (~12.9% faster). Repeat run: family mean `1.094 ms` -> `0.994 ms`
+  (~9.1% faster), `vector-stress.pdf` `3.243 ms` -> `2.837 ms`
+  (~12.5% faster). Protection fixtures were neutral to small noise:
+  `prepress-trim-bleed-marks.pdf` about +1.0%, `technical-hatch-clipping.pdf`
+  about +0.3%, and `technical-linework-dimensions.pdf` neutral in the repeat.
+- Decision: keep as a Phase 2 stroke-raster optimization. This is a
+  profile-backed structural reduction in row-bucket predicate checks, not a
+  broad sorting or allocation tweak.
+
 ## Hardware-Aware Rust Notes
 
 Goal: use Rust's memory model and the host CPU well without prematurely

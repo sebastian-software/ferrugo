@@ -118,6 +118,7 @@ const STROKE_AXIS_SPAN_MIN_LINES: usize = 4;
 const STROKE_JOIN_BUCKET_MIN_JOINS: usize = 8;
 const STROKE_SIMPLE_LINE_SPAN_MIN_PIXELS: u32 = 1024;
 const STROKE_ROW_RANGE_MIN_BUCKET_LINES: usize = 48;
+const STROKE_ROW_ACTIVE_MIN_BUCKET_LINES: usize = 64;
 
 /// Maximum dash segments tracked in the graphics state.
 pub const MAX_STROKE_DASH_SEGMENTS: usize = 8;
@@ -11262,6 +11263,19 @@ fn rasterize_row_bucketed_stroke_ranges(
     sample_count: u32,
     source: Rgba,
 ) -> RasterResult<()> {
+    if buckets.lines.len() >= STROKE_ROW_ACTIVE_MIN_BUCKET_LINES {
+        return rasterize_active_row_bucketed_stroke_ranges(
+            device,
+            buckets,
+            join_buckets,
+            bounds,
+            state,
+            context,
+            samples,
+            sample_count,
+            source,
+        );
+    }
     let radius = stroke_radius_for_device_line_width(state.line_width);
     let mut x_ranges = Vec::new();
     for y in bounds.min_y..bounds.max_y {
@@ -11290,6 +11304,109 @@ fn rasterize_row_bucketed_stroke_ranges(
                                     point,
                                     x,
                                     y,
+                                    join_buckets,
+                                    radius,
+                                    state.line_join,
+                                )
+                            }))
+                        {
+                            covered += 1;
+                        }
+                    }
+                }
+                if covered > 0 {
+                    blend_pixel(
+                        device,
+                        x,
+                        y,
+                        source,
+                        state.blend_mode,
+                        state.alpha * f64::from(covered) / f64::from(sample_count),
+                    )?;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "keeps stroke state at the callsite explicit"
+)]
+fn rasterize_active_row_bucketed_stroke_ranges(
+    device: &mut RasterDevice,
+    buckets: &StrokeRowBuckets,
+    join_buckets: Option<&StrokeJoinBuckets>,
+    bounds: PixelBounds,
+    state: StrokeRasterState,
+    context: PathRasterContext<'_>,
+    samples: u32,
+    sample_count: u32,
+    source: Rgba,
+) -> RasterResult<()> {
+    let radius = stroke_radius_for_device_line_width(state.line_width);
+    let mut x_ranges = Vec::new();
+    let mut sorted_line_indices = Vec::new();
+    let mut active_line_indices = Vec::new();
+    let mut sorted_join_indices = Vec::new();
+    let mut active_join_indices = Vec::new();
+    for y in bounds.min_y..bounds.max_y {
+        x_ranges.clear();
+        append_row_bucket_pixel_x_ranges(buckets, y, bounds, &mut x_ranges);
+        if let Some(join_buckets) = join_buckets {
+            append_join_bucket_pixel_x_ranges(join_buckets, y, bounds, &mut x_ranges);
+        }
+        merge_pixel_ranges(&mut x_ranges);
+        if x_ranges.is_empty() {
+            continue;
+        }
+        sorted_row_line_indices(buckets, y, &mut sorted_line_indices);
+        if let Some(join_buckets) = join_buckets {
+            sorted_row_join_indices(join_buckets, y, &mut sorted_join_indices);
+        } else {
+            sorted_join_indices.clear();
+        }
+        active_line_indices.clear();
+        active_join_indices.clear();
+        let mut next_line_index = 0;
+        let mut next_join_index = 0;
+        for x_range in &x_ranges {
+            for x in x_range.clone() {
+                advance_active_line_indices(
+                    x,
+                    buckets,
+                    &sorted_line_indices,
+                    &mut next_line_index,
+                    &mut active_line_indices,
+                );
+                if let Some(join_buckets) = join_buckets {
+                    advance_active_join_indices(
+                        x,
+                        join_buckets,
+                        &sorted_join_indices,
+                        &mut next_join_index,
+                        &mut active_join_indices,
+                    );
+                }
+                if active_line_indices.is_empty() && active_join_indices.is_empty() {
+                    continue;
+                }
+                let mut covered = 0;
+                for sample_y in 0..samples {
+                    for sample_x in 0..samples {
+                        let point = sample_point(x, y, sample_x, sample_y, samples);
+                        if point_in_active_clips(point, context.clips)
+                            && (point_in_row_bucketed_stroke_candidates(
+                                point,
+                                &active_line_indices,
+                                buckets,
+                                radius,
+                                state.line_cap,
+                            ) || join_buckets.is_some_and(|join_buckets| {
+                                point_in_join_bucket_candidates(
+                                    point,
+                                    &active_join_indices,
                                     join_buckets,
                                     radius,
                                     state.line_join,
@@ -11528,6 +11645,84 @@ fn append_join_bucket_pixel_x_ranges(
         let end = join_bounds.max_x.min(bounds.max_x);
         if start < end {
             x_ranges.push(start..end);
+        }
+    }
+}
+
+fn sorted_row_line_indices(buckets: &StrokeRowBuckets, y: u32, output: &mut Vec<usize>) {
+    output.clear();
+    let Some(row) = y
+        .checked_sub(buckets.min_y)
+        .and_then(|offset| buckets.rows.get(offset as usize))
+    else {
+        return;
+    };
+    output.extend_from_slice(&buckets.indices[row.clone()]);
+    output.sort_by_key(|&line_index| {
+        let bounds = buckets.lines[line_index].bounds;
+        (bounds.min_x, bounds.max_x)
+    });
+}
+
+fn sorted_row_join_indices(buckets: &StrokeJoinBuckets, y: u32, output: &mut Vec<usize>) {
+    output.clear();
+    let Some(row) = y
+        .checked_sub(buckets.min_y)
+        .and_then(|offset| buckets.rows.get(offset as usize))
+    else {
+        return;
+    };
+    output.extend_from_slice(&buckets.indices[row.clone()]);
+    output.sort_by_key(|&join_index| {
+        let bounds = bounded_join_bounds(buckets.joins[join_index]);
+        (bounds.min_x, bounds.max_x)
+    });
+}
+
+fn advance_active_line_indices(
+    x: u32,
+    buckets: &StrokeRowBuckets,
+    sorted_indices: &[usize],
+    next_index: &mut usize,
+    active_indices: &mut Vec<usize>,
+) {
+    while let Some(&line_index) = sorted_indices.get(*next_index) {
+        let bounds = buckets.lines[line_index].bounds;
+        if bounds.min_x > x {
+            break;
+        }
+        if bounds.max_x > x {
+            active_indices.push(line_index);
+        }
+        *next_index += 1;
+    }
+    active_indices.retain(|&line_index| buckets.lines[line_index].bounds.max_x > x);
+}
+
+fn advance_active_join_indices(
+    x: u32,
+    buckets: &StrokeJoinBuckets,
+    sorted_indices: &[usize],
+    next_index: &mut usize,
+    active_indices: &mut Vec<usize>,
+) {
+    while let Some(&join_index) = sorted_indices.get(*next_index) {
+        let bounds = bounded_join_bounds(buckets.joins[join_index]);
+        if bounds.min_x > x {
+            break;
+        }
+        if bounds.max_x > x {
+            active_indices.push(join_index);
+        }
+        *next_index += 1;
+    }
+    active_indices.retain(|&join_index| bounded_join_bounds(buckets.joins[join_index]).max_x > x);
+}
+
+fn bounded_join_bounds(join: BoundedStrokeJoin) -> PixelBounds {
+    match join {
+        BoundedStrokeJoin::Round { bounds, .. } | BoundedStrokeJoin::Prepared { bounds, .. } => {
+            bounds
         }
     }
 }
@@ -12487,6 +12682,20 @@ fn point_in_row_bucketed_stroke(
     false
 }
 
+fn point_in_row_bucketed_stroke_candidates(
+    point: Point,
+    line_indices: &[usize],
+    buckets: &StrokeRowBuckets,
+    radius: f64,
+    line_cap: LineCap,
+) -> bool {
+    let radius_squared = radius * radius;
+    line_indices.iter().any(|&line_index| {
+        let bounded = buckets.lines[line_index];
+        point_in_single_stroke_line(point, bounded.line, radius, radius_squared, line_cap)
+    })
+}
+
 fn point_in_single_stroke_line(
     point: Point,
     line: LineSegment,
@@ -12574,6 +12783,26 @@ fn point_in_join_buckets(
         }
     }
     false
+}
+
+fn point_in_join_bucket_candidates(
+    point: Point,
+    join_indices: &[usize],
+    buckets: &StrokeJoinBuckets,
+    radius: f64,
+    line_join: LineJoin,
+) -> bool {
+    let radius_squared = radius * radius;
+    join_indices
+        .iter()
+        .any(|&join_index| match buckets.joins[join_index] {
+            BoundedStrokeJoin::Round { join, .. } => {
+                distance_squared(point, join.point) <= radius_squared
+            }
+            BoundedStrokeJoin::Prepared { join, .. } => {
+                prepared_join_contains_point(point, join, line_join)
+            }
+        })
 }
 
 fn prepared_join_contains_point(
@@ -16771,6 +17000,46 @@ mod tests {
             0.5,
             LineCap::Butt
         ));
+    }
+
+    #[test]
+    fn active_row_bucket_candidates_should_match_bucketed_stroke_predicate_after_x_misses() {
+        let dimensions = RasterDimensions::new(24, 12).expect("valid dimensions");
+        let lines = [
+            LineSegment {
+                from: Point { x: 2.5, y: 5.5 },
+                to: Point { x: 4.5, y: 5.5 },
+            },
+            LineSegment {
+                from: Point { x: 12.5, y: 5.5 },
+                to: Point { x: 16.5, y: 5.5 },
+            },
+        ];
+        let radius = 0.5;
+        let bounds = stroke_pixel_bounds(&lines, &[], radius, dimensions)
+            .expect("stroke bounds should overlap");
+        let buckets =
+            stroke_row_buckets(&lines, radius, dimensions, bounds).expect("bucketed lines");
+        let mut sorted = Vec::new();
+        let mut active = Vec::new();
+        let mut next_index = 0;
+        let x = 14;
+        let y = 5;
+        let point = Point { x: 14.5, y: 5.5 };
+
+        sorted_row_line_indices(&buckets, y, &mut sorted);
+        advance_active_line_indices(x, &buckets, &sorted, &mut next_index, &mut active);
+
+        assert_eq!(
+            point_in_row_bucketed_stroke_candidates(
+                point,
+                &active,
+                &buckets,
+                radius,
+                LineCap::Butt,
+            ),
+            point_in_row_bucketed_stroke(point, x, y, &buckets, radius, LineCap::Butt)
+        );
     }
 
     #[test]
