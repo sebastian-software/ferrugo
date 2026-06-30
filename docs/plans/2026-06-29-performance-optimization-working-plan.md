@@ -2024,6 +2024,32 @@ Current post-cache vector profile and rejected scratch-capacity candidate from
   candidate samples or visited pixels in `stroke_path`; broad scratch capacity
   tuning remains too weak to land.
 
+Rejected single-active-line row-bucket candidate from 2026-06-30:
+
+- Rationale: the current CPU profile still points at `stroke_path` and
+  row-bucket candidate evaluation. The tested change specialized the active
+  row-bucket loop when exactly one line candidate and no join candidate were
+  active for the current pixel, calling the existing exact single-line
+  predicate directly instead of the generic candidate-slice path.
+- A/B artifact:
+  `target/performance-matrix-report-vector-single-active-line-candidate.json`
+  versus
+  `target/performance-matrix-report-vector-current-after-session-cache.json`,
+  same host and `report/vector` hot-render command shape.
+- Result: positive but still below the threshold. `vector-stress.pdf` p95 moved
+  `3.168 ms` -> `3.033 ms` (`~4.3%`) and mean `2.970 ms` -> `2.922 ms`
+  (`~1.6%`). `technical-linework-dimensions.pdf` p95 moved
+  `0.354 ms` -> `0.323 ms` (`~8.8%`), but mean was effectively neutral and the
+  primary target stayed below the 5% line.
+- Follow-up combination test:
+  `target/performance-matrix-report-vector-active-line-plus-capacity-candidate.json`
+  combined this candidate with the scratch-capacity candidate. The combination
+  did not compound on the primary fixture: `vector-stress.pdf` p95 landed at
+  `3.067 ms` (`~3.2%`) and mean at `2.926 ms` (`~1.5%`).
+- Decision: reverted. Keep the signal for a future row-bucket interval-query
+  or per-row span algorithm, but do not land a local single-candidate branch
+  that fails the acceptance threshold on the primary fixture.
+
 ## Hardware-Aware Rust Notes
 
 Goal: use Rust's memory model and the host CPU well without prematurely
