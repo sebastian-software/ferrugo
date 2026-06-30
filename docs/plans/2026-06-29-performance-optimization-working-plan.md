@@ -4921,6 +4921,46 @@ Row-bucket predicate runtime counters from 2026-06-30:
   Join-specific optimization is not supported by this trace because the current
   target pays join checks but records no join coverage hits.
 
+Accepted single-offset blend write from 2026-06-30:
+
+- Profiling basis:
+  `target/sample-vector-stress-row-predicate-counters-base.txt`, captured from
+  a long profiling-build repeat run for `fixtures/generated/vector-stress.pdf`,
+  still showed `rasterize_span_covered_stroke_ranges`,
+  `rasterize_row_bucketed_stroke_ranges`, `point_in_single_stroke_line`,
+  `merge_pixel_ranges`, and `blend_pixel` as visible path-raster costs.
+- Rejected local candidates:
+  replacing active candidate `Vec::retain` with manual write-index compaction
+  improved `vector-stress.pdf` only from repeat mean `0.703 ms` to `0.694 ms`
+  and was not kept. Moving `LineCap` dispatch out of the row-bucket candidate
+  line loop regressed the focused target (`0.703 ms` -> `0.705 ms`). A small
+  `merge_pixel_ranges` sorted/insertion-sort fast path also regressed the
+  target (`0.703 ms` -> `0.704 ms`). All three were reverted.
+- Change:
+  `blend_pixel` now computes the raster pixel offset once for the partial and
+  non-normal blend paths, reads the destination pixel from that offset, and
+  writes the result back through the same offset. The full-coverage opaque
+  normal direct-write path remains unchanged.
+- Focused result:
+  `target/benchmark-repeat-vector-stress-active-retain-baseline-20k.json`
+  versus
+  `target/benchmark-repeat-vector-stress-single-offset-blend-candidate-20k.json`.
+  `vector-stress.pdf` repeat mean improved `0.703 ms` -> `0.667 ms`, and
+  repeat mean `raster_paths` improved `0.611 ms` -> `0.576 ms`.
+- Protection result:
+  Fresh Prepress baseline/candidate artifacts
+  `target/benchmark-repeat-prepress-single-offset-blend-baseline-20k.json` and
+  `target/benchmark-repeat-prepress-single-offset-blend-candidate-20k.json`
+  moved repeat mean `0.327 ms` -> `0.328 ms`. Technical Hatch artifacts
+  `target/benchmark-repeat-technical-hatch-single-offset-blend-baseline-20k.json`
+  and
+  `target/benchmark-repeat-technical-hatch-single-offset-blend-candidate-20k.json`
+  moved repeat mean `0.264 ms` -> `0.263 ms`.
+- Decision:
+  keep. This is a profile-backed reduction in a shared blend hot path. It
+  avoids new dependencies and unsafe code, preserves existing blend math, and
+  keeps the protection set neutral within small absolute timing noise.
+
 ## Settled Decisions
 
 - [x] `scripts/generate_performance_matrix.sh` defaults to release mode.

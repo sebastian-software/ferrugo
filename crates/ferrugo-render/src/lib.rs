@@ -14387,14 +14387,21 @@ fn blend_pixel(
     if matches!(blend_mode, BlendMode::Normal) && source.a == 255 && coverage >= 1.0 {
         return device.set_pixel(x, y, source);
     }
-    let dest = device.pixel(x, y)?;
+    let offset = device.pixel_offset(x, y)?;
+    let dest = Rgba {
+        r: device.pixels[offset],
+        g: device.pixels[offset + 1],
+        b: device.pixels[offset + 2],
+        a: device.pixels[offset + 3],
+    };
     if matches!(blend_mode, BlendMode::Normal) && source.a == 255 && dest.a == 255 {
-        return device.set_pixel(x, y, source_over_opaque(source, dest, coverage));
+        write_pixel_at_offset(device, offset, source_over_opaque(source, dest, coverage));
+        return Ok(());
     }
     let blended = blend_source_with_backdrop(source, dest, blend_mode);
-    device.set_pixel(
-        x,
-        y,
+    write_pixel_at_offset(
+        device,
+        offset,
         source_over(
             Rgba {
                 a: source.a,
@@ -14403,7 +14410,13 @@ fn blend_pixel(
             dest,
             coverage,
         ),
-    )
+    );
+    Ok(())
+}
+
+fn write_pixel_at_offset(device: &mut RasterDevice, offset: usize, color: Rgba) {
+    device.pixels[offset..offset + PixelFormat::Rgba8.bytes_per_pixel()]
+        .copy_from_slice(&[color.r, color.g, color.b, color.a]);
 }
 
 fn source_over_opaque(source: Rgba, dest: Rgba, coverage: f64) -> Rgba {
