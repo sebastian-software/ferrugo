@@ -5286,6 +5286,59 @@ Rejected hoisted radius-squared candidate from 2026-06-30:
   hoisting shape unless a future profile isolates `radius * radius` itself,
   not just the broader row-bucket raster loop.
 
+Fresh post-row-bucket profiling pass from 2026-06-30:
+
+- Artifacts:
+  `target/sample-vector-stress-fresh-after-row-bucket-metrics.txt` and
+  `target/benchmark-repeat-vector-stress-fresh-profile-200k.json`, captured
+  from the profiling build on `fixtures/generated/vector-stress.pdf`,
+  `--max-edge 160`, 200,000 repetitions.
+- Current focused baseline:
+  repeat mean `0.607 ms`, p50 `0.601 ms`, p95 `0.693 ms`, p99 `0.736 ms`,
+  repeat mean `raster_paths=0.514 ms`, output status `native_rendered`,
+  dimensions `160x120`, and output bytes `76800`.
+- CPU sample:
+  the largest flat symbols were `rasterize_row_bucketed_stroke_ranges`
+  (`1042` samples), `rasterize_span_covered_stroke_ranges` (`985`),
+  `blend_pixel` (`972`), `stroke_path` (`927`),
+  `axis_stroke_raster_spans` (`556`), and `merge_pixel_ranges` (`142`).
+  `merge_pixel_ranges` still shows `sort_by_key` frames, but the earlier
+  sorted/unstable merge candidates were too small or regressed protection
+  fixtures, so the next accepted attempt should reduce span/sample work or
+  row-bucket predicate work rather than change sort flavor again.
+
+Rejected sample-scale candidate from 2026-06-30:
+
+- Rationale:
+  the fresh profile still showed heavy per-sample stroke raster work. The
+  candidate tried to remove repeated `1.0 / samples` divisions from the
+  stroke sample loops by computing a per-raster-pass scale and using
+  multiplication in `sample_point_scaled`.
+- Change tested locally but not kept:
+  add `sample_point_scaled` and route row-bucket, active row-bucket,
+  simple-line, and axis-span stroke loops through a precomputed sample scale.
+  Geometry predicates, blend math, clipping, output format, dependencies, and
+  unsafe usage were unchanged.
+- Correctness checks while the candidate was present:
+  `cargo fmt --all --check`,
+  `cargo test -p ferrugo-render --no-default-features stroke_row_buckets`, and
+  `cargo test -p ferrugo-render --no-default-features axis_stroke`.
+- A/B artifacts:
+  `target/benchmark-repeat-vector-stress-fresh-profile-200k.json` versus
+  `target/benchmark-repeat-vector-stress-sample-scale-candidate-200k.json`.
+- Result:
+  rejected as below the repeated 5% acceptance floor. The focused repeat moved
+  mean `0.607 ms` -> `0.593 ms` (~2.3%) and repeat mean `raster_paths`
+  `0.514 ms` -> `0.503 ms` (~2.1%). p95 moved `0.693 ms` -> `0.650 ms`
+  (~6.2%), but that was not enough by itself because the mean and phase timing
+  stayed below threshold and the baseline p95 was noisier than the prior
+  accepted row-bucket metric run. Output status, dimensions, and bytes stayed
+  unchanged.
+- Decision:
+  reverted. Do not retry this sample-scale shape unless a future lower-level
+  profile isolates floating-point sample-coordinate division as a standalone
+  cost, not just the broader span or row-bucket raster loops.
+
 ## Settled Decisions
 
 - [x] `scripts/generate_performance_matrix.sh` defaults to release mode.
