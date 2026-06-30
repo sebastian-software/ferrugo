@@ -12439,7 +12439,7 @@ fn axis_stroke_spans(
     if row_count == 0 {
         return None;
     }
-    let mut per_row = vec![Vec::new(); row_count];
+    let mut row_counts = vec![0usize; row_count];
     for line in lines {
         if !is_axis_aligned_line(*line) {
             return None;
@@ -12448,7 +12448,44 @@ fn axis_stroke_spans(
             .and_then(|bounds| intersect_pixel_bounds(bounds, stroke_bounds))?;
         let start = (bounds.min_y - stroke_bounds.min_y).saturating_mul(samples) as usize;
         let end = (bounds.max_y - stroke_bounds.min_y).saturating_mul(samples) as usize;
-        for (sample_row, row) in per_row
+        for (sample_row, count) in row_counts
+            .iter_mut()
+            .enumerate()
+            .take(end.min(row_count))
+            .skip(start)
+        {
+            let sample_y =
+                f64::from(stroke_bounds.min_y) + (sample_row as f64 + 0.5) / f64::from(samples);
+            if axis_stroke_span_for_sample_y(*line, radius, line_cap, sample_y).is_some() {
+                *count += 1;
+            }
+        }
+    }
+    let span_count = row_counts.iter().sum();
+    if span_count == 0 {
+        return None;
+    }
+    let mut rows = Vec::with_capacity(row_count);
+    let mut start = 0;
+    for count in row_counts {
+        let end = start + count;
+        rows.push(start..end);
+        start = end;
+    }
+    let mut spans = vec![
+        AxisStrokeSpan {
+            min_x: 0.0,
+            max_x: 0.0,
+        };
+        span_count
+    ];
+    let mut row_offsets: Vec<usize> = rows.iter().map(|row| row.start).collect();
+    for line in lines {
+        let bounds = line_pixel_bounds(*line, radius, dimensions)
+            .and_then(|bounds| intersect_pixel_bounds(bounds, stroke_bounds))?;
+        let start = (bounds.min_y - stroke_bounds.min_y).saturating_mul(samples) as usize;
+        let end = (bounds.max_y - stroke_bounds.min_y).saturating_mul(samples) as usize;
+        for (sample_row, offset) in row_offsets
             .iter_mut()
             .enumerate()
             .take(end.min(row_count))
@@ -12457,37 +12494,37 @@ fn axis_stroke_spans(
             let sample_y =
                 f64::from(stroke_bounds.min_y) + (sample_row as f64 + 0.5) / f64::from(samples);
             if let Some(span) = axis_stroke_span_for_sample_y(*line, radius, line_cap, sample_y) {
-                row.push(span);
+                let write_index = *offset;
+                spans[write_index] = span;
+                *offset += 1;
             }
         }
     }
-    let span_count = per_row.iter().map(Vec::len).sum();
-    if span_count == 0 {
-        return None;
+    for row in &rows {
+        spans[row.clone()].sort_by(|a, b| a.min_x.total_cmp(&b.min_x));
     }
-    let mut spans: Vec<AxisStrokeSpan> = Vec::with_capacity(span_count);
-    let mut rows = Vec::with_capacity(row_count);
-    for mut row in per_row {
-        row.sort_by(|a, b| a.min_x.total_cmp(&b.min_x));
-        let start = spans.len();
-        for span in row {
-            if spans.len() > start {
-                let last_index = spans.len() - 1;
-                let last = &mut spans[last_index];
+    let mut merged_spans = Vec::with_capacity(span_count);
+    let mut merged_rows = Vec::with_capacity(row_count);
+    for row in rows {
+        let row_start = merged_spans.len();
+        for span in spans[row].iter().copied() {
+            if merged_spans.len() > row_start {
+                let last_index = merged_spans.len() - 1;
+                let last: &mut AxisStrokeSpan = &mut merged_spans[last_index];
                 if span.min_x <= last.max_x + f64::EPSILON {
                     last.max_x = last.max_x.max(span.max_x);
                     continue;
                 }
             }
-            spans.push(span);
+            merged_spans.push(span);
         }
-        rows.push(start..spans.len());
+        merged_rows.push(row_start..merged_spans.len());
     }
     Some(AxisStrokeSpans {
         min_sample_y: stroke_bounds.min_y.saturating_mul(samples),
         samples,
-        rows,
-        spans,
+        rows: merged_rows,
+        spans: merged_spans,
     })
 }
 

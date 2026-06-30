@@ -4109,6 +4109,46 @@ Rejected flat axis-span builder candidate from 2026-06-30:
   growth as a larger standalone cost or with a two-pass flat builder that
   avoids global sorting.
 
+Accepted two-pass axis-span builder from 2026-06-30:
+
+- Profile basis: `target/sample-vector-stress-post-radial.txt` showed allocator
+  work under `stroke_path` around axis-span construction, while the flat
+  globally-sorted builder above regressed. The follow-up target was therefore a
+  flatter builder that keeps per-row sorting local and avoids the many small
+  `Vec` allocations from `Vec<Vec<AxisStrokeSpan>>`.
+- Change: `axis_stroke_spans` now counts span entries per sample row, allocates
+  one flat span buffer, fills it in a second pass, sorts each row slice in
+  place, and merges into the existing final `AxisStrokeSpans` representation.
+  Raster-time structures, coverage semantics, joins, clips, blend behavior, and
+  public APIs are unchanged.
+- Correctness guard:
+  `axis_stroke_spans_should_match_generic_axis_strokes`,
+  `axis_stroke_raster_spans_should_cover_joined_axis_strokes`, and
+  `round_axis_stroke_span_should_shrink_beyond_vertical_endpoint` passed
+  against the new builder.
+- Focused result:
+  `target/benchmark-repeat-vector-stress-two-pass-axis-spans-candidate.json`
+  improved repeat mean `0.711 ms` -> `0.676 ms` and p95 `0.813 ms` ->
+  `0.749 ms`, with `raster_paths` moving `0.620 ms` -> `0.585 ms`. The repeat
+  `target/benchmark-repeat-vector-stress-two-pass-axis-spans-repeat.json`
+  measured repeat mean `0.673 ms`, p95 `0.752 ms`, and `raster_paths`
+  `0.583 ms`.
+- Protection result:
+  `target/benchmark-repeat-prepress-two-pass-axis-spans-candidate.json` moved
+  mean `0.326 ms` -> `0.315 ms`, p95 `0.364 ms` -> `0.340 ms`.
+  `target/benchmark-repeat-technical-hatch-two-pass-axis-spans-candidate.json`
+  moved mean `0.266 ms` -> `0.262 ms`, p95 `0.296 ms` -> `0.288 ms`.
+  `target/performance-matrix-two-pass-axis-spans-starter.json` rendered all
+  `11` starter records with no fallback, missing-tool, not-applicable, or
+  errors; report/vector p95 moved `0.863 ms` -> `0.794 ms`.
+- Caveat: single-run trace artifacts remained noisy
+  (`target/trace-vector-stress-two-pass-axis-spans.json` did not show a
+  reliable phase reduction), so this acceptance is based on repeated hot-render
+  timings and status-neutral starter protection.
+- Decision: keep. This is a cumulative 5-10% vector/report win on the same
+  profiled `stroke_path` allocation/build track, without a dependency, unsafe
+  code, cache, or raster semantics change.
+
 Current prepress join-bounds optimization from 2026-06-30:
 
 - Profiling basis:
