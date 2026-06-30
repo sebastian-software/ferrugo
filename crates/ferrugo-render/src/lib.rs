@@ -117,6 +117,7 @@ const STROKE_ROW_BUCKET_MIN_LINES: usize = 32;
 const STROKE_AXIS_SPAN_MIN_LINES: usize = 32;
 const STROKE_JOIN_BUCKET_MIN_JOINS: usize = 8;
 const STROKE_SIMPLE_LINE_SPAN_MIN_PIXELS: u32 = 1024;
+const STROKE_ROW_RANGE_MIN_BUCKET_LINES: usize = 48;
 
 /// Maximum dash segments tracked in the graphics state.
 pub const MAX_STROKE_DASH_SEGMENTS: usize = 8;
@@ -10528,6 +10529,26 @@ fn stroke_path(
             )
         })
         .flatten();
+    match row_buckets.as_ref() {
+        Some(buckets)
+            if (!has_joins || join_buckets.is_some())
+                && row_bucket_range_raster_candidate(buckets) =>
+        {
+            rasterize_row_bucketed_stroke_ranges(
+                device,
+                buckets,
+                join_buckets.as_ref(),
+                bounds,
+                state,
+                context,
+                samples,
+                sample_count,
+                source,
+            )?;
+            return Ok(());
+        }
+        Some(_) | None => {}
+    }
     for y in bounds.min_y..bounds.max_y {
         for x in bounds.min_x..bounds.max_x {
             let mut covered = 0;
@@ -10583,6 +10604,75 @@ fn stroke_path(
                     state.blend_mode,
                     state.alpha * f64::from(covered) / f64::from(sample_count),
                 )?;
+            }
+        }
+    }
+    Ok(())
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "keeps stroke state at the callsite explicit"
+)]
+fn rasterize_row_bucketed_stroke_ranges(
+    device: &mut RasterDevice,
+    buckets: &StrokeRowBuckets,
+    join_buckets: Option<&StrokeJoinBuckets>,
+    bounds: PixelBounds,
+    state: StrokeRasterState,
+    context: PathRasterContext<'_>,
+    samples: u32,
+    sample_count: u32,
+    source: Rgba,
+) -> RasterResult<()> {
+    let radius = stroke_radius_for_device_line_width(state.line_width);
+    let mut x_ranges = Vec::new();
+    for y in bounds.min_y..bounds.max_y {
+        x_ranges.clear();
+        append_row_bucket_pixel_x_ranges(buckets, y, bounds, &mut x_ranges);
+        if let Some(join_buckets) = join_buckets {
+            append_join_bucket_pixel_x_ranges(join_buckets, y, bounds, &mut x_ranges);
+        }
+        merge_pixel_ranges(&mut x_ranges);
+        for x_range in &x_ranges {
+            for x in x_range.clone() {
+                let mut covered = 0;
+                for sample_y in 0..samples {
+                    for sample_x in 0..samples {
+                        let point = sample_point(x, y, sample_x, sample_y, samples);
+                        if point_in_active_clips(point, context.clips)
+                            && (point_in_row_bucketed_stroke(
+                                point,
+                                x,
+                                y,
+                                buckets,
+                                radius,
+                                state.line_cap,
+                            ) || join_buckets.is_some_and(|join_buckets| {
+                                point_in_join_buckets(
+                                    point,
+                                    x,
+                                    y,
+                                    join_buckets,
+                                    radius,
+                                    state.line_join,
+                                )
+                            }))
+                        {
+                            covered += 1;
+                        }
+                    }
+                }
+                if covered > 0 {
+                    blend_pixel(
+                        device,
+                        x,
+                        y,
+                        source,
+                        state.blend_mode,
+                        state.alpha * f64::from(covered) / f64::from(sample_count),
+                    )?;
+                }
             }
         }
     }
@@ -10752,6 +10842,57 @@ fn merge_pixel_ranges(ranges: &mut Vec<Range<u32>>) {
         }
     }
     ranges.truncate(write + 1);
+}
+
+fn row_bucket_range_raster_candidate(buckets: &StrokeRowBuckets) -> bool {
+    buckets.lines.len() >= STROKE_ROW_RANGE_MIN_BUCKET_LINES
+}
+
+fn append_row_bucket_pixel_x_ranges(
+    buckets: &StrokeRowBuckets,
+    y: u32,
+    bounds: PixelBounds,
+    x_ranges: &mut Vec<Range<u32>>,
+) {
+    let Some(row) = y
+        .checked_sub(buckets.min_y)
+        .and_then(|offset| buckets.rows.get(offset as usize))
+    else {
+        return;
+    };
+    for &line_index in &buckets.indices[row.clone()] {
+        let line_bounds = buckets.lines[line_index].bounds;
+        let start = line_bounds.min_x.max(bounds.min_x);
+        let end = line_bounds.max_x.min(bounds.max_x);
+        if start < end {
+            x_ranges.push(start..end);
+        }
+    }
+}
+
+fn append_join_bucket_pixel_x_ranges(
+    buckets: &StrokeJoinBuckets,
+    y: u32,
+    bounds: PixelBounds,
+    x_ranges: &mut Vec<Range<u32>>,
+) {
+    let Some(row) = y
+        .checked_sub(buckets.min_y)
+        .and_then(|offset| buckets.rows.get(offset as usize))
+    else {
+        return;
+    };
+    for &join_index in &buckets.indices[row.clone()] {
+        let join_bounds = match buckets.joins[join_index] {
+            BoundedStrokeJoin::Round { bounds, .. }
+            | BoundedStrokeJoin::Prepared { bounds, .. } => bounds,
+        };
+        let start = join_bounds.min_x.max(bounds.min_x);
+        let end = join_bounds.max_x.min(bounds.max_x);
+        if start < end {
+            x_ranges.push(start..end);
+        }
+    }
 }
 
 fn simple_line_stroke_raster_spans(
@@ -15705,6 +15846,96 @@ mod tests {
             0.5,
             LineCap::Butt
         ));
+    }
+
+    #[test]
+    fn row_bucket_pixel_x_ranges_should_cover_bucketed_stroke_samples() {
+        let dimensions = RasterDimensions::new(32, 20).expect("valid dimensions");
+        let lines = [
+            LineSegment {
+                from: Point { x: 2.5, y: 4.5 },
+                to: Point { x: 8.5, y: 4.5 },
+            },
+            LineSegment {
+                from: Point { x: 20.5, y: 12.5 },
+                to: Point { x: 28.5, y: 12.5 },
+            },
+        ];
+        let radius = 0.5;
+        let bounds = stroke_pixel_bounds(&lines, &[], radius, dimensions)
+            .expect("stroke bounds should overlap");
+        let buckets =
+            stroke_row_buckets(&lines, radius, dimensions, bounds).expect("bucketed lines");
+        let mut x_ranges = Vec::new();
+
+        for y in bounds.min_y..bounds.max_y {
+            x_ranges.clear();
+            append_row_bucket_pixel_x_ranges(&buckets, y, bounds, &mut x_ranges);
+            merge_pixel_ranges(&mut x_ranges);
+            for x in bounds.min_x..bounds.max_x {
+                let point = sample_point(x, y, 0, 0, 1);
+                assert!(
+                    x_ranges.iter().any(|range| range.contains(&x))
+                        || !point_in_row_bucketed_stroke(
+                            point,
+                            x,
+                            y,
+                            &buckets,
+                            radius,
+                            LineCap::Butt,
+                        ),
+                    "row bucket x range missed stroke sample at pixel ({x},{y})"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn join_bucket_pixel_x_ranges_should_cover_bucketed_join_samples() {
+        let dimensions = RasterDimensions::new(32, 32).expect("valid dimensions");
+        let lines = [
+            LineSegment {
+                from: Point { x: 8.0, y: 8.0 },
+                to: Point { x: 24.0, y: 8.0 },
+            },
+            LineSegment {
+                from: Point { x: 24.0, y: 8.0 },
+                to: Point { x: 24.0, y: 24.0 },
+            },
+        ];
+        let joins = [StrokeJoin {
+            previous: lines[0],
+            next: lines[1],
+            point: lines[0].to,
+        }];
+        let radius = 2.0;
+        let bounds = stroke_pixel_bounds(&lines, &joins, radius, dimensions)
+            .expect("stroke bounds should overlap");
+        let prepared = prepare_stroke_joins(&joins, radius, LineJoin::Miter, 10.0);
+        let buckets = stroke_join_buckets(
+            &joins,
+            &prepared,
+            radius,
+            LineJoin::Miter,
+            dimensions,
+            bounds,
+        )
+        .expect("bucketed joins");
+        let mut x_ranges = Vec::new();
+
+        for y in bounds.min_y..bounds.max_y {
+            x_ranges.clear();
+            append_join_bucket_pixel_x_ranges(&buckets, y, bounds, &mut x_ranges);
+            merge_pixel_ranges(&mut x_ranges);
+            for x in bounds.min_x..bounds.max_x {
+                let point = sample_point(x, y, 0, 0, 1);
+                assert!(
+                    x_ranges.iter().any(|range| range.contains(&x))
+                        || !point_in_join_buckets(point, x, y, &buckets, radius, LineJoin::Miter,),
+                    "join bucket x range missed join sample at pixel ({x},{y})"
+                );
+            }
+        }
     }
 
     #[test]

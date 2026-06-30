@@ -1610,6 +1610,56 @@ Accepted simple diagonal stroke span rasterizer from 2026-06-30:
   avoids new dependencies and unsafe code, and keeps the protection set within
   small absolute timing noise.
 
+Accepted row-bucket X-range rasterizer from 2026-06-30:
+
+- Profiling trigger:
+  `target/sample-vector-stress-post-diagonal.txt`, captured after the simple
+  diagonal stroke span block, still showed `stroke_path` as the dominant stack
+  with `5256` symbol samples. The matching trace
+  `target/trace-native-vector-stress-post-diagonal.json` reported `3.721 ms`
+  of `3.922 ms` total in `raster_paths`. The stroke shape summary showed
+  `485376` row-bucket sample refs, `25672` X hits, and `459704` X misses, so
+  about `95%` of row-bucket sample checks were known X misses.
+- Change: row-bucketed strokes with at least `48` bounded lines now build
+  conservative per-row pixel X ranges from line bounds and bucketed join bounds
+  before entering the sample loop. The rasterizer still calls the existing
+  `point_in_row_bucketed_stroke` and `point_in_join_buckets` predicates before
+  blending.
+- Scope refinement: an ungated first candidate improved `vector-stress`, but
+  small row-bucket fixtures sometimes paid more range/merge overhead than they
+  saved. A sample-ref threshold was also tested and proved too high for the
+  target fixture. The accepted line-count gate keeps the path on the large
+  vector row buckets that motivated the change while leaving smaller linework
+  mostly on the previous path.
+- Correctness guard: added
+  `row_bucket_pixel_x_ranges_should_cover_bucketed_stroke_samples` and
+  `join_bucket_pixel_x_ranges_should_cover_bucketed_join_samples` to verify
+  that generated candidate ranges cover every sample accepted by the exact
+  bucketed stroke and join predicates.
+- Candidate artifacts:
+  `target/performance-matrix-row-bucket-ranges-linegate-technical.json`,
+  `target/performance-matrix-row-bucket-ranges-linegate-technical-repeat.json`,
+  `target/performance-matrix-row-bucket-ranges-linegate-starter.json`,
+  `target/performance-matrix-row-bucket-ranges-linegate-starter-repeat.json`,
+  and `target/trace-native-vector-stress-row-bucket-ranges.json`.
+- Technical result against
+  `target/performance-matrix-simple-line-spans-diagonal-technical-repeat.json`:
+  `vector-stress.pdf` improved p95 `3.862 ms` -> `3.428 ms` (~11.2%) in the
+  first accepted run and `3.862 ms` -> `3.439 ms` (~11.0%) in the repeat. Mean
+  improved `3.715 ms` -> `3.291 ms` (~11.4%) and then `3.715 ms` -> `3.282 ms`
+  (~11.7%). Technical protection fixtures stayed within small absolute timing
+  noise; for example `technical-linework-dimensions.pdf` repeat moved p95
+  `0.390 ms` -> `0.397 ms` and mean `0.355 ms` -> `0.358 ms`.
+- Starter protection result:
+  `target/performance-matrix-row-bucket-ranges-linegate-starter-repeat.json`
+  rendered all starter fixtures with no fallback-required, missing-tool,
+  not-applicable, or error records. `vector-stress.pdf` improved p95
+  `3.911 ms` -> `3.423 ms` (~12.5%) and mean `3.761 ms` -> `3.309 ms`
+  (~12.0%). Remaining movements were sub-millisecond watch items.
+- Decision: accept. This is a profile-backed reduction in candidate pixel
+  scanning for the current top vector fixture, with exact geometry predicates
+  preserved and no new dependency or unsafe code.
+
 ## Hardware-Aware Rust Notes
 
 Goal: use Rust's memory model and the host CPU well without prematurely
