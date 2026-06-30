@@ -4498,6 +4498,40 @@ Rejected span-row blend candidate from 2026-06-30:
   workloads. The target win is real, but the current branch shape trades away
   protection-set stability and the guarded variant is below the 5% threshold.
 
+Rejected single-sample axis-span range candidate from 2026-06-30:
+
+- Profiling basis:
+  after the row-slice text rectangle win, the next Prepress refresh targeted
+  `fixtures/generated/prepress-trim-bleed-marks.pdf` at `--max-edge 160`.
+  `target/trace-prepress-head-after-row-rect.json` reported `0.474 ms` total
+  with `0.282 ms` in `raster_paths`; all 32 flattened stroke lines were
+  axis-aligned, 20 stroke items were snapped hairlines, and 16 items were
+  joinless axis-span candidates. The focused repeat artifact
+  `target/benchmark-repeat-prepress-head-sample-after-row-rect.json` measured
+  repeat mean `0.312 ms`, with `raster_paths` at `0.269 ms`. The CPU sample
+  `target/sample-prepress-head-after-row-rect.txt` still put almost all time
+  under `stroke_path`, with visible allocator samples but only small direct
+  `axis_stroke_span_for_sample_y` and `blend_pixel` samples.
+- Change tested locally but not kept:
+  add a `samples == 1` axis-span raster fast path that derived center-sampled
+  pixel ranges from each `AxisStrokeSpan` and skipped the existing per-pixel
+  single-sample `x_in_axis_stroke_span_row` test. The helper used inclusive
+  stroke-span max-edge semantics rather than the half-open rectangle-fill edge
+  rule.
+- A/B artifacts:
+  `target/benchmark-repeat-prepress-head-sample-after-row-rect.json` and
+  `target/benchmark-repeat-prepress-single-sample-axis-span-candidate.json`.
+- Result:
+  rejected. The candidate moved repeat mean `0.312 ms` -> `0.316 ms`; output
+  dimensions and bytes stayed unchanged, but the target did not improve. This
+  confirms that the remaining Prepress cost is not the one-sample span
+  membership check alone.
+- Decision:
+  reverted. Do not retry a one-sample axis-span range shortcut unless a deeper
+  profile or counter shows per-pixel span membership as a standalone cost. The
+  next Prepress pass should use a debug-symbol profiling build, Instruments, or
+  focused counters inside `stroke_path` before another micro-optimization.
+
 ## Phase 6: Benchmark Gates And Claims
 
 Goal: turn stable evidence into guardrails, not premature marketing.
