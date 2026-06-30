@@ -14,11 +14,10 @@ material.
   plugin-free installation, and explicit reference-renderer comparison builds.
 - [Renderer benchmarks](benchmarks.md): local smoke commands and the current
   performance snapshot for bounded preview workloads.
-- [Milestones](milestones/README.md): the implementation log. The files stay in
-  place and use `Status:` plus completion notes instead of moving between
-  folders.
 - [1.4 readiness report](reports/pdfium-free-1-4-readiness-2026-06-29.md):
   the current release decision and the clearest summary of what is ready.
+- [Native renderer conformance backlog](backlogs/native-renderer-conformance-backlog.md):
+  the current follow-up work after completed readiness and conformance gates.
 
 ## By task
 
@@ -94,14 +93,14 @@ fallback/error reporting.
 
 Read:
 
-- [Milestones](milestones/README.md)
 - [Native renderer conformance backlog](backlogs/native-renderer-conformance-backlog.md)
 - [Native renderer API cleanup backlog](backlogs/native-renderer-api-cleanup-backlog.md)
 - [Fixture policy](fixtures.md)
+- [PDFium-free 1.4 readiness](reports/pdfium-free-1-4-readiness-2026-06-29.md)
 
-Milestone docs are the working record. Keep the status field, validation notes,
-and report links honest. A passing server gate should not be stretched into a
-blanket PDF compatibility claim.
+Backlogs and reports are the working record. Keep validation notes, evidence,
+and follow-up owners honest. A passing server gate should not be stretched into
+a blanket PDF compatibility claim.
 
 ## Main folders
 
@@ -112,7 +111,6 @@ blanket PDF compatibility claim.
 | `concepts/` | Earlier design sketches and API concepts. |
 | `decisions/` | Architecture decisions that should stay stable. |
 | `guides/` | User-facing migration and workflow guides. |
-| `milestones/` | Numbered implementation plan and completion log. |
 | `plans/` | Planning baselines and scoped implementation plans. |
 | `policies/` | Compatibility, licensing, attribution, API, and support policy. |
 | `reports/` | Evidence from gates, benchmarks, corpus sweeps, and release checks. |
@@ -124,7 +122,7 @@ blanket PDF compatibility claim.
 2. [PDFium-free 1.4 readiness](reports/pdfium-free-1-4-readiness-2026-06-29.md)
 3. [Rust-native backend](backend/native.md)
 4. [Packaging](packaging.md)
-5. [Milestones](milestones/README.md)
-6. The report linked from the milestone or subsystem you are changing
+5. [Native renderer conformance backlog](backlogs/native-renderer-conformance-backlog.md)
+6. The report or policy for the subsystem you are changing
 
 That order gives you the current state before the older planning context.

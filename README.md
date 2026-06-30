@@ -29,7 +29,7 @@ The native Rust path is the default development and packaging target.
 
 The current renderer handles a useful slice of typical preview documents, but
 PDF is a large format. Some visual-fidelity gaps and typed unsupported feature
-boundaries are still tracked in the reports and milestone history.
+boundaries are tracked in reports, policies, and backlogs.
 
 ## What you can use it for today
 
@@ -226,7 +226,8 @@ Start here:
 - [Renderer benchmarks](docs/benchmarks.md) and the
   [initial performance matrix report](docs/reports/performance-matrix-initial-2026-06-29.md)
   for comparative speed, memory, and reference-renderer measurement.
-- [Milestones](docs/milestones/README.md) for the implementation log.
+- [Native renderer conformance backlog](docs/backlogs/native-renderer-conformance-backlog.md)
+  for follow-up renderer work.
 - [PDFium-free 1.4 readiness report](docs/reports/pdfium-free-1-4-readiness-2026-06-29.md)
   for the current release decision.
 
