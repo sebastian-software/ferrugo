@@ -13374,23 +13374,144 @@ fn axis_stroke_raster_spans(
         return None;
     }
     let coverage = axis_stroke_spans(lines, radius, dimensions, stroke_bounds, samples, line_cap)?;
-    let mut raster_rows = axis_stroke_span_rows(&coverage);
-    append_axis_join_raster_spans(
-        &mut raster_rows,
-        joins,
-        radius,
-        dimensions,
-        stroke_bounds,
-        samples,
-    )?;
-    let raster = axis_stroke_spans_from_rows(
-        stroke_bounds.min_y.saturating_mul(samples),
-        samples,
-        raster_rows,
-    );
+    let raster = if joins.is_empty() {
+        let raster_rows = axis_stroke_span_rows(&coverage);
+        axis_stroke_spans_from_rows(
+            stroke_bounds.min_y.saturating_mul(samples),
+            samples,
+            raster_rows,
+        )
+    } else {
+        axis_stroke_raster_spans_with_axis_joins(
+            &coverage,
+            joins,
+            radius,
+            dimensions,
+            stroke_bounds,
+            samples,
+        )?
+    };
     Some(AxisStrokeRasterSpans { coverage, raster })
 }
 
+fn axis_stroke_raster_spans_with_axis_joins(
+    coverage: &AxisStrokeSpans,
+    joins: &[StrokeJoin],
+    radius: f64,
+    dimensions: RasterDimensions,
+    stroke_bounds: PixelBounds,
+    samples: u32,
+) -> Option<AxisStrokeSpans> {
+    let row_count = coverage.rows.len();
+    let mut join_row_counts = vec![0_usize; row_count];
+    for join in joins {
+        let (row_range, _) =
+            axis_join_raster_span_rows(*join, radius, dimensions, stroke_bounds, samples)?;
+        for count in join_row_counts
+            .iter_mut()
+            .take(row_range.end)
+            .skip(row_range.start)
+        {
+            *count += 1;
+        }
+    }
+
+    let span_count = coverage.spans.len() + join_row_counts.iter().sum::<usize>();
+    let mut rows = Vec::with_capacity(row_count);
+    let mut start = 0;
+    for (coverage_row, join_count) in coverage.rows.iter().zip(join_row_counts) {
+        let end = start + coverage_row.len() + join_count;
+        rows.push(start..end);
+        start = end;
+    }
+
+    let mut spans = vec![
+        AxisStrokeSpan {
+            min_x: 0.0,
+            max_x: 0.0,
+        };
+        span_count
+    ];
+    let mut row_offsets: Vec<usize> = rows.iter().map(|row| row.start).collect();
+    for (row_index, coverage_row) in coverage.rows.iter().enumerate() {
+        let offset = row_offsets[row_index];
+        let coverage_spans = &coverage.spans[coverage_row.clone()];
+        spans[offset..offset + coverage_spans.len()].copy_from_slice(coverage_spans);
+        row_offsets[row_index] += coverage_spans.len();
+    }
+    for join in joins {
+        let (row_range, span) =
+            axis_join_raster_span_rows(*join, radius, dimensions, stroke_bounds, samples)?;
+        for offset in row_offsets
+            .iter_mut()
+            .take(row_range.end)
+            .skip(row_range.start)
+        {
+            spans[*offset] = span;
+            *offset += 1;
+        }
+    }
+
+    let mut merged_spans = Vec::with_capacity(span_count);
+    let mut merged_rows = Vec::with_capacity(row_count);
+    for row in rows {
+        spans[row.clone()].sort_by(|a, b| a.min_x.total_cmp(&b.min_x));
+        let row_start = merged_spans.len();
+        for span in spans[row].iter().copied() {
+            if merged_spans.len() > row_start {
+                let last_index = merged_spans.len() - 1;
+                let last: &mut AxisStrokeSpan = &mut merged_spans[last_index];
+                if span.min_x <= last.max_x + f64::EPSILON {
+                    last.max_x = last.max_x.max(span.max_x);
+                    continue;
+                }
+            }
+            merged_spans.push(span);
+        }
+        merged_rows.push(row_start..merged_spans.len());
+    }
+    Some(AxisStrokeSpans {
+        min_sample_y: coverage.min_sample_y,
+        samples,
+        rows: merged_rows,
+        spans: merged_spans,
+    })
+}
+
+fn axis_join_raster_span_rows(
+    join: StrokeJoin,
+    radius: f64,
+    dimensions: RasterDimensions,
+    stroke_bounds: PixelBounds,
+    samples: u32,
+) -> Option<(Range<usize>, AxisStrokeSpan)> {
+    if !is_axis_aligned_line(join.previous) || !is_axis_aligned_line(join.next) {
+        return None;
+    }
+    let bounds = device_pixel_bounds(
+        PathBounds {
+            min_x: join.point.x - radius,
+            min_y: join.point.y - radius,
+            max_x: join.point.x + radius,
+            max_y: join.point.y + radius,
+        },
+        dimensions,
+        0.0,
+    )
+    .and_then(|bounds| intersect_pixel_bounds(bounds, stroke_bounds))?;
+    let row_count = (stroke_bounds.max_y - stroke_bounds.min_y).saturating_mul(samples) as usize;
+    let start = (bounds.min_y - stroke_bounds.min_y).saturating_mul(samples) as usize;
+    let end = (bounds.max_y - stroke_bounds.min_y).saturating_mul(samples) as usize;
+    Some((
+        start..end.min(row_count),
+        AxisStrokeSpan {
+            min_x: join.point.x - radius,
+            max_x: join.point.x + radius,
+        },
+    ))
+}
+
+#[cfg(test)]
 fn append_axis_join_raster_spans(
     rows: &mut [Vec<AxisStrokeSpan>],
     joins: &[StrokeJoin],
@@ -18787,6 +18908,62 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn axis_stroke_raster_spans_with_axis_joins_should_match_row_builder() {
+        let dimensions = RasterDimensions::new(32, 32).expect("valid dimensions");
+        let lines = [
+            LineSegment {
+                from: Point { x: 8.0, y: 8.0 },
+                to: Point { x: 24.0, y: 8.0 },
+            },
+            LineSegment {
+                from: Point { x: 24.0, y: 8.0 },
+                to: Point { x: 24.0, y: 24.0 },
+            },
+            LineSegment {
+                from: Point { x: 24.0, y: 24.0 },
+                to: Point { x: 8.0, y: 24.0 },
+            },
+            LineSegment {
+                from: Point { x: 8.0, y: 24.0 },
+                to: Point { x: 8.0, y: 8.0 },
+            },
+        ];
+        let joins = [
+            StrokeJoin {
+                previous: lines[0],
+                next: lines[1],
+                point: lines[0].to,
+            },
+            StrokeJoin {
+                previous: lines[1],
+                next: lines[2],
+                point: lines[1].to,
+            },
+            StrokeJoin {
+                previous: lines[2],
+                next: lines[3],
+                point: lines[2].to,
+            },
+        ];
+        let radius = 0.75;
+        let bounds = stroke_pixel_bounds(&lines, &joins, radius, dimensions)
+            .expect("stroke bounds should overlap");
+        let coverage = axis_stroke_spans(&lines, radius, dimensions, bounds, 2, LineCap::Butt)
+            .expect("axis coverage spans");
+        let mut row_builder_rows = axis_stroke_span_rows(&coverage);
+        append_axis_join_raster_spans(&mut row_builder_rows, &joins, radius, dimensions, bounds, 2)
+            .expect("row builder should accept axis joins");
+        let row_builder =
+            axis_stroke_spans_from_rows(bounds.min_y.saturating_mul(2), 2, row_builder_rows);
+        let flat_builder = axis_stroke_raster_spans_with_axis_joins(
+            &coverage, &joins, radius, dimensions, bounds, 2,
+        )
+        .expect("flat builder should accept axis joins");
+
+        assert_eq!(flat_builder, row_builder);
     }
 
     #[test]

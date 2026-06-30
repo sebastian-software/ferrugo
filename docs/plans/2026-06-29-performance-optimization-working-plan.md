@@ -5102,6 +5102,61 @@ Rejected sampled float blend dispatch candidate from 2026-06-30:
   profile isolates from-start membership scanning as a larger standalone cost
   than the cursor setup overhead.
 
+### Accepted flat joined-axis raster span builder from 2026-06-30
+
+- Profile basis:
+  `target/sample-vector-stress-profile-refresh.txt`, captured from a long
+  profiling-build `benchmark-repeat-native` run for
+  `fixtures/generated/vector-stress.pdf`, still showed `stroke_path` as the
+  dominant render path. The largest flat symbols were
+  `rasterize_span_covered_stroke_ranges` (`947` samples), `blend_pixel`
+  (`929`), `stroke_path` (`906`), `point_in_single_stroke_line` (`487`),
+  allocator/free frames, `axis_stroke_span_for_sample_y` (`238`), and
+  `merge_pixel_ranges` (`156`). Inside `stroke_path`, the sample showed a
+  visible allocation/free block under `axis_stroke_raster_spans` for joined
+  axis-aligned strokes.
+- Change:
+  `axis_stroke_raster_spans` now keeps the old row-Vec builder only for
+  joinless raster spans and uses a two-pass flat builder when axis-aligned
+  joins are present. The new path counts join spans per sample row, allocates
+  one flat span buffer, copies existing coverage spans by row, appends join
+  spans into the same flat storage, then sorts and merges each row slice into
+  the existing `AxisStrokeSpans` representation. It does not change coverage
+  semantics, clipping, blend math, public APIs, dependencies, or unsafe usage.
+- Correctness guard:
+  `axis_stroke_raster_spans_with_axis_joins_should_match_row_builder` compares
+  the new flat joined-axis builder against the previous row-Vec builder, and
+  `axis_stroke_raster_spans_should_cover_joined_axis_strokes` still verifies
+  conservative raster coverage for joined axis strokes.
+- Focused artifacts:
+  `target/benchmark-repeat-vector-stress-profile-refresh-200k.json`,
+  `target/benchmark-repeat-vector-stress-flat-join-raster-candidate-200k.json`,
+  and `target/trace-vector-stress-flat-join-raster-candidate.json`.
+- Focused result:
+  accepted. `vector-stress.pdf` repeat mean improved `0.689 ms` -> `0.631 ms`
+  (~8.4%), p95 improved `0.828 ms` -> `0.743 ms` (~10.3%), and repeat mean
+  `raster_paths` improved `0.593 ms` -> `0.538 ms` (~9.3%). Output status,
+  dimensions, and bytes stayed unchanged.
+- Protection result:
+  `target/benchmark-repeat-prepress-single-offset-blend-candidate-20k.json`
+  versus
+  `target/benchmark-repeat-prepress-flat-join-raster-candidate-20k.json`
+  improved mean `0.328 ms` -> `0.322 ms`, p95 `0.379 ms` -> `0.367 ms`, and
+  raster paths `0.283 ms` -> `0.278 ms`.
+  `target/benchmark-repeat-technical-hatch-single-offset-blend-candidate-20k.json`
+  versus
+  `target/benchmark-repeat-technical-hatch-flat-join-raster-candidate-20k.json`
+  stayed neutral to slightly positive: mean `0.263 ms` -> `0.262 ms`, p95
+  `0.316 ms` -> `0.308 ms`, and raster paths `0.164 ms` -> `0.162 ms`.
+  Both protection fixtures kept native-rendered status, output dimensions, and
+  output bytes unchanged.
+- Decision:
+  keep. This is a profile-backed structural allocation reduction on the same
+  vector/report stroke path. It deliberately avoids reopening the previously
+  rejected joinless coverage-reuse and row-copy variants, because the accepted
+  change is scoped to joined axis spans where the row-Vec rebuild was visible
+  in the fresh profile.
+
 ## Settled Decisions
 
 - [x] `scripts/generate_performance_matrix.sh` defaults to release mode.
