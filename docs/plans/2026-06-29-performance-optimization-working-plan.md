@@ -1171,6 +1171,30 @@ Technical row-work sweep from 2026-06-30:
   `technical-linework-dimensions`, and the zero-row-bucket protection fixtures
   on the accepted row-bucket path.
 
+Rejected gated sorted-row candidate from 2026-06-30:
+
+- Change tested locally but not kept: when the row-work estimate exceeded
+  `1_000_000` sample-line refs and `90%` X-miss, sort each affected row bucket
+  by line `min_x` and break the row scan once `min_x > x`.
+- Rationale: this tried to keep the previously rejected row-sort idea away
+  from `vector-stress`, `technical-linework-dimensions`, and zero-row-bucket
+  protection fixtures while reducing the high X-miss work identified by the
+  row-work sweep.
+- Candidate artifact:
+  `target/performance-matrix-stroke-row-sorted-gated-technical.json`, native
+  hot-render, `fixtures/technical-drawing-manifest.tsv`, `--max-edge 160`, 200
+  measured iterations after 10 warmups.
+- Result: failed immediately on the technical target set.
+  `engineering-floorplan-precision.pdf` regressed p95 ~6.1% and mean ~5.4%;
+  `technical-large-coordinate-plan.pdf` regressed p95 ~1.5%; and no target
+  fixture reached a 5% p95 improvement. `vector-stress.pdf` stayed neutral, but
+  the intended large-plan gains did not materialize.
+- Decision: reverted without running the broader starter protection set. Plain
+  per-row sort/break is not the right structural reduction. The next attempt
+  should avoid per-row sorting overhead and instead test a lower-overhead
+  representation, such as per-row span groups, compact x-ranges, or a stroke
+  raster algorithm that handles dense horizontal/vertical linework in batches.
+
 ## Hardware-Aware Rust Notes
 
 Goal: use Rust's memory model and the host CPU well without prematurely
