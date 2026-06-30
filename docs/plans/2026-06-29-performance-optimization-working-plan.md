@@ -2127,6 +2127,46 @@ Accepted rectangle clip fill bounds result from 2026-06-30:
   rectangle-fill hot path while preserving exact center-sampled rectangle and
   clip semantics, with no new dependency or unsafe code.
 
+Accepted axis-aligned clip predicate fast path from 2026-06-30:
+
+- Profile basis: after the rectangle-fill clip optimization, the fresh
+  `target/sample-vector-stress-after-rect-clip.txt` profile showed
+  `stroke_path` as the dominant stack and `fill_path` no longer dominated.
+  The synthetic `vector-stress.pdf` fixture applies two nested axis-aligned
+  rectangle clips before the heavy grid/curve stroke work, so every stroke
+  sample still paid the generic clip path predicate even though the active
+  clips already carried an `axis_aligned_rect` diagnostic.
+- Change: `point_in_active_clips` now checks `ActiveClip::axis_aligned_rect`
+  directly with rectangle edge semantics and falls back to the existing
+  `point_in_path` predicate for all non-rectangular clips. This keeps the
+  general clip path unchanged while removing repeated path winding checks from
+  rectangle-clipped stroke and fill hot loops.
+- Correctness guard:
+  `point_in_active_clips_should_use_axis_aligned_rect_edges` freezes inclusive
+  left/top and exclusive right/bottom rectangle containment for the fast path.
+- A/B artifacts:
+  `target/performance-matrix-report-vector-rect-clip-repeat.json`,
+  `target/performance-matrix-report-vector-rect-clip-fast-repeat-1000.json`,
+  `target/performance-matrix-rect-clip-fast-starter.json`, and
+  `target/trace-native-vector-stress-rect-clip-fast.json`.
+- Result: accepted as a standalone vector/report improvement. Against the
+  previous rect-clip repeat baseline, `vector-stress.pdf` moved p95
+  `2.574 ms` -> `1.442 ms` (`~44.0%`) and mean `2.486 ms` -> `1.320 ms`
+  (`~46.9%`). Family p95 moved `2.574 ms` -> `1.442 ms`.
+  `technical-linework-dimensions.pdf` also improved p95
+  `0.342 ms` -> `0.305 ms` (`~10.8%`). `prepress-trim-bleed-marks.pdf`
+  showed a small p95 noise regression (`0.575 ms` -> `0.590 ms`) but improved
+  mean (`0.528 ms` -> `0.514 ms`), so it remains protection-neutral.
+  The trace moved `raster_paths` from `2.662 ms` to `1.400 ms`.
+- Protection result:
+  `target/performance-matrix-rect-clip-fast-starter.json` rendered all `11`
+  native hot-render records with no fallback-required, missing-tool,
+  not-applicable, or error records.
+- Decision: keep. This is a profile-backed reduction in per-sample clip
+  predicate work for common rectangular PDF clips, preserves generic clip
+  handling, and uses an existing field without new allocation, caching, unsafe
+  code, or dependency surface.
+
 ## Hardware-Aware Rust Notes
 
 Goal: use Rust's memory model and the host CPU well without prematurely

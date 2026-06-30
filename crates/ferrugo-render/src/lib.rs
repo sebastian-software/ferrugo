@@ -12604,9 +12604,14 @@ fn clip_coverage_for_pixel(
 }
 
 fn point_in_active_clips(point: Point, clips: &[ActiveClip]) -> bool {
-    clips
-        .iter()
-        .all(|clip| point_in_path(point, &clip.path, clip.rule))
+    clips.iter().all(|clip| match clip.axis_aligned_rect {
+        Some(rect) => point_in_rect(point, rect),
+        None => point_in_path(point, &clip.path, clip.rule),
+    })
+}
+
+fn point_in_rect(point: Point, rect: PathBounds) -> bool {
+    point.x >= rect.min_x && point.x < rect.max_x && point.y >= rect.min_y && point.y < rect.max_y
 }
 
 fn point_in_path(point: Point, path: &FlattenedPath, rule: FillRule) -> bool {
@@ -17638,6 +17643,32 @@ mod tests {
             intersect_active_clip_pixel_bounds(paint_bounds, &clips, dimensions),
             None
         );
+    }
+
+    #[test]
+    fn point_in_active_clips_should_use_axis_aligned_rect_edges() {
+        let clips = vec![ActiveClip {
+            path: FlattenedPath::default(),
+            bounds: Some(PathBounds {
+                min_x: 4.0,
+                min_y: 2.0,
+                max_x: 9.0,
+                max_y: 8.0,
+            }),
+            axis_aligned_rect: Some(PathBounds {
+                min_x: 4.0,
+                min_y: 2.0,
+                max_x: 9.0,
+                max_y: 8.0,
+            }),
+            rule: FillRule::Nonzero,
+            graphics_state_depth: 0,
+            graphics_state_scope_id: 0,
+        }];
+
+        assert!(point_in_active_clips(Point { x: 4.0, y: 2.0 }, &clips));
+        assert!(!point_in_active_clips(Point { x: 9.0, y: 7.5 }, &clips));
+        assert!(!point_in_active_clips(Point { x: 8.5, y: 8.0 }, &clips));
     }
 
     #[test]
