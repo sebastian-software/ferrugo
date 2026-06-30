@@ -8752,7 +8752,14 @@ fn trace_stroke_raster_route_summary_json(
                 "\"row_bucket_join_candidates\":{},",
                 "\"row_bucket_join_x_hits\":{},",
                 "\"row_bucket_join_hits\":{},",
-                "\"row_bucket_covered_pixels\":{}",
+                "\"row_bucket_covered_pixels\":{},",
+                "\"row_bucket_full_coverage_pixels\":{},",
+                "\"row_bucket_partial_coverage_pixels\":{},",
+                "\"row_bucket_empty_active_pixels\":{},",
+                "\"row_bucket_active_line_refs\":{},",
+                "\"max_row_bucket_active_line_refs_per_pixel\":{},",
+                "\"row_bucket_active_join_refs\":{},",
+                "\"max_row_bucket_active_join_refs_per_pixel\":{}",
                 "}}"
             ),
             summary.span_covered_calls,
@@ -8782,6 +8789,13 @@ fn trace_stroke_raster_route_summary_json(
             summary.row_bucket_join_x_hits,
             summary.row_bucket_join_hits,
             summary.row_bucket_covered_pixels,
+            summary.row_bucket_full_coverage_pixels,
+            summary.row_bucket_partial_coverage_pixels,
+            summary.row_bucket_empty_active_pixels,
+            summary.row_bucket_active_line_refs,
+            summary.max_row_bucket_active_line_refs_per_pixel,
+            summary.row_bucket_active_join_refs,
+            summary.max_row_bucket_active_join_refs_per_pixel,
         ),
         Err(error) => format!(
             "{{\"status\":\"error\",\"class\":{},\"bucket\":{}}}",
@@ -11798,6 +11812,13 @@ mod tests {
         assert!(json.contains("\"row_bucket_sample_points\""));
         assert!(json.contains("\"row_bucket_line_candidates\""));
         assert!(json.contains("\"row_bucket_covered_pixels\""));
+        assert!(json.contains("\"row_bucket_full_coverage_pixels\""));
+        assert!(json.contains("\"row_bucket_partial_coverage_pixels\""));
+        assert!(json.contains("\"row_bucket_empty_active_pixels\""));
+        assert!(json.contains("\"row_bucket_active_line_refs\""));
+        assert!(json.contains("\"max_row_bucket_active_line_refs_per_pixel\""));
+        assert!(json.contains("\"row_bucket_active_join_refs\""));
+        assert!(json.contains("\"max_row_bucket_active_join_refs_per_pixel\""));
         assert!(json.contains("\"image_resource_summary\""));
         assert!(json.contains("\"encoded_bytes\""));
         assert!(json.contains("\"resident_bytes\""));

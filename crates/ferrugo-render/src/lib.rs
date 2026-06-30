@@ -1570,6 +1570,21 @@ pub struct StrokeRasterRouteSummary {
     pub row_bucket_join_hits: usize,
     /// Pixels with at least one covered sample in row-bucket range calls.
     pub row_bucket_covered_pixels: usize,
+    /// Pixels with every sample covered in row-bucket range calls.
+    pub row_bucket_full_coverage_pixels: usize,
+    /// Pixels with partial sample coverage in row-bucket range calls.
+    pub row_bucket_partial_coverage_pixels: usize,
+    /// Pixels skipped by active row-bucket routing because no active candidate
+    /// line or join overlapped the pixel.
+    pub row_bucket_empty_active_pixels: usize,
+    /// Total active line references available for tested row-bucket pixels.
+    pub row_bucket_active_line_refs: usize,
+    /// Maximum active line references for one tested row-bucket pixel.
+    pub max_row_bucket_active_line_refs_per_pixel: usize,
+    /// Total active join references available for tested row-bucket pixels.
+    pub row_bucket_active_join_refs: usize,
+    /// Maximum active join references for one tested row-bucket pixel.
+    pub max_row_bucket_active_join_refs_per_pixel: usize,
 }
 
 impl StrokeRasterRouteSummary {
@@ -1633,6 +1648,27 @@ impl StrokeRasterRouteSummary {
         self.row_bucket_covered_pixels = self
             .row_bucket_covered_pixels
             .saturating_add(stats.covered_pixels);
+        self.row_bucket_full_coverage_pixels = self
+            .row_bucket_full_coverage_pixels
+            .saturating_add(stats.full_coverage_pixels);
+        self.row_bucket_partial_coverage_pixels = self
+            .row_bucket_partial_coverage_pixels
+            .saturating_add(stats.partial_coverage_pixels);
+        self.row_bucket_empty_active_pixels = self
+            .row_bucket_empty_active_pixels
+            .saturating_add(stats.empty_active_pixels);
+        self.row_bucket_active_line_refs = self
+            .row_bucket_active_line_refs
+            .saturating_add(stats.active_line_refs);
+        self.max_row_bucket_active_line_refs_per_pixel = self
+            .max_row_bucket_active_line_refs_per_pixel
+            .max(stats.max_active_line_refs_per_pixel);
+        self.row_bucket_active_join_refs = self
+            .row_bucket_active_join_refs
+            .saturating_add(stats.active_join_refs);
+        self.max_row_bucket_active_join_refs_per_pixel = self
+            .max_row_bucket_active_join_refs_per_pixel
+            .max(stats.max_active_join_refs_per_pixel);
     }
 }
 
@@ -1662,6 +1698,13 @@ struct StrokeRowBucketRuntimeStats {
     join_x_hits: usize,
     join_hits: usize,
     covered_pixels: usize,
+    full_coverage_pixels: usize,
+    partial_coverage_pixels: usize,
+    empty_active_pixels: usize,
+    active_line_refs: usize,
+    max_active_line_refs_per_pixel: usize,
+    active_join_refs: usize,
+    max_active_join_refs_per_pixel: usize,
 }
 
 /// Stroked item counts by flattened line count.
@@ -12073,6 +12116,7 @@ fn rasterize_row_bucketed_stroke_ranges_traced(
                 }
                 if covered > 0 {
                     stats.covered_pixels += 1;
+                    record_row_bucket_pixel_coverage(&mut stats, covered, sample_count);
                     blend_pixel(
                         device,
                         x,
@@ -12263,8 +12307,21 @@ fn rasterize_active_row_bucketed_stroke_ranges_traced(
                     );
                 }
                 if active_line_indices.is_empty() && active_join_indices.is_empty() {
+                    stats.empty_active_pixels += 1;
                     continue;
                 }
+                stats.active_line_refs = stats
+                    .active_line_refs
+                    .saturating_add(active_line_indices.len());
+                stats.max_active_line_refs_per_pixel = stats
+                    .max_active_line_refs_per_pixel
+                    .max(active_line_indices.len());
+                stats.active_join_refs = stats
+                    .active_join_refs
+                    .saturating_add(active_join_indices.len());
+                stats.max_active_join_refs_per_pixel = stats
+                    .max_active_join_refs_per_pixel
+                    .max(active_join_indices.len());
                 let mut covered = 0;
                 for sample_y in 0..samples {
                     for sample_x in 0..samples {
@@ -12295,6 +12352,7 @@ fn rasterize_active_row_bucketed_stroke_ranges_traced(
                 }
                 if covered > 0 {
                     stats.covered_pixels += 1;
+                    record_row_bucket_pixel_coverage(&mut stats, covered, sample_count);
                     blend_pixel(
                         device,
                         x,
@@ -12309,6 +12367,18 @@ fn rasterize_active_row_bucketed_stroke_ranges_traced(
     }
     stroke_routes.borrow_mut().record_row_bucket_runtime(stats);
     Ok(())
+}
+
+fn record_row_bucket_pixel_coverage(
+    stats: &mut StrokeRowBucketRuntimeStats,
+    covered: u32,
+    sample_count: u32,
+) {
+    if covered == sample_count {
+        stats.full_coverage_pixels += 1;
+    } else {
+        stats.partial_coverage_pixels += 1;
+    }
 }
 
 #[expect(
@@ -19674,6 +19744,106 @@ mod tests {
         assert!(routes.row_bucket_line_x_hits > 0);
         assert!(routes.row_bucket_line_hits > 0);
         assert!(routes.row_bucket_covered_pixels > 0);
+        assert_eq!(
+            routes.row_bucket_covered_pixels,
+            routes.row_bucket_full_coverage_pixels + routes.row_bucket_partial_coverage_pixels
+        );
+        assert_eq!(routes.row_bucket_empty_active_pixels, 0);
+        assert_eq!(routes.row_bucket_active_line_refs, 0);
+        assert_eq!(routes.max_row_bucket_active_line_refs_per_pixel, 0);
+        assert_eq!(routes.row_bucket_active_join_refs, 0);
+        assert_eq!(routes.max_row_bucket_active_join_refs_per_pixel, 0);
+    }
+
+    #[test]
+    fn stroke_raster_route_summary_should_count_active_row_bucket_refs() {
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 140.0,
+                    max_y: 140.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            140,
+        )
+        .expect("valid page transform");
+        let dimensions = transform.dimensions;
+        let mut lines = Vec::new();
+        for index in 0..STROKE_ROW_ACTIVE_MIN_BUCKET_LINES {
+            let offset = index as f64 * 0.5;
+            lines.push(LineSegment {
+                from: Point {
+                    x: 8.0 + offset,
+                    y: 12.0,
+                },
+                to: Point {
+                    x: 18.0 + offset,
+                    y: 120.0,
+                },
+            });
+        }
+        let radius = 0.5;
+        let bounds =
+            stroke_pixel_bounds(&lines, &[], radius, dimensions).expect("stroke should overlap");
+        let buckets = stroke_row_buckets(&lines, radius, dimensions, bounds)
+            .expect("row buckets should build");
+        assert!(buckets.lines.len() >= STROKE_ROW_ACTIVE_MIN_BUCKET_LINES);
+
+        let mut device = transform.create_device(Rgba::WHITE).expect("valid device");
+        let routes = RefCell::new(StrokeRasterRouteSummary::default());
+        let context = PathRasterContext {
+            transform,
+            options: PathRasterOptions::default(),
+            clips: &[],
+            stroke_routes: Some(&routes),
+        };
+        let state = StrokeRasterState {
+            line_width: 1.0,
+            ctm_scale: 1.0,
+            color: DeviceColor::BLACK,
+            blend_mode: BlendMode::Normal,
+            alpha: 1.0,
+            dash_pattern: StrokeDashPattern::solid(),
+            dash_scale: 1.0,
+            line_cap: LineCap::Butt,
+            line_join: LineJoin::Miter,
+            miter_limit: 10.0,
+        };
+
+        rasterize_row_bucketed_stroke_ranges(
+            &mut device,
+            &buckets,
+            None,
+            bounds,
+            state,
+            context,
+            1,
+            1,
+            Rgba {
+                r: 0,
+                g: 0,
+                b: 0,
+                a: 255,
+            },
+            true,
+        )
+        .expect("active row-bucket route should render");
+
+        let routes = routes.into_inner();
+        assert_eq!(routes.row_bucket_range_calls, 1);
+        assert_eq!(routes.row_bucket_active_range_calls, 1);
+        assert!(routes.row_bucket_active_line_refs > 0);
+        assert!(routes.max_row_bucket_active_line_refs_per_pixel > 0);
+        assert_eq!(routes.row_bucket_active_join_refs, 0);
+        assert_eq!(routes.max_row_bucket_active_join_refs_per_pixel, 0);
+        assert_eq!(
+            routes.row_bucket_covered_pixels,
+            routes.row_bucket_full_coverage_pixels + routes.row_bucket_partial_coverage_pixels
+        );
     }
 
     #[test]

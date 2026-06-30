@@ -5623,6 +5623,36 @@ Rejected active join-skip candidate from 2026-06-30:
   joins can be omitted entirely for a stroke item or a profile that isolates
   non-empty join candidate evaluation as the dominant cost.
 
+Row-bucket active counter instrumentation from 2026-06-30:
+
+- Change:
+  `trace-native` stroke raster route summaries now include row-bucket
+  full-coverage pixels, partial-coverage pixels, empty-active pixels, total
+  active line/join references, and max active line/join references per tested
+  pixel. The counters are collected only in the explicit traced raster path;
+  normal render and benchmark paths keep the previous loops.
+- Artifact:
+  `target/trace-vector-stress-row-bucket-active-counters.json`, generated with
+  `trace-native fixtures/generated/vector-stress.pdf --max-edge 160
+  --max-events 1`.
+- Current `vector-stress.pdf` signal:
+  row-bucket raster still used `2` active range calls, visited `3324` pixels
+  and `13296` sample points, and covered `1126` pixels. Coverage split was
+  `562` full-coverage pixels and `564` partial-coverage pixels. There were
+  `0` empty-active pixels, `6340` active line refs with max `7` per pixel, and
+  `1026` active join refs with max `4` per pixel. Line predicates checked
+  `21822` candidates with `3424` hits; join predicates checked `1096`
+  candidates with `0` hits. Span-covered work on the same trace visited `9008`
+  pixels and all `9008` were partial coverage.
+- Decision:
+  keep the counters. The new evidence explains why row-slice borrowing and
+  local empty-join guards did not help: the active route does not have empty
+  active pixels, average active candidate lists are small, and join evaluation
+  is visible but not a hit source. The next useful vector/report candidate
+  should target actual sample/pixel reduction or a larger coverage-aware path,
+  especially the span-covered route where all visited pixels are partial and
+  every pixel still pays sampled blending.
+
 ## Questions Closed For The Next Wave
 
 - [x] What family-specific standalone and cumulative thresholds should replace
