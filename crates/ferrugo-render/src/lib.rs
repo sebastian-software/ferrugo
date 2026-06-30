@@ -1169,14 +1169,14 @@ pub struct ImageXObject {
     pub bits_per_component: u8,
     /// Supported color space.
     pub color_space: ImageColorSpace,
-    /// Decoded image samples.
-    pub samples: Arc<[u8]>,
+    /// Decoded image samples shared across repeated placements.
+    pub samples: Arc<Vec<u8>>,
     /// Image rendering mode.
     pub kind: ImageKind,
     /// Indexed color lookup bytes for Indexed images.
     pub indexed_lookup: Option<Arc<[u8]>>,
     /// Optional 8-bit alpha mask samples matching the image dimensions.
-    pub soft_mask: Option<Arc<[u8]>>,
+    pub soft_mask: Option<Arc<Vec<u8>>>,
 }
 
 /// Decoded image rendering mode.
@@ -1267,6 +1267,10 @@ pub struct XObjectReference {
 
 /// Display-list item.
 #[derive(Debug, Clone, PartialEq)]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "display-list items stay inline to avoid per-item heap allocation in renderer hot paths"
+)]
 pub enum DisplayItem {
     /// Painted path.
     Path(PathDisplayItem),
@@ -1691,7 +1695,7 @@ pub struct ImageResourceSummary {
     pub encoded_bytes: usize,
     /// Total decoded sample bytes for decoded image resources.
     pub decoded_sample_bytes: usize,
-    /// Total resident soft-mask bytes attached to decoded image resources.
+    /// Total decoded soft-mask sample bytes attached to decoded image resources.
     pub soft_mask_bytes: usize,
     /// Total resident Indexed color lookup bytes attached to decoded image resources.
     pub indexed_lookup_bytes: usize,
@@ -1905,8 +1909,11 @@ struct IccTransform {
 }
 
 fn image_resident_bytes(image: &ImageXObject) -> usize {
-    image.samples.len()
-        + image.soft_mask.as_ref().map_or(0, |samples| samples.len())
+    image.samples.capacity()
+        + image
+            .soft_mask
+            .as_ref()
+            .map_or(0, |samples| samples.capacity())
         + image
             .indexed_lookup
             .as_ref()
@@ -9325,7 +9332,7 @@ where
         height,
         bits_per_component,
         color_space: color_space.kind,
-        samples: Arc::from(decoded),
+        samples: Arc::new(decoded),
         kind,
         indexed_lookup: color_space.indexed_lookup,
         soft_mask,
@@ -9384,7 +9391,7 @@ fn soft_mask_samples<'a, R>(
     limits: ImageDecodeLimits,
     soft_mask_depth: usize,
     icc_cache: &mut IccTransformCache,
-) -> GraphicsResult<Option<Arc<[u8]>>>
+) -> GraphicsResult<Option<Arc<Vec<u8>>>>
 where
     R: ImageObjectResolver<'a> + ?Sized,
 {
@@ -9495,7 +9502,7 @@ fn decode_inline_image(
         height,
         bits_per_component,
         color_space: color_space.kind,
-        samples: Arc::from(samples),
+        samples: Arc::new(samples),
         kind: ImageKind::Color,
         indexed_lookup: color_space.indexed_lookup,
         soft_mask: None,
@@ -20778,7 +20785,7 @@ mod tests {
                 paint_one_bits: false,
             }
         );
-        assert_eq!(image.samples.as_ref(), &[0b1000_0000]);
+        assert_eq!(image.samples.as_slice(), &[0b1000_0000]);
     }
 
     #[test]
@@ -20970,7 +20977,10 @@ mod tests {
             .get(PdfName::new(b"Im1"))
             .expect("decoded image resource");
 
-        assert_eq!(image.soft_mask.as_deref(), Some([0, 128].as_slice()));
+        assert_eq!(
+            image.soft_mask.as_ref().map(|samples| samples.as_slice()),
+            Some([0, 128].as_slice())
+        );
     }
 
     #[test]
@@ -21006,10 +21016,10 @@ mod tests {
                 height: 1,
                 bits_per_component: 8,
                 color_space: ImageColorSpace::DeviceRgb,
-                samples: Arc::from([255, 0, 0, 0, 0, 255].as_slice()),
+                samples: Arc::new(vec![255, 0, 0, 0, 0, 255]),
                 kind: ImageKind::Color,
                 indexed_lookup: None,
-                soft_mask: Some(Arc::from([0, 128].as_slice())),
+                soft_mask: Some(Arc::new(vec![0, 128])),
             },
             transform: Matrix::scale(2.0, 1.0),
             bounds: unit_square_bounds(Matrix::scale(2.0, 1.0)),
@@ -21074,7 +21084,7 @@ mod tests {
                 height: 1,
                 bits_per_component: 8,
                 color_space: ImageColorSpace::DeviceRgb,
-                samples: Arc::from([255, 0, 0].as_slice()),
+                samples: Arc::new(vec![255, 0, 0]),
                 kind: ImageKind::Color,
                 indexed_lookup: None,
                 soft_mask: None,
@@ -21131,7 +21141,7 @@ mod tests {
             height: 1,
             bits_per_component: 8,
             color_space: ImageColorSpace::DeviceRgb,
-            samples: Arc::from([255, 0, 0].as_slice()),
+            samples: Arc::new(vec![255, 0, 0]),
             kind: ImageKind::Color,
             indexed_lookup: None,
             soft_mask: None,
@@ -21142,7 +21152,7 @@ mod tests {
             Some(OpaqueImageSampleKind::DeviceRgb)
         );
 
-        image.soft_mask = Some(Arc::from([128].as_slice()));
+        image.soft_mask = Some(Arc::new(vec![128]));
         assert_eq!(opaque_image_sample_kind(&image), None);
 
         image.soft_mask = None;
@@ -21166,7 +21176,7 @@ mod tests {
             height: 1,
             bits_per_component: 8,
             color_space: ImageColorSpace::DeviceGray,
-            samples: Arc::from([192].as_slice()),
+            samples: Arc::new(vec![192]),
             kind: ImageKind::Color,
             indexed_lookup: None,
             soft_mask: None,
@@ -21177,7 +21187,7 @@ mod tests {
             Some(OpaqueImageSampleKind::DeviceGray)
         );
 
-        image.soft_mask = Some(Arc::from([128].as_slice()));
+        image.soft_mask = Some(Arc::new(vec![128]));
         assert_eq!(opaque_image_sample_kind(&image), None);
 
         image.soft_mask = None;
@@ -21581,10 +21591,10 @@ mod tests {
             height: 1,
             bits_per_component: 8,
             color_space: ImageColorSpace::DeviceCmyk,
-            samples: Arc::from([0, 255, 255, 0].as_slice()),
+            samples: Arc::new(vec![0, 255, 255, 0]),
             kind: ImageKind::Color,
             indexed_lookup: None,
-            soft_mask: Some(Arc::from([128].as_slice())),
+            soft_mask: Some(Arc::new(vec![128])),
         };
         let mut cache = ImageSampleCache::default();
 

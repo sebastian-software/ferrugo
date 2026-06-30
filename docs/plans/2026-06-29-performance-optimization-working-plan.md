@@ -2537,6 +2537,44 @@ Image resource summary instrumentation from 2026-06-30:
   decoded sample materialization for oversized Flate scans over more
   compressed-stream copy micro-optimizations.
 
+Accepted shared image sample Vec result from 2026-06-30:
+
+- Profiling trigger: `target/sample-scanner-large-post-interior.txt` showed a
+  visible `Arc::from(Vec<u8>)` copy after Flate image decode, and the image
+  resource summary showed large decoded sample buffers relative to encoded
+  bytes. This targeted renderer-owned allocation/copy traffic after decode,
+  not the `miniz_oxide` transfer loop itself.
+- Change: decoded image samples and decoded soft masks are now stored as
+  `Arc<Vec<u8>>` instead of `Arc<[u8]>`. This keeps cheap sharing across
+  repeated image placements while preserving the original decode `Vec`
+  allocation, avoiding the large copy required to move decoded samples into an
+  Arc slice.
+- Scope guard: indexed lookup tables stay as `Arc<[u8]>`; raster sampling,
+  soft-mask alpha, filter decode, color conversion, image bounds, and output
+  pixels are unchanged. `resident_bytes` now uses sample `Vec::capacity()` so
+  trace memory accounting remains honest for the new storage shape.
+- A/B artifacts:
+  `/private/tmp/pdfrust-arc-vec-base/target/performance-matrix-arc-vec-base.json`,
+  `target/performance-matrix-arc-vec-candidate.json`,
+  `/private/tmp/pdfrust-arc-vec-base/target/performance-matrix-arc-vec-base-repeat.json`,
+  `target/performance-matrix-arc-vec-candidate-repeat.json`,
+  `/private/tmp/pdfrust-arc-vec-base/target/benchmark-native-arc-vec-scanner-base.json`,
+  and `target/benchmark-native-arc-vec-scanner-candidate.json`.
+- Repeated image-heavy matrix result: `scanner-large-image-budget.pdf` improved
+  mean `0.248 ms` -> `0.237 ms` (~4.4%) and p95 `0.274 ms` -> `0.256 ms`
+  (~6.6%) across the two 200-iteration A/B runs. The focused 50,000-iteration
+  scanner benchmark confirmed mean movement `0.247 ms` -> `0.237 ms` (~4.0%).
+- Protection movement: `mobile-mixed-compression-scan.pdf` improved mean
+  ~2.0% and stayed roughly neutral on p95. `image-heavy-rotated-mask-sheet.pdf`,
+  `image-mask-logo.pdf`, and `soft-mask-image.pdf` stayed neutral to better.
+  `dct-image.pdf` and `predictor-image.pdf` had small noisy p95 regressions,
+  with mean movement under 5%; keep them as watch items in the next image
+  matrix.
+- Decision: accept as a cumulative Phase 4 resource-decode allocation win. It
+  does not replace downsample-aware decode, but it removes one measured
+  renderer-owned copy from the large decoded-image path and compounds with the
+  earlier Flate capacity and opaque image raster wins.
+
 Rejected image raster candidate from 2026-06-30:
 
 - Change tested locally but not kept: apply the same row-slice compositing
