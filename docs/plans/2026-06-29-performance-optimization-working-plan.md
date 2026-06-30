@@ -4583,6 +4583,33 @@ Stroke routing counters from 2026-06-30:
   discriminator that protects the technical fixtures that regressed in the
   earlier threshold test.
 
+Rejected single-line hairline shortcut from 2026-06-30:
+
+- Profiling basis:
+  `target/trace-prepress-routing-counters.json` showed `16` short single-line
+  snapped-hairline strokes below the simple-line span threshold and falling
+  through to the generic stroke loop. This made a narrower route worth testing,
+  without repeating the previously rejected broad threshold-16 change.
+- Change tested locally but not kept:
+  before axis-span setup, route only `snap_hairline && samples == 1`
+  single-line, axis-aligned, butt-cap, no-join strokes with skippable clips
+  through a direct center-sampled axis range raster path. The helper used the
+  existing sampled pixel blend path and had a byte-for-byte unit test against
+  the generic butt-stroke predicate for horizontal and vertical lines.
+- A/B artifacts:
+  `target/benchmark-repeat-prepress-head-sample-after-row-rect.json` and
+  `target/benchmark-repeat-prepress-single-line-hairline-candidate.json`.
+- Result:
+  rejected. The Prepress repeat mean moved `0.312 ms` -> `0.319 ms`, with
+  identical output dimensions and bytes. Even the narrow direct route did not
+  beat the current generic path on this fixture.
+- Decision:
+  reverted. Do not retry direct center-sampled single-line hairline drawing
+  unless a future profile shows the generic line-distance predicate itself as
+  the dominant standalone cost. The next attempt should inspect allocation/drop
+  or display-list lifetime costs visible around the remaining `stroke_path`
+  sample, not another small line raster shortcut.
+
 ## Phase 6: Benchmark Gates And Claims
 
 Goal: turn stable evidence into guardrails, not premature marketing.
