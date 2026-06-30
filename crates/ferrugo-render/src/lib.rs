@@ -14521,27 +14521,38 @@ fn fill_device_rect(
     let min_y = top.floor().max(0.0) as u32;
     let max_y = bottom.ceil().min(f64::from(dimensions.height)) as u32;
     for y in min_y..max_y {
+        let y_coverage = pixel_coverage_1d(y, top, bottom);
+        if y_coverage <= f64::EPSILON {
+            continue;
+        }
+        let row = device.row_mut(y)?;
         for x in min_x..max_x {
-            let coverage = rect_pixel_coverage(left, right, top, bottom, x, y);
+            let coverage = pixel_coverage_1d(x, left, right) * y_coverage;
             if coverage >= 1.0 - f64::EPSILON && color.a == 255 {
-                device.set_pixel(x, y, color)?;
+                write_opaque_image_pixel_in_row(row, x, color);
             } else if coverage > f64::EPSILON {
-                let dest = device.pixel(x, y)?;
-                device.set_pixel(x, y, source_over(color, dest, coverage))?;
+                blend_rect_pixel_in_row(row, x, color, coverage);
             }
         }
     }
     Ok(())
 }
 
-fn rect_pixel_coverage(left: f64, right: f64, top: f64, bottom: f64, x: u32, y: u32) -> f64 {
-    let pixel_left = f64::from(x);
-    let pixel_right = pixel_left + 1.0;
-    let pixel_top = f64::from(y);
-    let pixel_bottom = pixel_top + 1.0;
-    let overlap_x = right.min(pixel_right) - left.max(pixel_left);
-    let overlap_y = bottom.min(pixel_bottom) - top.max(pixel_top);
-    (overlap_x.max(0.0) * overlap_y.max(0.0)).clamp(0.0, 1.0)
+fn blend_rect_pixel_in_row(row: &mut [u8], x: u32, source: Rgba, coverage: f64) {
+    let offset = x as usize * PixelFormat::Rgba8.bytes_per_pixel();
+    let dest = Rgba {
+        r: row[offset],
+        g: row[offset + 1],
+        b: row[offset + 2],
+        a: row[offset + 3],
+    };
+    let blended = if source.a == 255 && dest.a == 255 {
+        source_over_opaque(source, dest, coverage)
+    } else {
+        source_over(source, dest, coverage)
+    };
+    row[offset..offset + PixelFormat::Rgba8.bytes_per_pixel()]
+        .copy_from_slice(&[blended.r, blended.g, blended.b, blended.a]);
 }
 
 fn ascii_glyph(character: char) -> [&'static str; 7] {

@@ -3986,6 +3986,46 @@ Accepted streamed fallback text rasterization from 2026-06-30:
   it is low risk for non-text pages and directly addresses the sampled text
   bottleneck.
 
+Accepted row-slice text rectangle fill from 2026-06-30:
+
+- Profiling basis: after the streamed fallback text work,
+  `target/benchmark-repeat-office-report-head-sample-run.json` measured
+  `fixtures/generated/office-report-header-footer-link.pdf` at repeat mean
+  `0.206 ms`, with `raster_text` still the largest repeat phase at `0.089 ms`.
+  The matching CPU sample, `target/sample-office-report-head-sample-run.txt`,
+  was dominated by `draw_text_run`; the largest child stacks were
+  `fill_device_rect` and `source_over`, with additional samples in
+  per-pixel `RasterDevice::pixel` reads.
+- Change: `fill_device_rect` now takes one mutable row slice per affected row,
+  computes y coverage once, reuses the existing 1D coverage helper for x
+  coverage, and writes/blends directly inside the row. Opaque source-over on
+  opaque destination pixels uses the existing `source_over_opaque` helper,
+  avoiding the general alpha-normalization path for the common fallback text
+  case.
+- Focused A/B artifacts:
+  `target/benchmark-repeat-office-report-head-sample-run.json`,
+  `target/benchmark-repeat-office-report-row-rect-candidate.json`, and
+  `target/benchmark-repeat-office-report-row-rect-candidate-repeat.json`, all
+  `benchmark-repeat-native`, `--max-edge 160`, 160,000 iterations.
+- Result: office report repeat mean improved `0.206 ms` -> `0.175 ms`
+  (`~15.0%`) on the first candidate run and repeated at `0.181 ms`
+  (`~12.1%`). The text phase improved `0.089 ms` -> `0.062 ms`
+  (`~30.3%`) and repeated at `0.062 ms`.
+- Protection: `target/performance-matrix-row-rect-candidate.json` and
+  `target/performance-matrix-row-rect-candidate-repeat.json` both rendered the
+  11-fixture starter matrix without fallback or errors. Short-run p95 was noisy
+  on unrelated fixtures, so focused repeats were used for the flagged vector
+  cases: `target/benchmark-repeat-vector-stress-row-rect-candidate.json`
+  measured repeat mean `0.671 ms` versus the current baseline artifact
+  `target/benchmark-repeat-vector-stress-profile-run-current.json` at
+  `0.681 ms`, and `target/benchmark-repeat-prepress-row-rect-candidate.json`
+  measured repeat mean `0.307 ms`, below the short-matrix baseline mean
+  `0.325 ms`.
+- Decision: accepted as a text/office-export raster win. The change removes
+  repeated device-level bounds checks from rectangle fills and keeps the
+  existing coverage model, so visual semantics stay covered by the subpixel
+  rectangle raster test.
+
 Repeat family phase-summary instrumentation from 2026-06-30:
 
 - Change: `benchmark-repeat-native` now aggregates record-level
