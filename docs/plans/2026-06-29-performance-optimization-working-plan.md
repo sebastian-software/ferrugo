@@ -4391,6 +4391,45 @@ Current vector-stress profiling pass from 2026-06-30:
   changes, or a targeted allocation counter before changing allocation
   strategy again.
 
+Rejected span-row blend candidate from 2026-06-30:
+
+- Profiling basis:
+  `target/sample-vector-stress-profile-run-current.txt` still showed
+  `blend_pixel` and `rasterize_span_covered_stroke_ranges` as prominent
+  sampled stacks under `stroke_path`, while
+  `target/benchmark-repeat-vector-stress-profile-run-current.json` measured
+  repeat mean `0.681 ms`, computed p95 `0.774 ms`, and `raster_paths`
+  `0.592 ms`.
+- Change tested locally but not kept:
+  route the existing `rasterize_span_covered_stroke_ranges` path through a
+  row-slice blend helper instead of calling `RasterDevice::pixel` /
+  `set_pixel` through `blend_sampled_pixel` for every covered pixel.
+- A/B artifacts:
+  `target/benchmark-repeat-vector-stress-span-row-blend-candidate-120k.json`,
+  `target/performance-matrix-report-vector-span-row-blend-candidate.json`,
+  `target/performance-matrix-report-vector-span-row-blend-candidate-repeat.json`,
+  `target/benchmark-repeat-technical-repeated-symbols-span-row-blend-candidate-120k.json`,
+  and
+  `target/benchmark-repeat-vector-stress-long-span-row-blend-candidate-120k.json`.
+- Result:
+  rejected. The broad row-slice variant improved the target repeat run
+  (`vector-stress` mean `0.681 ms` -> `0.641 ms`, computed p95 `0.774 ms` ->
+  `0.728 ms`, `raster_paths` `0.592 ms` -> `0.551 ms`), but it was not
+  protection-set neutral. The report/vector matrix showed unstable or worse
+  p95s on `prepress-trim-bleed-marks.pdf` and
+  `technical-hatch-clipping.pdf`; a second matrix repeated broad p95 spikes
+  and showed `prepress` mean `0.342 ms` -> `0.363 ms`.
+  `technical-repeated-symbols` repeat mean improved only `0.462 ms` ->
+  `0.449 ms`, while computed p95 regressed `0.491 ms` -> `0.511 ms`.
+  A narrower long-span-only variant reduced the target effect below the
+  threshold (`vector-stress` mean `0.681 ms` -> `0.663 ms`, p95 `0.774 ms` ->
+  `0.749 ms`, `raster_paths` `0.592 ms` -> `0.572 ms`).
+- Decision:
+  reverted. Do not revive row-slice stroke blending in the span-covered path
+  without a shape discriminator that preserves small snapped-hairline
+  workloads. The target win is real, but the current branch shape trades away
+  protection-set stability and the guarded variant is below the 5% threshold.
+
 ## Phase 6: Benchmark Gates And Claims
 
 Goal: turn stable evidence into guardrails, not premature marketing.
