@@ -7666,7 +7666,34 @@ struct LineSegment {
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct BoundedStrokeLine {
     line: LineSegment,
+    metrics: StrokeLineMetrics,
     bounds: PixelBounds,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct StrokeLineMetrics {
+    dx: f64,
+    dy: f64,
+    len_squared: f64,
+    inv_len_squared: f64,
+}
+
+impl StrokeLineMetrics {
+    fn new(line: LineSegment) -> Self {
+        let dx = line.to.x - line.from.x;
+        let dy = line.to.y - line.from.y;
+        let len_squared = dx.mul_add(dx, dy * dy);
+        Self {
+            dx,
+            dy,
+            len_squared,
+            inv_len_squared: if len_squared <= f64::EPSILON {
+                0.0
+            } else {
+                1.0 / len_squared
+            },
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -13083,6 +13110,7 @@ fn stroke_row_buckets(
         };
         lines_with_bounds.push(BoundedStrokeLine {
             line: *line,
+            metrics: StrokeLineMetrics::new(*line),
             bounds,
         });
         for y in bounds.min_y..bounds.max_y {
@@ -14054,11 +14082,11 @@ fn point_in_row_bucketed_stroke(
     };
     let radius_squared = radius * radius;
     for &line_index in &buckets.indices[row.clone()] {
-        let bounded = buckets.lines[line_index];
+        let bounded = &buckets.lines[line_index];
         if x < bounded.bounds.min_x || x >= bounded.bounds.max_x {
             continue;
         }
-        if point_in_single_stroke_line(point, bounded.line, radius, radius_squared, line_cap) {
+        if point_in_bounded_stroke_line(point, bounded, radius, radius_squared, line_cap) {
             return true;
         }
     }
@@ -14083,12 +14111,12 @@ fn point_in_row_bucketed_stroke_traced(
     let radius_squared = radius * radius;
     for &line_index in &buckets.indices[row.clone()] {
         stats.line_candidates += 1;
-        let bounded = buckets.lines[line_index];
+        let bounded = &buckets.lines[line_index];
         if x < bounded.bounds.min_x || x >= bounded.bounds.max_x {
             continue;
         }
         stats.line_x_hits += 1;
-        if point_in_single_stroke_line(point, bounded.line, radius, radius_squared, line_cap) {
+        if point_in_bounded_stroke_line(point, bounded, radius, radius_squared, line_cap) {
             stats.line_hits += 1;
             return true;
         }
@@ -14105,8 +14133,8 @@ fn point_in_row_bucketed_stroke_candidates(
 ) -> bool {
     let radius_squared = radius * radius;
     line_indices.iter().any(|&line_index| {
-        let bounded = buckets.lines[line_index];
-        point_in_single_stroke_line(point, bounded.line, radius, radius_squared, line_cap)
+        let bounded = &buckets.lines[line_index];
+        point_in_bounded_stroke_line(point, bounded, radius, radius_squared, line_cap)
     })
 }
 
@@ -14122,8 +14150,8 @@ fn point_in_row_bucketed_stroke_candidates_traced(
     for &line_index in line_indices {
         stats.line_candidates += 1;
         stats.line_x_hits += 1;
-        let bounded = buckets.lines[line_index];
-        if point_in_single_stroke_line(point, bounded.line, radius, radius_squared, line_cap) {
+        let bounded = &buckets.lines[line_index];
+        if point_in_bounded_stroke_line(point, bounded, radius, radius_squared, line_cap) {
             stats.line_hits += 1;
             return true;
         }
@@ -14144,6 +14172,27 @@ fn point_in_single_stroke_line(
         LineCap::Round => distance_to_line_segment_squared(point, line) <= radius_squared,
         LineCap::Square => {
             distance_to_line_body_squared(point, square_capped_line_segment(line, radius))
+                .is_some_and(|distance| distance <= radius_squared)
+        }
+    }
+}
+
+fn point_in_bounded_stroke_line(
+    point: Point,
+    bounded: &BoundedStrokeLine,
+    radius: f64,
+    radius_squared: f64,
+    line_cap: LineCap,
+) -> bool {
+    match line_cap {
+        LineCap::Butt => distance_to_bounded_line_body_squared(point, bounded)
+            .is_some_and(|distance| distance <= radius_squared),
+        LineCap::Round => {
+            distance_to_bounded_line_segment_squared(point, bounded) <= radius_squared
+        }
+        LineCap::Square => {
+            let line = square_capped_line_segment(bounded.line, radius);
+            distance_to_line_body_squared(point, line)
                 .is_some_and(|distance| distance <= radius_squared)
         }
     }
@@ -14598,6 +14647,25 @@ fn distance_to_line_body_squared(point: Point, line: LineSegment) -> Option<f64>
     Some(px.mul_add(px, py * py))
 }
 
+fn distance_to_bounded_line_body_squared(point: Point, bounded: &BoundedStrokeLine) -> Option<f64> {
+    if bounded.metrics.len_squared <= f64::EPSILON {
+        return None;
+    }
+    let t = ((point.x - bounded.line.from.x) * bounded.metrics.dx
+        + (point.y - bounded.line.from.y) * bounded.metrics.dy)
+        * bounded.metrics.inv_len_squared;
+    if !(0.0..=1.0).contains(&t) {
+        return None;
+    }
+    let projection = Point {
+        x: bounded.line.from.x + t * bounded.metrics.dx,
+        y: bounded.line.from.y + t * bounded.metrics.dy,
+    };
+    let px = point.x - projection.x;
+    let py = point.y - projection.y;
+    Some(px.mul_add(px, py * py))
+}
+
 fn square_capped_line_segment(line: LineSegment, radius: f64) -> LineSegment {
     let dx = line.to.x - line.from.x;
     let dy = line.to.y - line.from.y;
@@ -14633,6 +14701,25 @@ fn distance_to_line_segment_squared(point: Point, line: LineSegment) -> f64 {
     let projection = Point {
         x: line.from.x + t * dx,
         y: line.from.y + t * dy,
+    };
+    let px = point.x - projection.x;
+    let py = point.y - projection.y;
+    px.mul_add(px, py * py)
+}
+
+fn distance_to_bounded_line_segment_squared(point: Point, bounded: &BoundedStrokeLine) -> f64 {
+    if bounded.metrics.len_squared <= f64::EPSILON {
+        let px = point.x - bounded.line.from.x;
+        let py = point.y - bounded.line.from.y;
+        return px.mul_add(px, py * py);
+    }
+    let t = (((point.x - bounded.line.from.x) * bounded.metrics.dx
+        + (point.y - bounded.line.from.y) * bounded.metrics.dy)
+        * bounded.metrics.inv_len_squared)
+        .clamp(0.0, 1.0);
+    let projection = Point {
+        x: bounded.line.from.x + t * bounded.metrics.dx,
+        y: bounded.line.from.y + t * bounded.metrics.dy,
     };
     let px = point.x - projection.x;
     let py = point.y - projection.y;
@@ -18575,6 +18662,47 @@ mod tests {
             point_in_row_bucketed_stroke(point, 4, 5, &buckets, 0.5, LineCap::Butt),
             point_in_stroke(point, &lines, 0.5, LineCap::Butt)
         );
+    }
+
+    #[test]
+    fn bounded_stroke_line_predicate_should_match_single_line_predicate() {
+        let line = LineSegment {
+            from: Point { x: 2.25, y: 4.5 },
+            to: Point { x: 9.75, y: 7.25 },
+        };
+        let bounded = BoundedStrokeLine {
+            line,
+            metrics: StrokeLineMetrics::new(line),
+            bounds: PixelBounds {
+                min_x: 1,
+                min_y: 3,
+                max_x: 11,
+                max_y: 9,
+            },
+        };
+        let radius = 0.75;
+        let radius_squared = radius * radius;
+        for line_cap in [LineCap::Butt, LineCap::Round, LineCap::Square] {
+            for y in 3..9 {
+                for x in 1..11 {
+                    let point = Point {
+                        x: f64::from(x) + 0.25,
+                        y: f64::from(y) + 0.75,
+                    };
+                    assert_eq!(
+                        point_in_bounded_stroke_line(
+                            point,
+                            &bounded,
+                            radius,
+                            radius_squared,
+                            line_cap
+                        ),
+                        point_in_single_stroke_line(point, line, radius, radius_squared, line_cap),
+                        "bounded predicate mismatch for {line_cap:?} at {point:?}"
+                    );
+                }
+            }
+        }
     }
 
     #[test]

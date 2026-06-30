@@ -5183,6 +5183,55 @@ Rejected sampled float blend dispatch candidate from 2026-06-30:
   simple cursor threshold, joinless raster-span reuse, or row-copy spelling
   variants already rejected above.
 
+### Accepted row-bucket line metrics from 2026-06-30
+
+- Profile basis:
+  `target/sample-vector-stress-live-status.txt`,
+  `target/benchmark-repeat-vector-stress-live-status-200k.json`, and
+  `target/trace-vector-stress-live-status.json` showed the current hot section
+  still inside path rasterization. The largest sampled buckets included
+  `rasterize_span_covered_stroke_ranges`, `blend_pixel`,
+  `rasterize_row_bucketed_stroke_ranges`, `axis_stroke_raster_spans`, and
+  `point_in_single_stroke_line`. Runtime counters reported `2` active
+  row-bucket range calls, `13296` row-bucket sample points, `21822` line
+  candidate checks, and `3424` line hits.
+- Change:
+  `BoundedStrokeLine` now stores `StrokeLineMetrics` with precomputed `dx`,
+  `dy`, `len_squared`, and reciprocal length squared. Row-bucket stroke
+  predicates use those metrics for Butt and Round caps instead of recomputing
+  line deltas and dividing by length squared for every candidate sample. The
+  generic stroke predicate and Square-cap fallback semantics stay unchanged.
+- Correctness guard:
+  `bounded_stroke_line_predicate_should_match_single_line_predicate` compares
+  the bounded-metric predicate against the existing single-line predicate for
+  Butt, Round, and Square caps over a small point grid.
+- Focused result:
+  `target/benchmark-repeat-vector-stress-live-status-200k.json` versus
+  `target/benchmark-repeat-vector-stress-bounded-line-reciprocal-candidate-200k.json`.
+  `vector-stress.pdf` repeat mean improved `0.604 ms` -> `0.572 ms` (~5.3%),
+  p95 improved `0.637 ms` -> `0.612 ms` (~3.9%), and repeat mean
+  `raster_paths` improved `0.518 ms` -> `0.486 ms` (~6.2%). Output status,
+  dimensions, and bytes stayed unchanged.
+- Protection result:
+  `target/benchmark-repeat-prepress-flat-join-raster-candidate-20k.json`
+  versus
+  `target/benchmark-repeat-prepress-bounded-line-reciprocal-candidate-20k.json`
+  improved mean `0.322 ms` -> `0.301 ms`, p95 `0.367 ms` -> `0.316 ms`, and
+  raster paths `0.278 ms` -> `0.259 ms`.
+  `target/benchmark-repeat-technical-hatch-flat-join-raster-candidate-20k.json`
+  versus
+  `target/benchmark-repeat-technical-hatch-bounded-line-reciprocal-candidate-20k.json`
+  improved mean `0.262 ms` -> `0.250 ms`, p95 `0.308 ms` -> `0.261 ms`, and
+  raster paths `0.162 ms` -> `0.154 ms`.
+  Both protection fixtures kept native-rendered status, output dimensions, and
+  output bytes unchanged.
+- Decision:
+  keep. This is a narrow row-bucket predicate optimization backed by current
+  profile and trace data. It accepts a small per-line bucket memory increase to
+  remove repeated hotpath arithmetic in documents with larger stroke linework,
+  without adding dependencies, unsafe code, global state, or alternate
+  geometry.
+
 ## Settled Decisions
 
 - [x] `scripts/generate_performance_matrix.sh` defaults to release mode.
