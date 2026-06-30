@@ -5535,6 +5535,11 @@ fn add_phase_timings(target: &mut NativeRenderPhaseTimings, addend: NativeRender
     target.content_tokenize += addend.content_tokenize;
     target.display_list_build += addend.display_list_build;
     target.resource_decode += addend.resource_decode;
+    target.resource_graphics += addend.resource_graphics;
+    target.resource_forms += addend.resource_forms;
+    target.resource_images += addend.resource_images;
+    target.resource_fonts += addend.resource_fonts;
+    target.resource_annotations += addend.resource_annotations;
     target.raster_paths += addend.raster_paths;
     target.raster_text += addend.raster_text;
     target.raster_images += addend.raster_images;
@@ -5553,6 +5558,11 @@ fn scale_phase_timings(
         content_tokenize: scale_duration(timings.content_tokenize, divisor),
         display_list_build: scale_duration(timings.display_list_build, divisor),
         resource_decode: scale_duration(timings.resource_decode, divisor),
+        resource_graphics: scale_duration(timings.resource_graphics, divisor),
+        resource_forms: scale_duration(timings.resource_forms, divisor),
+        resource_images: scale_duration(timings.resource_images, divisor),
+        resource_fonts: scale_duration(timings.resource_fonts, divisor),
+        resource_annotations: scale_duration(timings.resource_annotations, divisor),
         raster_paths: scale_duration(timings.raster_paths, divisor),
         raster_text: scale_duration(timings.raster_text, divisor),
         raster_images: scale_duration(timings.raster_images, divisor),
@@ -8664,6 +8674,11 @@ fn trace_phase_timings_json(timings: Result<&NativeRenderPhaseTimings, &Thumbnai
                 "\"content_tokenize\":{:.3},",
                 "\"display_list_build\":{:.3},",
                 "\"resource_decode\":{:.3},",
+                "\"resource_graphics\":{:.3},",
+                "\"resource_forms\":{:.3},",
+                "\"resource_images\":{:.3},",
+                "\"resource_fonts\":{:.3},",
+                "\"resource_annotations\":{:.3},",
                 "\"raster_paths\":{:.3},",
                 "\"raster_text\":{:.3},",
                 "\"raster_images\":{:.3},",
@@ -8676,6 +8691,11 @@ fn trace_phase_timings_json(timings: Result<&NativeRenderPhaseTimings, &Thumbnai
             elapsed_ms(timings.content_tokenize),
             elapsed_ms(timings.display_list_build),
             elapsed_ms(timings.resource_decode),
+            elapsed_ms(timings.resource_graphics),
+            elapsed_ms(timings.resource_forms),
+            elapsed_ms(timings.resource_images),
+            elapsed_ms(timings.resource_fonts),
+            elapsed_ms(timings.resource_annotations),
             elapsed_ms(timings.raster_paths),
             elapsed_ms(timings.raster_text),
             elapsed_ms(timings.raster_images),
@@ -11509,6 +11529,7 @@ mod tests {
         assert!(json.contains("\"phase_timings_ms\""));
         assert!(json.contains("\"load_xref_object\""));
         assert!(json.contains("\"display_list_build\""));
+        assert!(json.contains("\"resource_images\""));
         assert!(json.contains("\"raster_paths\""));
         assert!(json.contains("\"total\""));
         assert!(json.contains("\"stroke_shape_summary\""));
@@ -12354,6 +12375,7 @@ status = "candidate"
         assert!(json.contains("\"phase_timings_ms\""));
         assert!(json.contains("\"phase_timings_ms\":{\"first_mean\""));
         assert!(json.contains("\"resource_decode\""));
+        assert!(json.contains("\"resource_images\""));
         assert!(json.contains("\"repeat_mean_ms\""));
     }
 

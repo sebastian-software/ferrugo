@@ -92,6 +92,16 @@ pub struct NativeRenderPhaseTimings {
     pub display_list_build: Duration,
     /// Page resources, XObjects, fonts, images, shadings, patterns, and color spaces.
     pub resource_decode: Duration,
+    /// Graphics-state, shading, tiling-pattern, and page color-space resources.
+    pub resource_graphics: Duration,
+    /// Form XObject resource resolution.
+    pub resource_forms: Duration,
+    /// Image XObject resource decoding.
+    pub resource_images: Duration,
+    /// Font and font-program resource decoding.
+    pub resource_fonts: Duration,
+    /// Annotation-specific synthetic resource decoding.
+    pub resource_annotations: Duration,
     /// Path-like raster work, including ordered mixed display-list rasterization.
     pub raster_paths: Duration,
     /// Text raster work.
@@ -154,7 +164,11 @@ enum NativeRenderPhase {
     StreamDecode,
     ContentTokenize,
     DisplayListBuild,
-    ResourceDecode,
+    ResourceGraphics,
+    ResourceForms,
+    ResourceImages,
+    ResourceFonts,
+    ResourceAnnotations,
     RasterPaths,
     RasterText,
     RasterImages,
@@ -167,7 +181,26 @@ impl NativeRenderPhaseTimings {
             NativeRenderPhase::StreamDecode => self.stream_decode += duration,
             NativeRenderPhase::ContentTokenize => self.content_tokenize += duration,
             NativeRenderPhase::DisplayListBuild => self.display_list_build += duration,
-            NativeRenderPhase::ResourceDecode => self.resource_decode += duration,
+            NativeRenderPhase::ResourceGraphics => {
+                self.resource_decode += duration;
+                self.resource_graphics += duration;
+            }
+            NativeRenderPhase::ResourceForms => {
+                self.resource_decode += duration;
+                self.resource_forms += duration;
+            }
+            NativeRenderPhase::ResourceImages => {
+                self.resource_decode += duration;
+                self.resource_images += duration;
+            }
+            NativeRenderPhase::ResourceFonts => {
+                self.resource_decode += duration;
+                self.resource_fonts += duration;
+            }
+            NativeRenderPhase::ResourceAnnotations => {
+                self.resource_decode += duration;
+                self.resource_annotations += duration;
+            }
             NativeRenderPhase::RasterPaths => self.raster_paths += duration,
             NativeRenderPhase::RasterText => self.raster_text += duration,
             NativeRenderPhase::RasterImages => self.raster_images += duration,
@@ -1385,7 +1418,7 @@ fn render_loaded_document_inner(
     let display_options = limits.display_options();
     let path_options = limits.path_raster_options();
     let (ext_graphics_states, shadings, patterns, color_spaces) =
-        record_render_phase(&mut timings, NativeRenderPhase::ResourceDecode, || {
+        record_render_phase(&mut timings, NativeRenderPhase::ResourceGraphics, || {
             Ok((
                 page_ext_graphics_state_resources(document, page)?,
                 page_shading_resources(document, page, display_options)?,
@@ -1413,7 +1446,7 @@ fn render_loaded_document_inner(
     .map_err(map_raster_error)?;
     record_stroke_shapes(&mut stroke_shapes, &display_list, transform, path_options)?;
     let form_resources =
-        record_render_phase(&mut timings, NativeRenderPhase::ResourceDecode, || {
+        record_render_phase(&mut timings, NativeRenderPhase::ResourceForms, || {
             page_form_resources(document, page, &xobject_invocations)
         })?;
     let form_list = record_render_phase(&mut timings, NativeRenderPhase::DisplayListBuild, || {
@@ -1430,7 +1463,7 @@ fn render_loaded_document_inner(
     })?;
     record_stroke_shapes(&mut stroke_shapes, &form_list, transform, path_options)?;
     let image_resources =
-        record_render_phase(&mut timings, NativeRenderPhase::ResourceDecode, || {
+        record_render_phase(&mut timings, NativeRenderPhase::ResourceImages, || {
             page_image_resources(document, page, &xobject_invocations, display_options)
         })?;
     let image_list =
@@ -1443,7 +1476,7 @@ fn render_loaded_document_inner(
             .map_err(map_graphics_error)
         })?;
     let font_resources =
-        record_render_phase(&mut timings, NativeRenderPhase::ResourceDecode, || {
+        record_render_phase(&mut timings, NativeRenderPhase::ResourceFonts, || {
             page_font_resources(document, page, display_options)
         })?;
     let text_list = record_render_phase(&mut timings, NativeRenderPhase::DisplayListBuild, || {
@@ -1534,7 +1567,7 @@ fn render_loaded_document_inner(
     }
     if !annotation_fallback_content.is_empty() {
         let annotation_ext_graphics_states =
-            record_render_phase(&mut timings, NativeRenderPhase::ResourceDecode, || {
+            record_render_phase(&mut timings, NativeRenderPhase::ResourceAnnotations, || {
                 annotation_fallback_ext_graphics_states().map_err(map_graphics_error)
             })?;
         let annotation_list =
@@ -4688,6 +4721,8 @@ mod tests {
             .expect("fixture should render with phase timings");
 
         assert!(trace.timings.raster_images > std::time::Duration::ZERO);
+        assert!(trace.timings.resource_images > std::time::Duration::ZERO);
+        assert!(trace.timings.resource_decode >= trace.timings.resource_images);
     }
 
     #[test]

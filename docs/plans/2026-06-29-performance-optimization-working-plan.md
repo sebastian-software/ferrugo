@@ -305,6 +305,26 @@ Current caveat:
   construction. Builder-internal tokenization is still included in
   `display_list_build` until the builder APIs expose a cleaner split.
 
+Resource attribution refinement from 2026-06-30:
+
+- Change: `trace-native` and repeat-benchmark phase timing JSON now keep
+  `resource_decode` as the compatible aggregate and also expose
+  `resource_graphics`, `resource_forms`, `resource_images`, `resource_fonts`,
+  and `resource_annotations`.
+- Purpose: the first image/scan optimization wave kept hitting a broad
+  `resource_decode` bucket. The subfields make the next profile loop tell
+  whether a fixture is actually image decode, font loading, form resolution, or
+  general graphics resources.
+- Smoke artifact: `target/trace-scanner-large-resource-subphases.json` confirms
+  the scanner fixture's resource time is overwhelmingly image-owned:
+  `resource_decode` `8.960 ms`, `resource_images` `8.841 ms`,
+  `resource_forms` `0.114 ms`, and the other resource buckets near zero in the
+  dev trace. Treat the absolute timings as dev-build smoke, not performance
+  claims.
+- Decision: accept as profiling infrastructure. The next image/scan code
+  candidate should target `resource_images` specifically, not generic resource
+  loading.
+
 Baseline artifacts from 2026-06-29:
 
 - `target/performance-matrix-baseline-starter-release-1.json`
