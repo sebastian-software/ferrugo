@@ -4824,6 +4824,40 @@ from 2026-06-30:
   or `point_in_single_stroke_line` samples with a protection run from the first
   A/B.
 
+Rejected sampled opaque integer blend candidate from 2026-06-30:
+
+- Profiling basis:
+  the same `target/sample-vector-stress-current-continuation.txt` run showed
+  `blend_pixel` as the largest visible symbol bucket after the latest accepted
+  stroke optimizations. The candidate targeted only sampled stroke pixels that
+  were not already full-coverage direct writes.
+- Change tested locally but not kept:
+  add a `blend_sampled_pixel` fast path for `Normal` blend mode, opaque source,
+  `alpha >= 1.0`, and opaque destination pixels, computing partial sample
+  coverage with integer channel math instead of calling the generic
+  `blend_pixel` path.
+- Correctness smoke:
+  a focused unit test compared the integer sampled blend against the existing
+  `source_over` result for quarter-sample coverages.
+- A/B artifacts:
+  `target/benchmark-repeat-vector-stress-sampled-opaque-blend-candidate-20k.json`,
+  `target/benchmark-repeat-prepress-sampled-opaque-blend-candidate-20k.json`,
+  and
+  `target/benchmark-repeat-technical-hatch-sampled-opaque-blend-candidate-20k.json`,
+  compared against the same current span-gate baseline artifacts.
+- Result:
+  rejected. `vector-stress.pdf` improved p95 only `0.772 ms` -> `0.752 ms`
+  (~2.6%) and raster paths `0.578 ms` -> `0.569 ms` (~1.6%), but
+  `prepress-trim-bleed-marks.pdf` regressed p95 `0.335 ms` -> `0.346 ms` and
+  `technical-hatch-clipping.pdf` regressed p95 `0.280 ms` -> `0.292 ms`.
+  Output bytes, native-render status, and error count stayed unchanged.
+- Decision:
+  reverted. The extra branch/destination-read path is not protection-set
+  neutral, which matches the earlier sampled-blend routing rejection. Do not
+  retry broad sampled opaque blend routing unless a profile isolates a larger
+  fully covered or partial opaque stroke subset and the protection run starts
+  with Prepress and Technical Hatch.
+
 ## Phase 6: Benchmark Gates And Claims
 
 Goal: turn stable evidence into guardrails, not premature marketing.
