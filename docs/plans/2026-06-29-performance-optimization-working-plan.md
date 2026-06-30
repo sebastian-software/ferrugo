@@ -3526,6 +3526,30 @@ Rejected row-bucket range-capacity candidate from 2026-06-30:
   testing, range sorting/merging work, or the number of row-bucket candidate
   samples rather than only preallocating scratch vectors.
 
+Rejected row-bucket sorted-merge candidate from 2026-06-30:
+
+- Profiling trigger: the same `vector-stress.pdf` sample showed
+  `merge_pixel_ranges` sort frames below
+  `rasterize_row_bucketed_stroke_ranges`. Row-bucket line indices are already
+  sorted by X bounds per row, so no-join row-bucket strokes can theoretically
+  merge their X ranges without sorting again.
+- Change tested locally but not kept: add a `merge_sorted_pixel_ranges` helper
+  and use it only for row-bucket range rasterization when no join bucket ranges
+  are appended. The generic `merge_pixel_ranges` path still sorted whenever
+  join ranges or unsorted callers were involved.
+- A/B artifacts:
+  `target/benchmark-native-vector-stress-row-bucket-capacity-base.json` and
+  `target/benchmark-native-vector-stress-row-bucket-sorted-merge-candidate.json`,
+  both `benchmark-native`, `fixtures/generated/vector-stress.pdf`,
+  `--max-edge 160`, 150,000 iterations.
+- Result: rejected as below threshold. Mean moved `0.905 ms` -> `0.871 ms`
+  (`~3.8%`). The direction is useful, but not enough to carry a standalone or
+  cumulative commit under the current rules.
+- Decision: reverted. Sorting contributes some cost, but the larger vector
+  blocker remains per-pixel stroke coverage work. The next vector candidate
+  should target active candidate reduction or a range-fill shortcut that
+  eliminates sample tests for fully covered stroke interiors.
+
 Repeat family phase-summary instrumentation from 2026-06-30:
 
 - Change: `benchmark-repeat-native` now aggregates record-level
