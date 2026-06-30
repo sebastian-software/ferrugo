@@ -1983,6 +1983,47 @@ Accepted gated active row-bucket candidate scan from 2026-06-30:
   profile-backed structural reduction in row-bucket predicate checks, not a
   broad sorting or allocation tweak.
 
+Current post-cache vector profile and rejected scratch-capacity candidate from
+2026-06-30:
+
+- Baseline artifact:
+  `target/performance-matrix-report-vector-current-after-session-cache.json`,
+  native hot-render, `fixtures/performance-matrix-manifest.tsv`,
+  `report/vector`, `--max-edge 160`, `240` measured iterations and `20`
+  warmups. `vector-stress.pdf` remains the top fixture at p95 `3.168 ms` and
+  mean `2.970 ms`; the next fixtures are much smaller:
+  `prepress-trim-bleed-marks.pdf` p95 `0.584 ms`,
+  `technical-hatch-clipping.pdf` p95 `0.403 ms`, and
+  `technical-linework-dimensions.pdf` p95 `0.354 ms`.
+- Trace evidence:
+  `target/trace-vector-stress-after-session-cache.json` reports
+  `raster_paths: 3.434 ms` of `3.818 ms` total. The stroke summary still shows
+  two row-bucket candidate items, `485376` row-bucket sample refs, `25672`
+  X hits, and `459704` X misses.
+- CPU profile evidence:
+  `target/sample-vector-stress-after-session-cache.txt`, a 10-second macOS
+  `sample` run against a long release `benchmark-native` process, still shows
+  `stroke_path` as the dominant flat symbol (`4641` samples), followed by
+  `fill_path` (`899`), `blend_pixel` (`390`), and `source_over` (`245`).
+  Allocator samples remain visible under `stroke_path`, but flattening is still
+  negligible (`flatten_path_segments` `8` samples).
+- Change tested locally but not kept: pre-size the row-bucket scratch vectors
+  from the maximum row reference count before the raster loop. This targeted
+  the visible allocator samples without changing row-bucket geometry or output.
+- A/B artifacts:
+  `target/performance-matrix-report-vector-current-after-session-cache.json`
+  versus
+  `target/performance-matrix-report-vector-row-scratch-capacity-candidate.json`,
+  same host and command shape.
+- Result: rejected by the acceptance threshold. `vector-stress.pdf` moved p95
+  `3.168 ms` -> `3.067 ms` (`~3.2%`) and mean `2.970 ms` -> `2.952 ms`
+  (`~0.6%`). `technical-linework-dimensions.pdf` improved p95
+  `0.354 ms` -> `0.330 ms` (`~6.8%`), but its mean moved only `~0.7%`, and
+  the primary target remained below the 5% threshold.
+- Decision: reverted. Continue the vector track only for candidates that reduce
+  candidate samples or visited pixels in `stroke_path`; broad scratch capacity
+  tuning remains too weak to land.
+
 ## Hardware-Aware Rust Notes
 
 Goal: use Rust's memory model and the host CPU well without prematurely
