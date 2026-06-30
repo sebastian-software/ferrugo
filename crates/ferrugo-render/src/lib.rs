@@ -1424,6 +1424,10 @@ pub struct StrokeShapeSummary {
     pub row_bucket_sample_x_hits: usize,
     /// Estimated row-bucket line checks rejected by X-bounds filtering.
     pub row_bucket_sample_x_misses: usize,
+    /// Estimated sample points visited after row-bucket X-range merging.
+    pub row_bucket_merged_sample_points: usize,
+    /// Maximum estimated merged row-bucket sample points seen on one stroked item.
+    pub max_row_bucket_merged_sample_points_per_item: usize,
     /// Maximum flattened line count seen on one stroked item.
     pub max_lines_per_item: usize,
     /// Maximum row-index references seen on one stroked item.
@@ -1459,6 +1463,10 @@ impl StrokeShapeSummary {
         self.row_bucket_sample_refs += other.row_bucket_sample_refs;
         self.row_bucket_sample_x_hits += other.row_bucket_sample_x_hits;
         self.row_bucket_sample_x_misses += other.row_bucket_sample_x_misses;
+        self.row_bucket_merged_sample_points += other.row_bucket_merged_sample_points;
+        self.max_row_bucket_merged_sample_points_per_item = self
+            .max_row_bucket_merged_sample_points_per_item
+            .max(other.max_row_bucket_merged_sample_points_per_item);
         self.max_lines_per_item = self.max_lines_per_item.max(other.max_lines_per_item);
         self.max_row_index_refs_per_item = self
             .max_row_index_refs_per_item
@@ -5615,9 +5623,46 @@ fn stroke_shape_summary_for_path(
             .pixel_x_span_buckets
             .add_span(bounds.max_x - bounds.min_x);
     }
+    if row_bucket_candidate {
+        summary.row_bucket_merged_sample_points = stroke_bounds
+            .and_then(|bounds| {
+                estimate_row_bucket_merged_sample_points(
+                    lines,
+                    radius,
+                    transform.dimensions,
+                    bounds,
+                    sample_count,
+                )
+            })
+            .unwrap_or_default();
+    }
     summary.max_row_index_refs_per_item = summary.row_index_refs;
     summary.max_row_bucket_sample_refs_per_item = summary.row_bucket_sample_refs;
+    summary.max_row_bucket_merged_sample_points_per_item = summary.row_bucket_merged_sample_points;
     Ok(summary)
+}
+
+fn estimate_row_bucket_merged_sample_points(
+    lines: &[LineSegment],
+    radius: f64,
+    dimensions: RasterDimensions,
+    stroke_bounds: PixelBounds,
+    sample_count: usize,
+) -> Option<usize> {
+    let buckets = stroke_row_buckets(lines, radius, dimensions, stroke_bounds)?;
+    let mut x_ranges = Vec::new();
+    let mut sample_points = 0usize;
+    for y in stroke_bounds.min_y..stroke_bounds.max_y {
+        x_ranges.clear();
+        append_row_bucket_pixel_x_ranges(&buckets, y, stroke_bounds, &mut x_ranges);
+        merge_pixel_ranges(&mut x_ranges);
+        let row_pixels = x_ranges
+            .iter()
+            .map(|range| (range.end - range.start) as usize)
+            .sum::<usize>();
+        sample_points = sample_points.saturating_add(row_pixels.saturating_mul(sample_count));
+    }
+    Some(sample_points)
 }
 
 fn is_axis_aligned_line(line: LineSegment) -> bool {
@@ -18097,6 +18142,7 @@ mod tests {
         assert_eq!(summary.row_bucket_sample_refs, 0);
         assert_eq!(summary.row_bucket_sample_x_hits, 0);
         assert_eq!(summary.row_bucket_sample_x_misses, 0);
+        assert_eq!(summary.row_bucket_merged_sample_points, 0);
         assert_eq!(summary.line_count_buckets.lt_32, 1);
         assert_eq!(summary.pixel_x_span_buckets.le_16, 10);
     }
@@ -18193,6 +18239,15 @@ mod tests {
         assert!(summary.row_bucket_sample_refs > 0);
         assert!(summary.row_bucket_sample_x_hits > 0);
         assert!(summary.row_bucket_sample_x_misses > summary.row_bucket_sample_x_hits);
+        assert!(summary.row_bucket_merged_sample_points > 0);
+        assert!(
+            summary.row_bucket_merged_sample_points <= summary.row_bucket_sample_x_hits,
+            "merged sample points should not exceed line-hit checks"
+        );
+        assert_eq!(
+            summary.max_row_bucket_merged_sample_points_per_item,
+            summary.row_bucket_merged_sample_points
+        );
         assert_eq!(
             summary.max_row_bucket_sample_refs_per_item,
             summary.row_bucket_sample_refs

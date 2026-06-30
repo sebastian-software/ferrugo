@@ -4610,6 +4610,33 @@ Rejected single-line hairline shortcut from 2026-06-30:
   or display-list lifetime costs visible around the remaining `stroke_path`
   sample, not another small line raster shortcut.
 
+Row-bucket merged sample-point counters from 2026-06-30:
+
+- Profiling basis:
+  the current `vector-stress` refresh still shows `raster_paths` as the
+  dominant phase. `target/benchmark-repeat-vector-stress-current-next-20k.json`
+  measured repeat mean `0.835 ms`, p95 `0.915 ms`, and repeat mean
+  `raster_paths` `0.744 ms`. The matching trace
+  `target/trace-vector-stress-current-next.json` still reported `485376`
+  conservative row-bucket sample refs, `25672` X hits, and `459704` X misses.
+- Change:
+  `StrokeShapeSummary` now also reports
+  `row_bucket_merged_sample_points` and
+  `max_row_bucket_merged_sample_points_per_item`. These estimate the sample
+  points actually visited after row-bucket X ranges are merged, separate from
+  the line-check count that passes X-bounds filtering.
+- Fresh trace:
+  `target/trace-vector-stress-row-bucket-merged-points.json` reports
+  `row_bucket_merged_sample_points` `13488` and
+  `max_row_bucket_merged_sample_points_per_item` `6744`, while
+  `row_bucket_sample_x_hits` remains `25672`.
+- Optimization impact:
+  the current `vector-stress` shape is not primarily wasting time by visiting
+  huge merged pixel ranges after the accepted range-culling work. It still does
+  about `1.9` line-hit checks per visited sample point, so the next vector
+  attempt should target candidate grouping/predicate reduction inside visited
+  ranges rather than another broad X-range merge or blend-only variant.
+
 ## Phase 6: Benchmark Gates And Claims
 
 Goal: turn stable evidence into guardrails, not premature marketing.

@@ -8639,6 +8639,8 @@ fn trace_stroke_shape_summary_json(
                 "\"row_bucket_sample_refs\":{},",
                 "\"row_bucket_sample_x_hits\":{},",
                 "\"row_bucket_sample_x_misses\":{},",
+                "\"row_bucket_merged_sample_points\":{},",
+                "\"max_row_bucket_merged_sample_points_per_item\":{},",
                 "\"max_lines_per_item\":{},",
                 "\"max_row_index_refs_per_item\":{},",
                 "\"max_row_bucket_sample_refs_per_item\":{},",
@@ -8674,6 +8676,8 @@ fn trace_stroke_shape_summary_json(
             summary.row_bucket_sample_refs,
             summary.row_bucket_sample_x_hits,
             summary.row_bucket_sample_x_misses,
+            summary.row_bucket_merged_sample_points,
+            summary.max_row_bucket_merged_sample_points_per_item,
             summary.max_lines_per_item,
             summary.max_row_index_refs_per_item,
             summary.max_row_bucket_sample_refs_per_item,
@@ -11669,6 +11673,8 @@ mod tests {
         assert!(json.contains("\"flattened_lines\""));
         assert!(json.contains("\"row_bucket_sample_refs\""));
         assert!(json.contains("\"row_bucket_sample_x_misses\""));
+        assert!(json.contains("\"row_bucket_merged_sample_points\""));
+        assert!(json.contains("\"max_row_bucket_merged_sample_points_per_item\""));
         assert!(json.contains("\"span_raster_candidate_items\""));
         assert!(json.contains("\"axis_span_routed_items\""));
         assert!(json.contains("\"simple_line_span_below_threshold_items\""));
