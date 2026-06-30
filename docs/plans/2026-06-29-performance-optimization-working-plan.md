@@ -4149,6 +4149,44 @@ Accepted two-pass axis-span builder from 2026-06-30:
   profiled `stroke_path` allocation/build track, without a dependency, unsafe
   code, cache, or raster semantics change.
 
+Rejected row-slice stroke blend candidate from 2026-06-30:
+
+- Profile basis:
+  `target/performance-matrix-current-after-axis-spans-native-hot.json` kept
+  `vector-stress.pdf` as the slowest starter fixture at p95 `0.854 ms`.
+  `target/sample-vector-stress-after-two-pass-axis-spans.txt`, captured from a
+  long release `benchmark-repeat-native` run, showed `stroke_path` still
+  dominating. The visible subpaths were
+  `rasterize_span_covered_stroke_ranges`,
+  `rasterize_row_bucketed_stroke_ranges`, `blend_pixel`,
+  `merge_pixel_ranges`, and `point_in_single_stroke_line`.
+- Candidate:
+  route the hot stroke range loops through a borrowed row slice and a local
+  row-blend helper, avoiding repeated `RasterDevice::pixel` /
+  `RasterDevice::set_pixel` offset checks for every covered pixel. Coverage
+  math, clipping decisions, blend semantics, and output dimensions were
+  unchanged.
+- Focused result:
+  `target/benchmark-repeat-vector-stress-current-after-two-pass-axis-spans-1000.json`
+  measured repeat mean `0.685 ms`, p95 `0.771 ms`, and `raster_paths`
+  `0.594 ms`. The candidate
+  `target/benchmark-repeat-vector-stress-row-blend-candidate-1000.json`
+  measured repeat mean `0.653 ms`, p95 `0.737 ms`, and `raster_paths`
+  `0.561 ms`.
+- Protection result:
+  `target/benchmark-repeat-prepress-row-blend-candidate-1000.json` measured
+  repeat mean `0.324 ms` versus the recent two-pass baseline `0.315 ms`, and
+  `target/benchmark-repeat-technical-hatch-row-blend-candidate-1000.json`
+  measured `0.264 ms` versus `0.262 ms`. Both remained rendered without
+  fallback or errors, but the candidate was not protection-set neutral.
+- Decision:
+  reverted. The primary fixture moved only about `4.7%` on mean and `4.4%` on
+  p95, below the repeated 5% threshold, and the protection set showed small
+  regressions. The useful signal is that remaining `blend_pixel` samples are
+  real, but a broad row-slice helper is not the next accepted shape. Reopen only
+  with a narrower `span_covered` or full-coverage range path that clears the
+  threshold without hurting prepress.
+
 Current prepress join-bounds optimization from 2026-06-30:
 
 - Profiling basis:
