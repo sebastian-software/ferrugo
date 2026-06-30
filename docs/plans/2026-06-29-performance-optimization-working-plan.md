@@ -1915,6 +1915,39 @@ Rejected per-row bucket candidate caching from 2026-06-30:
   the number of candidate line checks or pixels visited, not only cache row
   lookup plumbing around the same X-miss-heavy predicate loop.
 
+Rejected sorted row-bucket early-break candidate from 2026-06-30:
+
+- Fresh profile evidence:
+  `target/sample-vector-stress-current-after-downsample.txt`, captured from a
+  long release `benchmark-native` process for
+  `fixtures/generated/vector-stress.pdf`, `--max-edge 160`, after the
+  low-memory image decode work. The top visible stacks were `stroke_path`,
+  `point_in_row_bucketed_stroke`, `fill_path`, `blend_pixel`,
+  `point_in_join`, and `point_in_join_buckets`.
+- Trace evidence:
+  `target/trace-vector-stress-current-after-downsample.json` reported
+  `3.418 ms` of `3.786 ms` total in `raster_paths`. The stroke summary still
+  showed `485376` row-bucket sample refs with `459704` X misses, so about
+  95% of row-bucket sample checks were rejected by X bounds.
+- Change tested locally but not kept: sort each row-bucket and join-bucket row
+  by conservative `min_x/max_x`, then break the point predicate loop once the
+  current pixel lies before the next sorted candidate. This preserved the
+  existing exact geometry predicates and only changed candidate ordering.
+- A/B artifacts:
+  `target/benchmark-row-bucket-unsorted-report-vector-240.json` and
+  `target/benchmark-row-bucket-sorted-report-vector-240.json`, same host,
+  report/vector manifest, `--max-edge 160`, `240` iterations.
+- Result: positive but below the acceptance threshold. Family mean moved
+  `1.094 ms` -> `1.060 ms` (~3.1% faster). `vector-stress.pdf` moved
+  `3.243 ms` -> `3.105 ms` (~4.3% faster), while
+  `prepress-trim-bleed-marks.pdf` regressed slightly
+  `0.510 ms` -> `0.516 ms` (~1.2%). A focused sorted-only
+  `vector-stress` run over `500` iterations measured `3.129 ms`.
+- Decision: reverted. This is a useful signal that row-bucket X ordering
+  matters, but it is still a sub-5% result and not enough to land as a
+  performance commit. Revisit only as part of a larger interval-query or
+  range-generation change that materially reduces candidate checks.
+
 ## Hardware-Aware Rust Notes
 
 Goal: use Rust's memory model and the host CPU well without prematurely
