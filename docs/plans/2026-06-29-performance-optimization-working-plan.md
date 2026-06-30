@@ -4637,6 +4637,45 @@ Row-bucket merged sample-point counters from 2026-06-30:
   attempt should target candidate grouping/predicate reduction inside visited
   ranges rather than another broad X-range merge or blend-only variant.
 
+Accepted span-row cursor result from 2026-06-30:
+
+- Profile basis:
+  the same current `vector-stress` repeat and profile still had visible time in
+  `rasterize_span_covered_stroke_ranges`. The existing span membership helper
+  scanned each sorted coverage row from the beginning for every pixel/sample,
+  even though raster X positions advance monotonically across merged ranges.
+- Change:
+  large span-covered stroke rows now keep one cursor per supersample Y row and
+  advance it through the sorted `AxisStrokeSpan` row as X increases. Smaller
+  span sets stay on the original from-start membership helper; the cursor route
+  is gated by `STROKE_SPAN_CURSOR_MIN_SPANS = 512` to avoid adding branch and
+  cursor overhead to small snapped/prepress strokes.
+- Correctness guard:
+  `exact_axis_line_span_raster_should_match_sampled_stroke_raster` still
+  compares the exact span route against the sampled fallback byte-for-byte.
+- A/B artifacts:
+  `target/benchmark-repeat-vector-stress-current-next-20k.json`,
+  `target/benchmark-repeat-vector-stress-span-cursor-gate512-candidate-20k.json`,
+  `target/benchmark-repeat-prepress-current-next-20k.json`,
+  `target/benchmark-repeat-prepress-span-cursor-gate512-candidate-20k.json`,
+  `target/benchmark-repeat-technical-hatch-span-cursor-gate512-candidate-20k.json`,
+  and `target/performance-matrix-span-cursor-gate512-report-vector.json`.
+- Focused result:
+  `vector-stress.pdf` repeat mean improved `0.835 ms` -> `0.685 ms`, p95
+  improved `0.915 ms` -> `0.782 ms`, and repeat mean `raster_paths` moved
+  `0.744 ms` -> `0.594 ms`.
+- Protection result:
+  Prepress repeat mean moved only `0.311 ms` -> `0.314 ms`; p95 was noisy
+  (`0.338 ms` -> `0.355 ms`) and should be watched in the next matrix run.
+  `technical-hatch-clipping.pdf` measured `0.264 ms` mean and `0.299 ms` p95
+  in the candidate repeat. The report/vector matrix rendered all four records
+  with no fallback, missing-tool, not-applicable, or error records.
+- Decision:
+  keep. This is a profile-backed algorithmic reduction in the remaining
+  span-covered raster loop. It adds no dependency, unsafe code, cache, or
+  alternate stroke geometry, and the gate keeps the changed loop on large span
+  workloads where the cursor can amortize its setup cost.
+
 ## Phase 6: Benchmark Gates And Claims
 
 Goal: turn stable evidence into guardrails, not premature marketing.

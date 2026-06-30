@@ -118,6 +118,7 @@ const STROKE_SIMPLE_LINE_SPAN_MIN_PIXELS: u32 = 1024;
 const STROKE_AXIS_SIMPLE_LINE_SPAN_MIN_PIXELS: u32 = 128;
 const STROKE_ROW_RANGE_MIN_BUCKET_LINES: usize = 48;
 const STROKE_ROW_ACTIVE_MIN_BUCKET_LINES: usize = 64;
+const STROKE_SPAN_CURSOR_MIN_SPANS: usize = 512;
 
 /// Maximum dash segments tracked in the graphics state.
 pub const MAX_STROKE_DASH_SEGMENTS: usize = 8;
@@ -11962,6 +11963,73 @@ fn rasterize_span_covered_stroke_ranges(
     blend: SampledPixelBlend,
     samples: u32,
 ) -> RasterResult<()> {
+    if coverage_spans.spans.len() < STROKE_SPAN_CURSOR_MIN_SPANS {
+        return rasterize_span_covered_stroke_ranges_from_start(
+            device,
+            raster_spans,
+            coverage_spans,
+            bounds,
+            blend,
+            samples,
+        );
+    }
+    let mut x_ranges = Vec::new();
+    let mut coverage_rows = Vec::with_capacity(samples as usize);
+    let mut coverage_cursors = Vec::with_capacity(samples as usize);
+    for y in bounds.min_y..bounds.max_y {
+        x_ranges.clear();
+        for sample_y in 0..samples {
+            append_axis_stroke_pixel_x_ranges(raster_spans, bounds, y, sample_y, &mut x_ranges);
+        }
+        merge_pixel_ranges(&mut x_ranges);
+        coverage_rows.clear();
+        coverage_cursors.clear();
+        for sample_y in 0..samples {
+            let sample_row = y
+                .saturating_mul(coverage_spans.samples)
+                .saturating_add(sample_y)
+                .saturating_sub(coverage_spans.min_sample_y);
+            let row = coverage_spans
+                .rows
+                .get(sample_row as usize)
+                .cloned()
+                .unwrap_or(0..0);
+            coverage_cursors.push(row.start);
+            coverage_rows.push(row);
+        }
+        for x_range in &x_ranges {
+            for x in x_range.clone() {
+                let mut covered = 0;
+                for (sample_y, row) in coverage_rows.iter().enumerate() {
+                    let cursor = &mut coverage_cursors[sample_y];
+                    for sample_x in 0..samples {
+                        let sample_x =
+                            f64::from(x) + (f64::from(sample_x) + 0.5) / f64::from(samples);
+                        if x_in_axis_stroke_span_row_from_cursor(
+                            sample_x,
+                            row,
+                            &coverage_spans.spans,
+                            cursor,
+                        ) {
+                            covered += 1;
+                        }
+                    }
+                }
+                blend_sampled_pixel(device, x, y, blend, covered)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn rasterize_span_covered_stroke_ranges_from_start(
+    device: &mut RasterDevice,
+    raster_spans: &AxisStrokeSpans,
+    coverage_spans: &AxisStrokeSpans,
+    bounds: PixelBounds,
+    blend: SampledPixelBlend,
+    samples: u32,
+) -> RasterResult<()> {
     let mut x_ranges = Vec::new();
     for y in bounds.min_y..bounds.max_y {
         x_ranges.clear();
@@ -11993,6 +12061,18 @@ fn rasterize_span_covered_stroke_ranges(
         }
     }
     Ok(())
+}
+
+fn x_in_axis_stroke_span_row_from_cursor(
+    x: f64,
+    row: &Range<usize>,
+    spans: &[AxisStrokeSpan],
+    cursor: &mut usize,
+) -> bool {
+    while *cursor < row.end && x > spans[*cursor].max_x {
+        *cursor += 1;
+    }
+    *cursor < row.end && x >= spans[*cursor].min_x
 }
 
 fn append_axis_stroke_pixel_x_ranges(
