@@ -116,6 +116,7 @@ pub const DEFAULT_MESH_SHADING_TRIANGLE_LIMIT: usize = 8_192;
 const STROKE_ROW_BUCKET_MIN_LINES: usize = 32;
 const STROKE_AXIS_SPAN_MIN_LINES: usize = 32;
 const STROKE_JOIN_BUCKET_MIN_JOINS: usize = 8;
+const STROKE_SIMPLE_LINE_SPAN_MIN_PIXELS: u32 = 1024;
 
 /// Maximum dash segments tracked in the graphics state.
 pub const MAX_STROKE_DASH_SEGMENTS: usize = 8;
@@ -10462,8 +10463,6 @@ fn stroke_path(
     else {
         return Ok(());
     };
-    let prepared_joins = prepare_stroke_joins(joins, radius, state.line_join, state.miter_limit);
-    let has_joins = !joins.is_empty();
     let axis_spans = axis_stroke_raster_spans(
         stroke_lines,
         joins,
@@ -10473,9 +10472,8 @@ fn stroke_path(
         samples,
         state.line_cap,
     );
-    let row_buckets = (axis_spans.is_none() && stroke_lines.len() >= STROKE_ROW_BUCKET_MIN_LINES)
-        .then(|| stroke_row_buckets(stroke_lines, radius, dimensions, bounds))
-        .flatten();
+    let prepared_joins = prepare_stroke_joins(joins, radius, state.line_join, state.miter_limit);
+    let has_joins = !joins.is_empty();
     if let Some(spans) = axis_spans {
         rasterize_axis_stroke_spans(
             device,
@@ -10492,6 +10490,32 @@ fn stroke_path(
         )?;
         return Ok(());
     }
+    if stroke_lines.len() == 1 && joins.is_empty() && !is_axis_aligned_line(stroke_lines[0]) {
+        if let Some(spans) = simple_line_stroke_raster_spans(
+            stroke_lines[0],
+            radius,
+            dimensions,
+            bounds,
+            samples,
+            state.line_cap,
+        ) {
+            rasterize_simple_line_stroke_spans(
+                device,
+                spans,
+                stroke_lines[0],
+                bounds,
+                state,
+                context,
+                samples,
+                sample_count,
+                source,
+            )?;
+            return Ok(());
+        }
+    }
+    let row_buckets = (stroke_lines.len() >= STROKE_ROW_BUCKET_MIN_LINES)
+        .then(|| stroke_row_buckets(stroke_lines, radius, dimensions, bounds))
+        .flatten();
     let join_buckets = (joins.len() >= STROKE_JOIN_BUCKET_MIN_JOINS)
         .then(|| {
             stroke_join_buckets(
@@ -10559,6 +10583,65 @@ fn stroke_path(
                     state.blend_mode,
                     state.alpha * f64::from(covered) / f64::from(sample_count),
                 )?;
+            }
+        }
+    }
+    Ok(())
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "keeps stroke state at the callsite explicit"
+)]
+fn rasterize_simple_line_stroke_spans(
+    device: &mut RasterDevice,
+    spans: AxisStrokeSpans,
+    line: LineSegment,
+    bounds: PixelBounds,
+    state: StrokeRasterState,
+    context: PathRasterContext<'_>,
+    samples: u32,
+    sample_count: u32,
+    source: Rgba,
+) -> RasterResult<()> {
+    let radius = stroke_radius_for_device_line_width(state.line_width);
+    let radius_squared = radius * radius;
+    let mut x_ranges = Vec::new();
+    for y in bounds.min_y..bounds.max_y {
+        x_ranges.clear();
+        for sample_y in 0..samples {
+            append_axis_stroke_pixel_x_ranges(&spans, bounds, y, sample_y, &mut x_ranges);
+        }
+        merge_pixel_ranges(&mut x_ranges);
+        for x_range in &x_ranges {
+            for x in x_range.clone() {
+                let mut covered = 0;
+                for sample_y in 0..samples {
+                    for sample_x in 0..samples {
+                        let point = sample_point(x, y, sample_x, sample_y, samples);
+                        if point_in_active_clips(point, context.clips)
+                            && point_in_single_stroke_line(
+                                point,
+                                line,
+                                radius,
+                                radius_squared,
+                                state.line_cap,
+                            )
+                        {
+                            covered += 1;
+                        }
+                    }
+                }
+                if covered > 0 {
+                    blend_pixel(
+                        device,
+                        x,
+                        y,
+                        source,
+                        state.blend_mode,
+                        state.alpha * f64::from(covered) / f64::from(sample_count),
+                    )?;
+                }
             }
         }
     }
@@ -10669,6 +10752,171 @@ fn merge_pixel_ranges(ranges: &mut Vec<Range<u32>>) {
         }
     }
     ranges.truncate(write + 1);
+}
+
+fn simple_line_stroke_raster_spans(
+    line: LineSegment,
+    radius: f64,
+    dimensions: RasterDimensions,
+    stroke_bounds: PixelBounds,
+    samples: u32,
+    line_cap: LineCap,
+) -> Option<AxisStrokeSpans> {
+    if samples == 0 {
+        return None;
+    }
+    let bounds = line_pixel_bounds(line, radius, dimensions)
+        .and_then(|bounds| intersect_pixel_bounds(bounds, stroke_bounds))?;
+    let pixel_area = (bounds.max_x - bounds.min_x).saturating_mul(bounds.max_y - bounds.min_y);
+    if pixel_area < STROKE_SIMPLE_LINE_SPAN_MIN_PIXELS {
+        return None;
+    }
+    let row_count = (stroke_bounds.max_y - stroke_bounds.min_y).checked_mul(samples)? as usize;
+    if row_count == 0 {
+        return None;
+    }
+    let start = (bounds.min_y - stroke_bounds.min_y).saturating_mul(samples) as usize;
+    let end = (bounds.max_y - stroke_bounds.min_y).saturating_mul(samples) as usize;
+    let mut rows = Vec::with_capacity(row_count);
+    let mut spans = Vec::with_capacity(end.saturating_sub(start).min(row_count));
+    for sample_row in 0..row_count {
+        let row_start = spans.len();
+        if (start..end).contains(&sample_row) {
+            let sample_y =
+                f64::from(stroke_bounds.min_y) + (sample_row as f64 + 0.5) / f64::from(samples);
+            if let Some(span) =
+                simple_line_stroke_span_for_sample_y(line, radius, line_cap, sample_y)
+            {
+                spans.push(span);
+            }
+        }
+        rows.push(row_start..spans.len());
+    }
+    (!spans.is_empty()).then_some(AxisStrokeSpans {
+        min_sample_y: stroke_bounds.min_y.saturating_mul(samples),
+        samples,
+        rows,
+        spans,
+    })
+}
+
+fn simple_line_stroke_span_for_sample_y(
+    line: LineSegment,
+    radius: f64,
+    line_cap: LineCap,
+    sample_y: f64,
+) -> Option<AxisStrokeSpan> {
+    if is_axis_aligned_line(line) {
+        return axis_stroke_span_for_sample_y(line, radius, line_cap, sample_y);
+    }
+
+    let center_line = match line_cap {
+        LineCap::Butt | LineCap::Round => line,
+        LineCap::Square => square_capped_line_segment(line, radius),
+    };
+    let mut span = stroke_quad_span_for_sample_y(center_line, radius, sample_y);
+    if matches!(line_cap, LineCap::Round) {
+        span = merge_optional_stroke_span(
+            span,
+            round_cap_span_for_sample_y(line.from, radius, sample_y),
+        );
+        span = merge_optional_stroke_span(
+            span,
+            round_cap_span_for_sample_y(line.to, radius, sample_y),
+        );
+    }
+    span
+}
+
+fn stroke_quad_span_for_sample_y(
+    line: LineSegment,
+    radius: f64,
+    sample_y: f64,
+) -> Option<AxisStrokeSpan> {
+    let dx = line.to.x - line.from.x;
+    let dy = line.to.y - line.from.y;
+    let length = dx.hypot(dy);
+    if length <= f64::EPSILON {
+        return None;
+    }
+    let normal_x = -dy / length * radius;
+    let normal_y = dx / length * radius;
+    let corners = [
+        Point {
+            x: line.from.x + normal_x,
+            y: line.from.y + normal_y,
+        },
+        Point {
+            x: line.to.x + normal_x,
+            y: line.to.y + normal_y,
+        },
+        Point {
+            x: line.to.x - normal_x,
+            y: line.to.y - normal_y,
+        },
+        Point {
+            x: line.from.x - normal_x,
+            y: line.from.y - normal_y,
+        },
+    ];
+    let mut min_x = f64::INFINITY;
+    let mut max_x = f64::NEG_INFINITY;
+    for index in 0..corners.len() {
+        let from = corners[index];
+        let to = corners[(index + 1) % corners.len()];
+        if (from.y - to.y).abs() <= f64::EPSILON {
+            if (sample_y - from.y).abs() <= f64::EPSILON {
+                min_x = min_x.min(from.x.min(to.x));
+                max_x = max_x.max(from.x.max(to.x));
+            }
+            continue;
+        }
+        let min_y = from.y.min(to.y);
+        let max_y = from.y.max(to.y);
+        if sample_y < min_y || sample_y > max_y {
+            continue;
+        }
+        let t = (sample_y - from.y) / (to.y - from.y);
+        if (0.0..=1.0).contains(&t) {
+            let x = (to.x - from.x).mul_add(t, from.x);
+            min_x = min_x.min(x);
+            max_x = max_x.max(x);
+        }
+    }
+    if !min_x.is_finite() || !max_x.is_finite() {
+        return None;
+    }
+    Some(AxisStrokeSpan { min_x, max_x })
+}
+
+fn round_cap_span_for_sample_y(
+    center: Point,
+    radius: f64,
+    sample_y: f64,
+) -> Option<AxisStrokeSpan> {
+    let delta_y = (sample_y - center.y).abs();
+    if delta_y > radius {
+        return None;
+    }
+    let half_width = (radius * radius - delta_y * delta_y).max(0.0).sqrt();
+    Some(AxisStrokeSpan {
+        min_x: center.x - half_width,
+        max_x: center.x + half_width,
+    })
+}
+
+fn merge_optional_stroke_span(
+    left: Option<AxisStrokeSpan>,
+    right: Option<AxisStrokeSpan>,
+) -> Option<AxisStrokeSpan> {
+    match (left, right) {
+        (Some(left), Some(right)) => Some(AxisStrokeSpan {
+            min_x: left.min_x.min(right.min_x),
+            max_x: left.max_x.max(right.max_x),
+        }),
+        (Some(span), None) | (None, Some(span)) => Some(span),
+        (None, None) => None,
+    }
 }
 
 fn stroke_row_buckets(
@@ -15578,6 +15826,48 @@ mod tests {
                     }
                 }
             }
+        }
+    }
+
+    #[test]
+    fn simple_line_stroke_raster_spans_should_cover_single_line_strokes() {
+        let dimensions = RasterDimensions::new(48, 48).expect("valid dimensions");
+        let line = LineSegment {
+            from: Point { x: 6.25, y: 9.5 },
+            to: Point { x: 39.75, y: 31.25 },
+        };
+        let radius = 0.75;
+        let bounds = stroke_pixel_bounds(&[line], &[], radius, dimensions).expect("stroke bounds");
+
+        for line_cap in [LineCap::Butt, LineCap::Round, LineCap::Square] {
+            let spans =
+                simple_line_stroke_raster_spans(line, radius, dimensions, bounds, 2, line_cap)
+                    .expect("simple line spans");
+            let mut candidate_samples = 0;
+            let mut total_samples = 0;
+            for y in bounds.min_y..bounds.max_y {
+                for x in bounds.min_x..bounds.max_x {
+                    for sample_y in 0..2 {
+                        for sample_x in 0..2 {
+                            total_samples += 1;
+                            let point = sample_point(x, y, sample_x, sample_y, 2);
+                            let candidate = point_in_axis_stroke_spans(point, y, sample_y, &spans);
+                            if candidate {
+                                candidate_samples += 1;
+                            }
+                            assert!(
+                                candidate
+                                    || !point_in_stroke(point, &[line], radius, line_cap),
+                                "span missed {line_cap:?} stroke sample at pixel ({x},{y}) sample ({sample_x},{sample_y})"
+                            );
+                        }
+                    }
+                }
+            }
+            assert!(
+                candidate_samples < total_samples,
+                "simple line spans should cull at least some samples for {line_cap:?}"
+            );
         }
     }
 

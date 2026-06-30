@@ -367,7 +367,9 @@ Work items:
   clipping, stroke rasterization, or pixel loops.
 - [x] Add device-bounds culling before expensive raster work.
 - [x] Add fast paths for axis-aligned filled rectangles.
-- [ ] Add fast paths for axis-aligned hairlines and simple strokes.
+- [x] Add a fast path for simple non-axis-aligned strokes; keep the earlier
+  narrow axis-aligned hairline candidate rejected unless new evidence reopens
+  it.
 - [ ] Flatten reusable paths once per display item instead of per raster pass.
 - [x] Apply clip/intersection checks before entering expensive pixel loops.
 - [x] Precompute bevel/miter stroke join geometry once per stroke instead of
@@ -1552,6 +1554,61 @@ Accepted join-bucket stroke predicate index from 2026-06-30:
   and
   `cargo clippy --workspace --all-targets --all-features -- -D warnings`
   passed.
+
+Accepted simple diagonal stroke span rasterizer from 2026-06-30:
+
+- Profiling trigger:
+  `target/sample-technical-hatch-post-join-buckets.txt`, captured from a long
+  release `benchmark-native` run on `technical-hatch-clipping.pdf`, showed
+  `stroke_path` as the dominant stack after the join-bucket optimization.
+  The matching trace `target/trace-native-technical-hatch-post-join-buckets.json`
+  reported `2.313 ms` of `3.058 ms` total in `raster_paths`. The stroke shape
+  summary showed `92` stroked items, `90` snapped hairline items, `114`
+  flattened lines, only `6` axis-aligned items, and no row-bucket candidates.
+- Change: single-line non-axis-aligned strokes now build conservative
+  sample-row X spans when their clipped pixel bounds cover at least `1024`
+  pixels. Rasterization visits only candidate X ranges, but still uses the
+  existing exact `point_in_single_stroke_line` predicate, active clip checks,
+  alpha, and blend path before writing pixels.
+- Scope refinement: an earlier broad candidate also handled axis-aligned
+  single-line strokes and used a lower `256` pixel threshold. It kept the hatch
+  win but caused repeated p95 regressions on linework-heavy protection
+  fixtures. Shape summaries showed those fixtures were almost entirely
+  axis-aligned linework already covered by existing axis span and row-bucket
+  paths, so the accepted version is limited to non-axis-aligned simple strokes.
+- Correctness guard: added
+  `simple_line_stroke_raster_spans_should_cover_single_line_strokes`, which
+  checks Butt, Round, and Square caps and proves the conservative spans do not
+  miss any sample accepted by the generic stroke predicate.
+- Baseline control artifacts from the direct predecessor `887184a`:
+  `target/performance-matrix-baseline-simple-line-control-technical.json` and
+  `target/performance-matrix-baseline-simple-line-control-starter.json`.
+- Accepted candidate artifacts:
+  `target/performance-matrix-simple-line-spans-diagonal-technical.json`,
+  `target/performance-matrix-simple-line-spans-diagonal-technical-repeat.json`,
+  `target/performance-matrix-simple-line-spans-diagonal-starter.json`, and
+  `target/performance-matrix-simple-line-spans-diagonal-starter-repeat.json`.
+- Technical result against the fresh predecessor control:
+  `technical-hatch-clipping.pdf` improved p95 `2.466 ms` -> `0.386 ms`
+  (~84.3%) in the first accepted run and `2.466 ms` -> `0.376 ms` (~84.8%) in
+  the repeat. Mean improved `2.363 ms` -> `0.356 ms` (~84.9%) and then
+  `2.363 ms` -> `0.351 ms` (~85.1%). The technical protection fixtures were
+  neutral to small-noise after narrowing: the repeat kept
+  `technical-linework-dimensions.pdf` to `0.379 ms` -> `0.390 ms` p95 and
+  `0.352 ms` -> `0.355 ms` mean, while axis-heavy engineering fixtures were
+  neutral.
+- Starter protection result:
+  `target/performance-matrix-simple-line-spans-diagonal-starter-repeat.json`
+  rendered all starter fixtures with no fallback-required, missing-tool,
+  not-applicable, or error records. `technical-hatch-clipping.pdf` improved
+  p95 `2.482 ms` -> `0.394 ms` (~84.1%) and mean `2.375 ms` -> `0.353 ms`
+  (~85.1%). Remaining starter movements were sub-millisecond watch items; the
+  only notable p95 percentage was `text-page.pdf` at `0.042 ms` -> `0.046 ms`,
+  an absolute `0.004 ms` movement below the meaningful threshold.
+- Decision: accept. This is a profile-backed algorithmic reduction for the
+  hatch/clipping stroke hot path, preserves exact stroke coverage semantics,
+  avoids new dependencies and unsafe code, and keeps the protection set within
+  small absolute timing noise.
 
 ## Hardware-Aware Rust Notes
 
