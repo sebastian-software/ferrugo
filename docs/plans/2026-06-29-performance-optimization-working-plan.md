@@ -1712,6 +1712,92 @@ Accepted lower multi-line axis-stroke span threshold from 2026-06-30:
   span rasterizer semantics, avoids new dependencies and unsafe code, and keeps
   the protection set within small absolute timing movement.
 
+Post-axis-threshold profile and rejected fill shortcut from 2026-06-30:
+
+- Profile evidence:
+  `target/sample-vector-stress-post-axis-threshold.txt`, captured from a long
+  release `benchmark-native` run after the axis-threshold commit, still showed
+  `stroke_path` as the dominant stack with `3837` samples. The matching
+  `trace-native fixtures/generated/vector-stress.pdf --max-edge 160` run
+  reported `3.395 ms` of `3.603 ms` total in `raster_paths`.
+  `point_in_row_bucketed_stroke` accounted for `949` samples, `fill_path` for
+  `843`, `blend_pixel` for `328`, and `flatten_path_segments` for only `6`.
+- Interpretation: reusable flattening is still not the next bottleneck for the
+  current top vector fixture. The remaining work is mostly stroke rasterization
+  plus a visible but secondary fill path.
+- Change tested locally but not kept: split fill rasterization into unclipped
+  variants so clip-free generic fills skip `point_in_active_clips`, and
+  clip-free axis-aligned rectangle fills precompute center-sampled pixel bounds.
+- Candidate artifacts:
+  `target/performance-matrix-unclipped-rect-fill-technical.json`,
+  `target/performance-matrix-unclipped-rect-fill-starter.json`,
+  `target/performance-matrix-unclipped-fill-technical.json`, and
+  `target/performance-matrix-unclipped-fill-starter.json`.
+- Result: rejected. The rect-only variant was mostly noise; the broader
+  unclipped-fill variant failed the protection set. Against
+  `target/performance-matrix-axis-threshold4-technical-repeat.json`, it
+  regressed p95 for `engineering-schematic-symbols.pdf` by ~20.1%,
+  `technical-linework-dimensions.pdf` by ~15.0%, and
+  `technical-large-coordinate-plan.pdf` by ~10.5%, while `vector-stress.pdf`
+  was slightly slower. The starter run showed similar p95 regressions on small
+  absolute timings, including `text-page.pdf`, `acroform-text-field.pdf`, and
+  `technical-linework-dimensions.pdf`.
+- Decision: reverted. Fill-loop branch splitting is not a useful next block
+  without a more specific fill-shape profile. Continue with stroke-raster
+  structural changes or collect better fill-shape diagnostics before touching
+  fill hot paths again.
+
+Rejected row-bucket sample-row span candidate from 2026-06-30:
+
+- Change tested locally but not kept: replace row-bucket X ranges based on full
+  per-line pixel bounds with sample-row stroke spans. The candidate built
+  tighter candidate X ranges for each supersample row, then still used the
+  existing exact `point_in_row_bucketed_stroke` and join predicates before
+  blending.
+- Rationale: the post-axis-threshold profile still pointed at
+  `point_in_row_bucketed_stroke`, and diagonal or slanted lines can have much
+  narrower row-local spans than their full device bounds.
+- Candidate artifacts:
+  `target/performance-matrix-row-bucket-sample-spans-technical.json` and
+  `target/performance-matrix-row-bucket-sample-spans-starter.json`.
+- Result: rejected. Against
+  `target/performance-matrix-axis-threshold4-technical-repeat.json`,
+  `vector-stress.pdf` improved only p95 `3.443 ms` -> `3.313 ms` (~3.8%) and
+  mean `3.331 ms` -> `3.173 ms` (~4.7%), below the meaningful threshold.
+  Protection-set signals were poor: `clipped-paths.pdf` regressed p95
+  `0.411 ms` -> `0.538 ms`, and small starter fixtures showed large p95
+  percentage movement on tiny absolute timings.
+- Decision: reverted. Per-sample span construction adds too much overhead for
+  the current row-bucket path. Revisit only if a future shape diagnostic can
+  isolate rows with long diagonal bounds where the tighter range construction
+  clearly pays for itself.
+
+Rejected opaque normal blend fast path from 2026-06-30:
+
+- Change tested locally but not kept: add a `blend_pixel` fast path for normal
+  blend mode when source and destination alpha are both opaque and coverage is
+  partial. The specialized path avoided `blend_source_with_backdrop` and the
+  full `source_over` alpha calculation while preserving the same floor-based
+  channel compositing.
+- Rationale: the post-axis-threshold sample showed `blend_pixel` and
+  `source_over` together as a secondary stack after `stroke_path`,
+  `point_in_row_bucketed_stroke`, and `fill_path`.
+- Candidate artifacts:
+  `target/performance-matrix-opaque-blend-fastpath-technical.json`,
+  `target/performance-matrix-opaque-blend-fastpath-technical-repeat.json`,
+  `target/performance-matrix-opaque-blend-fastpath-starter.json`, and
+  `target/performance-matrix-opaque-blend-fastpath-starter-repeat.json`.
+- Result: rejected as an optimization block. The repeat technical run showed
+  some useful movement, for example `engineering-floorplan-precision.pdf` p95
+  `0.726 ms` -> `0.687 ms` (~5.4%) and
+  `engineering-large-transform-detail.pdf` p95 `0.572 ms` -> `0.543 ms`
+  (~5.1%), but the target `vector-stress.pdf` moved only p95 `3.443 ms` ->
+  `3.372 ms` (~2.1%) and the starter repeat left `vector-stress.pdf` neutral.
+  Small fixtures also showed p95 noise on tiny absolute timings.
+- Decision: reverted. Keep blend specialization on the backlog, but do not
+  land it as a standalone win until profiling shows blend is primary or the
+  fast path can be batched at row/pixel-buffer level with stronger evidence.
+
 ## Hardware-Aware Rust Notes
 
 Goal: use Rust's memory model and the host CPU well without prematurely
