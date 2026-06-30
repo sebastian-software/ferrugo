@@ -1660,6 +1660,58 @@ Accepted row-bucket X-range rasterizer from 2026-06-30:
   scanning for the current top vector fixture, with exact geometry predicates
   preserved and no new dependency or unsafe code.
 
+Accepted lower multi-line axis-stroke span threshold from 2026-06-30:
+
+- Profiling trigger:
+  `target/sample-vector-stress-post-row-ranges.txt`, captured after the
+  row-bucket X-range rasterizer, still showed `stroke_path` as the dominant
+  stack with `3844` symbol samples. The matching trace
+  `target/trace-native-vector-stress-post-row-ranges-current.json` reported
+  `3.266 ms` of `3.477 ms` total in `raster_paths`, while
+  `flatten_path_segments` accounted for only `8` samples. That kept the next
+  candidate on stroke raster work rather than reusable path flattening.
+- Change: lower the axis-aligned stroke span fast-path gate from `32` flattened
+  lines to `4`. The existing sparse span rasterizer, exact coverage predicate,
+  clipping, alpha, and blend behavior are unchanged. This extends the proven
+  axis-aligned span path to medium linework items without routing every
+  single-line stroke through the span builder.
+- Scope refinement: thresholds `1`, `2`, `4`, and `8` were tested. Threshold
+  `1` helped a long single-fixture `vector-stress` run, but caused a repeated
+  `technical-repeated-symbols` regression. Threshold `2` kept the large
+  technical wins but left more starter p95 movement on office/hatch fixtures.
+  Threshold `8` reduced coverage and introduced a double-digit p95 movement on
+  `technical-hatch-clipping` in the starter protection set. Threshold `4` was
+  the best balance: broad medium-linework gains, neutral `vector-stress`, and
+  no double-digit regression in the focused matrices.
+- Candidate artifacts:
+  `target/performance-matrix-axis-threshold4-technical-repeat.json`,
+  `target/performance-matrix-axis-threshold4-starter-repeat.json`,
+  plus rejected comparison runs for thresholds `1`, `2`, and `8`.
+- Technical result against
+  `target/performance-matrix-row-bucket-ranges-linegate-technical-repeat.json`:
+  `engineering-floorplan-precision.pdf` improved p95 `1.472 ms` -> `0.726 ms`
+  (~50.7%) and mean `1.363 ms` -> `0.650 ms` (~52.3%).
+  `engineering-large-transform-detail.pdf` improved p95 `1.071 ms` ->
+  `0.572 ms` (~46.6%) and mean `0.979 ms` -> `0.514 ms` (~47.5%).
+  `technical-large-coordinate-plan.pdf` improved p95 `0.844 ms` -> `0.495 ms`
+  (~41.4%) and mean `0.758 ms` -> `0.447 ms` (~41.0%).
+  `technical-linework-dimensions.pdf` improved p95 `0.397 ms` -> `0.320 ms`
+  (~19.4%) and mean `0.358 ms` -> `0.299 ms` (~16.5%).
+- Protection result:
+  `target/performance-matrix-axis-threshold4-starter-repeat.json` rendered all
+  starter fixtures with no fallback-required, missing-tool, not-applicable, or
+  error records. `technical-linework-dimensions.pdf` improved p95
+  `0.404 ms` -> `0.320 ms` (~20.8%) and mean `0.359 ms` -> `0.300 ms`
+  (~16.4%). `vector-stress.pdf` stayed neutral (`3.423 ms` -> `3.442 ms` p95,
+  `3.309 ms` -> `3.317 ms` mean). Watch items were limited to small absolute
+  timing movements, with the largest p95 percentage on
+  `office-report-header-footer-link.pdf` at `0.362 ms` -> `0.387 ms`
+  (`+0.025 ms`).
+- Decision: accept. This is a profile-backed cumulative stroke-rasterization
+  improvement for medium axis-aligned linework, preserves the already-tested
+  span rasterizer semantics, avoids new dependencies and unsafe code, and keeps
+  the protection set within small absolute timing movement.
+
 ## Hardware-Aware Rust Notes
 
 Goal: use Rust's memory model and the host CPU well without prematurely
