@@ -4187,6 +4187,52 @@ Rejected row-slice stroke blend candidate from 2026-06-30:
   with a narrower `span_covered` or full-coverage range path that clears the
   threshold without hurting prepress.
 
+Accepted common shading exponent ratio fast paths from 2026-06-30:
+
+- Profile basis:
+  after the vector-focused wins, the current native hot-render matrix
+  `target/performance-matrix-current-after-axis-spans-native-hot.json` showed
+  `slide-title-gradient.pdf` as the next non-vector hotspot at p95 `0.304 ms`.
+  The focused baseline
+  `target/benchmark-repeat-slide-current-after-axis-spans-1000.json` measured
+  repeat mean `0.247 ms`, p95 `0.269 ms`, and `raster_paths` `0.201 ms`.
+  The long CPU profile
+  `target/sample-slide-title-gradient-after-axis-spans.txt` put
+  `rasterize_shading_item -> pow` at the top of the sample tree.
+- Change:
+  `sample_shading_color_from_rgba` now routes through `shading_sample_ratio`,
+  which keeps the existing linear result for exponent `1.0` and adds safe
+  scalar fast paths for common type-2-function exponents `2.0` and `0.5`
+  before falling back to `powf`. The change is local to shading color ratio
+  calculation; color interpolation, alpha, clipping, transforms, output
+  dimensions, and fallback behavior are unchanged.
+- Correctness guard:
+  `shading_sample_ratio_should_fast_path_common_exponents`,
+  `axial_shading_sampling_should_interpolate_colors`,
+  `radial_shading_sampling_should_interpolate_colors`,
+  and the shading resource/display-list tests passed.
+- Focused result:
+  `target/benchmark-repeat-slide-shading-ratio-candidate-1000.json` improved
+  repeat mean `0.247 ms` -> `0.114 ms`, p95 `0.269 ms` -> `0.138 ms`, and
+  `raster_paths` `0.201 ms` -> `0.066 ms`. The repeat artifact
+  `target/benchmark-repeat-slide-shading-ratio-candidate-repeat-1000.json`
+  measured repeat mean `0.112 ms`, p95 `0.129 ms`, and `raster_paths`
+  `0.065 ms`.
+- Protection result:
+  `target/benchmark-repeat-vector-stress-shading-ratio-protection-1000.json`
+  stayed on the established vector track at repeat mean `0.680 ms`, p95
+  `0.783 ms`, and no fallback or errors. The starter protection matrix
+  `target/performance-matrix-shading-ratio-candidate-starter.json` rendered all
+  `11` records with no fallback, missing tool, not-applicable, or errors.
+  Focused axial/radial smoke artifacts
+  `target/benchmark-repeat-axial-gradient-shading-ratio-candidate-1000.json`
+  and `target/benchmark-repeat-radial-gradient-shading-ratio-candidate-1000.json`
+  both rendered without fallback or errors.
+- Decision:
+  keep. This is a profile-backed presentation/shading win that removes a hot
+  `powf` path for common PDF Type 2 function exponents without adding a
+  dependency, unsafe code, cache state, or public API surface.
+
 Current prepress join-bounds optimization from 2026-06-30:
 
 - Profiling basis:

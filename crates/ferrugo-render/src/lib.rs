@@ -5959,13 +5959,26 @@ fn sample_shading_color_from_rgba(
     t: f64,
 ) -> Rgba {
     let t = t.clamp(0.0, 1.0);
-    let ratio = if linear_exponent { t } else { t.powf(exponent) };
+    let ratio = shading_sample_ratio(t, exponent, linear_exponent);
     Rgba {
         r: interpolate_channel(start.r, end.r, ratio),
         g: interpolate_channel(start.g, end.g, ratio),
         b: interpolate_channel(start.b, end.b, ratio),
         a: 255,
     }
+}
+
+fn shading_sample_ratio(t: f64, exponent: f64, linear_exponent: bool) -> f64 {
+    if linear_exponent || (exponent - 1.0).abs() <= f64::EPSILON {
+        return t;
+    }
+    if (exponent - 2.0).abs() <= f64::EPSILON {
+        return t * t;
+    }
+    if (exponent - 0.5).abs() <= f64::EPSILON {
+        return t.sqrt();
+    }
+    t.powf(exponent)
 }
 
 #[cfg(test)]
@@ -19587,6 +19600,14 @@ mod tests {
                 a: 255,
             }
         );
+    }
+
+    #[test]
+    fn shading_sample_ratio_should_fast_path_common_exponents() {
+        assert_eq!(shading_sample_ratio(0.5, 1.0, true), 0.5);
+        assert_eq!(shading_sample_ratio(0.5, 1.0, false), 0.5);
+        assert_eq!(shading_sample_ratio(0.5, 2.0, false), 0.25);
+        assert_eq!(shading_sample_ratio(0.25, 0.5, false), 0.5);
     }
 
     #[test]
