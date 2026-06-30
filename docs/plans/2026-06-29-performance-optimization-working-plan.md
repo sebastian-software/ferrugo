@@ -3496,6 +3496,36 @@ Accepted opaque rectangle row-fill shortcut from 2026-06-30:
   changing generic fill semantics, allocation strategy, dependency surface, or
   unsafe-code policy.
 
+Rejected row-bucket range-capacity candidate from 2026-06-30:
+
+- Profiling trigger: the fresh post-opaque-rect matrix,
+  `target/performance-matrix-current-post-rect-row.json`, still showed
+  `vector-stress.pdf` as the top native hot-render fixture at p95 `1.035 ms`.
+  The paired long benchmark/sample artifacts,
+  `target/benchmark-native-vector-stress-post-rect-row-profile-run.json`,
+  `target/sample-vector-stress-post-rect-row.txt`, and
+  `target/trace-vector-stress-post-rect-row.json`, reported mean `0.898 ms`,
+  `raster_paths: 0.861 ms` of `1.073 ms`, and hot stacks in
+  `stroke_path` / `rasterize_row_bucketed_stroke_ranges`.
+- Change tested locally but not kept: store each stroke row/join bucket's
+  maximum row occupancy and use that to preallocate temporary `x_ranges`,
+  sorted row indices, and active row indices inside the row-bucket stroke
+  rasterizer.
+- Rationale: this targeted visible `Vec` growth, sort, and allocator frames in
+  the sample without changing geometry, clipping, blend semantics, or adding
+  dependencies.
+- A/B artifacts:
+  `target/benchmark-native-vector-stress-row-bucket-capacity-base.json` and
+  `target/benchmark-native-vector-stress-row-bucket-capacity-candidate.json`,
+  both `benchmark-native`, `fixtures/generated/vector-stress.pdf`,
+  `--max-edge 160`, 150,000 iterations.
+- Result: rejected as noise. Mean moved only `0.905 ms` -> `0.893 ms`
+  (`~1.3%`), below the 5% floor for a cumulative performance commit.
+- Decision: reverted. Row-bucket temporary allocation is visible but not large
+  enough by itself. The next vector pass should reduce per-pixel stroke hit
+  testing, range sorting/merging work, or the number of row-bucket candidate
+  samples rather than only preallocating scratch vectors.
+
 Repeat family phase-summary instrumentation from 2026-06-30:
 
 - Change: `benchmark-repeat-native` now aggregates record-level
