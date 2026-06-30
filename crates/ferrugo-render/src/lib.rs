@@ -1530,6 +1530,20 @@ pub struct StrokeRasterRouteSummary {
     pub span_raster_spans: usize,
     /// Maximum raster spans seen by one span-covered raster call.
     pub max_span_raster_spans_per_call: usize,
+    /// Raster rows visited by span-covered raster calls.
+    pub span_rows: usize,
+    /// Merged X ranges visited by span-covered raster calls.
+    pub span_x_ranges: usize,
+    /// Pixels visited after span X-range merging.
+    pub span_pixels: usize,
+    /// Supersample points tested inside span-covered raster calls.
+    pub span_sample_points: usize,
+    /// Pixels with at least one covered sample in span-covered raster calls.
+    pub span_covered_pixels: usize,
+    /// Pixels with every sample covered in span-covered raster calls.
+    pub span_full_coverage_pixels: usize,
+    /// Pixels with partial sample coverage in span-covered raster calls.
+    pub span_partial_coverage_pixels: usize,
     /// Number of row-bucket range raster calls.
     pub row_bucket_range_calls: usize,
     /// Number of row-bucket range calls that used active X candidates.
@@ -1573,6 +1587,22 @@ impl StrokeRasterRouteSummary {
         self.max_span_raster_spans_per_call = self.max_span_raster_spans_per_call.max(raster_spans);
     }
 
+    fn record_span_runtime(&mut self, stats: StrokeSpanRuntimeStats) {
+        self.span_rows = self.span_rows.saturating_add(stats.rows);
+        self.span_x_ranges = self.span_x_ranges.saturating_add(stats.x_ranges);
+        self.span_pixels = self.span_pixels.saturating_add(stats.pixels);
+        self.span_sample_points = self.span_sample_points.saturating_add(stats.sample_points);
+        self.span_covered_pixels = self
+            .span_covered_pixels
+            .saturating_add(stats.covered_pixels);
+        self.span_full_coverage_pixels = self
+            .span_full_coverage_pixels
+            .saturating_add(stats.full_coverage_pixels);
+        self.span_partial_coverage_pixels = self
+            .span_partial_coverage_pixels
+            .saturating_add(stats.partial_coverage_pixels);
+    }
+
     fn record_row_bucket_runtime(&mut self, stats: StrokeRowBucketRuntimeStats) {
         self.row_bucket_range_calls = self
             .row_bucket_range_calls
@@ -1604,6 +1634,17 @@ impl StrokeRasterRouteSummary {
             .row_bucket_covered_pixels
             .saturating_add(stats.covered_pixels);
     }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct StrokeSpanRuntimeStats {
+    rows: usize,
+    x_ranges: usize,
+    pixels: usize,
+    sample_points: usize,
+    covered_pixels: usize,
+    full_coverage_pixels: usize,
+    partial_coverage_pixels: usize,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -12416,6 +12457,26 @@ fn rasterize_span_covered_stroke_ranges(
         stroke_routes
             .borrow_mut()
             .record_span_covered_call(raster_spans.spans.len(), coverage_spans.spans.len());
+        if coverage_spans.spans.len() < STROKE_SPAN_CURSOR_MIN_SPANS {
+            return rasterize_span_covered_stroke_ranges_from_start_traced(
+                device,
+                raster_spans,
+                coverage_spans,
+                bounds,
+                blend,
+                samples,
+                stroke_routes,
+            );
+        }
+        return rasterize_span_covered_stroke_ranges_with_cursor_traced(
+            device,
+            raster_spans,
+            coverage_spans,
+            bounds,
+            blend,
+            samples,
+            stroke_routes,
+        );
     }
     if coverage_spans.spans.len() < STROKE_SPAN_CURSOR_MIN_SPANS {
         return rasterize_span_covered_stroke_ranges_from_start(
@@ -12476,6 +12537,71 @@ fn rasterize_span_covered_stroke_ranges(
     Ok(())
 }
 
+fn rasterize_span_covered_stroke_ranges_with_cursor_traced(
+    device: &mut RasterDevice,
+    raster_spans: &AxisStrokeSpans,
+    coverage_spans: &AxisStrokeSpans,
+    bounds: PixelBounds,
+    blend: SampledPixelBlend,
+    samples: u32,
+    stroke_routes: &RefCell<StrokeRasterRouteSummary>,
+) -> RasterResult<()> {
+    let mut stats = StrokeSpanRuntimeStats::default();
+    let mut x_ranges = Vec::new();
+    let mut coverage_rows = Vec::with_capacity(samples as usize);
+    let mut coverage_cursors = Vec::with_capacity(samples as usize);
+    for y in bounds.min_y..bounds.max_y {
+        stats.rows += 1;
+        x_ranges.clear();
+        for sample_y in 0..samples {
+            append_axis_stroke_pixel_x_ranges(raster_spans, bounds, y, sample_y, &mut x_ranges);
+        }
+        merge_pixel_ranges(&mut x_ranges);
+        stats.x_ranges = stats.x_ranges.saturating_add(x_ranges.len());
+        coverage_rows.clear();
+        coverage_cursors.clear();
+        for sample_y in 0..samples {
+            let sample_row = y
+                .saturating_mul(coverage_spans.samples)
+                .saturating_add(sample_y)
+                .saturating_sub(coverage_spans.min_sample_y);
+            let row = coverage_spans
+                .rows
+                .get(sample_row as usize)
+                .cloned()
+                .unwrap_or(0..0);
+            coverage_cursors.push(row.start);
+            coverage_rows.push(row);
+        }
+        for x_range in &x_ranges {
+            for x in x_range.clone() {
+                stats.pixels += 1;
+                let mut covered = 0;
+                for (sample_y, row) in coverage_rows.iter().enumerate() {
+                    let cursor = &mut coverage_cursors[sample_y];
+                    for sample_x in 0..samples {
+                        stats.sample_points += 1;
+                        let sample_x =
+                            f64::from(x) + (f64::from(sample_x) + 0.5) / f64::from(samples);
+                        if x_in_axis_stroke_span_row_from_cursor(
+                            sample_x,
+                            row,
+                            &coverage_spans.spans,
+                            cursor,
+                        ) {
+                            covered += 1;
+                        }
+                    }
+                }
+                record_sampled_span_pixel(&mut stats, covered, blend.sample_count);
+                blend_sampled_pixel(device, x, y, blend, covered)?;
+            }
+        }
+    }
+    stroke_routes.borrow_mut().record_span_runtime(stats);
+    Ok(())
+}
+
 fn rasterize_span_covered_stroke_ranges_from_start(
     device: &mut RasterDevice,
     raster_spans: &AxisStrokeSpans,
@@ -12515,6 +12641,67 @@ fn rasterize_span_covered_stroke_ranges_from_start(
         }
     }
     Ok(())
+}
+
+fn rasterize_span_covered_stroke_ranges_from_start_traced(
+    device: &mut RasterDevice,
+    raster_spans: &AxisStrokeSpans,
+    coverage_spans: &AxisStrokeSpans,
+    bounds: PixelBounds,
+    blend: SampledPixelBlend,
+    samples: u32,
+    stroke_routes: &RefCell<StrokeRasterRouteSummary>,
+) -> RasterResult<()> {
+    let mut stats = StrokeSpanRuntimeStats::default();
+    let mut x_ranges = Vec::new();
+    for y in bounds.min_y..bounds.max_y {
+        stats.rows += 1;
+        x_ranges.clear();
+        for sample_y in 0..samples {
+            append_axis_stroke_pixel_x_ranges(raster_spans, bounds, y, sample_y, &mut x_ranges);
+        }
+        merge_pixel_ranges(&mut x_ranges);
+        stats.x_ranges = stats.x_ranges.saturating_add(x_ranges.len());
+        for x_range in &x_ranges {
+            for x in x_range.clone() {
+                stats.pixels += 1;
+                let mut covered = 0;
+                for sample_y in 0..samples {
+                    let sample_row = y
+                        .saturating_mul(coverage_spans.samples)
+                        .saturating_add(sample_y)
+                        .saturating_sub(coverage_spans.min_sample_y);
+                    let Some(row) = coverage_spans.rows.get(sample_row as usize) else {
+                        continue;
+                    };
+                    for sample_x in 0..samples {
+                        stats.sample_points += 1;
+                        let sample_x =
+                            f64::from(x) + (f64::from(sample_x) + 0.5) / f64::from(samples);
+                        if x_in_axis_stroke_span_row(sample_x, row, &coverage_spans.spans) {
+                            covered += 1;
+                        }
+                    }
+                }
+                record_sampled_span_pixel(&mut stats, covered, blend.sample_count);
+                blend_sampled_pixel(device, x, y, blend, covered)?;
+            }
+        }
+    }
+    stroke_routes.borrow_mut().record_span_runtime(stats);
+    Ok(())
+}
+
+fn record_sampled_span_pixel(stats: &mut StrokeSpanRuntimeStats, covered: u32, sample_count: u32) {
+    if covered == 0 {
+        return;
+    }
+    stats.covered_pixels += 1;
+    if covered == sample_count {
+        stats.full_coverage_pixels += 1;
+    } else {
+        stats.partial_coverage_pixels += 1;
+    }
 }
 
 fn x_in_axis_stroke_span_row_from_cursor(
@@ -19012,6 +19199,84 @@ mod tests {
         assert_eq!(routes.span_cursor_calls, 1);
         assert_eq!(routes.span_from_start_calls, 0);
         assert!(routes.max_span_coverage_spans_per_call >= STROKE_SPAN_CURSOR_MIN_SPANS);
+        assert!(routes.span_rows > 0);
+        assert!(routes.span_x_ranges > 0);
+        assert!(routes.span_pixels > 0);
+        assert!(routes.span_sample_points >= routes.span_pixels);
+        assert_eq!(
+            routes.span_covered_pixels,
+            routes.span_full_coverage_pixels + routes.span_partial_coverage_pixels
+        );
+    }
+
+    #[test]
+    fn stroke_raster_route_summary_should_count_span_from_start_work() {
+        let spans = AxisStrokeSpans {
+            min_sample_y: 0,
+            samples: 2,
+            rows: vec![0..1, 1..2, 2..3, 3..4],
+            spans: vec![
+                AxisStrokeSpan {
+                    min_x: 1.0,
+                    max_x: 3.0,
+                },
+                AxisStrokeSpan {
+                    min_x: 1.0,
+                    max_x: 3.0,
+                },
+                AxisStrokeSpan {
+                    min_x: 1.0,
+                    max_x: 3.0,
+                },
+                AxisStrokeSpan {
+                    min_x: 1.0,
+                    max_x: 3.0,
+                },
+            ],
+        };
+        let bounds = PixelBounds {
+            min_x: 0,
+            min_y: 0,
+            max_x: 4,
+            max_y: 2,
+        };
+        let blend = SampledPixelBlend::new(
+            Rgba {
+                r: 0,
+                g: 0,
+                b: 0,
+                a: 255,
+            },
+            BlendMode::Normal,
+            1.0,
+            4,
+        );
+        let mut device = RasterDevice::new(4, 2, Rgba::WHITE).expect("valid device");
+        let routes = RefCell::new(StrokeRasterRouteSummary::default());
+
+        rasterize_span_covered_stroke_ranges(
+            &mut device,
+            &spans,
+            &spans,
+            bounds,
+            blend,
+            2,
+            Some(&routes),
+        )
+        .expect("span-covered raster should render");
+
+        let routes = routes.into_inner();
+        assert_eq!(routes.span_covered_calls, 1);
+        assert_eq!(routes.span_cursor_calls, 0);
+        assert_eq!(routes.span_from_start_calls, 1);
+        assert!(routes.max_span_coverage_spans_per_call < STROKE_SPAN_CURSOR_MIN_SPANS);
+        assert_eq!(routes.span_rows, 2);
+        assert_eq!(routes.span_x_ranges, 2);
+        assert_eq!(routes.span_pixels, 4);
+        assert_eq!(routes.span_sample_points, 16);
+        assert_eq!(routes.span_covered_pixels, 4);
+        assert_eq!(routes.span_full_coverage_pixels, 4);
+        assert_eq!(routes.span_partial_coverage_pixels, 0);
     }
 
     #[test]

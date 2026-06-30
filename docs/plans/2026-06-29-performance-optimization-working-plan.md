@@ -5015,6 +5015,37 @@ Rejected sampled float blend dispatch candidate from 2026-06-30:
   opaque-normal blend routing unless a future profile isolates a narrower
   subcase than the whole sampled stroke path.
 
+### Accepted span-raster work counters from 2026-06-30
+
+- Change:
+  `trace-native` now reports span-covered raster work in addition to route
+  counts: raster rows, merged X ranges, visited pixels, sample points, covered
+  pixels, full-coverage pixels, and partial-coverage pixels.
+- Normal-render overhead:
+  the detailed counters run only when stroke-route tracing is requested. The
+  non-trace render path keeps the previous loops.
+- Focus fixture:
+  `fixtures/generated/vector-stress.pdf`, `--max-edge 160`.
+- Trace artifact:
+  `target/trace-vector-stress-span-work.json`.
+- Result:
+  `span_covered_calls=44`, `span_from_start_calls=44`, `span_pixels=9008`,
+  `span_sample_points=36032`, `span_covered_pixels=9008`,
+  `span_full_coverage_pixels=0`, and `span_partial_coverage_pixels=9008`.
+  Row-bucket raster work on the same trace reported
+  `row_bucket_pixels=3324` and `row_bucket_sample_points=13296`.
+- Neutrality check:
+  a normal hot-render canary with 20k repetitions reported repeat mean
+  `0.676 ms` and repeat mean `raster_paths=0.582 ms`, close to the prior
+  accepted single-offset blend result (`0.667 ms` / `0.576 ms`) and not treated
+  as a speed claim.
+- Decision:
+  accepted as profiling infrastructure. The current `vector-stress` bottleneck
+  does not expose a full-coverage fast path in span rastering; every span pixel
+  is partially covered. The next optimization candidate should target
+  coverage/sample work or route selection before trying another sampled
+  blend/write micro-optimization.
+
 ## Settled Decisions
 
 - [x] `scripts/generate_performance_matrix.sh` defaults to release mode.

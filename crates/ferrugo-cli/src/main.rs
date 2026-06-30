@@ -8733,6 +8733,13 @@ fn trace_stroke_raster_route_summary_json(
                 "\"max_span_coverage_spans_per_call\":{},",
                 "\"span_raster_spans\":{},",
                 "\"max_span_raster_spans_per_call\":{},",
+                "\"span_rows\":{},",
+                "\"span_x_ranges\":{},",
+                "\"span_pixels\":{},",
+                "\"span_sample_points\":{},",
+                "\"span_covered_pixels\":{},",
+                "\"span_full_coverage_pixels\":{},",
+                "\"span_partial_coverage_pixels\":{},",
                 "\"row_bucket_range_calls\":{},",
                 "\"row_bucket_active_range_calls\":{},",
                 "\"row_bucket_rows\":{},",
@@ -8755,6 +8762,13 @@ fn trace_stroke_raster_route_summary_json(
             summary.max_span_coverage_spans_per_call,
             summary.span_raster_spans,
             summary.max_span_raster_spans_per_call,
+            summary.span_rows,
+            summary.span_x_ranges,
+            summary.span_pixels,
+            summary.span_sample_points,
+            summary.span_covered_pixels,
+            summary.span_full_coverage_pixels,
+            summary.span_partial_coverage_pixels,
             summary.row_bucket_range_calls,
             summary.row_bucket_active_range_calls,
             summary.row_bucket_rows,
@@ -11773,6 +11787,13 @@ mod tests {
         assert!(json.contains("\"span_cursor_calls\""));
         assert!(json.contains("\"span_from_start_calls\""));
         assert!(json.contains("\"max_span_coverage_spans_per_call\""));
+        assert!(json.contains("\"span_rows\""));
+        assert!(json.contains("\"span_x_ranges\""));
+        assert!(json.contains("\"span_pixels\""));
+        assert!(json.contains("\"span_sample_points\""));
+        assert!(json.contains("\"span_covered_pixels\""));
+        assert!(json.contains("\"span_full_coverage_pixels\""));
+        assert!(json.contains("\"span_partial_coverage_pixels\""));
         assert!(json.contains("\"row_bucket_range_calls\""));
         assert!(json.contains("\"row_bucket_sample_points\""));
         assert!(json.contains("\"row_bucket_line_candidates\""));
