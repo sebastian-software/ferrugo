@@ -1219,6 +1219,71 @@ Rejected gated X-tile candidate from 2026-06-30:
   raster strategy is scoped, for example batching dense axis-aligned linework
   spans or rasterizing technical-grid strokes as coverage intervals.
 
+Current engineering floorplan profile from 2026-06-30:
+
+- Profile evidence:
+  `target/sample-engineering-floorplan-current.txt`, captured from a 10-second
+  macOS `sample` run against a long release `benchmark-native` process for
+  `fixtures/generated/engineering-floorplan-precision.pdf`, `--max-edge 160`.
+- Trace evidence:
+  `target/trace-native-engineering-floorplan-current.json` reports total
+  `3.223 ms`, with `raster_paths` at `2.762 ms`. The stroke summary reports
+  `72` stroked items, `62` dashed items, `24` row-bucket candidates,
+  `2174` flattened lines, all `2174` axis-aligned, and `2,872,320`
+  row-bucket sample refs with about `95.0%` X-miss.
+- Top-of-stack summary: `stroke_path` remains dominant (`6632` symbol samples),
+  with `blend_pixel` (`189`), `source_over` (`51`), and `fill_path` (`46`) far
+  behind. Allocation frames appear inside `stroke_path` and
+  `dashed_subpath_line_segments`, but the first direct allocation candidates
+  below did not improve the matrix.
+- Interpretation: the large engineering fixtures still need a different
+  stroke raster strategy. The profile does not justify more local empty-check
+  or `Vec`-reservation micro-optimizations; those have now been tested and
+  rejected.
+
+Rejected empty-join hot-loop candidate from 2026-06-30:
+
+- Change tested locally but not kept: compute `has_joins = !joins.is_empty()`
+  in `stroke_path` and skip `point_in_join` in the inner sample loop when a
+  stroked item has no joins. This targeted dashed floorplan strokes, where the
+  dash path passes an empty join slice.
+- Baseline artifact:
+  `target/performance-matrix-empty-join-baseline-technical.json`, native
+  hot-render, `fixtures/technical-drawing-manifest.tsv`, `--max-edge 160`, 200
+  measured iterations after 10 warmups.
+- Candidate artifact:
+  `target/performance-matrix-empty-join-candidate-technical.json`, same command
+  shape and host.
+- Result: rejected. No fixture reached a 5% p95 win.
+  `engineering-floorplan-precision.pdf` regressed p95 ~3.5% and mean ~3.8%,
+  `technical-large-coordinate-plan.pdf` regressed p95 ~3.8% and mean ~4.8%,
+  `dashed-stroke.pdf` regressed p95 ~14.5%, and `clipped-paths.pdf` regressed
+  p95 ~50.6%.
+- Decision: reverted. The branch avoided an apparently redundant empty join
+  call, but the hot loop got worse in protection fixtures. Do not revisit this
+  exact check without lower-level evidence from generated assembly or a
+  profile that isolates `point_in_join` itself as a measurable cost.
+
+Rejected dashed-line capacity candidate from 2026-06-30:
+
+- Change tested locally but not kept: initialize dashed stroke output with
+  `Vec::with_capacity(source_segments * active_dash_segments)`, capped by the
+  existing path complexity limit, to reduce reallocations visible in the
+  engineering floorplan sample.
+- Candidate artifact:
+  `target/performance-matrix-dashed-capacity-candidate-technical.json`, compared
+  against `target/performance-matrix-empty-join-baseline-technical.json` with
+  the same native hot-render technical command.
+- Result: rejected. Reserving capacity regressed nearly the whole technical
+  set: `engineering-floorplan-precision.pdf` p95 ~7.1% slower,
+  `technical-large-coordinate-plan.pdf` ~12.9% slower,
+  `technical-linework-dimensions.pdf` ~19.1% slower, and `vector-stress.pdf`
+  ~7.7% slower.
+- Decision: reverted. The allocation frames in `sample` are not enough by
+  themselves to justify pre-reservation. The extra capacity likely increases
+  allocation/cache pressure more than it removes growth cost for these short
+  dashed stroke buffers.
+
 ## Hardware-Aware Rust Notes
 
 Goal: use Rust's memory model and the host CPU well without prematurely
