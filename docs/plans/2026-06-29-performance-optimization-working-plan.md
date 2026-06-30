@@ -1195,6 +1195,30 @@ Rejected gated sorted-row candidate from 2026-06-30:
   representation, such as per-row span groups, compact x-ranges, or a stroke
   raster algorithm that handles dense horizontal/vertical linework in batches.
 
+Rejected gated X-tile candidate from 2026-06-30:
+
+- Change tested locally but not kept: build optional 16px X-tiles inside
+  `StrokeRowBuckets` only when the row-work estimate exceeded `1_000_000`
+  sample-line refs and `90%` X-miss. Standard row buckets remained unchanged
+  below that gate.
+- Rationale: the earlier raw X-tile experiment improved the largest plan
+  fixtures but damaged protection fixtures. The new gate used row-work trace
+  counters to activate tiles only on the high-work plan/engineering cases.
+- Candidate artifact:
+  `target/performance-matrix-stroke-row-xtile-gated-technical.json`, native
+  hot-render, `fixtures/technical-drawing-manifest.tsv`, `--max-edge 160`, 200
+  measured iterations after 10 warmups.
+- Result: rejected by the first technical run. No fixture reached a 5% p95 win.
+  `engineering-floorplan-precision.pdf` regressed p95 ~1.0% and mean ~0.8%,
+  `engineering-large-transform-detail.pdf` regressed p95 ~1.9%, and
+  `technical-large-coordinate-plan.pdf` regressed p95 ~0.6%. `vector-stress.pdf`
+  regressed p95 ~3.7% and mean ~5.0%.
+- Decision: reverted. The fixed-width tile index adds allocation and lookup
+  overhead without reducing enough work on the gated target set. Future work
+  should stop iterating on row-bucket index variants until a different stroke
+  raster strategy is scoped, for example batching dense axis-aligned linework
+  spans or rasterizing technical-grid strokes as coverage intervals.
+
 ## Hardware-Aware Rust Notes
 
 Goal: use Rust's memory model and the host CPU well without prematurely
