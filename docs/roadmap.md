@@ -1,11 +1,12 @@
 # Roadmap
 
-Status: exploratory roadmap, not an approved implementation plan.
+Status: historical roadmap, not an active implementation plan.
 Date: 2026-06-24.
 
-Operational progress is tracked in small milestone documents under
-`docs/milestones/`. The roadmap describes the broad phase direction; milestone
-files are the working log for status, validation, and completion notes.
+This roadmap records the original phase direction. Operational truth now lives
+in readiness reports, policies, ADRs, and backlogs. Completed milestone
+planning files were retired after their decisions and evidence were promoted to
+durable documentation.
 
 ## Phase 0: Thumbnail Probe Definition
 
