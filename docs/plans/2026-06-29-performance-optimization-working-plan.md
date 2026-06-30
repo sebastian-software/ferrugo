@@ -3643,6 +3643,30 @@ Accepted exact axis-span raster result from 2026-06-30:
   stroke bottleneck track; it adds no dependency, unsafe code, global cache, or
   alternate stroke geometry.
 
+Rejected exact-span full-coverage row candidate from 2026-06-30:
+
+- Profile basis: after the exact axis-span raster commit,
+  `target/sample-vector-stress-post-exact-span.txt` showed
+  `rasterize_span_covered_stroke_ranges` and `blend_pixel` as visible costs
+  inside `stroke_path`. The current exact-span route still computes sample
+  coverage for every candidate pixel, including interior pixels that are fully
+  covered by all supersample rows.
+- Change tested locally but not kept: compute full-coverage X ranges by
+  intersecting all supersample span rows for each raster row, write those ranges
+  directly when the blend is opaque normal, and keep the existing sampled loop
+  only for the remaining partial edge ranges.
+- A/B artifacts:
+  `target/benchmark-native-vector-stress-post-exact-span-profile-run.json` and
+  `target/benchmark-native-vector-stress-exact-span-full-ranges-candidate.json`,
+  both `benchmark-native`, `fixtures/generated/vector-stress.pdf`,
+  `--max-edge 160`, 150,000 iterations.
+- Result: rejected as below threshold. Mean moved `0.764 ms` -> `0.738 ms`
+  (`~3.4%`). The direction is technically coherent but too small for the
+  amount of extra range-intersection and split-loop code.
+- Decision: reverted. Revisit only if a later sample shows exact-span
+  full-coverage pixels dominating more heavily, or if a simpler row-fill shape
+  can avoid most of the added range plumbing.
+
 Repeat family phase-summary instrumentation from 2026-06-30:
 
 - Change: `benchmark-repeat-native` now aggregates record-level
