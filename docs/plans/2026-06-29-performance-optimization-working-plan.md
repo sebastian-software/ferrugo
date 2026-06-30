@@ -4739,6 +4739,34 @@ Runtime span-route counters from 2026-06-30:
   path or a row-bucket/blend target with `prepress` and
   `technical-hatch-clipping` in the protection set from the first run.
 
+Rejected span-cursor threshold 128 candidate from 2026-06-30:
+
+- Profiling basis:
+  runtime route counters showed `44` span-covered calls on `vector-stress`, all
+  using the from-start route, with max `172` coverage spans per call. This made
+  a threshold-lowering A/B worth testing, but only with protection fixtures.
+- Change tested locally but not kept:
+  lower `STROKE_SPAN_CURSOR_MIN_SPANS` from `512` to `128`.
+- A/B artifacts:
+  `target/benchmark-repeat-vector-stress-current-span-gate-baseline-20k.json`,
+  `target/benchmark-repeat-vector-stress-span-cursor-gate128-candidate-20k.json`,
+  `target/benchmark-repeat-prepress-current-span-gate-baseline-20k.json`,
+  `target/benchmark-repeat-prepress-span-cursor-gate128-candidate-20k.json`,
+  `target/benchmark-repeat-technical-hatch-current-span-gate-baseline-20k.json`,
+  and
+  `target/benchmark-repeat-technical-hatch-span-cursor-gate128-candidate-20k.json`.
+- Result:
+  rejected. `vector-stress.pdf` regressed mean `0.666 ms` -> `0.675 ms`, p95
+  `0.772 ms` -> `0.786 ms`, and `raster_paths` `0.578 ms` -> `0.586 ms`.
+  `prepress-trim-bleed-marks.pdf` regressed mean `0.307 ms` -> `0.310 ms` and
+  p95 `0.335 ms` -> `0.344 ms`. `technical-hatch-clipping.pdf` was neutral
+  on mean and raster paths, with p95 `0.280 ms` -> `0.279 ms`.
+- Decision:
+  reverted. The from-start span route is visible, but lowering the cursor
+  threshold adds overhead before it removes enough scan work. Do not retest
+  simple threshold lowering for this shape; the next candidate should change
+  the from-start algorithm itself or move to row-bucket/blend work.
+
 ## Phase 6: Benchmark Gates And Claims
 
 Goal: turn stable evidence into guardrails, not premature marketing.
