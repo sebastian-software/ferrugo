@@ -1369,6 +1369,37 @@ Accepted axis-aligned span-row result from 2026-06-30:
   `cargo clippy --workspace --all-targets --all-features -- -D warnings`
   passed.
 
+Post-span image and mobile impact from 2026-06-30:
+
+- Follow-up artifacts:
+  `target/performance-matrix-post-span-image-heavy.json` and
+  `target/performance-matrix-post-span-mobile.json`, native hot-render,
+  `--max-edge 160`.
+- Image-heavy result compared with
+  `target/performance-matrix-image-row-color-repeat.json`: all 8 image-heavy
+  fixtures improved on p95. `image-heavy-repeated-xobject-report.pdf` improved
+  ~33.2%, `image-heavy-rotated-mask-sheet.pdf` ~27.6%,
+  `image-mask-logo.pdf` ~58.5%, `predictor-image.pdf` ~20.9%, and
+  `mobile-mixed-compression-scan.pdf` ~7.8%. This confirms that several
+  previously image-labeled slow cases were still paying substantial
+  axis-aligned stroke overlay cost.
+- Mobile result compared with
+  `target/performance-matrix-mobile-row-color-repeat.json`: 8 of 9 rendered
+  mobile fixtures improved by at least 5% p95, with no p95 regression above
+  5%. `cropped-scan-page.pdf` improved ~65.2%,
+  `ocr-invisible-text-layer.pdf` ~68.6%, `rotated-office-export.pdf` ~21.1%,
+  and `mobile-mixed-compression-scan.pdf` ~5.2%.
+- New slowest rendered fixtures after this pass are
+  `mobile-cropped-photo-scan.pdf` (`1.338 ms` p95),
+  `mobile-mixed-compression-scan.pdf` (`1.001 ms` p95),
+  `rotated-office-export.pdf` (`0.818 ms` p95),
+  `image-heavy-rotated-mask-sheet.pdf` (`0.593 ms` p95), and
+  `image-heavy-repeated-xobject-report.pdf` (`0.589 ms` p95).
+- Decision: count these as secondary wins from the accepted span-row patch, not
+  a separate image optimization. The next Phase 4 candidate should use fresh
+  post-span attribution on the remaining scan/image top fixtures instead of
+  relying on pre-span profiles.
+
 ## Hardware-Aware Rust Notes
 
 Goal: use Rust's memory model and the host CPU well without prematurely
