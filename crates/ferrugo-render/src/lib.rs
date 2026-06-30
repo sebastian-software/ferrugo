@@ -11658,10 +11658,6 @@ fn sorted_row_line_indices(buckets: &StrokeRowBuckets, y: u32, output: &mut Vec<
         return;
     };
     output.extend_from_slice(&buckets.indices[row.clone()]);
-    output.sort_by_key(|&line_index| {
-        let bounds = buckets.lines[line_index].bounds;
-        (bounds.min_x, bounds.max_x)
-    });
 }
 
 fn sorted_row_join_indices(buckets: &StrokeJoinBuckets, y: u32, output: &mut Vec<usize>) {
@@ -11673,10 +11669,6 @@ fn sorted_row_join_indices(buckets: &StrokeJoinBuckets, y: u32, output: &mut Vec
         return;
     };
     output.extend_from_slice(&buckets.indices[row.clone()]);
-    output.sort_by_key(|&join_index| {
-        let bounds = bounded_join_bounds(buckets.joins[join_index]);
-        (bounds.min_x, bounds.max_x)
-    });
 }
 
 fn advance_active_line_indices(
@@ -11925,7 +11917,11 @@ fn stroke_row_buckets(
     let index_count = per_row.iter().map(Vec::len).sum();
     let mut indices = Vec::with_capacity(index_count);
     let mut rows = Vec::with_capacity(row_count);
-    for row in per_row {
+    for mut row in per_row {
+        row.sort_by_key(|&line_index| {
+            let bounds = lines_with_bounds[line_index].bounds;
+            (bounds.min_x, bounds.max_x)
+        });
         let start = indices.len();
         indices.extend(row);
         rows.push(start..indices.len());
@@ -11990,7 +11986,11 @@ fn stroke_join_buckets(
     let index_count = per_row.iter().map(Vec::len).sum();
     let mut indices = Vec::with_capacity(index_count);
     let mut rows = Vec::with_capacity(row_count);
-    for row in per_row {
+    for mut row in per_row {
+        row.sort_by_key(|&join_index| {
+            let bounds = bounded_join_bounds(bounded_joins[join_index]);
+            (bounds.min_x, bounds.max_x)
+        });
         let start = indices.len();
         indices.extend(row);
         rows.push(start..indices.len());
@@ -17000,6 +17000,36 @@ mod tests {
             0.5,
             LineCap::Butt
         ));
+    }
+
+    #[test]
+    fn stroke_row_buckets_should_sort_row_indices_by_x_bounds() {
+        let dimensions = RasterDimensions::new(24, 12).expect("valid dimensions");
+        let lines = [
+            LineSegment {
+                from: Point { x: 12.5, y: 5.5 },
+                to: Point { x: 16.5, y: 5.5 },
+            },
+            LineSegment {
+                from: Point { x: 2.5, y: 5.5 },
+                to: Point { x: 4.5, y: 5.5 },
+            },
+        ];
+        let radius = 0.5;
+        let bounds = stroke_pixel_bounds(&lines, &[], radius, dimensions)
+            .expect("stroke bounds should overlap");
+        let buckets =
+            stroke_row_buckets(&lines, radius, dimensions, bounds).expect("bucketed lines");
+        let row = buckets.rows[(5 - buckets.min_y) as usize].clone();
+        let row_min_x: Vec<u32> = buckets.indices[row]
+            .iter()
+            .map(|&line_index| buckets.lines[line_index].bounds.min_x)
+            .collect();
+
+        assert!(
+            row_min_x.windows(2).all(|window| window[0] <= window[1]),
+            "row min_x values should be sorted: {row_min_x:?}"
+        );
     }
 
     #[test]

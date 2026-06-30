@@ -2050,6 +2050,41 @@ Rejected single-active-line row-bucket candidate from 2026-06-30:
   or per-row span algorithm, but do not land a local single-candidate branch
   that fails the acceptance threshold on the primary fixture.
 
+Accepted pre-sorted row-bucket rows from 2026-06-30:
+
+- Profile basis: the post-cache vector profile still showed `stroke_path` as
+  the dominant flat symbol, and the accepted active row-bucket path still
+  needed per-raster-row X-ordered candidate lists. Earlier scratch-capacity and
+  single-active-line candidates were positive but below the threshold, so this
+  candidate moved the ordering work out of the hot raster loop instead of adding
+  another local predicate branch.
+- Change: `stroke_row_buckets` and `stroke_join_buckets` now store each row's
+  indices sorted by conservative `(min_x, max_x)` bounds when the buckets are
+  built. The active row-bucket rasterizer can then copy the already sorted row
+  slice and skip per-row sorting in `sorted_row_line_indices` and
+  `sorted_row_join_indices`. Exact stroke and join geometry predicates are
+  unchanged.
+- Correctness guard:
+  `stroke_row_buckets_should_sort_row_indices_by_x_bounds` freezes the row
+  ordering invariant used by the active scan.
+- A/B artifacts:
+  `target/performance-matrix-report-vector-current-after-session-cache.json`,
+  `target/performance-matrix-report-vector-presorted-row-buckets-candidate.json`,
+  and
+  `target/performance-matrix-report-vector-presorted-row-buckets-repeat.json`,
+  same host, `report/vector` hot-render, `--max-edge 160`, `240` measured
+  iterations and `20` warmups.
+- Result: accepted as a cumulative row-bucket optimization. First run:
+  `vector-stress.pdf` p95 `3.168 ms` -> `2.927 ms` (`~7.6%`) and mean
+  `2.970 ms` -> `2.832 ms` (`~4.6%`). Repeat: p95 `3.168 ms` -> `2.958 ms`
+  (`~6.6%`) and mean `2.970 ms` -> `2.849 ms` (`~4.1%`).
+  `technical-hatch-clipping.pdf` repeated p95 `~9.7%` faster, and
+  `technical-linework-dimensions.pdf` repeated p95 `~7.1%` faster.
+  `prepress-trim-bleed-marks.pdf` stayed neutral-to-better.
+- Decision: keep. This reduces repeated row sorting in the profile-backed
+  `stroke_path` track without changing coverage decisions or adding new
+  dependencies.
+
 ## Hardware-Aware Rust Notes
 
 Goal: use Rust's memory model and the host CPU well without prematurely
