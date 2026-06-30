@@ -841,6 +841,44 @@ Rejected axis-aligned hairline candidate from 2026-06-30:
   simple-stroke work only with a profile that points to a broader stroke
   predicate or bounds strategy, not this narrow centerline branch.
 
+Post-blend stroke profile and rejected bounded-line candidate from 2026-06-30:
+
+- Profile evidence:
+  `target/sample-post-blend-report-vector.txt`, captured from a long
+  report/vector hot-render run after the opaque normal-blend fast path, showed
+  `stroke_path` even more clearly as the dominant CPU target. `stroke_path`
+  accounted for about `5750` samples, while `blend_pixel` was about `766`,
+  `fill_path` about `187`, `source_over` about `32`, and
+  `flatten_path_segments` about `6`.
+- Interpretation: allocation and flattening are not the current vector
+  bottleneck. The next accepted vector win needs to reduce the amount of stroke
+  predicate work per candidate pixel or change the raster algorithm, not add a
+  cache around flattening.
+- Change tested locally but not kept: precompute per-line pixel bounds for
+  strokes with many segments, then check integer pixel bounds before the
+  expensive distance-to-line predicate. Variants tested thresholds of `>=8`,
+  `>=32`, and `>=64` stroke segments before enabling the precomputed-bounds
+  path.
+- Candidate artifacts:
+  `target/performance-matrix-bounded-stroke-candidate-technical.json`,
+  `target/performance-matrix-bounded-stroke-candidate-technical-repeat.json`,
+  `target/performance-matrix-bounded-stroke-threshold32-technical.json`,
+  `target/performance-matrix-bounded-stroke-threshold32-technical-repeat.json`,
+  `target/performance-matrix-bounded-stroke-threshold64-technical.json`, and
+  `target/performance-matrix-bounded-stroke-threshold64-technical-repeat.json`.
+- Result: the lower thresholds produced useful wins on several large linework
+  fixtures, but were not protection-set-neutral. `>=32` improved
+  `engineering-floorplan-precision.pdf` by about 13% p95 and
+  `technical-large-coordinate-plan.pdf` by about 12% p95 in repeat runs, but
+  regressed `technical-hatch-clipping.pdf` by about 5-7% and
+  `technical-repeated-symbols.pdf` by about 5%. `>=64` reduced the wins and
+  still left repeat mean regressions above 5% on protection fixtures.
+- Decision: reverted. The concept is directionally useful, but a per-stroke
+  vector of bounded lines is too blunt. Revisit with row buckets, tiling, or a
+  stroke-specific spatial index only if the profile remains dominated by
+  repeated line predicate scans and the protection fixtures are included from
+  the start.
+
 ## Hardware-Aware Rust Notes
 
 Goal: use Rust's memory model and the host CPU well without prematurely
