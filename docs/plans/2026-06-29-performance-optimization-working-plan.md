@@ -1092,6 +1092,34 @@ Rejected micro candidate from 2026-06-30:
   scalar arithmetic too small to matter. Continue with algorithmic
   candidate-reduction or raster-loop changes, not scalar expression hoisting.
 
+Rejected row-bucket copy candidate from 2026-06-30:
+
+- Change tested locally but not kept: borrow each `BoundedStrokeLine` in
+  `point_in_row_bucketed_stroke` until after the X-bounds check, avoiding a
+  line/bounds copy for common row-bucket X misses.
+- Technical target artifacts:
+  `target/performance-matrix-stroke-row-borrow-technical.json` and
+  `target/performance-matrix-stroke-row-borrow-technical-repeat.json`, native
+  hot-render, `fixtures/technical-drawing-manifest.tsv`, `--max-edge 160`, 200
+  measured iterations after 10 warmups.
+- Technical result: useful but narrow. `technical-large-coordinate-plan.pdf`
+  improved p95 ~8.7% then ~7.5% on repeat, and mean ~7.4% then ~6.6%.
+  `engineering-large-transform-detail.pdf` improved p95 ~6.5% in the first
+  run but only ~4.0% on repeat. `vector-stress.pdf` stayed neutral/slightly
+  slower.
+- Starter protection artifacts:
+  `target/performance-matrix-stroke-row-borrow-starter.json` and
+  `target/performance-matrix-stroke-row-borrow-starter-repeat.json`, native
+  hot-render, `fixtures/performance-matrix-manifest.tsv`, `--max-edge 160`,
+  100 measured iterations after 10 warmups.
+- Starter result: not protection-set-neutral. `technical-linework-dimensions.pdf`
+  improved p95 ~6-7%, but `browser-chromium-article-print.pdf` regressed p95
+  ~6.1% and then ~12.2% on repeat, while mean was only ~2.3% slower.
+- Decision: reverted. Borrow-before-copy is directionally reasonable for
+  large linework but too small and noisy in the broader starter set. Revisit
+  row-bucket internals only with a larger structural reduction in candidate
+  checks, not as an isolated copy-order tweak.
+
 ## Hardware-Aware Rust Notes
 
 Goal: use Rust's memory model and the host CPU well without prematurely
