@@ -3731,6 +3731,36 @@ Accepted axial shading raster fast path from 2026-06-30:
 - Decision: keep. This is a profile-backed scalar raster fast path with no new
   dependency, unsafe code, global cache, or alternate shading semantics.
 
+Rejected prepared row-bucket line-metrics candidate from 2026-06-30:
+
+- Profile basis: after the axial-shading fast path,
+  `target/performance-matrix-current-post-axial-shading.json` still showed
+  `vector-stress.pdf` as the slowest starter fixture at p95 `0.792 ms`.
+  `target/trace-current-post-axial-vector-stress.json` reported total
+  `1.462 ms`, with `raster_paths` at `0.878 ms`. A fresh CPU sample,
+  `target/sample-vector-stress-current-post-axial.txt`, showed the dominant
+  remaining stacks in `stroke_path`, especially
+  `rasterize_span_covered_stroke_ranges`,
+  `rasterize_row_bucketed_stroke_ranges`, `blend_pixel`, and
+  `point_in_single_stroke_line`.
+- Change tested locally but not kept: store precomputed `dx`, `dy`, and
+  `len_squared` on `BoundedStrokeLine`, then route row-bucket stroke candidate
+  checks through distance helpers that reuse those prepared values instead of
+  recalculating line metrics for every sample.
+- A/B artifacts:
+  `target/benchmark-native-vector-stress-current-post-axial-profile-run.json`
+  and
+  `target/benchmark-native-vector-stress-prepared-line-metrics-candidate.json`,
+  both `benchmark-native`, `fixtures/generated/vector-stress.pdf`,
+  `--max-edge 160`, 160,000 iterations.
+- Result: rejected as below threshold. Mean moved `0.728 ms` -> `0.716 ms`
+  (`~1.6%`). The direction is positive, but too small for a standalone or
+  cumulative vector-track commit.
+- Decision: reverted. Prepared line metrics avoid some arithmetic inside the
+  row-bucket predicate, but the current blocker is broader span/range
+  rasterization and blending work. Revisit only if a future profile shows line
+  metric recomputation dominating independently.
+
 Repeat family phase-summary instrumentation from 2026-06-30:
 
 - Change: `benchmark-repeat-native` now aggregates record-level
