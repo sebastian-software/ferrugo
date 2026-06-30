@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 use ferrugo_native::{
     scan_operator_coverage, NativeBackend, NativeDocumentSessionStats, NativeMemoryDiagnostics,
     NativePageCacheKey, NativePageCachePolicy, NativeRenderPhaseTimings, NativeRenderTrace,
-    OperatorCoverageEntry, OperatorCoverageOptions, OperatorSupportStatus,
+    OperatorCoverageEntry, OperatorCoverageOptions, OperatorSupportStatus, StrokeShapeSummary,
 };
 #[cfg(feature = "pdfium")]
 use ferrugo_pdfium::PdfiumBackend;
@@ -8489,6 +8489,8 @@ fn native_render_trace_json(config: &TraceNativeConfig) -> Result<String, CliErr
     let metadata_json = trace_metadata_json(metadata);
     let phase_timings_json =
         trace_phase_timings_json(render_trace.as_ref().map(|trace| &trace.timings));
+    let stroke_shape_summary_json =
+        trace_stroke_shape_summary_json(render_trace.as_ref().map(|trace| &trace.stroke_shapes));
     let render_json = trace_render_outcome_json(render_trace);
 
     Ok(format!(
@@ -8508,6 +8510,7 @@ fn native_render_trace_json(config: &TraceNativeConfig) -> Result<String, CliErr
             "  \"metadata\": {},\n",
             "  \"render\": {},\n",
             "  \"phase_timings_ms\": {},\n",
+            "  \"stroke_shape_summary\": {},\n",
             "  \"operator_coverage\": {},\n",
             "  \"operator_summary\": {},\n",
             "  \"events\": [{}]\n",
@@ -8524,6 +8527,7 @@ fn native_render_trace_json(config: &TraceNativeConfig) -> Result<String, CliErr
         metadata_json,
         render_json,
         phase_timings_json,
+        stroke_shape_summary_json,
         coverage_json,
         operator_summary,
         events_json
@@ -8574,6 +8578,59 @@ fn trace_render_outcome_json(result: Result<NativeRenderTrace, ThumbnailError>) 
             json_string(error.class().as_str()),
             optional_json_string(error.unsupported_feature_bucket()),
             json_string(&error.to_string())
+        ),
+    }
+}
+
+fn trace_stroke_shape_summary_json(
+    summary: Result<&StrokeShapeSummary, &ThumbnailError>,
+) -> String {
+    match summary {
+        Ok(summary) => format!(
+            concat!(
+                "{{",
+                "\"status\":\"measured\",",
+                "\"stroked_items\":{},",
+                "\"dashed_items\":{},",
+                "\"row_bucket_candidate_items\":{},",
+                "\"flattened_lines\":{},",
+                "\"axis_aligned_lines\":{},",
+                "\"row_index_refs\":{},",
+                "\"max_lines_per_item\":{},",
+                "\"max_row_index_refs_per_item\":{},",
+                "\"line_count_buckets\":{{",
+                "\"lt_32\":{},",
+                "\"from_32_to_127\":{},",
+                "\"ge_128\":{}",
+                "}},",
+                "\"pixel_x_span_buckets\":{{",
+                "\"le_16\":{},",
+                "\"le_32\":{},",
+                "\"le_64\":{},",
+                "\"gt_64\":{}",
+                "}}",
+                "}}"
+            ),
+            summary.stroked_items,
+            summary.dashed_items,
+            summary.row_bucket_candidate_items,
+            summary.flattened_lines,
+            summary.axis_aligned_lines,
+            summary.row_index_refs,
+            summary.max_lines_per_item,
+            summary.max_row_index_refs_per_item,
+            summary.line_count_buckets.lt_32,
+            summary.line_count_buckets.from_32_to_127,
+            summary.line_count_buckets.ge_128,
+            summary.pixel_x_span_buckets.le_16,
+            summary.pixel_x_span_buckets.le_32,
+            summary.pixel_x_span_buckets.le_64,
+            summary.pixel_x_span_buckets.gt_64
+        ),
+        Err(error) => format!(
+            "{{\"status\":\"error\",\"class\":{},\"bucket\":{}}}",
+            json_string(error.class().as_str()),
+            optional_json_string(error.unsupported_feature_bucket())
         ),
     }
 }
@@ -11436,6 +11493,9 @@ mod tests {
         assert!(json.contains("\"display_list_build\""));
         assert!(json.contains("\"raster_paths\""));
         assert!(json.contains("\"total\""));
+        assert!(json.contains("\"stroke_shape_summary\""));
+        assert!(json.contains("\"flattened_lines\""));
+        assert!(json.contains("\"pixel_x_span_buckets\""));
         assert!(json.contains("\"operator_summary\""));
         assert!(!json.contains("stream\n"));
         assert!(!json.contains("ferrugo thumbnail fixture"));

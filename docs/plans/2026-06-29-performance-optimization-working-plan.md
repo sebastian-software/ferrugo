@@ -985,6 +985,32 @@ Rejected row/X-tile bucket candidate from 2026-06-30:
   that can choose between row-only and tiled indexing without extra work on the
   row-only path.
 
+Stroke-shape trace diagnostics from 2026-06-30:
+
+- Change: `trace-native` now includes a numeric `stroke_shape_summary` for the
+  rendered page. The summary is request-local, contains no PDF bytes, text,
+  image samples, or rendered pixels, and is only collected in the explicit trace
+  path. Normal rendering and benchmark paths do not call it.
+- Reported fields include stroked item counts, dashed item counts,
+  row-bucket-candidate items, flattened line totals, axis-aligned line totals,
+  row-index references, max lines per item, max row-index references per item,
+  line-count buckets (`<32`, `32-127`, `>=128`), and conservative device-pixel
+  X-span buckets (`<=16`, `<=32`, `<=64`, `>64`).
+- First fixture evidence:
+  `target/trace-native-vector-stress-stroke-shapes.json`, generated with
+  `trace-native fixtures/generated/vector-stress.pdf --max-edge 160`, reports
+  `66` stroked items, `252` flattened lines, `2` row-bucket candidates,
+  `5688` row-index references, max `64` lines per item, `124` axis-aligned
+  lines, `64` items below 32 lines, `2` items in the 32-127 line bucket, and no
+  `>=128` line-count items. Pixel X-span buckets were `<=16`: `234`, `<=32`:
+  `0`, `<=64`: `0`, `>64`: `18`.
+- Interpretation: `vector-stress` is dominated by a few medium-sized stroke
+  items plus many tiny strokes, not by very large single stroke items. The
+  rejected coarse X-tile path was therefore too broad. The next spatial-index
+  attempt should first collect the same summary for the protection fixtures and
+  choose a shape-specific strategy, for example medium-stroke short-span
+  handling, instead of a universal row/X-tile split.
+
 ## Hardware-Aware Rust Notes
 
 Goal: use Rust's memory model and the host CPU well without prematurely

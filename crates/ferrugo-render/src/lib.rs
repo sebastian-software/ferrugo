@@ -1375,6 +1375,110 @@ pub enum RasterDisplayPhase {
     Text,
 }
 
+/// Stroke geometry summary for renderer performance diagnostics.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct StrokeShapeSummary {
+    /// Number of display-list path items that include stroke painting.
+    pub stroked_items: usize,
+    /// Number of stroked items that use a dash pattern.
+    pub dashed_items: usize,
+    /// Number of stroked items that would enter the row-bucket stroke path.
+    pub row_bucket_candidate_items: usize,
+    /// Total flattened stroke line segments after device transform and dashing.
+    pub flattened_lines: usize,
+    /// Flattened stroke line segments that are axis-aligned in device space.
+    pub axis_aligned_lines: usize,
+    /// Total row-index references a row-bucket build would create.
+    pub row_index_refs: usize,
+    /// Maximum flattened line count seen on one stroked item.
+    pub max_lines_per_item: usize,
+    /// Maximum row-index references seen on one stroked item.
+    pub max_row_index_refs_per_item: usize,
+    /// Stroked item counts by flattened line count.
+    pub line_count_buckets: StrokeLineCountBuckets,
+    /// Flattened line counts by conservative device-pixel X span.
+    pub pixel_x_span_buckets: StrokePixelSpanBuckets,
+}
+
+impl StrokeShapeSummary {
+    /// Merges another summary into this one.
+    pub fn merge(&mut self, other: Self) {
+        self.stroked_items += other.stroked_items;
+        self.dashed_items += other.dashed_items;
+        self.row_bucket_candidate_items += other.row_bucket_candidate_items;
+        self.flattened_lines += other.flattened_lines;
+        self.axis_aligned_lines += other.axis_aligned_lines;
+        self.row_index_refs += other.row_index_refs;
+        self.max_lines_per_item = self.max_lines_per_item.max(other.max_lines_per_item);
+        self.max_row_index_refs_per_item = self
+            .max_row_index_refs_per_item
+            .max(other.max_row_index_refs_per_item);
+        self.line_count_buckets.add_assign(other.line_count_buckets);
+        self.pixel_x_span_buckets
+            .add_assign(other.pixel_x_span_buckets);
+    }
+}
+
+/// Stroked item counts by flattened line count.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct StrokeLineCountBuckets {
+    /// Fewer than 32 flattened lines.
+    pub lt_32: usize,
+    /// Between 32 and 127 flattened lines.
+    pub from_32_to_127: usize,
+    /// At least 128 flattened lines.
+    pub ge_128: usize,
+}
+
+impl StrokeLineCountBuckets {
+    fn add_line_count(&mut self, line_count: usize) {
+        if line_count < STROKE_ROW_BUCKET_MIN_LINES {
+            self.lt_32 += 1;
+        } else if line_count < 128 {
+            self.from_32_to_127 += 1;
+        } else {
+            self.ge_128 += 1;
+        }
+    }
+
+    fn add_assign(&mut self, other: Self) {
+        self.lt_32 += other.lt_32;
+        self.from_32_to_127 += other.from_32_to_127;
+        self.ge_128 += other.ge_128;
+    }
+}
+
+/// Flattened line counts by conservative device-pixel X span.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct StrokePixelSpanBuckets {
+    /// Line bounds span at most 16 device pixels in X.
+    pub le_16: usize,
+    /// Line bounds span 17 to 32 device pixels in X.
+    pub le_32: usize,
+    /// Line bounds span 33 to 64 device pixels in X.
+    pub le_64: usize,
+    /// Line bounds span more than 64 device pixels in X.
+    pub gt_64: usize,
+}
+
+impl StrokePixelSpanBuckets {
+    fn add_span(&mut self, span: u32) {
+        match span {
+            0..=16 => self.le_16 += 1,
+            17..=32 => self.le_32 += 1,
+            33..=64 => self.le_64 += 1,
+            _ => self.gt_64 += 1,
+        }
+    }
+
+    fn add_assign(&mut self, other: Self) {
+        self.le_16 += other.le_16;
+        self.le_32 += other.le_32;
+        self.le_64 += other.le_64;
+        self.gt_64 += other.gt_64;
+    }
+}
+
 /// Image XObject resource map.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct ImageResources {
@@ -4978,6 +5082,114 @@ pub fn rasterize_paths_into(
         }
     }
     Ok(())
+}
+
+/// Summarizes stroke geometry in a display list for performance diagnostics.
+///
+/// This is intended for explicit profiling and trace commands. It does not
+/// inspect PDF bytes, rendered pixels, text contents, or image samples.
+///
+/// # Errors
+///
+/// Returns [`RasterError`] when flattening or dash expansion exceeds the same
+/// path complexity budget used by rasterization.
+pub fn display_list_stroke_shape_summary(
+    display_list: &DisplayList,
+    transform: PageTransform,
+    options: PathRasterOptions,
+) -> RasterResult<StrokeShapeSummary> {
+    let mut summary = StrokeShapeSummary::default();
+    collect_display_list_stroke_shapes(display_list, transform, options, &mut summary)?;
+    Ok(summary)
+}
+
+fn collect_display_list_stroke_shapes(
+    display_list: &DisplayList,
+    transform: PageTransform,
+    options: PathRasterOptions,
+    summary: &mut StrokeShapeSummary,
+) -> RasterResult<()> {
+    for item in display_list.items() {
+        match item {
+            DisplayItem::Path(path)
+                if matches!(path.paint, PaintMode::Stroke | PaintMode::FillStroke { .. }) =>
+            {
+                summary.merge(stroke_shape_summary_for_path(path, transform, options)?);
+            }
+            DisplayItem::TransparencyGroup(group) => {
+                collect_display_list_stroke_shapes(&group.items, transform, options, summary)?;
+            }
+            DisplayItem::Path(_)
+            | DisplayItem::ClipPlaceholder { .. }
+            | DisplayItem::Text(_)
+            | DisplayItem::Image(_)
+            | DisplayItem::Shading(_) => {}
+        }
+    }
+    Ok(())
+}
+
+fn stroke_shape_summary_for_path(
+    path: &PathDisplayItem,
+    transform: PageTransform,
+    options: PathRasterOptions,
+) -> RasterResult<StrokeShapeSummary> {
+    let flattened = flatten_path_segments(
+        &path.segments,
+        transform.matrix,
+        options.max_flattened_segments,
+    )?;
+    let dashed_lines;
+    let dashed = !path.state.stroke_dash.is_solid();
+    let lines = if dashed {
+        dashed_lines = dashed_subpath_line_segments(
+            &flattened.subpaths,
+            path.state
+                .stroke_dash
+                .scaled(device_stroke_scale(path.state, transform)),
+            options.max_flattened_segments,
+        )?;
+        dashed_lines.as_slice()
+    } else {
+        flattened.lines.as_slice()
+    };
+    let radius = stroke_radius_for_device_line_width(device_stroke_width(path.state, transform));
+    let mut summary = StrokeShapeSummary {
+        stroked_items: 1,
+        dashed_items: usize::from(dashed),
+        flattened_lines: lines.len(),
+        max_lines_per_item: lines.len(),
+        ..StrokeShapeSummary::default()
+    };
+    summary.line_count_buckets.add_line_count(lines.len());
+    if lines.len() >= STROKE_ROW_BUCKET_MIN_LINES {
+        summary.row_bucket_candidate_items = 1;
+    }
+    let stroke_bounds = stroke_pixel_bounds(lines, &flattened.joins, radius, transform.dimensions);
+    for line in lines {
+        if is_axis_aligned_line(*line) {
+            summary.axis_aligned_lines += 1;
+        }
+        let Some(bounds) =
+            line_pixel_bounds(*line, radius, transform.dimensions).and_then(|bounds| {
+                stroke_bounds.and_then(|stroke| intersect_pixel_bounds(bounds, stroke))
+            })
+        else {
+            continue;
+        };
+        let row_refs = (bounds.max_y - bounds.min_y) as usize;
+        summary.row_index_refs += row_refs;
+        summary
+            .pixel_x_span_buckets
+            .add_span(bounds.max_x - bounds.min_x);
+    }
+    summary.max_row_index_refs_per_item = summary.row_index_refs;
+    Ok(summary)
+}
+
+fn is_axis_aligned_line(line: LineSegment) -> bool {
+    (line.from.x - line.to.x).abs() <= f64::EPSILON
+        || (line.from.y - line.to.y).abs() <= f64::EPSILON
 }
 
 /// Rasterizes all supported display-list items into an existing RGBA raster device.
@@ -14532,6 +14744,56 @@ mod tests {
             0.5,
             LineCap::Butt
         ));
+    }
+
+    #[test]
+    fn stroke_shape_summary_should_count_dashed_axis_aligned_lines() {
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 100.0,
+                    max_y: 100.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            100,
+        )
+        .expect("valid page transform");
+        let mut state = GraphicsState {
+            stroke_dash: StrokeDashPattern {
+                segments: [4.0, 4.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                len: 2,
+                phase: 0.0,
+            },
+            ..GraphicsState::default()
+        };
+        state.ctm = Matrix::IDENTITY;
+        let display_list = DisplayList::from_items(vec![DisplayItem::Path(PathDisplayItem {
+            segments: vec![
+                PathSegment::MoveTo(Point { x: 10.0, y: 10.0 }),
+                PathSegment::LineTo(Point { x: 90.0, y: 10.0 }),
+            ],
+            paint: PaintMode::Stroke,
+            state,
+            fill_pattern: None,
+        })]);
+
+        let summary = display_list_stroke_shape_summary(
+            &display_list,
+            transform,
+            PathRasterOptions::default(),
+        )
+        .expect("stroke shape summary should build");
+
+        assert_eq!(summary.stroked_items, 1);
+        assert_eq!(summary.dashed_items, 1);
+        assert_eq!(summary.flattened_lines, 10);
+        assert_eq!(summary.axis_aligned_lines, 10);
+        assert_eq!(summary.line_count_buckets.lt_32, 1);
+        assert_eq!(summary.pixel_x_span_buckets.le_16, 10);
     }
 
     #[test]

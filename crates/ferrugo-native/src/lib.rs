@@ -16,15 +16,17 @@ use ferrugo_object::{
     ObjectValue, PageBox, PageMetadata as ObjectPageMetadata, PageTree, Reference,
     StreamDecodeOptions,
 };
+pub use ferrugo_render::StrokeShapeSummary;
 use ferrugo_render::{
     build_form_display_list_with_graphics_resources, build_image_display_list,
     build_path_display_list_with_graphics_resources, build_text_display_list,
-    decode_tiling_pattern, rasterize_display_list_into_with_phase_timings, rasterize_images,
-    rasterize_paths_into, rasterize_text, ColorSpaceResources, DisplayItem, DisplayList,
-    DisplayListOptions, ExtGraphicsStateResources, FontResources, FormResources, GraphicsError,
-    GraphicsErrorKind, ImageResources, PageGeometry, PageRotation, PageTransform,
-    PageTransformOptions, PathBounds, PathRasterOptions, Point, RasterDisplayPhase, RasterError,
-    RasterErrorKind, ShadingResources, TextDisplayItem, TextWritingMode, TilingPatternResources,
+    decode_tiling_pattern, display_list_stroke_shape_summary,
+    rasterize_display_list_into_with_phase_timings, rasterize_images, rasterize_paths_into,
+    rasterize_text, ColorSpaceResources, DisplayItem, DisplayList, DisplayListOptions,
+    ExtGraphicsStateResources, FontResources, FormResources, GraphicsError, GraphicsErrorKind,
+    ImageResources, PageGeometry, PageRotation, PageTransform, PageTransformOptions, PathBounds,
+    PathRasterOptions, Point, RasterDisplayPhase, RasterError, RasterErrorKind, ShadingResources,
+    TextDisplayItem, TextWritingMode, TilingPatternResources,
 };
 use ferrugo_syntax::{PdfBytes, PdfName, PdfNumber, PdfPrimitive, PdfReference, PdfString};
 use ferrugo_thumbnail::{
@@ -109,6 +111,8 @@ pub struct NativeRenderTrace {
     pub thumbnail: Thumbnail,
     /// Request-local phase timings.
     pub timings: NativeRenderPhaseTimings,
+    /// Request-local stroke geometry summary for renderer profiling.
+    pub stroke_shapes: StrokeShapeSummary,
 }
 
 /// Explicit request/session-local native document state.
@@ -337,15 +341,21 @@ impl NativeBackend {
             load_xref_object: load_started.elapsed(),
             ..NativeRenderPhaseTimings::default()
         };
-        let thumbnail = render_loaded_document_with_timings(
+        let mut stroke_shapes = StrokeShapeSummary::default();
+        let thumbnail = render_loaded_document_with_timings_and_stroke_shapes(
             &document,
             &page_tree,
             options,
             self.limits,
             &mut timings,
+            &mut stroke_shapes,
         )?;
         timings.total = total_started.elapsed();
-        Ok(NativeRenderTrace { thumbnail, timings })
+        Ok(NativeRenderTrace {
+            thumbnail,
+            timings,
+            stroke_shapes,
+        })
     }
 
     /// Creates an explicit document session for repeated renders over the same
@@ -1318,7 +1328,7 @@ fn render_loaded_document(
     options: &ThumbnailOptions,
     limits: NativeRenderLimits,
 ) -> Result<Thumbnail, ThumbnailError> {
-    render_loaded_document_inner(document, page_tree, options, limits, None)
+    render_loaded_document_inner(document, page_tree, options, limits, None, None)
 }
 
 fn render_loaded_document_with_timings(
@@ -1328,7 +1338,25 @@ fn render_loaded_document_with_timings(
     limits: NativeRenderLimits,
     timings: &mut NativeRenderPhaseTimings,
 ) -> Result<Thumbnail, ThumbnailError> {
-    render_loaded_document_inner(document, page_tree, options, limits, Some(timings))
+    render_loaded_document_inner(document, page_tree, options, limits, Some(timings), None)
+}
+
+fn render_loaded_document_with_timings_and_stroke_shapes(
+    document: &ClassicDocument<'_>,
+    page_tree: &PageTree,
+    options: &ThumbnailOptions,
+    limits: NativeRenderLimits,
+    timings: &mut NativeRenderPhaseTimings,
+    stroke_shapes: &mut StrokeShapeSummary,
+) -> Result<Thumbnail, ThumbnailError> {
+    render_loaded_document_inner(
+        document,
+        page_tree,
+        options,
+        limits,
+        Some(timings),
+        Some(stroke_shapes),
+    )
 }
 
 fn render_loaded_document_inner(
@@ -1337,6 +1365,7 @@ fn render_loaded_document_inner(
     options: &ThumbnailOptions,
     limits: NativeRenderLimits,
     mut timings: Option<&mut NativeRenderPhaseTimings>,
+    mut stroke_shapes: Option<&mut StrokeShapeSummary>,
 ) -> Result<Thumbnail, ThumbnailError> {
     enforce_xfa_render_policy(document)?;
     let page = page_tree
@@ -1382,6 +1411,7 @@ fn render_loaded_document_inner(
         limits.page_transform_options(),
     )
     .map_err(map_raster_error)?;
+    record_stroke_shapes(&mut stroke_shapes, &display_list, transform, path_options)?;
     let form_resources =
         record_render_phase(&mut timings, NativeRenderPhase::ResourceDecode, || {
             page_form_resources(document, page, &xobject_invocations)
@@ -1398,6 +1428,7 @@ fn render_loaded_document_inner(
         )
         .map_err(map_graphics_error)
     })?;
+    record_stroke_shapes(&mut stroke_shapes, &form_list, transform, path_options)?;
     let image_resources =
         record_render_phase(&mut timings, NativeRenderPhase::ResourceDecode, || {
             page_image_resources(document, page, &xobject_invocations, display_options)
@@ -1490,6 +1521,12 @@ fn render_loaded_document_inner(
                 )
                 .map_err(map_graphics_error)
             })?;
+        record_stroke_shapes(
+            &mut stroke_shapes,
+            &annotation_list,
+            transform,
+            path_options,
+        )?;
         record_render_phase(&mut timings, NativeRenderPhase::RasterPaths, || {
             rasterize_paths_into(&annotation_list, &mut raster, transform, path_options)
                 .map_err(map_raster_error)
@@ -1512,6 +1549,12 @@ fn render_loaded_document_inner(
                 )
                 .map_err(map_graphics_error)
             })?;
+        record_stroke_shapes(
+            &mut stroke_shapes,
+            &annotation_list,
+            transform,
+            path_options,
+        )?;
         record_render_phase(&mut timings, NativeRenderPhase::RasterPaths, || {
             rasterize_paths_into(&annotation_list, &mut raster, transform, path_options)
                 .map_err(map_raster_error)
@@ -1549,6 +1592,21 @@ fn record_render_phase<T>(
     let result = operation();
     timings.record(phase, started.elapsed());
     result
+}
+
+fn record_stroke_shapes(
+    stroke_shapes: &mut Option<&mut StrokeShapeSummary>,
+    display_list: &DisplayList,
+    transform: PageTransform,
+    options: PathRasterOptions,
+) -> Result<(), ThumbnailError> {
+    let Some(stroke_shapes) = stroke_shapes.as_deref_mut() else {
+        return Ok(());
+    };
+    let summary = display_list_stroke_shape_summary(display_list, transform, options)
+        .map_err(map_raster_error)?;
+    stroke_shapes.merge(summary);
+    Ok(())
 }
 
 fn rasterize_ordered_display_list_with_phase_timings(
