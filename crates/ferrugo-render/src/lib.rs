@@ -10442,6 +10442,7 @@ fn stroke_path(
         return Ok(());
     };
     let prepared_joins = prepare_stroke_joins(joins, radius, state.line_join, state.miter_limit);
+    let has_joins = !joins.is_empty();
     let axis_spans = axis_stroke_raster_spans(
         stroke_lines,
         joins,
@@ -10460,6 +10461,7 @@ fn stroke_path(
             spans,
             joins,
             &prepared_joins,
+            has_joins,
             bounds,
             state,
             context,
@@ -10488,13 +10490,14 @@ fn stroke_path(
                                     state.line_cap,
                                 )
                             },
-                        ) || point_in_join(
-                            point,
-                            joins,
-                            &prepared_joins,
-                            radius,
-                            state.line_join,
-                        ))
+                        ) || (has_joins
+                            && point_in_join(
+                                point,
+                                joins,
+                                &prepared_joins,
+                                radius,
+                                state.line_join,
+                            )))
                     {
                         covered += 1;
                     }
@@ -10524,6 +10527,7 @@ fn rasterize_axis_stroke_spans(
     spans: AxisStrokeRasterSpans,
     joins: &[StrokeJoin],
     prepared_joins: &[PreparedStrokeJoin],
+    has_joins: bool,
     bounds: PixelBounds,
     state: StrokeRasterState,
     context: PathRasterContext<'_>,
@@ -10547,13 +10551,14 @@ fn rasterize_axis_stroke_spans(
                         let point = sample_point(x, y, sample_x, sample_y, samples);
                         if point_in_active_clips(point, context.clips)
                             && (point_in_axis_stroke_spans(point, y, sample_y, &spans.coverage)
-                                || point_in_join(
-                                    point,
-                                    joins,
-                                    prepared_joins,
-                                    radius,
-                                    state.line_join,
-                                ))
+                                || (has_joins
+                                    && point_in_join(
+                                        point,
+                                        joins,
+                                        prepared_joins,
+                                        radius,
+                                        state.line_join,
+                                    )))
                         {
                             covered += 1;
                         }

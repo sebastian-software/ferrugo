@@ -1451,6 +1451,55 @@ Accepted sparse axis-stroke raster result from 2026-06-30:
   `cargo clippy --workspace --all-targets --all-features -- -D warnings`
   passed.
 
+Accepted empty-join stroke predicate skip from 2026-06-30:
+
+- Profiling trigger: after the sparse axis-stroke win, fresh matrices showed
+  `vector-stress.pdf` and `technical-hatch-clipping.pdf` as the remaining
+  p95 leaders. `target/sample-vector-repeated-symbols-sparse-axis.txt`
+  still showed `stroke_path` as the dominant stack and `point_in_join` as a
+  visible inner predicate cost. The focused long run artifact is
+  `target/performance-matrix-vector-repeated-symbols-profile-run.json`.
+- Change: `stroke_path` now computes whether the flattened/dashed stroke has
+  joins once and skips the join predicate entirely when the join slice is
+  empty. This keeps the existing stroke and join geometry unchanged while
+  avoiding a per-sample always-false branch for dashed/joinless strokes.
+- Baseline artifacts:
+  `target/performance-matrix-sparse-axis-technical.json` and
+  `target/performance-matrix-sparse-axis-starter.json`, native hot-render,
+  `--max-edge 160`, 200 measured iterations after 20 warmups.
+- Candidate artifacts:
+  `target/performance-matrix-join-skip-technical.json`,
+  `target/performance-matrix-join-skip-technical-repeat.json`,
+  `target/performance-matrix-join-skip-starter.json`, and
+  `target/trace-join-skip-technical-hatch-clipping.json`.
+- Technical result: `technical-hatch-clipping.pdf` improved p95
+  `2.594 ms` -> `2.376 ms` in both candidate runs (~8.4%); mean improved
+  ~8.3% in the first run and ~9.7% in the repeat. `clipped-paths.pdf`
+  improved p95 ~13.2% in the first run and ~9.0% in the repeat. The top
+  `vector-stress.pdf` case improved only ~1-2%, so this is not a
+  vector-stress fix.
+- Trace confirmation: `technical-hatch-clipping.pdf` moved from `3.450 ms`
+  total / `2.465 ms` `raster_paths` in
+  `target/trace-sparse-axis-technical-hatch-clipping.json` to `2.576 ms`
+  total / `2.163 ms` `raster_paths` after the change.
+- Protection result: `target/performance-matrix-join-skip-starter.json`
+  rendered all starter fixtures with no fallback-required, missing-tool,
+  not-applicable, or error records. Sub-0.1 ms small-text/form movements are
+  noise/watch items.
+- Decision: accept as a cumulative 5-10% stroke predicate win for the
+  hatch/clipping subset. It is too small to claim as a standalone broad vector
+  improvement, but it attacks the same path-raster bottleneck with a simple
+  zero-dependency branch removal and no protection-set failures.
+- Validation:
+  `cargo fmt --all --check`,
+  `git diff --check -- crates/ferrugo-render/src/lib.rs docs/plans/2026-06-29-performance-optimization-working-plan.md`,
+  `cargo check -p ferrugo-render --no-default-features`,
+  `cargo test -p ferrugo-render axis_stroke --no-default-features`,
+  `cargo test --workspace --no-default-features`,
+  and
+  `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+  passed.
+
 ## Hardware-Aware Rust Notes
 
 Goal: use Rust's memory model and the host CPU well without prematurely
