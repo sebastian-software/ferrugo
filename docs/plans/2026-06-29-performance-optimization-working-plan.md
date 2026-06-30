@@ -4767,6 +4767,63 @@ Rejected span-cursor threshold 128 candidate from 2026-06-30:
   simple threshold lowering for this shape; the next candidate should change
   the from-start algorithm itself or move to row-bucket/blend work.
 
+Rejected joinless raster-span reuse and from-start row precompute candidates
+from 2026-06-30:
+
+- Profiling basis:
+  `target/sample-vector-stress-current-continuation.txt`, captured from a
+  10-second macOS `sample` run against a profiling build repeat process for
+  `fixtures/generated/vector-stress.pdf`, `--max-edge 160`, still showed
+  `stroke_path` as the dominant path. The visible sampled buckets included
+  `blend_pixel` (~1020 symbol samples),
+  `rasterize_span_covered_stroke_ranges` (~948),
+  `rasterize_row_bucketed_stroke_ranges` (~942), `stroke_path` (~889),
+  `point_in_single_stroke_line` (~451), allocator/free frames,
+  `axis_stroke_span_for_sample_y`, and `merge_pixel_ranges`.
+- Change tested locally but not kept:
+  represent joinless `AxisStrokeRasterSpans` with only the coverage span set,
+  using that same span set as the raster span source when `joins.is_empty()`.
+  This targeted the sampled `axis_stroke_raster_spans` allocation/free work.
+- A/B artifacts for the joinless reuse candidate:
+  `target/benchmark-repeat-vector-stress-current-span-gate-baseline-20k.json`,
+  `target/benchmark-repeat-vector-stress-reuse-coverage-candidate-20k.json`,
+  `target/benchmark-repeat-prepress-current-span-gate-baseline-20k.json`,
+  `target/benchmark-repeat-prepress-reuse-coverage-candidate-20k.json`,
+  `target/benchmark-repeat-technical-hatch-current-span-gate-baseline-20k.json`,
+  and
+  `target/benchmark-repeat-technical-hatch-reuse-coverage-candidate-20k.json`.
+- Result:
+  rejected. `vector-stress.pdf` improved p95 only `0.772 ms` -> `0.751 ms`
+  (~2.7%) and repeat mean only `0.666 ms` -> `0.663 ms` (~0.5%), while
+  `technical-hatch-clipping.pdf` regressed mean `0.255 ms` -> `0.260 ms`
+  and raster paths `0.159 ms` -> `0.162 ms`. `prepress-trim-bleed-marks.pdf`
+  stayed effectively neutral on p95 and raster paths.
+- Follow-up change tested locally but not kept:
+  precompute the `coverage_spans.rows` lookups once per output row in
+  `rasterize_span_covered_stroke_ranges_from_start`, instead of recomputing
+  the sample-row index for every pixel. This was tested together with the
+  joinless reuse candidate.
+- A/B artifacts for the row-precompute candidate:
+  `target/benchmark-repeat-vector-stress-row-precompute-candidate-20k.json`,
+  `target/benchmark-repeat-prepress-row-precompute-candidate-20k.json`, and
+  `target/benchmark-repeat-technical-hatch-row-precompute-candidate-20k.json`,
+  compared against the same current span-gate baseline artifacts above.
+- Result:
+  rejected. The combined candidate regressed `vector-stress.pdf` mean
+  `0.666 ms` -> `0.672 ms`, `prepress-trim-bleed-marks.pdf` mean
+  `0.307 ms` -> `0.313 ms`, and `technical-hatch-clipping.pdf` mean
+  `0.255 ms` -> `0.264 ms`. Output dimensions, output bytes, native-render
+  status, and error count stayed unchanged in all runs.
+- Decision:
+  reverted. The sample exposed real allocation and row-lookup work, but these
+  local restructurings do not move enough wall/raster time and hurt at least
+  one protection fixture. Do not retry joinless raster-span ownership changes
+  or per-row from-start lookup precomputation unless a lower-level allocation
+  profile shows the specific allocation as a larger standalone cost. The next
+  vector pass should target the remaining `blend_pixel`, row-bucket predicate,
+  or `point_in_single_stroke_line` samples with a protection run from the first
+  A/B.
+
 ## Phase 6: Benchmark Gates And Claims
 
 Goal: turn stable evidence into guardrails, not premature marketing.
