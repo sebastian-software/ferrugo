@@ -1142,6 +1142,50 @@ Rejected row-bucket copy candidate from 2026-06-30:
   row-bucket internals only with a larger structural reduction in candidate
   checks, not as an isolated copy-order tweak.
 
+Current profile refresh from 2026-06-30:
+
+- Artifact: `target/sample-vector-stress-current-refresh.txt`, a 10-second
+  macOS `sample` run against a long release `benchmark-native` process for
+  `fixtures/generated/vector-stress.pdf`, `--max-edge 160`.
+- Top-of-stack summary: `stroke_path` `3866` samples,
+  `point_in_row_bucketed_stroke` `948`, `fill_path` `847`, `blend_pixel` `314`,
+  `source_over` `200`, and allocator/memmove/free symbols visible but much
+  smaller.
+- Trace artifacts:
+  `target/trace-vector-stress-current-refresh.json` and
+  `target/trace-engineering-floorplan-current-refresh.json`.
+- Interpretation: the current head still points at row-bucketed stroke
+  candidate scanning as the main vector bottleneck. Flattening remains too
+  small to justify a flatten-cache change. Allocation churn is visible, but
+  should be attacked only when the structural change also preserves the
+  protection set.
+
+Rejected compact row-bucket construction candidate from 2026-06-30:
+
+- Change tested locally but not kept: build stroke and join row buckets with a
+  two-pass count/offset/index layout instead of `Vec<Vec<usize>>` per raster
+  row, while preserving row order and the final flat `rows`/`indices` layout.
+- Rationale: the fresh `sample` profile still showed allocator activity under
+  `stroke_path`, and the existing bucket builders allocate many small row
+  vectors before flattening them.
+- Baseline:
+  `target/performance-matrix-row-bucket-compact-baseline.json`, native
+  hot-render, `fixtures/technical-drawing-manifest.tsv`, `--max-edge 160`, 200
+  measured iterations after 10 warmups.
+- Candidate:
+  `target/performance-matrix-row-bucket-compact-candidate.json`, same command
+  shape and host.
+- Result: not protection-set-neutral and too small overall.
+  `technical-large-coordinate-plan.pdf` improved p95 ~3.8%,
+  `technical-hatch-clipping.pdf` ~3.4%, and `vector-stress.pdf` ~1.0%, but
+  `clipped-paths.pdf` regressed p95 ~6.5% and
+  `technical-repeated-symbols.pdf` / `engineering-schematic-symbols.pdf`
+  regressed ~3.0%. The family average moved only about -0.7% p95 and +0.5%
+  mean.
+- Decision: reverted. Row-bucket allocation cleanup alone is not enough; the
+  next candidate should reduce `point_in_row_bucketed_stroke` work directly
+  rather than only changing the temporary construction strategy.
+
 Stroke row-work trace diagnostics from 2026-06-30:
 
 - Change: `trace-native` stroke summaries now include estimated row-bucket
