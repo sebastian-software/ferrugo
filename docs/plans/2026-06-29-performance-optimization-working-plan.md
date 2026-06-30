@@ -2207,6 +2207,38 @@ Accepted axis-stroke join-bucket predicate result from 2026-06-30:
   uncovered axis-stroke path, reduces profile-visible join predicate fanout,
   and avoids new dependencies, unsafe code, or broader cache behavior.
 
+Rejected post-axis-join candidates from 2026-06-30:
+
+- Fresh profile:
+  `target/sample-vector-stress-after-axis-join-buckets.txt`, captured from a
+  long release `benchmark-repeat-native` run after the axis-join bucket commit,
+  still showed `stroke_path` as the dominant symbol. The hottest visible
+  secondary buckets were `blend_pixel` / `source_over`, allocation/free samples
+  inside `stroke_path`, `fill_path`, and `merge_pixel_ranges`. The paired repeat
+  run `target/benchmark-repeat-vector-stress-after-axis-join-buckets-profile-run.json`
+  reported repeat mean `1.317 ms` and repeat `raster_paths` mean `1.216 ms`.
+- Candidate: re-test an opaque `BlendMode::Normal` partial-coverage fast path
+  now that clip and join predicate costs had been reduced. Result:
+  `target/performance-matrix-report-vector-opaque-blend-candidate.json` kept
+  `vector-stress.pdf` p95 at `1.356 ms` and only moved mean to `1.234 ms`.
+  This is below the repeated 5% small-win bar, so the code was reverted.
+- Candidate: skip the Vec-of-Vec rebuild in `axis_stroke_raster_spans` when
+  axis-aligned strokes have no joins, cloning the compact coverage spans as the
+  raster spans. Result:
+  `target/performance-matrix-report-vector-joinless-span-reuse-candidate.json`
+  regressed `vector-stress.pdf` p95 to `1.416 ms` and mean to `1.307 ms`.
+  The code was reverted.
+- Candidate: add a narrow axis-aligned rectangle-stroke fast path for solid
+  Butt/Miter strokes. Result:
+  `target/performance-matrix-report-vector-rect-stroke-candidate.json`
+  regressed `vector-stress.pdf` p95 to `1.387 ms` and mean to `1.298 ms`.
+  The code was reverted.
+- Interpretation: after the accepted clip and join optimizations, the obvious
+  micro-specializations are either below noise or negative on the current top
+  vector fixture. The next vector pass should use a fresh sample plus a broader
+  algorithmic target, not another local branch around `blend_pixel`, joinless
+  span copying, or rectangle-stroke detection.
+
 ## Hardware-Aware Rust Notes
 
 Goal: use Rust's memory model and the host CPU well without prematurely
