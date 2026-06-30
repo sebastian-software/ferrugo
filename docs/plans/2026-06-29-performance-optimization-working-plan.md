@@ -5530,6 +5530,37 @@ Performance matrix smoke gate from 2026-06-30:
   `target/performance-matrix-smoke.json` plus
   `target/performance-matrix-smoke.md`.
 
+Release-mode vector-stress profile from 2026-06-30:
+
+- Trigger: after several profiling-build micro-candidates failed to repeat in
+  release mode, the next vector decision needed a release-near CPU profile
+  rather than another local spelling change.
+- Artifacts:
+  `target/benchmark-repeat-vector-stress-release-current-200k.json` and
+  `target/sample-vector-stress-release-current.txt`, captured from
+  `target/release/ferrugo-cli benchmark-repeat-native
+  fixtures/generated/vector-stress.pdf --repetitions 200000 --max-edge 160`.
+- Timing result:
+  `vector-stress.pdf` rendered natively at `160x120` with `76800` output
+  bytes. Repeat mean was `0.575 ms`, p50 `0.561 ms`, p95 `0.653 ms`, p99
+  `0.721 ms`, and repeat mean `raster_paths` was `0.487 ms`. The first render
+  took `0.943 ms`, with `raster_paths=0.707 ms`.
+- CPU sample:
+  top flat symbols were `rasterize_row_bucketed_stroke_ranges` (`1325`
+  samples), `blend_pixel` (`1034`),
+  `rasterize_span_covered_stroke_ranges` (`963`), `stroke_path` (`949`),
+  `axis_stroke_raster_spans` (`510`),
+  `axis_stroke_span_for_sample_y` (`236`), `ContentTokenizer::next` (`206`),
+  `PrimitiveParser::parse_value` (`148`), `parse_number_raw` (`147`), and
+  `merge_pixel_ranges` (`145`).
+- Decision:
+  continue with release-profile-led work. The current bottleneck is still
+  mostly path/stroke rasterization and blending; parser/content costs are
+  visible but secondary on this fixture. The next useful code candidate should
+  remove actual row-bucket/span/blend work or allocation churn in those paths.
+  Avoid more profiling-build-only byte-write or arithmetic-spelling changes
+  unless a release sample isolates the exact operation.
+
 ## Questions Closed For The Next Wave
 
 - [x] What family-specific standalone and cumulative thresholds should replace
