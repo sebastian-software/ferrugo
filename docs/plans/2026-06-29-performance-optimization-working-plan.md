@@ -1030,11 +1030,33 @@ Technical protection-set stroke-shape sweep from 2026-06-30:
   `technical-linework-dimensions.pdf` (`1268`, `14`, `8042`).
 - Interpretation: the protection set is not dominated by huge single strokes;
   it is dominated by many small/medium strokes and overwhelmingly
-  axis-aligned line segments. The next code candidate should therefore try a
-  broad axis-aligned stroke predicate inside the existing row-bucket/direct
-  scans before revisiting any heavier spatial index. This targets the hot
-  distance predicate directly while preserving the current accepted row-bucket
-  structure.
+  axis-aligned line segments. This made a broad axis-aligned stroke predicate
+  inside the existing row-bucket/direct scans worth testing before revisiting
+  any heavier spatial index.
+
+Rejected candidate from 2026-06-30:
+
+- Change tested locally but not kept: add a broad horizontal/vertical stroke
+  hit-test shortcut inside `point_in_single_stroke_line`, covering butt, round,
+  and square caps before falling back to the generic projection-based
+  predicate.
+- Baseline:
+  `target/performance-matrix-stroke-row-buckets-xmiss-fix-technical-repeat.json`,
+  native hot-render, `fixtures/technical-drawing-manifest.tsv`, `--max-edge
+  160`, 200 measured iterations after 10 warmups.
+- Candidate:
+  `target/performance-matrix-axis-stroke-predicate-technical.json`, same
+  command shape and host.
+- Result: some large linework fixtures improved (`engineering-floorplan-precision.pdf`
+  p95 ~6.0%, `engineering-large-transform-detail.pdf` ~6.9%, and
+  `technical-large-coordinate-plan.pdf` ~5.3%), but the primary
+  `vector-stress.pdf` target was effectively neutral (~0.4%), the family
+  average was ~0.1%, and `clipped-paths.pdf` regressed on p95 in the local run.
+- Decision: reverted. The result is not strong enough for a standalone win, is
+  not protection-set-neutral, and overlaps with an earlier rejected simple
+  stroke shortcut. The next vector attempt should use a deeper profile of the
+  remaining `stroke_path` work instead of another local distance-predicate
+  micro-fast-path.
 
 ## Hardware-Aware Rust Notes
 
