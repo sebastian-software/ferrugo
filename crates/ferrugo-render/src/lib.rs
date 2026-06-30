@@ -11170,11 +11170,24 @@ fn stroke_path(
     let prepared_joins = prepare_stroke_joins(joins, radius, state.line_join, state.miter_limit);
     let has_joins = !joins.is_empty();
     if let Some(spans) = axis_spans {
+        let join_buckets = has_joins
+            .then(|| {
+                stroke_join_buckets(
+                    joins,
+                    &prepared_joins,
+                    radius,
+                    state.line_join,
+                    dimensions,
+                    bounds,
+                )
+            })
+            .flatten();
         rasterize_axis_stroke_spans(
             device,
             spans,
             joins,
             &prepared_joins,
+            join_buckets.as_ref(),
             has_joins,
             bounds,
             state,
@@ -11557,6 +11570,7 @@ fn rasterize_axis_stroke_spans(
     spans: AxisStrokeRasterSpans,
     joins: &[StrokeJoin],
     prepared_joins: &[PreparedStrokeJoin],
+    join_buckets: Option<&StrokeJoinBuckets>,
     has_joins: bool,
     bounds: PixelBounds,
     state: StrokeRasterState,
@@ -11582,12 +11596,26 @@ fn rasterize_axis_stroke_spans(
                         if point_in_active_clips(point, context.clips)
                             && (point_in_axis_stroke_spans(point, y, sample_y, &spans.coverage)
                                 || (has_joins
-                                    && point_in_join(
-                                        point,
-                                        joins,
-                                        prepared_joins,
-                                        radius,
-                                        state.line_join,
+                                    && join_buckets.map_or_else(
+                                        || {
+                                            point_in_join(
+                                                point,
+                                                joins,
+                                                prepared_joins,
+                                                radius,
+                                                state.line_join,
+                                            )
+                                        },
+                                        |join_buckets| {
+                                            point_in_join_buckets(
+                                                point,
+                                                x,
+                                                y,
+                                                join_buckets,
+                                                radius,
+                                                state.line_join,
+                                            )
+                                        },
                                     )))
                         {
                             covered += 1;
@@ -17306,6 +17334,15 @@ mod tests {
             axis_stroke_raster_spans(&lines, &joins, radius, dimensions, bounds, 2, LineCap::Butt)
                 .expect("axis raster spans");
         let prepared_joins = prepare_stroke_joins(&joins, radius, LineJoin::Miter, 10.0);
+        let join_buckets = stroke_join_buckets(
+            &joins,
+            &prepared_joins,
+            radius,
+            LineJoin::Miter,
+            dimensions,
+            bounds,
+        )
+        .expect("axis stroke join buckets");
 
         for y in bounds.min_y..bounds.max_y {
             for x in bounds.min_x..bounds.max_x {
@@ -17329,9 +17366,23 @@ mod tests {
                                     radius,
                                     LineJoin::Miter,
                                 );
+                        let bucketed =
+                            point_in_axis_stroke_spans(point, y, sample_y, &spans.coverage)
+                                || point_in_join_buckets(
+                                    point,
+                                    x,
+                                    y,
+                                    &join_buckets,
+                                    radius,
+                                    LineJoin::Miter,
+                                );
                         assert_eq!(
                             sparse, generic,
                             "coverage mismatch at pixel ({x},{y}) sample ({sample_x},{sample_y}) point {point:?}"
+                        );
+                        assert_eq!(
+                            bucketed, generic,
+                            "bucketed coverage mismatch at pixel ({x},{y}) sample ({sample_x},{sample_y}) point {point:?}"
                         );
                         if generic {
                             assert!(

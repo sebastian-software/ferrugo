@@ -2167,6 +2167,46 @@ Accepted axis-aligned clip predicate fast path from 2026-06-30:
   handling, and uses an existing field without new allocation, caching, unsafe
   code, or dependency surface.
 
+Accepted axis-stroke join-bucket predicate result from 2026-06-30:
+
+- Profile basis: after the axis-aligned clip predicate fast path,
+  `target/sample-vector-stress-after-clip-fast.txt` showed `stroke_path`
+  still dominant, with `point_in_join` (`701` samples) nearly as visible as
+  `blend_pixel` (`767` samples). The existing join-bucket index already reduced
+  generic row-bucketed stroke joins, but axis-aligned strokes still used the
+  generic `point_in_join` predicate inside the axis-span raster loop.
+- Change: axis-stroke span rasterization now builds a conservative
+  `StrokeJoinBuckets` index when the axis-aligned stroked item has joins, then
+  uses `point_in_join_buckets` in the inner sample loop. The existing generic
+  `point_in_join` path remains the fallback when no bucket can be built. Stroke
+  span coverage and exact join geometry predicates are unchanged.
+- Correctness guard:
+  `axis_stroke_raster_spans_should_cover_joined_axis_strokes` now also checks
+  that bucketed join coverage matches the existing generic join predicate over
+  the joined axis-stroke raster bounds.
+- A/B artifacts:
+  `target/performance-matrix-report-vector-rect-clip-fast-repeat-1000.json`,
+  `target/performance-matrix-report-vector-axis-join-buckets-candidate.json`,
+  `target/performance-matrix-report-vector-axis-join-buckets-repeat.json`,
+  `target/performance-matrix-axis-join-buckets-starter.json`, and
+  `target/trace-native-vector-stress-axis-join-buckets.json`.
+- Result: accepted as a repeated cumulative stroke-raster improvement.
+  Against the current fast-clip baseline, `vector-stress.pdf` moved p95
+  `1.442 ms` -> `1.356 ms` (`~6.0%`) and mean `1.320 ms` -> `1.239 ms`
+  (`~6.1%`) in the repeat. The trace moved `raster_paths` from `1.400 ms` to
+  `1.291 ms`. `prepress-trim-bleed-marks.pdf` stayed effectively neutral
+  (`0.590 ms` -> `0.582 ms` p95, mean `0.514 ms` -> `0.522 ms`), and
+  `technical-linework-dimensions.pdf` showed a small p95 watch regression
+  (`0.305 ms` -> `0.314 ms`) with near-neutral mean (`0.279 ms` ->
+  `0.281 ms`).
+- Protection result:
+  `target/performance-matrix-axis-join-buckets-starter.json` rendered all `11`
+  native hot-render records with no fallback-required, missing-tool,
+  not-applicable, or error records.
+- Decision: keep. This reuses the existing bounded join index in a previously
+  uncovered axis-stroke path, reduces profile-visible join predicate fanout,
+  and avoids new dependencies, unsafe code, or broader cache behavior.
+
 ## Hardware-Aware Rust Notes
 
 Goal: use Rust's memory model and the host CPU well without prematurely
