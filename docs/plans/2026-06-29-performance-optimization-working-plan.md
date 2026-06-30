@@ -1830,6 +1830,27 @@ Current vector profile and rejected scratch-capacity candidate from 2026-06-30:
   allocation-volume evidence or a candidate that repeats at least a 5-10%
   protection-neutral gain as part of the cumulative stroke-raster track.
 
+Rejected per-row bucket candidate caching from 2026-06-30:
+
+- Change tested locally but not kept: in the row-bucketed stroke range
+  rasterizer, resolve stroke and join bucket candidate slices once per raster
+  row and pass them into inner predicate helpers. This avoided repeating the
+  `y -> row range -> indices` lookup and `radius * radius` calculation for
+  every supersample.
+- Rationale: the current `vector-stress` sample still showed
+  `point_in_row_bucketed_stroke` as the largest visible child stack under
+  `stroke_path`, while retaining the existing exact geometry predicates and
+  row-bucket data structure.
+- Candidate artifact:
+  `target/benchmark-native-vector-stress-row-candidates.json`, native
+  single-fixture run, `--max-edge 160`, `10000` iterations.
+- Result: rejected as a performance candidate. The run measured `3.171 ms`
+  mean versus the previous current single-fixture signal at `3.198 ms`; the
+  movement is below the 5% threshold and has no p95/protection-matrix support.
+- Decision: reverted. The next accepted row-bucket improvement needs to reduce
+  the number of candidate line checks or pixels visited, not only cache row
+  lookup plumbing around the same X-miss-heavy predicate loop.
+
 ## Hardware-Aware Rust Notes
 
 Goal: use Rust's memory model and the host CPU well without prematurely
