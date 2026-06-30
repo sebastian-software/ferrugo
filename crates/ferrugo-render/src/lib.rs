@@ -12444,8 +12444,14 @@ fn draw_axis_aligned_image(
     if matches!(image.image.kind, ImageKind::StencilMask { .. }) {
         return draw_axis_aligned_image_with_device_pixels(device, image, inverse, window);
     }
-    if image_uses_opaque_device_rgb_samples(&image.image) {
-        return draw_axis_aligned_opaque_rgb_image(device, image, inverse, window);
+    match opaque_image_sample_kind(&image.image) {
+        Some(OpaqueImageSampleKind::DeviceGray) => {
+            return draw_axis_aligned_opaque_gray_image(device, image, inverse, window);
+        }
+        Some(OpaqueImageSampleKind::DeviceRgb) => {
+            return draw_axis_aligned_opaque_rgb_image(device, image, inverse, window);
+        }
+        None => {}
     }
 
     let mut sample_cache = ImageSampleCache::default();
@@ -12472,6 +12478,41 @@ fn draw_axis_aligned_image(
             let (sample_x, sample_y) = image_sample_coords(&image.image, sample_x, sample_y);
             let pixel =
                 sample_cache.sample(&image.image, sample_x, sample_y, image.state.fill_color);
+            composite_image_pixel_in_row(row, x, pixel, coverage);
+        }
+    }
+    Ok(())
+}
+
+fn draw_axis_aligned_opaque_gray_image(
+    device: &mut RasterDevice,
+    image: &ImageDisplayItem,
+    inverse: Matrix,
+    window: ImageRasterWindow,
+) -> RasterResult<()> {
+    let mut sample_cache = OpaqueGraySampleCache::default();
+    for y in window.min_y..window.max_y {
+        let y_coverage = pixel_coverage_1d(y, window.bounds.min_y, window.bounds.max_y);
+        if y_coverage <= f64::EPSILON {
+            continue;
+        }
+        let sample_y = inverse
+            .d
+            .mul_add(f64::from(y) + 0.5, inverse.f)
+            .clamp(0.0, 1.0);
+        let row = device.row_mut(y)?;
+        for x in window.min_x..window.max_x {
+            let coverage =
+                pixel_coverage_1d(x, window.bounds.min_x, window.bounds.max_x) * y_coverage;
+            if coverage <= f64::EPSILON {
+                continue;
+            }
+            let sample_x = inverse
+                .a
+                .mul_add(f64::from(x) + 0.5, inverse.e)
+                .clamp(0.0, 1.0);
+            let (sample_x, sample_y) = image_sample_coords(&image.image, sample_x, sample_y);
+            let pixel = sample_cache.sample(&image.image, sample_x, sample_y);
             composite_image_pixel_in_row(row, x, pixel, coverage);
         }
     }
@@ -12588,11 +12629,26 @@ fn transform_bounds(bounds: PathBounds, transform: Matrix) -> PathBounds {
     include_point(Some(bounds), p3)
 }
 
-fn image_uses_opaque_device_rgb_samples(image: &ImageXObject) -> bool {
-    matches!(image.kind, ImageKind::Color)
-        && image.color_space == ImageColorSpace::DeviceRgb
-        && image.soft_mask.is_none()
-        && image.indexed_lookup.is_none()
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OpaqueImageSampleKind {
+    DeviceGray,
+    DeviceRgb,
+}
+
+fn opaque_image_sample_kind(image: &ImageXObject) -> Option<OpaqueImageSampleKind> {
+    if !matches!(image.kind, ImageKind::Color)
+        || image.soft_mask.is_some()
+        || image.indexed_lookup.is_some()
+    {
+        return None;
+    }
+    match image.color_space {
+        ImageColorSpace::DeviceGray => Some(OpaqueImageSampleKind::DeviceGray),
+        ImageColorSpace::DeviceRgb => Some(OpaqueImageSampleKind::DeviceRgb),
+        ImageColorSpace::DeviceCmyk
+        | ImageColorSpace::IndexedGray
+        | ImageColorSpace::IndexedRgb => None,
+    }
 }
 
 #[derive(Debug, Default)]
@@ -12631,6 +12687,28 @@ impl ImageSampleCache {
 }
 
 #[derive(Debug, Default)]
+struct OpaqueGraySampleCache {
+    last: Option<CachedImageSample>,
+}
+
+impl OpaqueGraySampleCache {
+    fn sample(&mut self, image: &ImageXObject, sample_x: u32, sample_y: u32) -> Rgba {
+        if let Some(last) = self.last {
+            if last.x == sample_x && last.y == sample_y {
+                return last.color;
+            }
+        }
+        let color = sample_opaque_device_gray_at(image, sample_x, sample_y);
+        self.last = Some(CachedImageSample {
+            x: sample_x,
+            y: sample_y,
+            color,
+        });
+        color
+    }
+}
+
+#[derive(Debug, Default)]
 struct OpaqueRgbSampleCache {
     last: Option<CachedImageSample>,
 }
@@ -12656,6 +12734,17 @@ fn image_sample_coords(image: &ImageXObject, x: f64, y: f64) -> (u32, u32) {
     let sample_x = ((x * f64::from(image.width)).floor() as u32).min(image.width - 1);
     let sample_y = (((1.0 - y) * f64::from(image.height)).floor() as u32).min(image.height - 1);
     (sample_x, sample_y)
+}
+
+fn sample_opaque_device_gray_at(image: &ImageXObject, sample_x: u32, sample_y: u32) -> Rgba {
+    let index = sample_y as usize * image.width as usize + sample_x as usize;
+    let channel = image.samples[index];
+    Rgba {
+        r: channel,
+        g: channel,
+        b: channel,
+        a: 255,
+    }
 }
 
 fn sample_opaque_device_rgb_at(image: &ImageXObject, sample_x: u32, sample_y: u32) -> Rgba {
@@ -20779,22 +20868,60 @@ mod tests {
             soft_mask: None,
         };
 
-        assert!(image_uses_opaque_device_rgb_samples(&image));
+        assert_eq!(
+            opaque_image_sample_kind(&image),
+            Some(OpaqueImageSampleKind::DeviceRgb)
+        );
 
         image.soft_mask = Some(Arc::from([128].as_slice()));
-        assert!(!image_uses_opaque_device_rgb_samples(&image));
+        assert_eq!(opaque_image_sample_kind(&image), None);
 
         image.soft_mask = None;
         image.color_space = ImageColorSpace::IndexedRgb;
         image.indexed_lookup = Some(Arc::from([255, 0, 0].as_slice()));
-        assert!(!image_uses_opaque_device_rgb_samples(&image));
+        assert_eq!(opaque_image_sample_kind(&image), None);
 
         image.color_space = ImageColorSpace::DeviceRgb;
         image.indexed_lookup = None;
         image.kind = ImageKind::StencilMask {
             paint_one_bits: true,
         };
-        assert!(!image_uses_opaque_device_rgb_samples(&image));
+        assert_eq!(opaque_image_sample_kind(&image), None);
+    }
+
+    #[test]
+    fn image_fast_path_should_only_accept_opaque_device_gray_samples() {
+        let mut image = ImageXObject {
+            resource_name: b"Im1".to_vec(),
+            width: 1,
+            height: 1,
+            bits_per_component: 8,
+            color_space: ImageColorSpace::DeviceGray,
+            samples: Arc::from([192].as_slice()),
+            kind: ImageKind::Color,
+            indexed_lookup: None,
+            soft_mask: None,
+        };
+
+        assert_eq!(
+            opaque_image_sample_kind(&image),
+            Some(OpaqueImageSampleKind::DeviceGray)
+        );
+
+        image.soft_mask = Some(Arc::from([128].as_slice()));
+        assert_eq!(opaque_image_sample_kind(&image), None);
+
+        image.soft_mask = None;
+        image.color_space = ImageColorSpace::IndexedGray;
+        image.indexed_lookup = Some(Arc::from([192].as_slice()));
+        assert_eq!(opaque_image_sample_kind(&image), None);
+
+        image.color_space = ImageColorSpace::DeviceGray;
+        image.indexed_lookup = None;
+        image.kind = ImageKind::StencilMask {
+            paint_one_bits: true,
+        };
+        assert_eq!(opaque_image_sample_kind(&image), None);
     }
 
     #[test]

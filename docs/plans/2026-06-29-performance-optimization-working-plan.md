@@ -2324,6 +2324,46 @@ Accepted opaque DeviceRGB image sampling result from 2026-06-30:
   downsample-aware decode implementation and does not close the cropped-decode
   backlog.
 
+Accepted opaque DeviceGray image sampling result from 2026-06-30:
+
+- Profiling trigger: after the opaque RGB fast path, a fresh 10-second macOS
+  `sample` run on `mobile-mixed-compression-scan.pdf`,
+  `target/sample-mobile-mixed-after-opaque-rgb.txt`, still showed image raster
+  work at the top of the hot render stack: `ImageSampleCache::sample` (`207`
+  top samples), `draw_image` (`180`), and `composite_image_pixel_in_row`
+  (`138`). The fixture generator confirmed the dominant scan image is opaque
+  DeviceGray with Flate compression.
+- Change: axis-aligned opaque DeviceGray images now use a direct gray sampler
+  and the existing row-slice compositing path. Opaque RGB and Gray are routed
+  through one `opaque_image_sample_kind` classifier so RGB image placements do
+  not pay for a second fast-path guard.
+- Scope guard: the fast path is disabled for ImageMask/stencil images, Indexed
+  color, CMYK, and any image with a soft mask. Those remain on the generic
+  sampler.
+- Live A/B artifacts: base worktree at `2632944` wrote
+  `/private/tmp/pdfrust-gray-base/target/performance-matrix-gray-base-live.json`;
+  the accepted candidate wrote
+  `target/performance-matrix-opaque-gray-combined-repeat.json`.
+- Result against the live base matrix:
+  `mobile-mixed-compression-scan.pdf` improved mean `0.220 ms` -> `0.193 ms`
+  (~12.3%) and p95 `0.242 ms` -> `0.203 ms` (~16.1%).
+  `scanner-large-image-budget.pdf` improved mean `0.321 ms` -> `0.294 ms`
+  (~8.4%) and p95 `0.336 ms` -> `0.314 ms` (~6.5%).
+- Protection movement: `dct-image.pdf`, `image-heavy-rotated-mask-sheet.pdf`,
+  `soft-mask-image.pdf`, and `image-mask-logo.pdf` were neutral to slightly
+  better on p95. `image-heavy-repeated-xobject-report.pdf` moved p95
+  `0.368 ms` -> `0.376 ms` (~2.2% slower), and `predictor-image.pdf` moved
+  `0.049 ms` -> `0.050 ms` (~2.0% slower); both stayed rendered with no
+  fallback or error and are treated as noise/watch items for the next image
+  matrix.
+- Correctness guard:
+  `image_fast_path_should_only_accept_opaque_device_gray_samples` freezes the
+  Gray predicate beside the existing RGB guard.
+- Decision: accept as a profile-backed Phase 4 cumulative image sampling win.
+  The scanner fixture is a 5-10% repeated improvement, which is acceptable here
+  because it compounds with the mobile win, keeps the protection set effectively
+  neutral, and targets the same image sampling bottleneck.
+
 Rejected image raster candidate from 2026-06-30:
 
 - Change tested locally but not kept: apply the same row-slice compositing
