@@ -4988,6 +4988,33 @@ Post-offset-blend profile and rejected axis row-copy candidate from 2026-06-30:
   not improve the current target. Keep future axis-span allocation work tied to
   a more structural reduction, not another local copy-shape rewrite.
 
+Rejected sampled float blend dispatch candidate from 2026-06-30:
+
+- Rationale:
+  `target/sample-vector-stress-post-offset-blend.txt` still showed
+  `blend_pixel` under both span-covered and row-bucket stroke rasterization.
+  The previously rejected sampled opaque integer blend changed arithmetic; this
+  follow-up kept the existing floating-point `source_over_opaque` math but
+  tried to route sampled opaque normal pixels around generic `blend_pixel`
+  dispatch.
+- Change tested locally but not kept:
+  add an `opaque_normal` flag to `SampledPixelBlend` and route non-full sampled
+  opaque-normal pixels through a sampled-specific helper that computed coverage,
+  read the destination pixel once, and wrote the existing `source_over_opaque`
+  or `source_over` result directly.
+- A/B artifacts:
+  `target/benchmark-repeat-vector-stress-single-offset-blend-candidate-20k.json`
+  versus
+  `target/benchmark-repeat-vector-stress-sampled-float-blend-candidate-20k.json`.
+- Result:
+  rejected. `vector-stress.pdf` repeat mean regressed `0.667 ms` -> `0.701 ms`
+  and repeat mean `raster_paths` regressed `0.576 ms` -> `0.604 ms`.
+- Decision:
+  reverted. Even without changing blend arithmetic, the extra sampled-specific
+  branch and helper shape lose on the current hot fixture. Do not retry sampled
+  opaque-normal blend routing unless a future profile isolates a narrower
+  subcase than the whole sampled stroke path.
+
 ## Settled Decisions
 
 - [x] `scripts/generate_performance_matrix.sh` defaults to release mode.
