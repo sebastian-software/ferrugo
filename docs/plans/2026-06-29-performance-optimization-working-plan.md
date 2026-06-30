@@ -4027,6 +4027,39 @@ Current vector profile and rejected joinless axis-span reuse candidate from
   `Option<AxisStrokeSpans>` form unless a lower-level allocation profile shows
   a different construction strategy can avoid the branch/shape regression.
 
+Rejected flat axis-span clone candidate from 2026-06-30:
+
+- Profile basis: after the radial shading fast path, the fresh starter matrix
+  `target/performance-matrix-current-post-radial-starter.json` still showed
+  `vector-stress.pdf` as the slowest fixture at mean `0.744 ms`, p95
+  `0.863 ms`. The focused baseline
+  `target/benchmark-repeat-vector-stress-current-post-radial.json` measured
+  repeat mean `0.711 ms`, p95 `0.813 ms`, with `raster_paths` at `0.620 ms`.
+  A long `sample` artifact at `target/sample-vector-stress-post-radial.txt`
+  showed `rasterize_span_covered_stroke_ranges`,
+  `rasterize_row_bucketed_stroke_ranges`, `blend_pixel`, `merge_pixel_ranges`,
+  and stroke allocation/free frames as the visible CPU work.
+- Change tested locally but not kept: when `axis_stroke_raster_spans` had no
+  joins, return `AxisStrokeRasterSpans { raster: coverage.clone(), coverage }`
+  instead of converting coverage back through `Vec<Vec<AxisStrokeSpan>>` and
+  rebuilding a merged raster span set.
+- Rationale: this tested a narrower construction strategy than the previously
+  rejected `Option<AxisStrokeSpans>` shape while preserving the existing
+  `AxisStrokeRasterSpans` fields and raster call sites.
+- Result: rejected. The primary target did not clear the repeated 5% bar:
+  `target/benchmark-repeat-vector-stress-flat-axis-clone-candidate.json`
+  measured repeat mean `0.715 ms` and p95 `0.806 ms` versus the fresh baseline
+  repeat mean `0.711 ms` and p95 `0.813 ms`. Against the matching accepted
+  prepress join-bounds artifact,
+  `target/benchmark-repeat-prepress-flat-axis-clone-candidate.json` moved mean
+  `0.326 ms` -> `0.320 ms` and p95 `0.364 ms` -> `0.348 ms`, still below 5%.
+  `technical-hatch-clipping.pdf` moved mean `0.266 ms` -> `0.272 ms` and p95
+  `0.296 ms` -> `0.302 ms`.
+- Decision: reverted. The flat clone avoids one obvious reconstruction path,
+  but the measured effect is below the acceptance threshold and slightly noisy
+  across protection fixtures. Do not reopen this local construction-only axis
+  span variant unless a later allocation profile shows a larger isolated cost.
+
 Current prepress join-bounds optimization from 2026-06-30:
 
 - Profiling basis:
