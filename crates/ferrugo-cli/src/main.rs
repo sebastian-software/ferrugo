@@ -15,7 +15,7 @@ use ferrugo_native::{
     scan_operator_coverage, ImagePlacementSummary, ImageResourceSummary, NativeBackend,
     NativeDocumentSessionStats, NativeMemoryDiagnostics, NativePageCacheKey, NativePageCachePolicy,
     NativeRenderPhaseTimings, NativeRenderTrace, OperatorCoverageEntry, OperatorCoverageOptions,
-    OperatorSupportStatus, StrokeShapeSummary,
+    OperatorSupportStatus, StrokeRasterRouteSummary, StrokeShapeSummary,
 };
 #[cfg(feature = "pdfium")]
 use ferrugo_pdfium::PdfiumBackend;
@@ -8509,6 +8509,9 @@ fn native_render_trace_json(config: &TraceNativeConfig) -> Result<String, CliErr
         trace_phase_timings_json(render_trace.as_ref().map(|trace| &trace.timings));
     let stroke_shape_summary_json =
         trace_stroke_shape_summary_json(render_trace.as_ref().map(|trace| &trace.stroke_shapes));
+    let stroke_raster_route_summary_json = trace_stroke_raster_route_summary_json(
+        render_trace.as_ref().map(|trace| &trace.stroke_routes),
+    );
     let image_resource_summary_json = trace_image_resource_summary_json(
         render_trace.as_ref().map(|trace| &trace.image_resources),
     );
@@ -8536,6 +8539,7 @@ fn native_render_trace_json(config: &TraceNativeConfig) -> Result<String, CliErr
             "  \"render\": {},\n",
             "  \"phase_timings_ms\": {},\n",
             "  \"stroke_shape_summary\": {},\n",
+            "  \"stroke_raster_route_summary\": {},\n",
             "  \"image_resource_summary\": {},\n",
             "  \"image_placement_summary\": {},\n",
             "  \"operator_coverage\": {},\n",
@@ -8556,6 +8560,7 @@ fn native_render_trace_json(config: &TraceNativeConfig) -> Result<String, CliErr
         render_json,
         phase_timings_json,
         stroke_shape_summary_json,
+        stroke_raster_route_summary_json,
         image_resource_summary_json,
         image_placement_summary_json,
         coverage_json,
@@ -8704,6 +8709,39 @@ fn trace_stroke_shape_summary_json(
             summary.pixel_x_span_buckets.le_32,
             summary.pixel_x_span_buckets.le_64,
             summary.pixel_x_span_buckets.gt_64
+        ),
+        Err(error) => format!(
+            "{{\"status\":\"error\",\"class\":{},\"bucket\":{}}}",
+            json_string(error.class().as_str()),
+            optional_json_string(error.unsupported_feature_bucket())
+        ),
+    }
+}
+
+fn trace_stroke_raster_route_summary_json(
+    summary: Result<&StrokeRasterRouteSummary, &ThumbnailError>,
+) -> String {
+    match summary {
+        Ok(summary) => format!(
+            concat!(
+                "{{",
+                "\"status\":\"measured\",",
+                "\"span_covered_calls\":{},",
+                "\"span_cursor_calls\":{},",
+                "\"span_from_start_calls\":{},",
+                "\"span_coverage_spans\":{},",
+                "\"max_span_coverage_spans_per_call\":{},",
+                "\"span_raster_spans\":{},",
+                "\"max_span_raster_spans_per_call\":{}",
+                "}}"
+            ),
+            summary.span_covered_calls,
+            summary.span_cursor_calls,
+            summary.span_from_start_calls,
+            summary.span_coverage_spans,
+            summary.max_span_coverage_spans_per_call,
+            summary.span_raster_spans,
+            summary.max_span_raster_spans_per_call,
         ),
         Err(error) => format!(
             "{{\"status\":\"error\",\"class\":{},\"bucket\":{}}}",
@@ -11704,6 +11742,11 @@ mod tests {
         assert!(json.contains("\"simple_line_span_below_threshold_items\""));
         assert!(json.contains("\"generic_stroke_fallback_items\""));
         assert!(json.contains("\"pixel_x_span_buckets\""));
+        assert!(json.contains("\"stroke_raster_route_summary\""));
+        assert!(json.contains("\"span_covered_calls\""));
+        assert!(json.contains("\"span_cursor_calls\""));
+        assert!(json.contains("\"span_from_start_calls\""));
+        assert!(json.contains("\"max_span_coverage_spans_per_call\""));
         assert!(json.contains("\"image_resource_summary\""));
         assert!(json.contains("\"encoded_bytes\""));
         assert!(json.contains("\"resident_bytes\""));

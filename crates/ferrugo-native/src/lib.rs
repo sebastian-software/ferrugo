@@ -22,14 +22,16 @@ use ferrugo_render::{
     build_path_display_list_with_graphics_resources, build_text_display_list,
     collect_image_decode_hints, decode_tiling_pattern, display_list_image_placement_summary,
     display_list_stroke_shape_summary, rasterize_display_list_into_with_phase_timings,
-    rasterize_images, rasterize_paths_into, rasterize_text, ColorSpaceResources, DisplayItem,
-    DisplayList, DisplayListOptions, ExtGraphicsStateResources, FontResources, FormResources,
-    GraphicsError, GraphicsErrorKind, ImageDecodeHints, ImageResources, PageGeometry, PageRotation,
-    PageTransform, PageTransformOptions, PathBounds, PathRasterOptions, Point, RasterDisplayPhase,
-    RasterError, RasterErrorKind, ShadingResources, TextDisplayItem, TextWritingMode,
-    TilingPatternResources,
+    rasterize_display_list_into_with_phase_timings_and_stroke_routes, rasterize_images,
+    rasterize_paths_into, rasterize_text, ColorSpaceResources, DisplayItem, DisplayList,
+    DisplayListOptions, ExtGraphicsStateResources, FontResources, FormResources, GraphicsError,
+    GraphicsErrorKind, ImageDecodeHints, ImageResources, PageGeometry, PageRotation, PageTransform,
+    PageTransformOptions, PathBounds, PathRasterOptions, Point, RasterDisplayPhase, RasterError,
+    RasterErrorKind, ShadingResources, TextDisplayItem, TextWritingMode, TilingPatternResources,
 };
-pub use ferrugo_render::{ImagePlacementSummary, ImageResourceSummary, StrokeShapeSummary};
+pub use ferrugo_render::{
+    ImagePlacementSummary, ImageResourceSummary, StrokeRasterRouteSummary, StrokeShapeSummary,
+};
 use ferrugo_syntax::{PdfBytes, PdfName, PdfNumber, PdfPrimitive, PdfReference, PdfString};
 use ferrugo_thumbnail::{
     unsupported_feature_buckets as buckets, AccessibilityMetadata, AnnotationMode,
@@ -126,6 +128,8 @@ pub struct NativeRenderTrace {
     pub timings: NativeRenderPhaseTimings,
     /// Request-local stroke geometry summary for renderer profiling.
     pub stroke_shapes: StrokeShapeSummary,
+    /// Request-local stroke raster route summary for renderer profiling.
+    pub stroke_routes: StrokeRasterRouteSummary,
     /// Request-local image resource summary for renderer profiling.
     pub image_resources: ImageResourceSummary,
     /// Request-local image placement summary for renderer profiling.
@@ -135,6 +139,7 @@ pub struct NativeRenderTrace {
 struct RenderTraceSinks<'a> {
     timings: Option<&'a mut NativeRenderPhaseTimings>,
     stroke_shapes: Option<&'a mut StrokeShapeSummary>,
+    stroke_routes: Option<&'a mut StrokeRasterRouteSummary>,
     image_resources: Option<&'a mut ImageResourceSummary>,
     image_placements: Option<&'a mut ImagePlacementSummary>,
 }
@@ -144,6 +149,7 @@ impl<'a> RenderTraceSinks<'a> {
         Self {
             timings: None,
             stroke_shapes: None,
+            stroke_routes: None,
             image_resources: None,
             image_placements: None,
         }
@@ -153,6 +159,7 @@ impl<'a> RenderTraceSinks<'a> {
         Self {
             timings: Some(timings),
             stroke_shapes: None,
+            stroke_routes: None,
             image_resources: None,
             image_placements: None,
         }
@@ -161,12 +168,14 @@ impl<'a> RenderTraceSinks<'a> {
     fn with_trace(
         timings: &'a mut NativeRenderPhaseTimings,
         stroke_shapes: &'a mut StrokeShapeSummary,
+        stroke_routes: &'a mut StrokeRasterRouteSummary,
         image_resources: &'a mut ImageResourceSummary,
         image_placements: &'a mut ImagePlacementSummary,
     ) -> Self {
         Self {
             timings: Some(timings),
             stroke_shapes: Some(stroke_shapes),
+            stroke_routes: Some(stroke_routes),
             image_resources: Some(image_resources),
             image_placements: Some(image_placements),
         }
@@ -495,6 +504,7 @@ impl NativeBackend {
             ..NativeRenderPhaseTimings::default()
         };
         let mut stroke_shapes = StrokeShapeSummary::default();
+        let mut stroke_routes = StrokeRasterRouteSummary::default();
         let mut image_resources = ImageResourceSummary::default();
         let mut image_placements = ImagePlacementSummary::default();
         let thumbnail = render_loaded_document_with_trace(
@@ -505,6 +515,7 @@ impl NativeBackend {
             RenderTraceSinks::with_trace(
                 &mut timings,
                 &mut stroke_shapes,
+                &mut stroke_routes,
                 &mut image_resources,
                 &mut image_placements,
             ),
@@ -514,6 +525,7 @@ impl NativeBackend {
             thumbnail,
             timings,
             stroke_shapes,
+            stroke_routes,
             image_resources,
             image_placements,
         })
@@ -1793,22 +1805,33 @@ fn render_loaded_document_inner(
             transform,
             path_options,
             &mut trace_sinks.timings,
+            &mut trace_sinks.stroke_routes,
         )?;
     } else {
         record_render_phase(
             &mut trace_sinks.timings,
             NativeRenderPhase::RasterPaths,
             || {
-                rasterize_paths_into(&display_list, &mut raster, transform, path_options)
-                    .map_err(map_raster_error)
+                rasterize_paths_with_optional_stroke_routes(
+                    &display_list,
+                    &mut raster,
+                    transform,
+                    path_options,
+                    &mut trace_sinks.stroke_routes,
+                )
             },
         )?;
         record_render_phase(
             &mut trace_sinks.timings,
             NativeRenderPhase::RasterPaths,
             || {
-                rasterize_paths_into(&form_list, &mut raster, transform, path_options)
-                    .map_err(map_raster_error)
+                rasterize_paths_with_optional_stroke_routes(
+                    &form_list,
+                    &mut raster,
+                    transform,
+                    path_options,
+                    &mut trace_sinks.stroke_routes,
+                )
             },
         )?;
         record_render_phase(
@@ -1854,8 +1877,13 @@ fn render_loaded_document_inner(
             &mut trace_sinks.timings,
             NativeRenderPhase::RasterPaths,
             || {
-                rasterize_paths_into(&annotation_list, &mut raster, transform, path_options)
-                    .map_err(map_raster_error)
+                rasterize_paths_with_optional_stroke_routes(
+                    &annotation_list,
+                    &mut raster,
+                    transform,
+                    path_options,
+                    &mut trace_sinks.stroke_routes,
+                )
             },
         )?;
     }
@@ -1890,8 +1918,13 @@ fn render_loaded_document_inner(
             &mut trace_sinks.timings,
             NativeRenderPhase::RasterPaths,
             || {
-                rasterize_paths_into(&annotation_list, &mut raster, transform, path_options)
-                    .map_err(map_raster_error)
+                rasterize_paths_with_optional_stroke_routes(
+                    &annotation_list,
+                    &mut raster,
+                    transform,
+                    path_options,
+                    &mut trace_sinks.stroke_routes,
+                )
             },
         )?;
         match build_text_display_list(
@@ -1972,13 +2005,58 @@ fn record_image_placement_summary(
     ));
 }
 
+fn rasterize_paths_with_optional_stroke_routes(
+    display_list: &DisplayList,
+    raster: &mut ferrugo_render::RasterDevice,
+    transform: PageTransform,
+    path_options: PathRasterOptions,
+    stroke_routes: &mut Option<&mut StrokeRasterRouteSummary>,
+) -> Result<(), ThumbnailError> {
+    let Some(stroke_routes) = stroke_routes.as_deref_mut() else {
+        return rasterize_paths_into(display_list, raster, transform, path_options)
+            .map_err(map_raster_error);
+    };
+    let route_cell = RefCell::new(*stroke_routes);
+    rasterize_display_list_into_with_phase_timings_and_stroke_routes(
+        display_list,
+        raster,
+        transform,
+        path_options,
+        &route_cell,
+        |_phase, _duration| {},
+    )
+    .map_err(map_raster_error)?;
+    *stroke_routes = route_cell.into_inner();
+    Ok(())
+}
+
 fn rasterize_ordered_display_list_with_phase_timings(
     display_list: &DisplayList,
     raster: &mut ferrugo_render::RasterDevice,
     transform: PageTransform,
     path_options: PathRasterOptions,
     timings: &mut Option<&mut NativeRenderPhaseTimings>,
+    stroke_routes: &mut Option<&mut StrokeRasterRouteSummary>,
 ) -> Result<(), ThumbnailError> {
+    if let Some(stroke_routes) = stroke_routes.as_deref_mut() {
+        let route_cell = RefCell::new(StrokeRasterRouteSummary::default());
+        rasterize_display_list_into_with_phase_timings_and_stroke_routes(
+            display_list,
+            raster,
+            transform,
+            path_options,
+            &route_cell,
+            |phase, duration| {
+                if let Some(timings) = timings.as_deref_mut() {
+                    timings.record(native_render_phase_from_raster_phase(phase), duration);
+                }
+            },
+        )
+        .map_err(map_raster_error)?;
+        *stroke_routes = route_cell.into_inner();
+        return Ok(());
+    }
+
     rasterize_display_list_into_with_phase_timings(
         display_list,
         raster,

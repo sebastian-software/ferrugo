@@ -4714,6 +4714,31 @@ Post-span-cursor profile and span-route diagnostics from 2026-06-30:
   target the still-visible row-bucket predicate/blend work with a fresh
   protection run.
 
+Runtime span-route counters from 2026-06-30:
+
+- Change:
+  `trace-native` now also includes `stroke_raster_route_summary`, collected
+  from the actual path-raster callsites. Unlike `stroke_shape_summary`, these
+  counters record the runtime `rasterize_span_covered_stroke_ranges` decisions:
+  total span-covered calls, cursor-route calls, from-start calls, coverage span
+  totals, max coverage spans per call, raster span totals, and max raster spans
+  per call.
+- Scope:
+  the counters are request-local and only active in explicit native trace
+  renders. Normal renders, hot benchmarks, and timing-only repeat benchmarks
+  stay on the existing raster path and do not pay the counter overhead.
+- Smoke artifact:
+  `target/trace-vector-stress-runtime-span-routes.json` reports `44`
+  span-covered calls, `0` cursor calls, `44` from-start calls, `4508` total
+  coverage spans, max `172` coverage spans per call, `4508` raster spans, and
+  max `172` raster spans per call.
+- Interpretation:
+  current `vector-stress` at `--max-edge 160` is not using the accepted
+  `STROKE_SPAN_CURSOR_MIN_SPANS = 512` route. The next code candidate should
+  not lower that threshold blindly; it needs a focused A/B on the from-start
+  path or a row-bucket/blend target with `prepress` and
+  `technical-hatch-clipping` in the protection set from the first run.
+
 ## Phase 6: Benchmark Gates And Claims
 
 Goal: turn stable evidence into guardrails, not premature marketing.

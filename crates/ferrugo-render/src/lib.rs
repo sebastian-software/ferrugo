@@ -3,6 +3,7 @@
 #![forbid(unsafe_code)]
 
 use std::borrow::Cow;
+use std::cell::RefCell;
 use std::fmt;
 use std::ops::Range;
 use std::sync::Arc;
@@ -1509,6 +1510,41 @@ impl StrokeShapeSummary {
         self.line_count_buckets.add_assign(other.line_count_buckets);
         self.pixel_x_span_buckets
             .add_assign(other.pixel_x_span_buckets);
+    }
+}
+
+/// Runtime stroke-raster route summary for renderer performance diagnostics.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct StrokeRasterRouteSummary {
+    /// Number of span-covered stroke raster calls.
+    pub span_covered_calls: usize,
+    /// Number of span-covered calls that used row cursors.
+    pub span_cursor_calls: usize,
+    /// Number of span-covered calls that used from-start row scans.
+    pub span_from_start_calls: usize,
+    /// Total coverage spans seen by span-covered raster calls.
+    pub span_coverage_spans: usize,
+    /// Maximum coverage spans seen by one span-covered raster call.
+    pub max_span_coverage_spans_per_call: usize,
+    /// Total raster spans seen by span-covered raster calls.
+    pub span_raster_spans: usize,
+    /// Maximum raster spans seen by one span-covered raster call.
+    pub max_span_raster_spans_per_call: usize,
+}
+
+impl StrokeRasterRouteSummary {
+    fn record_span_covered_call(&mut self, raster_spans: usize, coverage_spans: usize) {
+        self.span_covered_calls += 1;
+        if coverage_spans >= STROKE_SPAN_CURSOR_MIN_SPANS {
+            self.span_cursor_calls += 1;
+        } else {
+            self.span_from_start_calls += 1;
+        }
+        self.span_coverage_spans = self.span_coverage_spans.saturating_add(coverage_spans);
+        self.max_span_coverage_spans_per_call =
+            self.max_span_coverage_spans_per_call.max(coverage_spans);
+        self.span_raster_spans = self.span_raster_spans.saturating_add(raster_spans);
+        self.max_span_raster_spans_per_call = self.max_span_raster_spans_per_call.max(raster_spans);
     }
 }
 
@@ -5337,6 +5373,7 @@ pub fn rasterize_paths_into(
                         transform,
                         options,
                         clips: &active_clips,
+                        stroke_routes: None,
                     },
                     &mut pattern_cache,
                 )?;
@@ -5761,6 +5798,7 @@ pub fn rasterize_display_list_into(
         transform,
         options,
         &mut transparency_scratch,
+        None,
         None::<&mut fn(RasterDisplayPhase, Duration)>,
     )
 }
@@ -5788,6 +5826,36 @@ pub fn rasterize_display_list_into_with_phase_timings(
         transform,
         options,
         &mut transparency_scratch,
+        None,
+        Some(&mut on_phase),
+    )
+}
+
+/// Rasterizes all supported display-list items and records stroke route counts.
+///
+/// This is intended for explicit diagnostics. Normal rendering should use
+/// [`rasterize_display_list_into`] or
+/// [`rasterize_display_list_into_with_phase_timings`].
+///
+/// # Errors
+///
+/// Returns [`RasterError`] when path, image, or text rasterization fails.
+pub fn rasterize_display_list_into_with_phase_timings_and_stroke_routes(
+    display_list: &DisplayList,
+    device: &mut RasterDevice,
+    transform: PageTransform,
+    options: PathRasterOptions,
+    stroke_routes: &RefCell<StrokeRasterRouteSummary>,
+    mut on_phase: impl FnMut(RasterDisplayPhase, Duration),
+) -> RasterResult<()> {
+    let mut transparency_scratch = TransparencyGroupScratch::default();
+    rasterize_display_list_into_with_scratch(
+        display_list,
+        device,
+        transform,
+        options,
+        &mut transparency_scratch,
+        Some(stroke_routes),
         Some(&mut on_phase),
     )
 }
@@ -5798,6 +5866,7 @@ fn rasterize_display_list_into_with_scratch(
     transform: PageTransform,
     options: PathRasterOptions,
     transparency_scratch: &mut TransparencyGroupScratch,
+    stroke_routes: Option<&RefCell<StrokeRasterRouteSummary>>,
     mut on_phase: Option<&mut impl FnMut(RasterDisplayPhase, Duration)>,
 ) -> RasterResult<()> {
     if options.supersample == 0 {
@@ -5822,6 +5891,7 @@ fn rasterize_display_list_into_with_scratch(
                             transform,
                             options,
                             clips: &active_clips,
+                            stroke_routes,
                         },
                         &mut pattern_cache,
                     )
@@ -7579,6 +7649,7 @@ struct PathRasterContext<'a> {
     transform: PageTransform,
     options: PathRasterOptions,
     clips: &'a [ActiveClip],
+    stroke_routes: Option<&'a RefCell<StrokeRasterRouteSummary>>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -11890,6 +11961,7 @@ fn rasterize_simple_line_stroke_spans(
             bounds,
             SampledPixelBlend::new(source, state.blend_mode, state.alpha, sample_count),
             samples,
+            context.stroke_routes,
         );
     }
     let radius = stroke_radius_for_device_line_width(state.line_width);
@@ -11963,6 +12035,7 @@ fn rasterize_axis_stroke_spans(
             bounds,
             SampledPixelBlend::new(source, state.blend_mode, state.alpha, sample_count),
             samples,
+            context.stroke_routes,
         );
     }
     let radius = stroke_radius_for_device_line_width(state.line_width);
@@ -12031,7 +12104,13 @@ fn rasterize_span_covered_stroke_ranges(
     bounds: PixelBounds,
     blend: SampledPixelBlend,
     samples: u32,
+    stroke_routes: Option<&RefCell<StrokeRasterRouteSummary>>,
 ) -> RasterResult<()> {
+    if let Some(stroke_routes) = stroke_routes {
+        stroke_routes
+            .borrow_mut()
+            .record_span_covered_call(raster_spans.spans.len(), coverage_spans.spans.len());
+    }
     if coverage_spans.spans.len() < STROKE_SPAN_CURSOR_MIN_SPANS {
         return rasterize_span_covered_stroke_ranges_from_start(
             device,
@@ -14694,6 +14773,7 @@ fn draw_type3_text_run(
                     transform: page_transform,
                     options,
                     clips: &[],
+                    stroke_routes: None,
                 },
                 &mut pattern_cache,
             )?;
@@ -18188,6 +18268,7 @@ mod tests {
             transform,
             options: PathRasterOptions::default(),
             clips: &[],
+            stroke_routes: None,
         };
         let mut exact = RasterDevice::new(48, 48, Rgba::WHITE).expect("valid raster");
         let mut sampled = RasterDevice::new(48, 48, Rgba::WHITE).expect("valid raster");
@@ -18434,6 +18515,51 @@ mod tests {
             summary.max_simple_line_span_coverage_spans_per_item,
             summary.simple_line_span_coverage_spans
         );
+    }
+
+    #[test]
+    fn stroke_raster_route_summary_should_count_span_cursor_calls() {
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 400.0,
+                    max_y: 400.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            400,
+        )
+        .expect("valid page transform");
+        let display_list = DisplayList::from_items(vec![DisplayItem::Path(PathDisplayItem {
+            segments: vec![
+                PathSegment::MoveTo(Point { x: 80.0, y: 20.0 }),
+                PathSegment::LineTo(Point { x: 80.0, y: 380.0 }),
+            ],
+            paint: PaintMode::Stroke,
+            state: GraphicsState::default(),
+            fill_pattern: None,
+        })]);
+        let mut device = transform.create_device(Rgba::WHITE).expect("valid device");
+        let routes = RefCell::new(StrokeRasterRouteSummary::default());
+
+        rasterize_display_list_into_with_phase_timings_and_stroke_routes(
+            &display_list,
+            &mut device,
+            transform,
+            PathRasterOptions::default(),
+            &routes,
+            |_phase, _duration| {},
+        )
+        .expect("route-aware raster should render");
+
+        let routes = routes.into_inner();
+        assert_eq!(routes.span_covered_calls, 1);
+        assert_eq!(routes.span_cursor_calls, 1);
+        assert_eq!(routes.span_from_start_calls, 0);
+        assert!(routes.max_span_coverage_spans_per_call >= STROKE_SPAN_CURSOR_MIN_SPANS);
     }
 
     #[test]
@@ -19547,6 +19673,7 @@ mod tests {
                 transform,
                 options: PathRasterOptions::default(),
                 clips: &[],
+                stroke_routes: None,
             },
         )
         .expect("rectangle fill should rasterize");
@@ -24239,6 +24366,7 @@ mod tests {
             transform,
             PathRasterOptions::default(),
             &mut scratch,
+            None,
             None::<&mut fn(RasterDisplayPhase, Duration)>,
         )
         .expect("transparency groups should rasterize");
