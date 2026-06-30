@@ -879,6 +879,50 @@ Post-blend stroke profile and rejected bounded-line candidate from 2026-06-30:
   repeated line predicate scans and the protection fixtures are included from
   the start.
 
+Accepted stroke row-bucket result from 2026-06-30:
+
+- Change: strokes with at least `32` flattened segments now build a temporary
+  row-bucket index for the current raster pass. Each bucket stores only the
+  stroke lines whose conservative pixel bounds overlap that device row, so the
+  inner pixel loop avoids scanning every line segment for every candidate
+  sample. Small strokes stay on the existing direct scan to avoid allocation
+  overhead.
+- Rationale: this is the narrower spatial-index form suggested by the rejected
+  bounded-line experiment. It reduces repeated line predicate scans instead of
+  adding another check in front of the same full scan. The data structure is
+  request-local, dependency-free, and uses safe `Vec`/slice traversal only.
+- Candidate artifacts:
+  `target/performance-matrix-stroke-row-buckets-technical.json`,
+  `target/performance-matrix-stroke-row-buckets-technical-repeat.json`,
+  `target/performance-matrix-stroke-row-buckets-starter.json`, and
+  `target/performance-matrix-stroke-row-buckets-image.json`.
+- Repeat technical result against
+  `target/performance-matrix-blend-fastpath-technical-repeat-after.json`:
+  `vector-stress.pdf` p95 improved `6.378 ms` -> `5.354 ms` (~16.1%) and mean
+  `6.179 ms` -> `5.230 ms` (~15.4%). `engineering-floorplan-precision.pdf`
+  improved p95 ~6.2% and mean ~8.2%, `clipped-paths.pdf` improved p95 ~7.0%,
+  and `dashed-stroke.pdf` improved p95 ~13.1%. Protection fixtures stayed
+  neutral enough: `technical-hatch-clipping.pdf` p95 improved ~1.7% with mean
+  neutral, and `technical-repeated-symbols.pdf` was about 1-2% slower.
+- Starter protection result:
+  `vector-stress.pdf` improved p95 ~18.4% and mean ~18.5%;
+  `technical-hatch-clipping.pdf` improved p95 ~2.1%; text/browser/office/mixed
+  fixtures were neutral to better. `prepress-trim-bleed-marks.pdf` and
+  `scanned-page.pdf` had only sub-2% p95 noise.
+- Image-heavy protection result:
+  all 8 records rendered with no errors or fallback. Image fixtures were
+  neutral to better aside from `dct-image.pdf`, which moved by about -1.6% p95
+  and is below the noise threshold for this change.
+- Decision: accept. This is the first post-blend stroke-path win that moves the
+  dominant `vector-stress` fixture by more than 10% while keeping the previous
+  protection regressions out of the repeat run.
+- Validation:
+  `cargo fmt --all --check`, `git diff --check -- crates/ferrugo-render/src/lib.rs docs/plans/2026-06-29-performance-optimization-working-plan.md`,
+  `cargo check --workspace --no-default-features`,
+  `cargo test --workspace --no-default-features`, and
+  `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+  passed.
+
 ## Hardware-Aware Rust Notes
 
 Goal: use Rust's memory model and the host CPU well without prematurely

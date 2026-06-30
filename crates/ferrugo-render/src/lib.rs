@@ -4,6 +4,7 @@
 
 use std::borrow::Cow;
 use std::fmt;
+use std::ops::Range;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -111,6 +112,8 @@ pub const DEFAULT_MESH_SHADING_BYTES_LIMIT: usize = 1024 * 1024;
 
 /// Default maximum triangles accepted in one decoded mesh shading.
 pub const DEFAULT_MESH_SHADING_TRIANGLE_LIMIT: usize = 8_192;
+
+const STROKE_ROW_BUCKET_MIN_LINES: usize = 32;
 
 /// Maximum dash segments tracked in the graphics state.
 pub const MAX_STROKE_DASH_SEGMENTS: usize = 8;
@@ -6593,6 +6596,20 @@ struct LineSegment {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+struct BoundedStrokeLine {
+    line: LineSegment,
+    bounds: PixelBounds,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct StrokeRowBuckets {
+    min_y: u32,
+    rows: Vec<Range<usize>>,
+    indices: Vec<usize>,
+    lines: Vec<BoundedStrokeLine>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 struct StrokeJoin {
     previous: LineSegment,
     next: LineSegment,
@@ -10117,6 +10134,9 @@ fn stroke_path(
         return Ok(());
     };
     let prepared_joins = prepare_stroke_joins(joins, radius, state.line_join, state.miter_limit);
+    let row_buckets = (stroke_lines.len() >= STROKE_ROW_BUCKET_MIN_LINES)
+        .then(|| stroke_row_buckets(stroke_lines, radius, dimensions, bounds))
+        .flatten();
     for y in bounds.min_y..bounds.max_y {
         for x in bounds.min_x..bounds.max_x {
             let mut covered = 0;
@@ -10124,14 +10144,25 @@ fn stroke_path(
                 for sample_x in 0..samples {
                     let point = sample_point(x, y, sample_x, sample_y, samples);
                     if point_in_active_clips(point, context.clips)
-                        && (point_in_stroke(point, stroke_lines, radius, state.line_cap)
-                            || point_in_join(
-                                point,
-                                joins,
-                                &prepared_joins,
-                                radius,
-                                state.line_join,
-                            ))
+                        && (row_buckets.as_ref().map_or_else(
+                            || point_in_stroke(point, stroke_lines, radius, state.line_cap),
+                            |buckets| {
+                                point_in_row_bucketed_stroke(
+                                    point,
+                                    x,
+                                    y,
+                                    buckets,
+                                    radius,
+                                    state.line_cap,
+                                )
+                            },
+                        ) || point_in_join(
+                            point,
+                            joins,
+                            &prepared_joins,
+                            radius,
+                            state.line_join,
+                        ))
                     {
                         covered += 1;
                     }
@@ -10150,6 +10181,69 @@ fn stroke_path(
         }
     }
     Ok(())
+}
+
+fn stroke_row_buckets(
+    lines: &[LineSegment],
+    radius: f64,
+    dimensions: RasterDimensions,
+    stroke_bounds: PixelBounds,
+) -> Option<StrokeRowBuckets> {
+    let row_count = (stroke_bounds.max_y - stroke_bounds.min_y) as usize;
+    if row_count == 0 {
+        return None;
+    }
+    let mut lines_with_bounds = Vec::with_capacity(lines.len());
+    let mut per_row = vec![Vec::new(); row_count];
+    for line in lines {
+        let bounds = line_pixel_bounds(*line, radius, dimensions)
+            .and_then(|bounds| intersect_pixel_bounds(bounds, stroke_bounds));
+        let Some(bounds) = bounds else {
+            continue;
+        };
+        let line_index = lines_with_bounds.len();
+        lines_with_bounds.push(BoundedStrokeLine {
+            line: *line,
+            bounds,
+        });
+        for y in bounds.min_y..bounds.max_y {
+            per_row[(y - stroke_bounds.min_y) as usize].push(line_index);
+        }
+    }
+    if lines_with_bounds.is_empty() {
+        return None;
+    }
+    let index_count = per_row.iter().map(Vec::len).sum();
+    let mut indices = Vec::with_capacity(index_count);
+    let mut rows = Vec::with_capacity(row_count);
+    for row in per_row {
+        let start = indices.len();
+        indices.extend(row);
+        rows.push(start..indices.len());
+    }
+    Some(StrokeRowBuckets {
+        min_y: stroke_bounds.min_y,
+        rows,
+        indices,
+        lines: lines_with_bounds,
+    })
+}
+
+fn line_pixel_bounds(
+    line: LineSegment,
+    radius: f64,
+    dimensions: RasterDimensions,
+) -> Option<PixelBounds> {
+    device_pixel_bounds(
+        PathBounds {
+            min_x: line.from.x.min(line.to.x),
+            min_y: line.from.y.min(line.to.y),
+            max_x: line.from.x.max(line.to.x),
+            max_y: line.from.y.max(line.to.y),
+        },
+        dimensions,
+        radius.ceil() + 1.0,
+    )
 }
 
 fn stroke_radius_for_device_line_width(line_width: f64) -> f64 {
@@ -10466,6 +10560,48 @@ fn point_in_stroke(point: Point, lines: &[LineSegment], radius: f64, line_cap: L
             }
         }
     })
+}
+
+fn point_in_row_bucketed_stroke(
+    point: Point,
+    x: u32,
+    y: u32,
+    buckets: &StrokeRowBuckets,
+    radius: f64,
+    line_cap: LineCap,
+) -> bool {
+    let Some(row) = y
+        .checked_sub(buckets.min_y)
+        .and_then(|offset| buckets.rows.get(offset as usize))
+    else {
+        return false;
+    };
+    let radius_squared = radius * radius;
+    buckets.indices[row.clone()].iter().any(|&line_index| {
+        let bounded = buckets.lines[line_index];
+        if x < bounded.bounds.min_x || x >= bounded.bounds.max_x {
+            return false;
+        }
+        point_in_single_stroke_line(point, bounded.line, radius, radius_squared, line_cap)
+    })
+}
+
+fn point_in_single_stroke_line(
+    point: Point,
+    line: LineSegment,
+    radius: f64,
+    radius_squared: f64,
+    line_cap: LineCap,
+) -> bool {
+    match line_cap {
+        LineCap::Butt => distance_to_line_body_squared(point, line)
+            .is_some_and(|distance| distance <= radius_squared),
+        LineCap::Round => distance_to_line_segment_squared(point, line) <= radius_squared,
+        LineCap::Square => {
+            distance_to_line_body_squared(point, square_capped_line_segment(line, radius))
+                .is_some_and(|distance| distance <= radius_squared)
+        }
+    }
 }
 
 fn point_in_padded_line_bounds(point: Point, line: LineSegment, padding: f64) -> bool {
@@ -14309,6 +14445,61 @@ mod tests {
                 max_x: 19,
                 max_y: 17,
             }
+        );
+    }
+
+    #[test]
+    fn stroke_row_buckets_should_limit_lines_by_pixel_row() {
+        let dimensions = RasterDimensions::new(20, 12).expect("valid dimensions");
+        let lines = [
+            LineSegment {
+                from: Point { x: 2.5, y: 3.5 },
+                to: Point { x: 8.5, y: 3.5 },
+            },
+            LineSegment {
+                from: Point { x: 2.5, y: 9.5 },
+                to: Point { x: 8.5, y: 9.5 },
+            },
+        ];
+        let bounds = stroke_pixel_bounds(&lines, &[], 0.5, dimensions)
+            .expect("stroke bounds should overlap");
+        let buckets = stroke_row_buckets(&lines, 0.5, dimensions, bounds).expect("bucketed lines");
+        let top_point = Point { x: 4.5, y: 3.5 };
+        let bottom_point = Point { x: 4.5, y: 9.5 };
+
+        assert!(point_in_row_bucketed_stroke(
+            top_point,
+            4,
+            3,
+            &buckets,
+            0.5,
+            LineCap::Butt
+        ));
+        assert!(!point_in_row_bucketed_stroke(
+            bottom_point,
+            4,
+            3,
+            &buckets,
+            0.5,
+            LineCap::Butt
+        ));
+    }
+
+    #[test]
+    fn stroke_row_buckets_should_match_generic_stroke_predicate() {
+        let dimensions = RasterDimensions::new(20, 12).expect("valid dimensions");
+        let lines = [LineSegment {
+            from: Point { x: 2.5, y: 5.5 },
+            to: Point { x: 8.5, y: 5.5 },
+        }];
+        let bounds = stroke_pixel_bounds(&lines, &[], 0.5, dimensions)
+            .expect("stroke bounds should overlap");
+        let buckets = stroke_row_buckets(&lines, 0.5, dimensions, bounds).expect("bucketed lines");
+        let point = Point { x: 4.5, y: 5.5 };
+
+        assert_eq!(
+            point_in_row_bucketed_stroke(point, 4, 5, &buckets, 0.5, LineCap::Butt),
+            point_in_stroke(point, &lines, 0.5, LineCap::Butt)
         );
     }
 
