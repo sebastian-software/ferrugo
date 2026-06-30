@@ -5371,6 +5371,44 @@ Rejected span sample-scale candidate from 2026-06-30:
   vector track; the next accepted change needs to remove actual span or
   row-bucket work, not just replace division syntax inside the same loops.
 
+Rejected span single-pass membership candidate from 2026-06-30:
+
+- Rationale:
+  a fresh trace artifact,
+  `target/trace-vector-stress-current-work-reduction.json`, confirmed that
+  current `vector-stress.pdf` still spends visible work in the from-start span
+  path: `44` span-covered calls, `44` from-start calls, `9008` span pixels,
+  `36032` span sample points, `9008` covered pixels, and no full-coverage
+  pixels. The candidate tried to reduce actual membership work rather than
+  repeating the rejected sample-coordinate arithmetic changes.
+- Change tested locally but not kept:
+  replace the from-start span membership loop with
+  `covered_samples_in_axis_stroke_span_row`, which scans each sorted coverage
+  span row once per output pixel and counts all sample-X positions for that
+  pixel. The cursor-route threshold, row-bucket code, blend math, clipping,
+  output format, dependencies, and unsafe usage stayed unchanged.
+- Correctness checks while the candidate was present:
+  `cargo fmt --all --check`,
+  `cargo test -p ferrugo-render --no-default-features covered_samples_in_axis_stroke_span_row_should_match_membership_scan`,
+  and
+  `cargo test -p ferrugo-render --no-default-features stroke_raster_route_summary_should_count_span_from_start_work`.
+- A/B artifacts:
+  `target/benchmark-repeat-vector-stress-fresh-profile-200k.json` versus
+  `target/benchmark-repeat-vector-stress-span-single-pass-candidate-200k.json`.
+- Result:
+  rejected as below the repeated 5% acceptance floor. The focused repeat moved
+  mean `0.607 ms` -> `0.597 ms` (~1.6%) and repeat mean `raster_paths`
+  `0.514 ms` -> `0.512 ms` (~0.4%). p95 moved `0.693 ms` -> `0.639 ms`
+  (~7.8%), but the phase timing shows the structural work did not actually
+  move the dominant raster cost. Output status, dimensions, and bytes stayed
+  unchanged.
+- Decision:
+  reverted. The from-start span path is visible, but local membership-loop
+  spelling is not the next useful lever. The next vector/report attempt should
+  move to row-bucket predicate reduction, blend/write reduction backed by a
+  narrower profile, or a larger route-selection change that reduces visited
+  pixels/sample points.
+
 ## Settled Decisions
 
 - [x] `scripts/generate_performance_matrix.sh` defaults to release mode.
