@@ -5685,6 +5685,36 @@ Rejected merge presort-check candidate from 2026-06-30:
   that avoids producing duplicate/unsorted ranges in the first place, or a
   profile showing sort as a larger standalone cost.
 
+Current release profile after merge rejection from 2026-06-30:
+
+- Artifacts:
+  `target/benchmark-repeat-vector-stress-current-after-presort-reject-200k.json`
+  and `target/sample-vector-stress-current-after-presort-reject.txt`, captured
+  from the release binary on `fixtures/generated/vector-stress.pdf`,
+  `--max-edge 160`, 200,000 repetitions.
+- Timing result:
+  repeat mean `0.586 ms`, p50 `0.579 ms`, p95 `0.663 ms`, p99 `0.701 ms`,
+  repeat mean `raster_paths=0.497 ms`, output status `native_rendered`,
+  dimensions `160x120`, and output bytes `76800`. This is slightly slower
+  than the older release baseline (`0.575 ms` mean, `0.487 ms` raster paths),
+  but within the local variance seen across recent sub-millisecond repeats.
+- CPU sample:
+  top-of-stack samples were `rasterize_row_bucketed_stroke_ranges` (`1318`),
+  `blend_pixel` (`1020`), `rasterize_span_covered_stroke_ranges` (`963`),
+  `stroke_path` (`940`), `axis_stroke_raster_spans` (`486`),
+  `axis_stroke_span_for_sample_y` (`243`), `ContentTokenizer::next` (`181`),
+  `PrimitiveParser::parse_value` (`170`), `parse_number_raw` (`162`), and
+  `merge_pixel_ranges` (`143`).
+- Decision:
+  keep using release-profile-led work. The profile still points at
+  row-bucket and span-covered stroke rasterization plus blending as the only
+  large enough buckets for the next optimization. Generic sort prechecks,
+  broad sampled-blend dispatch, direct byte writes, scalar sample-coordinate
+  rewrites, and local row-copy spelling changes are exhausted for this target.
+  The next code candidate should remove actual visited row-bucket/span work or
+  change route construction for a measured subcase; otherwise collect deeper
+  line-level Instruments/Samply evidence before editing.
+
 ## Questions Closed For The Next Wave
 
 - [x] What family-specific standalone and cumulative thresholds should replace
