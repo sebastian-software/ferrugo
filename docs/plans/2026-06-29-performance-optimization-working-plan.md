@@ -1072,6 +1072,26 @@ Current profile after rejecting the axis predicate:
   likely by changing candidate-pixel/line reduction or the dense linework
   raster algorithm rather than adding another local predicate shortcut.
 
+Rejected micro candidate from 2026-06-30:
+
+- Change tested locally but not kept: compute `radius * radius` once per
+  `stroke_path` call and pass it into direct and row-bucketed stroke predicates
+  instead of recomputing it inside each sample hit test.
+- Baseline:
+  `target/performance-matrix-stroke-row-buckets-xmiss-fix-technical-repeat.json`,
+  native hot-render, `fixtures/technical-drawing-manifest.tsv`, `--max-edge
+  160`, 200 measured iterations after 10 warmups.
+- Candidate:
+  `target/performance-matrix-stroke-radius-squared-technical.json`, same
+  command shape and host.
+- Result: no fixture reached the repeated 5% p95 threshold.
+  `vector-stress.pdf` improved only ~0.4% p95 and regressed ~0.8% mean,
+  `engineering-large-transform-detail.pdf` regressed ~2.6% p95/mean, and the
+  family p95 average moved only ~0.2%.
+- Decision: reverted. The compiler and surrounding hot loop already make this
+  scalar arithmetic too small to matter. Continue with algorithmic
+  candidate-reduction or raster-loop changes, not scalar expression hoisting.
+
 ## Hardware-Aware Rust Notes
 
 Goal: use Rust's memory model and the host CPU well without prematurely
