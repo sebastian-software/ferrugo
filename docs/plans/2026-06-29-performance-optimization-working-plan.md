@@ -4357,6 +4357,40 @@ Current prepress join-bounds optimization from 2026-06-30:
   performance wave. It is narrow, local, and keeps the next work focused on
   path-raster predicates rather than allocation guesses.
 
+Current vector-stress profiling pass from 2026-06-30:
+
+- Profiling basis:
+  `target/benchmark-repeat-vector-stress-profile-run-current.json` measured
+  `fixtures/generated/vector-stress.pdf` with 120000 repetitions at
+  `--max-edge 160`: repeat mean `0.681 ms`, repeat min `0.639 ms`, repeat max
+  `6.037 ms`. Repeat phase attribution was `raster_paths` `0.592 ms`,
+  `display_list_build` `0.061 ms`, and `content_tokenize` `0.023 ms`.
+  `target/sample-vector-stress-profile-run-current.txt` again put the CPU
+  inside path rasterization, led by `stroke_path`, `blend_pixel`,
+  `rasterize_span_covered_stroke_ranges`,
+  `rasterize_row_bucketed_stroke_ranges`, `point_in_single_stroke_line`, and
+  `axis_stroke_span_for_sample_y`. The sample also showed allocator activity
+  under stroke/path span construction, but not enough by itself to justify a
+  dependency or arena rewrite.
+- Change tested locally but not kept:
+  pre-size the per-row vectors in `axis_stroke_span_rows` from the already
+  known row slice length instead of creating empty vectors and extending them.
+- A/B artifacts:
+  `target/benchmark-repeat-vector-stress-profile-run-current.json`,
+  `target/sample-vector-stress-profile-run-current.txt`, and
+  `target/benchmark-repeat-vector-stress-row-capacity-candidate-120k.json`.
+- Result:
+  rejected as noise. Repeat mean stayed `0.681 ms` -> `0.681 ms`, and
+  `raster_paths` moved only `0.592 ms` -> `0.591 ms`. This is far below the
+  5% minimum signal threshold and does not justify keeping the code change.
+- Decision:
+  reverted. Do not retry simple per-row `Vec` capacity tuning for
+  `axis_stroke_span_rows` unless a future allocation profile shows this exact
+  allocation as a larger standalone cost. The next vector-stress work should
+  stay with profile-backed stroke predicate reduction, row/span algorithm
+  changes, or a targeted allocation counter before changing allocation
+  strategy again.
+
 ## Phase 6: Benchmark Gates And Claims
 
 Goal: turn stable evidence into guardrails, not premature marketing.
