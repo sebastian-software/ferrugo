@@ -1500,6 +1500,59 @@ Accepted empty-join stroke predicate skip from 2026-06-30:
   `cargo clippy --workspace --all-targets --all-features -- -D warnings`
   passed.
 
+Accepted join-bucket stroke predicate index from 2026-06-30:
+
+- Profiling trigger:
+  `target/sample-vector-stress-profile-refresh.txt`, captured from a long
+  release `benchmark-native` run on `vector-stress.pdf`, showed `stroke_path`
+  still dominating with about `4358` symbol samples. `fill_path` was about
+  `639`, `blend_pixel` about `238`, and `source_over` about `153`. The matching
+  trace `target/trace-native-vector-stress-profile-refresh.json` reported
+  `4.477 ms` of `4.850 ms` total in `raster_paths`, with `485376`
+  row-bucket sample refs and about `95%` X-miss.
+- Change: strokes with at least `8` joins now build a conservative per-row
+  join index after the axis-span fast path declines the item. The raster loop
+  still uses the existing round-join circle and prepared bevel/miter triangle
+  predicates; the new index only skips joins whose pixel bounds cannot contain
+  the current sample.
+- Correctness guard: added focused unit tests comparing the bucketed predicate
+  against the existing `point_in_join` predicate for round and miter joins
+  across their raster bounds.
+- Candidate artifacts:
+  `target/performance-matrix-join-buckets-technical.json`,
+  `target/performance-matrix-join-buckets-technical-repeat.json`,
+  `target/performance-matrix-join-buckets-starter.json`,
+  `target/trace-native-vector-stress-join-buckets.json`, and
+  `target/trace-native-clipped-paths-join-buckets.json`.
+- Technical result against
+  `target/performance-matrix-join-skip-technical-repeat.json`:
+  `vector-stress.pdf` improved p95 `4.649 ms` -> `3.778 ms` in the repeat
+  (~18.7%) and mean `4.488 ms` -> `3.646 ms` (~18.8%). The first candidate run
+  measured a similar `~19.6%` p95/mean improvement. `clipped-paths.pdf` had one
+  first-run p95 outlier but the repeat was neutral (`0.427 ms` -> `0.430 ms`)
+  and its trace confirmed `0` stroked items, so keep it as a watch fixture
+  rather than treating it as a code-path regression.
+- Protection result:
+  `target/performance-matrix-join-buckets-starter.json` rendered all starter
+  fixtures with no fallback-required, missing-tool, not-applicable, or error
+  records. `vector-stress.pdf` improved p95 `4.696 ms` -> `3.744 ms` (~20.3%)
+  and mean `4.559 ms` -> `3.623 ms` (~20.5%). The starter matrix did not show a
+  repeated broad regression; small sub-millisecond movements remain watch
+  items.
+- Decision: accept. This is a profile-backed algorithmic reduction in join
+  predicate fanout for the current top vector fixture, with exact geometry
+  checks preserved and clean starter protection.
+- Validation:
+  `cargo fmt --all`,
+  `cargo fmt --all --check`,
+  `git diff --check -- crates/ferrugo-render/src/lib.rs docs/plans/2026-06-29-performance-optimization-working-plan.md`,
+  `cargo check -p ferrugo-render --no-default-features`,
+  `cargo test -p ferrugo-render stroke_join_buckets --no-default-features`,
+  `cargo test --workspace --no-default-features`,
+  and
+  `cargo clippy --workspace --all-targets --all-features -- -D warnings`
+  passed.
+
 ## Hardware-Aware Rust Notes
 
 Goal: use Rust's memory model and the host CPU well without prematurely

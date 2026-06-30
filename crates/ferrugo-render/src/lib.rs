@@ -115,6 +115,7 @@ pub const DEFAULT_MESH_SHADING_TRIANGLE_LIMIT: usize = 8_192;
 
 const STROKE_ROW_BUCKET_MIN_LINES: usize = 32;
 const STROKE_AXIS_SPAN_MIN_LINES: usize = 32;
+const STROKE_JOIN_BUCKET_MIN_JOINS: usize = 8;
 
 /// Maximum dash segments tracked in the graphics state.
 pub const MAX_STROKE_DASH_SEGMENTS: usize = 8;
@@ -6898,6 +6899,26 @@ struct StrokeRowBuckets {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+struct StrokeJoinBuckets {
+    min_y: u32,
+    rows: Vec<Range<usize>>,
+    indices: Vec<usize>,
+    joins: Vec<BoundedStrokeJoin>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum BoundedStrokeJoin {
+    Round {
+        join: StrokeJoin,
+        bounds: PixelBounds,
+    },
+    Prepared {
+        join: PreparedStrokeJoin,
+        bounds: PixelBounds,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq)]
 struct AxisStrokeSpans {
     min_sample_y: u32,
     samples: u32,
@@ -10471,6 +10492,18 @@ fn stroke_path(
         )?;
         return Ok(());
     }
+    let join_buckets = (joins.len() >= STROKE_JOIN_BUCKET_MIN_JOINS)
+        .then(|| {
+            stroke_join_buckets(
+                joins,
+                &prepared_joins,
+                radius,
+                state.line_join,
+                dimensions,
+                bounds,
+            )
+        })
+        .flatten();
     for y in bounds.min_y..bounds.max_y {
         for x in bounds.min_x..bounds.max_x {
             let mut covered = 0;
@@ -10491,12 +10524,26 @@ fn stroke_path(
                                 )
                             },
                         ) || (has_joins
-                            && point_in_join(
-                                point,
-                                joins,
-                                &prepared_joins,
-                                radius,
-                                state.line_join,
+                            && join_buckets.as_ref().map_or_else(
+                                || {
+                                    point_in_join(
+                                        point,
+                                        joins,
+                                        &prepared_joins,
+                                        radius,
+                                        state.line_join,
+                                    )
+                                },
+                                |buckets| {
+                                    point_in_join_buckets(
+                                        point,
+                                        x,
+                                        y,
+                                        buckets,
+                                        radius,
+                                        state.line_join,
+                                    )
+                                },
                             )))
                     {
                         covered += 1;
@@ -10668,6 +10715,122 @@ fn stroke_row_buckets(
         indices,
         lines: lines_with_bounds,
     })
+}
+
+fn stroke_join_buckets(
+    joins: &[StrokeJoin],
+    prepared_joins: &[PreparedStrokeJoin],
+    radius: f64,
+    line_join: LineJoin,
+    dimensions: RasterDimensions,
+    stroke_bounds: PixelBounds,
+) -> Option<StrokeJoinBuckets> {
+    let row_count = (stroke_bounds.max_y - stroke_bounds.min_y) as usize;
+    if row_count == 0 {
+        return None;
+    }
+    let mut bounded_joins = Vec::with_capacity(joins.len());
+    let mut per_row = vec![Vec::new(); row_count];
+    match line_join {
+        LineJoin::Round => {
+            for join in joins {
+                let Some(bounds) =
+                    round_join_pixel_bounds(*join, radius, dimensions, stroke_bounds)
+                else {
+                    continue;
+                };
+                let join_index = bounded_joins.len();
+                bounded_joins.push(BoundedStrokeJoin::Round {
+                    join: *join,
+                    bounds,
+                });
+                append_join_bucket_rows(&mut per_row, stroke_bounds.min_y, bounds, join_index);
+            }
+        }
+        LineJoin::Bevel | LineJoin::Miter => {
+            for join in prepared_joins {
+                let Some(bounds) =
+                    prepared_join_pixel_bounds(*join, line_join, dimensions, stroke_bounds)
+                else {
+                    continue;
+                };
+                let join_index = bounded_joins.len();
+                bounded_joins.push(BoundedStrokeJoin::Prepared {
+                    join: *join,
+                    bounds,
+                });
+                append_join_bucket_rows(&mut per_row, stroke_bounds.min_y, bounds, join_index);
+            }
+        }
+    }
+    if bounded_joins.is_empty() {
+        return None;
+    }
+    let index_count = per_row.iter().map(Vec::len).sum();
+    let mut indices = Vec::with_capacity(index_count);
+    let mut rows = Vec::with_capacity(row_count);
+    for row in per_row {
+        let start = indices.len();
+        indices.extend(row);
+        rows.push(start..indices.len());
+    }
+    Some(StrokeJoinBuckets {
+        min_y: stroke_bounds.min_y,
+        rows,
+        indices,
+        joins: bounded_joins,
+    })
+}
+
+fn append_join_bucket_rows(
+    per_row: &mut [Vec<usize>],
+    min_y: u32,
+    bounds: PixelBounds,
+    join_index: usize,
+) {
+    for y in bounds.min_y..bounds.max_y {
+        per_row[(y - min_y) as usize].push(join_index);
+    }
+}
+
+fn round_join_pixel_bounds(
+    join: StrokeJoin,
+    radius: f64,
+    dimensions: RasterDimensions,
+    stroke_bounds: PixelBounds,
+) -> Option<PixelBounds> {
+    device_pixel_bounds(
+        PathBounds {
+            min_x: join.point.x - radius,
+            min_y: join.point.y - radius,
+            max_x: join.point.x + radius,
+            max_y: join.point.y + radius,
+        },
+        dimensions,
+        0.0,
+    )
+    .and_then(|bounds| intersect_pixel_bounds(bounds, stroke_bounds))
+}
+
+fn prepared_join_pixel_bounds(
+    join: PreparedStrokeJoin,
+    line_join: LineJoin,
+    dimensions: RasterDimensions,
+    stroke_bounds: PixelBounds,
+) -> Option<PixelBounds> {
+    let mut bounds = None;
+    for side in join.sides {
+        let triangle = if matches!(line_join, LineJoin::Miter) {
+            side.miter.unwrap_or(side.bevel)
+        } else {
+            side.bevel
+        };
+        bounds = Some(include_point(bounds, triangle.a));
+        bounds = Some(include_point(bounds, triangle.b));
+        bounds = Some(include_point(bounds, triangle.c));
+    }
+    device_pixel_bounds(bounds?, dimensions, 0.0)
+        .and_then(|bounds| intersect_pixel_bounds(bounds, stroke_bounds))
 }
 
 fn axis_stroke_spans(
@@ -11347,6 +11510,59 @@ fn point_in_join(
                 .any(|side| point_in_join_triangle(point, side.miter.unwrap_or(side.bevel)))
         }),
     }
+}
+
+fn point_in_join_buckets(
+    point: Point,
+    x: u32,
+    y: u32,
+    buckets: &StrokeJoinBuckets,
+    radius: f64,
+    line_join: LineJoin,
+) -> bool {
+    let Some(row) = y
+        .checked_sub(buckets.min_y)
+        .and_then(|offset| buckets.rows.get(offset as usize))
+    else {
+        return false;
+    };
+    let radius_squared = radius * radius;
+    for &join_index in &buckets.indices[row.clone()] {
+        match buckets.joins[join_index] {
+            BoundedStrokeJoin::Round { join, bounds } => {
+                if x < bounds.min_x || x >= bounds.max_x {
+                    continue;
+                }
+                if distance_squared(point, join.point) <= radius_squared {
+                    return true;
+                }
+            }
+            BoundedStrokeJoin::Prepared { join, bounds } => {
+                if x < bounds.min_x || x >= bounds.max_x {
+                    continue;
+                }
+                if prepared_join_contains_point(point, join, line_join) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+fn prepared_join_contains_point(
+    point: Point,
+    join: PreparedStrokeJoin,
+    line_join: LineJoin,
+) -> bool {
+    join.sides.iter().any(|side| {
+        let triangle = if matches!(line_join, LineJoin::Miter) {
+            side.miter.unwrap_or(side.bevel)
+        } else {
+            side.bevel
+        };
+        point_in_join_triangle(point, triangle)
+    })
 }
 
 fn prepare_stroke_joins(
@@ -17643,6 +17859,118 @@ mod tests {
         let prepared = prepare_stroke_joins(&joins, 2.0, LineJoin::Bevel, 10.0);
 
         assert!(prepared.is_empty());
+    }
+
+    #[test]
+    fn stroke_join_buckets_should_match_round_join_predicate() {
+        let dimensions = RasterDimensions {
+            width: 48,
+            height: 32,
+            stride: 48 * 4,
+        };
+        let joins = [
+            StrokeJoin {
+                previous: LineSegment {
+                    from: Point { x: 2.0, y: 8.0 },
+                    to: Point { x: 8.0, y: 8.0 },
+                },
+                next: LineSegment {
+                    from: Point { x: 8.0, y: 8.0 },
+                    to: Point { x: 8.0, y: 14.0 },
+                },
+                point: Point { x: 8.0, y: 8.0 },
+            },
+            StrokeJoin {
+                previous: LineSegment {
+                    from: Point { x: 28.0, y: 10.0 },
+                    to: Point { x: 34.0, y: 10.0 },
+                },
+                next: LineSegment {
+                    from: Point { x: 34.0, y: 10.0 },
+                    to: Point { x: 34.0, y: 18.0 },
+                },
+                point: Point { x: 34.0, y: 10.0 },
+            },
+        ];
+        let bounds = PixelBounds {
+            min_x: 0,
+            min_y: 0,
+            max_x: dimensions.width,
+            max_y: dimensions.height,
+        };
+        let buckets = stroke_join_buckets(&joins, &[], 2.0, LineJoin::Round, dimensions, bounds)
+            .expect("round join buckets");
+
+        for y in bounds.min_y..bounds.max_y {
+            for x in bounds.min_x..bounds.max_x {
+                let point = Point {
+                    x: f64::from(x) + 0.5,
+                    y: f64::from(y) + 0.5,
+                };
+                assert_eq!(
+                    point_in_join(point, &joins, &[], 2.0, LineJoin::Round),
+                    point_in_join_buckets(point, x, y, &buckets, 2.0, LineJoin::Round),
+                    "round join mismatch at pixel ({x},{y})"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn stroke_join_buckets_should_match_miter_join_predicate() {
+        let dimensions = RasterDimensions {
+            width: 48,
+            height: 32,
+            stride: 48 * 4,
+        };
+        let joins = [
+            StrokeJoin {
+                previous: LineSegment {
+                    from: Point { x: 4.0, y: 8.0 },
+                    to: Point { x: 12.0, y: 8.0 },
+                },
+                next: LineSegment {
+                    from: Point { x: 12.0, y: 8.0 },
+                    to: Point { x: 12.0, y: 18.0 },
+                },
+                point: Point { x: 12.0, y: 8.0 },
+            },
+            StrokeJoin {
+                previous: LineSegment {
+                    from: Point { x: 36.0, y: 22.0 },
+                    to: Point { x: 28.0, y: 22.0 },
+                },
+                next: LineSegment {
+                    from: Point { x: 28.0, y: 22.0 },
+                    to: Point { x: 28.0, y: 12.0 },
+                },
+                point: Point { x: 28.0, y: 22.0 },
+            },
+        ];
+        let prepared = prepare_stroke_joins(&joins, 2.0, LineJoin::Miter, 10.0);
+        let bounds = PixelBounds {
+            min_x: 0,
+            min_y: 0,
+            max_x: dimensions.width,
+            max_y: dimensions.height,
+        };
+        let buckets =
+            stroke_join_buckets(&joins, &prepared, 2.0, LineJoin::Miter, dimensions, bounds)
+                .expect("miter join buckets");
+
+        for y in bounds.min_y..bounds.max_y {
+            for x in bounds.min_x..bounds.max_x {
+                let point = Point {
+                    x: f64::from(x) + 0.5,
+                    y: f64::from(y) + 0.5,
+                };
+                assert_eq!(
+                    point_in_join(point, &joins, &prepared, 2.0, LineJoin::Miter),
+                    point_in_join_buckets(point, x, y, &buckets, 2.0, LineJoin::Miter),
+                    "miter join mismatch at pixel ({x},{y})"
+                );
+            }
+        }
     }
 
     #[test]
