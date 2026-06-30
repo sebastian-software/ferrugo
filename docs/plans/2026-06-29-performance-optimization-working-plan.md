@@ -2414,6 +2414,36 @@ Accepted opaque image interior write result from 2026-06-30:
   does not solve Flate decode dominance, but it removes avoidable renderer work
   from the same image/scan family and compounds with the Gray/RGB sampler wins.
 
+Rejected stream raw-copy candidate from 2026-06-30:
+
+- Profiling trigger: after the opaque interior write win, a fresh long
+  `scanner-large-image-budget.pdf` benchmark was sampled in
+  `target/sample-scanner-large-post-interior.txt`. The remaining CPU profile
+  was dominated by `decode_image_samples`,
+  `std::io::default_read_to_end`, `flate2::read::ZlibDecoder`, and
+  `miniz_oxide::inflate`; `draw_image` was now materially smaller than the
+  Flate stack. `_platform_memmove` also remained visible in the sample.
+- Change tested locally but not kept: avoid the unconditional `raw.to_vec()`
+  in `decode_stream_bytes` for filtered streams by applying the first stream
+  filter directly to the borrowed raw byte slice, then continuing later filters
+  from owned intermediate buffers.
+- Rationale: this targeted a plausible compressed-byte copy before Flate
+  decode, not the actual miniz transfer/decompression cost.
+- A/B artifacts:
+  `/private/tmp/pdfrust-stream-copy-base/target/benchmark-native-scanner-large-stream-copy-base.json`,
+  `target/benchmark-native-scanner-large-stream-copy-candidate.json`,
+  `target/benchmark-native-scanner-large-post-interior-long.json`, and
+  `target/benchmark-native-scanner-large-skip-raw-copy.json`.
+- Result: rejected as a performance candidate. The clean base worktree measured
+  `0.244 ms` mean, while the candidate measured `0.246 ms` mean on the same
+  100000-iteration scanner benchmark. Earlier candidate-only reruns moved from
+  `0.246 ms` to `0.255 ms`, so the apparent first-run `0.252 ms` -> `0.246 ms`
+  improvement was noise.
+- Decision: keep `decode_stream_bytes` unchanged for now. The next Flate work
+  should target actual decoder cost, predictor application, or avoiding full
+  decode for downsample/crop cases rather than only removing the compressed raw
+  staging copy.
+
 Rejected image raster candidate from 2026-06-30:
 
 - Change tested locally but not kept: apply the same row-slice compositing
