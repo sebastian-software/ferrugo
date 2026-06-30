@@ -936,6 +936,23 @@ Accepted stroke row-bucket result from 2026-06-30:
   `cargo clippy --workspace --all-targets --all-features -- -D warnings`
   passed.
 
+Post-row-bucket profile from 2026-06-30:
+
+- Profile evidence:
+  `target/sample-post-row-buckets-xmiss-report-vector.txt`, captured from a
+  long native report/vector hot-render run after the corrected row-bucket scan,
+  still shows `stroke_path` as the dominant CPU target. Top-of-stack samples
+  were: `stroke_path` `5813`, `blend_pixel` `684`, `fill_path` `237`,
+  `source_over` `38`, `fill_device_rect` `26`, `draw_text_run` `7`, and
+  `flatten_path_segments` `6`.
+- Interpretation: the accepted row-bucket index reduced work, but the next
+  high-value vector block is still stroke rasterization. Flatten-once path reuse
+  and allocation tweaks are not currently supported by this CPU profile for the
+  report/vector hot set. The next code candidate should either reduce candidate
+  line checks further or change the stroke raster algorithm for dense linework,
+  with `technical-repeated-symbols`, `technical-large-coordinate-plan`, and
+  `technical-linework-dimensions` kept in the protection set from the first run.
+
 ## Hardware-Aware Rust Notes
 
 Goal: use Rust's memory model and the host CPU well without prematurely
@@ -1525,8 +1542,8 @@ of the traced render time on the report/vector candidates.
 The most likely high-value candidates are:
 
 1. device-bounds culling before raster work;
-2. simple rect and hairline fast paths;
-3. flatten-once path reuse;
+2. broader stroke raster candidate reduction for dense linework;
+3. simple rect and hairline fast paths only when they affect the heavy fixtures;
 4. clip-before-loop checks.
 
 If deeper profiler samples point elsewhere inside path rasterization, this
