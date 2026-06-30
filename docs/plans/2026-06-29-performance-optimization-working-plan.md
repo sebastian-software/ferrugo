@@ -5232,6 +5232,33 @@ Rejected sampled float blend dispatch candidate from 2026-06-30:
   without adding dependencies, unsafe code, global state, or alternate
   geometry.
 
+### Post row-bucket line metrics profile from 2026-06-30
+
+- Current post-commit artifacts:
+  `target/sample-vector-stress-after-row-bucket-metrics.txt` and
+  `target/benchmark-repeat-vector-stress-after-row-bucket-metrics-200k.json`.
+- Current focused baseline:
+  `vector-stress.pdf` repeat mean `0.579 ms`, p95 `0.637 ms`, p99 `0.713 ms`,
+  and repeat mean `raster_paths=0.491 ms`. The timing run is slightly noisier
+  than the accepted candidate repeat (`0.572 ms` mean, p95 `0.612 ms`), so use
+  repeated before/after evidence for acceptance decisions and this run mainly
+  for the next hotspot ordering.
+- CPU sample:
+  the largest flat symbols are now
+  `rasterize_row_bucketed_stroke_ranges` (`413` samples), `blend_pixel`
+  (`404`), `stroke_path` (`384`),
+  `rasterize_span_covered_stroke_ranges` (`362`),
+  `axis_stroke_raster_spans` (`213`), and `merge_pixel_ranges` (`57`).
+  `point_in_single_stroke_line` is no longer a top visible bucket after the
+  bounded-line metric route.
+- Decision:
+  use this as the next vector/report baseline. The next candidate should
+  target row-bucket raster loop structure, remaining blend/write work,
+  span-covered from-start work, or a narrower axis-span build reduction. Do
+  not repeat row-bucket metric precomputation, broad row-slice blend, sampled
+  blend dispatch, cursor-threshold lowering, joinless raster-span reuse, or
+  local row-copy variants already tested above.
+
 ## Settled Decisions
 
 - [x] `scripts/generate_performance_matrix.sh` defaults to release mode.
