@@ -4233,6 +4233,53 @@ Accepted common shading exponent ratio fast paths from 2026-06-30:
   `powf` path for common PDF Type 2 function exponents without adding a
   dependency, unsafe code, cache state, or public API surface.
 
+Rejected off-bounds axis-span skip candidate from 2026-06-30:
+
+- Profile basis:
+  after the shading ratio fast path, the current starter matrix
+  `target/performance-matrix-current-after-shading-ratio-native-hot.json`
+  still showed `vector-stress.pdf` as the top fixture at p95 `0.830 ms`.
+  The refreshed repeat baseline
+  `target/benchmark-repeat-vector-stress-current-after-shading-ratio-1000.json`
+  measured repeat mean `0.705 ms`, p95 `0.801 ms`, and `raster_paths`
+  `0.610 ms`. The CPU sample
+  `target/sample-vector-stress-current-after-shading-ratio.txt` again pointed
+  at `rasterize_span_covered_stroke_ranges`,
+  `rasterize_row_bucketed_stroke_ranges`, `blend_pixel`, and
+  `point_in_single_stroke_line`.
+- Technical-family check:
+  `target/performance-matrix-technical-current-after-shading-ratio.json`
+  showed `engineering-floorplan-precision.pdf` p95 `0.635 ms`,
+  `engineering-large-transform-detail.pdf` p95 `0.496 ms`, and
+  `technical-large-coordinate-plan.pdf` p95 `0.443 ms`. Their traces
+  (`target/trace-engineering-floorplan-current-after-shading-ratio.json`,
+  `target/trace-engineering-large-transform-current-after-shading-ratio.json`,
+  and `target/trace-technical-large-coordinate-current-after-shading-ratio.json`)
+  still showed row-bucket X-miss ratios around `95%`.
+- Change tested locally but not kept:
+  make `axis_stroke_spans` and axis-join raster span construction skip
+  off-device / off-clip lines and joins instead of rejecting the entire
+  axis-span route. The intent was to keep all-axis linework fixtures on the
+  span path when a few segments did not intersect the active stroke bounds.
+- A/B artifacts:
+  `target/performance-matrix-axis-span-skip-offbounds-candidate-technical.json`,
+  `target/benchmark-repeat-engineering-floorplan-axis-span-skip-offbounds-candidate-1000.json`,
+  `target/benchmark-repeat-technical-large-coordinate-axis-span-skip-offbounds-candidate-1000.json`,
+  and
+  `target/benchmark-repeat-vector-stress-axis-span-skip-offbounds-protection-1000.json`.
+- Result:
+  rejected by the technical protection matrix. `engineering-floorplan` p95
+  regressed `0.635 ms` -> `0.652 ms`, `engineering-large-transform-detail`
+  regressed `0.496 ms` -> `0.512 ms`, `technical-large-coordinate-plan`
+  regressed `0.443 ms` -> `0.478 ms`, and `technical-linework-dimensions`
+  regressed `0.257 ms` -> `0.290 ms`. `vector-stress` protection stayed close
+  but did not improve, moving p95 `0.768 ms` -> `0.783 ms`.
+- Decision:
+  reverted. The all-or-nothing axis-span rejection looked suspicious, but the
+  current large-linework cost is not solved by skipping off-bounds segments in
+  this builder. Future X-miss work should reduce candidate scans directly,
+  not broaden axis-span routing through this shape.
+
 Current prepress join-bounds optimization from 2026-06-30:
 
 - Profiling basis:
