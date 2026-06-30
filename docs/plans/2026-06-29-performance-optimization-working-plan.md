@@ -5072,6 +5072,36 @@ Rejected sampled float blend dispatch candidate from 2026-06-30:
   Keep the evidence, but spend the next pass on reducing actual span/sample
   work or row-bucket predicate work rather than changing sort flavor.
 
+### Rejected small span-cursor candidate from 2026-06-30
+
+- Profile basis:
+  the span-work counters showed that `vector-stress.pdf` still spends visible
+  time in span-covered rastering, while all `44` span-covered calls stay on the
+  from-start route. The current CPU sample also kept
+  `rasterize_span_covered_stroke_ranges`, `point_in_single_stroke_line`,
+  `axis_stroke_span_for_sample_y`, and `merge_pixel_ranges` visible.
+- Change tested locally but not kept:
+  add a small stack cursor route for `samples <= 4`, using fixed
+  `[Range<usize>; 4]` and cursor arrays instead of the existing from-start
+  membership helper for below-threshold span sets. This was a narrower variant
+  than the previously rejected simple cursor-threshold reduction.
+- Correctness check while the candidate was present:
+  `small_cursor_span_raster_should_match_from_start_raster` compared the new
+  route against the existing from-start route byte-for-byte, and the focused
+  `ferrugo-render` tests passed.
+- Candidate artifact:
+  `target/benchmark-repeat-vector-stress-small-cursor-candidate-20k.json`.
+- Result:
+  rejected. The focused run regressed the current canary from repeat mean
+  `0.676 ms` to `0.681 ms`, and repeat mean `raster_paths` from `0.582 ms` to
+  `0.587 ms`.
+- Decision:
+  reverted. The from-start route remains better for these small span-covered
+  calls; the stack cursor adds branch/cursor bookkeeping without reducing enough
+  membership work. Do not retry small-cursor routing unless a lower-level
+  profile isolates from-start membership scanning as a larger standalone cost
+  than the cursor setup overhead.
+
 ## Settled Decisions
 
 - [x] `scripts/generate_performance_matrix.sh` defaults to release mode.
