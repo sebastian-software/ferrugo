@@ -417,4 +417,3 @@ These are ordered by expected leverage for the current `report/vector` gap.
   lesson is the shape of the pipeline, not the exact C/C++/JavaScript code.
 - Do not publish performance claims against MuPDF/Poppler/PDFium until the
   benchmark matrix has repeated, versioned reference runs on the same host.
-

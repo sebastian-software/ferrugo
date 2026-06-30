@@ -28,8 +28,8 @@ Set `FERRUGO_PDFIUM_LIBRARY` to a local dynamic library built from the pinned
 PDFium checkout:
 
 ```sh
-export FERRUGO_PDFIUM_LIBRARY="/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib"
-export DYLD_LIBRARY_PATH="/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib"
+export FERRUGO_PDFIUM_LIBRARY="/path/to/pdfium/out/ferrugo-dylib/libpdfium.dylib"
+export DYLD_LIBRARY_PATH="/path/to/pdfium/out/ferrugo-dylib"
 ```
 
 The component dylib depends on other `@rpath` dylibs in the same output
@@ -64,7 +64,7 @@ cargo run -p ferrugo-pdfium --example smoke
 ```
 
 ```text
-initialized=true last_error=0 library=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib
+initialized=true last_error=0 library=/path/to/pdfium/out/ferrugo-dylib/libpdfium.dylib
 ```
 
 ## CLI Example

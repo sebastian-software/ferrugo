@@ -92,7 +92,7 @@ Use that workflow to:
 
 ```text
 cargo fmt --check
-git diff --check -- crates/ferrugo-cli/src/main.rs docs/milestones/0190-cross-producer-regression-bisect-workflow.md docs/milestones/README.md docs/policies/corpus-governance.md docs/policies/producer-regression-bisect-workflow.md docs/reports/cross-producer-regression-bisect-2026-06-29.md
+git diff --check -- crates/ferrugo-cli/src/main.rs docs/policies/corpus-governance.md docs/policies/producer-regression-bisect-workflow.md docs/reports/cross-producer-regression-bisect-2026-06-29.md
 cargo test -p ferrugo-cli producer_regression -- --nocapture
 cargo run -p ferrugo-cli --no-default-features -- producer-regression-report fixtures/generated --manifest fixtures/producer-compatibility-manifest.tsv --max-edge 160 --output target/producer-regression-0190-report.json
 cargo check --workspace --no-default-features

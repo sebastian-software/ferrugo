@@ -112,5 +112,5 @@ cargo run -p ferrugo-cli --no-default-features -- producer-regression-report fix
 cargo fmt --check
 cargo test --workspace --no-default-features
 cargo clippy --workspace --all-targets --all-features -- -D warnings
-git diff --check -- fixtures/cross-producer-fusion-manifest.tsv fixtures/cross-producer-fusion-matrix.tsv scripts/check_cross_producer_fusion_corpus.sh docs/corpus-taxonomy.md docs/policies/producer-regression-bisect-workflow.md docs/milestones/README.md docs/milestones/0216-cross-producer-typical-document-fusion-corpus.md docs/reports/cross-producer-fusion-corpus-2026-06-29.md
+git diff --check -- fixtures/cross-producer-fusion-manifest.tsv fixtures/cross-producer-fusion-matrix.tsv scripts/check_cross_producer_fusion_corpus.sh docs/corpus-taxonomy.md docs/policies/producer-regression-bisect-workflow.md docs/reports/cross-producer-fusion-corpus-2026-06-29.md
 ```

@@ -70,7 +70,7 @@ returns a truncated result instead of growing the output without limit.
 
 ```text
 cargo fmt --check
-git diff --check -- crates/ferrugo-native/src/lib.rs crates/ferrugo-thumbnail/src/lib.rs fixtures/text-extraction-search-manifest.tsv docs/backend/native.md docs/corpus-taxonomy.md docs/milestones/README.md docs/milestones/0186-native-text-extraction-and-search-parity-gate.md docs/reports/native-text-extraction-search-boundary-2026-06-29.md
+git diff --check -- crates/ferrugo-native/src/lib.rs crates/ferrugo-thumbnail/src/lib.rs fixtures/text-extraction-search-manifest.tsv docs/backend/native.md docs/corpus-taxonomy.md docs/reports/native-text-extraction-search-boundary-2026-06-29.md
 cargo test -p ferrugo-native extract -- --nocapture
 cargo check --workspace --no-default-features
 cargo test --workspace --no-default-features

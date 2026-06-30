@@ -230,7 +230,8 @@ low-memory benchmark both report 0 budget failures.
 
 The accessibility boundary remains explicit: tagged metadata, RoleMap, alt
 text, and reading-order structures are diagnostics inputs, not visual drawing
-commands. Full reading-order extraction remains deferred to milestone 0182.
+commands. Full reading-order extraction remains deferred to the tagged-PDF
+extraction backlog.
 
 The focused tagged visual oracle reports 1 accepted drift row and 4 blockers:
 
@@ -253,20 +254,20 @@ structure traversal.
 | `graphics.transparency` | `extgstate-luminosity-soft-mask.pdf`, `unsupported-blend-mode.pdf` | Keep typed unsupported until blend/soft-mask support has bounded raster tests. |
 | `graphics.optional-content` | `optional-content-ocmd.pdf` | Needs explicit layer membership and flattening policy before rendering. |
 | `graphics.pattern-shading` | `mesh-shading-unsupported.pdf` | Keep as vector/shading follow-up rather than fallback. |
-| `form.xfa-dynamic` | `xfa-dynamic-no-static-appearance.pdf` | Dynamic XFA stays unsupported unless a separate policy milestone changes scope. |
+| `form.xfa-dynamic` | `xfa-dynamic-no-static-appearance.pdf` | Dynamic XFA stays unsupported unless a separate policy decision changes scope. |
 
 ## Not Release Blockers By Themselves
 
 | Area | Rationale |
 | --- | --- |
 | Low-amplitude gradients and mesh drift | Current accepted-drift rows have low mean absolute error and low p95 deltas despite broad changed-pixel ratios. |
-| OCR invisible text layer drift | Visual output remains native-renderable; text extraction/search parity is a later API milestone. |
+| OCR invisible text layer drift | Visual output remains native-renderable; text extraction/search parity is later API work. |
 | Encrypted placeholder fixture | Both native and PDFium return encrypted; this is a document-security policy boundary. |
 | Dynamic XFA without static appearance | Not part of the normal server-side thumbnail rendering target unless explicitly reprioritized. |
 
 ## Backlog Use
 
-Each implementation milestone should pick one row, add or reuse a focused
-manifest where useful, and keep the native-only supported-family gate green.
+Each implementation slice should pick one row, add or reuse a focused manifest
+where useful, and keep the native-only supported-family gate green.
 Broad corpus visual improvement is measured by reducing blocker count without
 loosening thresholds.

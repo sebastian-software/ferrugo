@@ -19,7 +19,7 @@ comparison infrastructure. Each deletion item should be small and reversible.
 
 ## Delete Candidates
 
-| Candidate | Earliest milestone | Risk | Rollback |
+| Candidate | Earliest action | Risk | Rollback |
 | --- | --- | --- | --- |
 | Production docs that suggest PDFium fallback for supported families | 0120 complete | Low: docs-only cleanup. | Restore wording from this backlog/report. |
 | Any default-feature PDFium dependency edge | Immediately if found | High if missed, because it would reintroduce runtime packaging baggage. | Revert the dependency or feature change. |

@@ -248,9 +248,9 @@ fallback text. Combining marks are positioned over the previous base glyph by a
 small deterministic mark fallback. Repeated fallback rasterization reuses
 scratch capacity for expanded text atoms.
 
-This is still not full OpenType GSUB/GPOS table shaping. The current milestone
-handles PDF-exported shaped output and records typed unsupported reasons for
-cases outside that subset. See
+This is still not full OpenType GSUB/GPOS table shaping. The current native
+text support handles PDF-exported shaped output and records typed unsupported
+reasons for cases outside that subset. See
 `docs/reports/opentype-layout-feature-coverage-2026-06-25.md`.
 
 ## OCR And Invisible Text Layers
@@ -477,7 +477,7 @@ This is intentionally an RGB thumbnail approximation, not a press-proof
 overprint simulator. The current path keeps common print-oriented documents
 visible and diagnosable while leaving device-separation compositing, full CMYK
 knockout behavior, and prepress conformance for later print-production
-milestones. See `docs/reports/overprint-simulation-2026-06-25.md`.
+work. See `docs/reports/overprint-simulation-2026-06-25.md`.
 
 ## Print Imposition Thumbnails
 
@@ -597,7 +597,7 @@ code should use the native backend where the support matrix marks the document
 class as rendered and the caller accepts the documented fidelity level. When the
 native backend returns `unsupported`, callers should treat it as a typed policy
 outcome, route the document to their own review/alternate-processing workflow,
-or wait for the relevant native milestone instead of retrying through an
+or wait for the relevant native support path instead of retrying through an
 implicit PDFium path.
 
 Do not retry native `encrypted` or `malformed` errors through a silent repair

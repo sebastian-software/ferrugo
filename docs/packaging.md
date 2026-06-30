@@ -150,8 +150,8 @@ cargo test -p ferrugo-cli --features pdfium
 Then provide the local dynamic library at runtime:
 
 ```sh
-export FERRUGO_PDFIUM_LIBRARY="/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib"
-export DYLD_LIBRARY_PATH="/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib"
+export FERRUGO_PDFIUM_LIBRARY="/path/to/pdfium/out/ferrugo-dylib/libpdfium.dylib"
+export DYLD_LIBRARY_PATH="/path/to/pdfium/out/ferrugo-dylib"
 ```
 
 The PDFium-enabled CLI adds:

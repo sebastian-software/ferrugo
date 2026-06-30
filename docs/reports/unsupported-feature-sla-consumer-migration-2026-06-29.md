@@ -101,5 +101,5 @@ cargo package -p ferrugo-cli --allow-dirty --no-verify --list
 cargo fmt --check
 cargo test --workspace --no-default-features
 cargo clippy --workspace --all-targets --all-features -- -D warnings
-git diff --check -- crates/ferrugo-thumbnail/src/lib.rs docs/errors.md docs/packaging.md docs/policies/unsupported-feature-sla.md docs/guides/native-only-consumer-migration.md docs/reports/unsupported-feature-sla-consumer-migration-2026-06-29.md scripts/check_unsupported_feature_sla.sh docs/milestones/README.md docs/milestones/0219-unsupported-feature-sla-and-consumer-migration-guide.md
+git diff --check -- crates/ferrugo-thumbnail/src/lib.rs docs/errors.md docs/packaging.md docs/policies/unsupported-feature-sla.md docs/guides/native-only-consumer-migration.md docs/reports/unsupported-feature-sla-consumer-migration-2026-06-29.md scripts/check_unsupported_feature_sla.sh
 ```

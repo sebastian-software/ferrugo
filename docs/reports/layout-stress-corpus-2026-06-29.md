@@ -150,7 +150,7 @@ relaxation.
 
 ```text
 cargo fmt --check
-git diff --check -- crates/ferrugo-native/src/lib.rs scripts/generate_fixtures.py fixtures/corpus-manifest.tsv fixtures/layout-stress-manifest.tsv docs/corpus-taxonomy.md docs/milestones/0189-layout-stress-corpus-for-tables-columns-and-footnotes.md docs/milestones/README.md docs/reports/layout-stress-corpus-2026-06-29.md
+git diff --check -- crates/ferrugo-native/src/lib.rs scripts/generate_fixtures.py fixtures/corpus-manifest.tsv fixtures/layout-stress-manifest.tsv docs/corpus-taxonomy.md docs/reports/layout-stress-corpus-2026-06-29.md
 cargo test -p ferrugo-native scientific_report -- --nocapture
 cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated --manifest fixtures/layout-stress-manifest.tsv --include-family layout-stress --include-family dense-business-table --include-family spreadsheet-grid --include-family two-column --include-family footnotes --include-family page-furniture --fail-on-fallback --max-edge 160 --output target/layout-stress-0189-supported-gate.json
 cargo run -p ferrugo-cli --no-default-features -- benchmark-native fixtures/generated --manifest fixtures/layout-stress-manifest.tsv --include-family layout-stress --include-family dense-business-table --include-family spreadsheet-grid --include-family two-column --include-family footnotes --include-family page-furniture --max-edge 160 --iterations 2 --max-ms 1000 --max-output-bytes 1048576 --output target/layout-stress-0189-benchmark.json

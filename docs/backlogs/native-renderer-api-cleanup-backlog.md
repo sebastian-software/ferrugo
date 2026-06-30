@@ -14,13 +14,13 @@ as explicit SemVer decisions instead of accidental renderer churn.
 | `ferrugo-thumbnail` facade types | Stable consumer boundary | Keep backend-neutral and PDFium-free. |
 | `ferrugo-native::NativeBackend` | Stable native entry point | Keep construction, render limits, diagnostics, preview APIs, and trait impls public. |
 | `ThumbnailErrorClass::as_str()` | Stable strings | Preserve class strings for logs and baseline metadata. |
-| `ThumbnailError::UnsupportedFeature` buckets | Diagnostic boundary | Keep available, but do not make bucket names a 1.0 SLA until the typed unsupported milestone. |
+| `ThumbnailError::UnsupportedFeature` buckets | Diagnostic boundary | Keep available, but do not make bucket names a 1.0 SLA until the typed unsupported boundary is accepted. |
 | `ferrugo-pdfium` | Maintainer-only oracle | Keep optional and outside normal runtime SemVer expectations. |
-| Low-level renderer crates | Internal implementation surface | Avoid recommending direct application use before a separate API design milestone. |
+| Low-level renderer crates | Internal implementation surface | Avoid recommending direct application use before a separate API design is accepted. |
 
 ## Cleanup Candidates
 
-| Candidate | Earliest milestone | Risk | Validation |
+| Candidate | Earliest decision point | Risk | Validation |
 | --- | --- | --- | --- |
 | Decide which public enums should become `#[non_exhaustive]` before 1.0. | 0174 | Medium: affects exhaustive matches. | Public API docs build plus example migration notes. |
 | Decide whether public structs with fields need builders or `#[non_exhaustive]` replacements. | 0174 | Medium: literal construction compatibility. | Compile migration examples for `ThumbnailOptions`, metadata structs, and native limits. |

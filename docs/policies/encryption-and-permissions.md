@@ -26,6 +26,6 @@ as plain data.
 ## Future Decision Point
 
 Any password, permission, or decryption support must be designed as a separate
-milestone with explicit API ownership for password input, credential lifetime,
-and permission policy. Until then, encrypted documents fail closed with the
-stable encrypted error class.
+decision point with explicit API ownership for password input, credential
+lifetime, and permission policy. Until then, encrypted documents fail closed
+with the stable encrypted error class.

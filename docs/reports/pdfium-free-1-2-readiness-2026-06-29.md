@@ -162,7 +162,7 @@ bash scripts/check_native_only_release.sh
 bash scripts/check_fuzz_smoke.sh
 scripts/measure_serverless_profile.sh
 cargo fmt --check
-git diff --check -- scripts/check_plugin_free_distribution.sh fuzz/fuzz_targets/render_setup.rs docs/milestones/0200-pdfium-free-1-2-readiness-gate.md docs/milestones/README.md docs/reports/pdfium-free-1-2-readiness-2026-06-29.md
+git diff --check -- scripts/check_plugin_free_distribution.sh fuzz/fuzz_targets/render_setup.rs docs/reports/pdfium-free-1-2-readiness-2026-06-29.md
 cargo test --workspace --no-default-features
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 ```

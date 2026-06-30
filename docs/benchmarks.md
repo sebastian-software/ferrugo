@@ -142,8 +142,8 @@ cargo run -p ferrugo-cli -- benchmark-native fixtures/generated \
 Run the PDFium baseline with the same budgets:
 
 ```sh
-FERRUGO_PDFIUM_LIBRARY=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib/libpdfium.dylib \
-DYLD_LIBRARY_PATH=/private/tmp/ferrugo-tools/pdfium-work/pdfium/out/ferrugo-dylib \
+FERRUGO_PDFIUM_LIBRARY=/path/to/pdfium/out/ferrugo-dylib/libpdfium.dylib \
+DYLD_LIBRARY_PATH=/path/to/pdfium/out/ferrugo-dylib \
 cargo run -p ferrugo-cli --features pdfium -- benchmark-pdfium fixtures/generated \
   --manifest fixtures/corpus-manifest.tsv \
   --max-edge 160 \

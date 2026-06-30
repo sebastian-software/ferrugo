@@ -87,7 +87,7 @@ All focused tests passed locally.
 
 ```bash
 cargo fmt --check
-git diff --check -- crates/ferrugo-object/src/lib.rs docs/policies/incremental-and-hybrid-references.md docs/milestones/README.md docs/milestones/0214-incremental-parser-and-object-cache-fusion.md docs/reports/object-cache-fusion-2026-06-29.md fixtures/object-cache-fusion-manifest.tsv
+git diff --check -- crates/ferrugo-object/src/lib.rs docs/policies/incremental-and-hybrid-references.md docs/reports/object-cache-fusion-2026-06-29.md fixtures/object-cache-fusion-manifest.tsv
 cargo check --workspace --no-default-features
 cargo test --workspace --no-default-features
 cargo clippy --workspace --all-targets --all-features -- -D warnings
