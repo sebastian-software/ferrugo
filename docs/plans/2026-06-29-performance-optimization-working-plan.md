@@ -2364,6 +2364,56 @@ Accepted opaque DeviceGray image sampling result from 2026-06-30:
   because it compounds with the mobile win, keeps the protection set effectively
   neutral, and targets the same image sampling bottleneck.
 
+Accepted opaque image interior write result from 2026-06-30:
+
+- Profiling trigger: after the opaque Gray fast path, post-change traces still
+  showed `resource_decode` as the largest scanner block, but the renderer-owned
+  image work remained visible. A 10-second `sample` on
+  `scanner-large-image-budget.pdf`,
+  `target/sample-scanner-large-after-gray.txt`, showed
+  `miniz_oxide::inflate::core::transfer` as the top external decode stack
+  (`2758` top samples), while the local raster side still had `draw_image`
+  (`1269`) and `composite_image_pixel_in_row` (`560`).
+- Change: axis-aligned opaque Gray/RGB images now split fully-covered interior
+  pixels from edge pixels. Interior pixels skip per-pixel coverage calculation
+  and alpha/compositing checks and write the opaque RGBA row bytes directly.
+  Edge pixels keep the existing coverage and compositing path, preserving
+  subpixel antialiasing.
+- Scope guard: only the opaque Gray/RGB fast path uses the direct interior row
+  writer. Soft masks, ImageMask/stencil images, Indexed color, CMYK, and
+  rotated/non-axis-aligned images remain on existing paths.
+- Live A/B artifacts:
+  `/private/tmp/pdfrust-opaque-interior-base/target/performance-matrix-opaque-interior-base.json`,
+  `/private/tmp/pdfrust-opaque-interior-base/target/performance-matrix-opaque-interior-base-2.json`,
+  `target/performance-matrix-opaque-interior-candidate.json`, and
+  `target/performance-matrix-opaque-interior-candidate-2.json`. Final
+  post-Clippy-fix verification artifact:
+  `target/performance-matrix-opaque-interior-final.json`.
+- Aggregated result across the two live A/B runs:
+  `mobile-mixed-compression-scan.pdf` improved p95 `0.2155 ms` -> `0.163 ms`
+  (~24.4%) and mean `0.1975 ms` -> `0.152 ms` (~23.0%);
+  `scanner-large-image-budget.pdf` improved p95 `0.3325 ms` -> `0.269 ms`
+  (~19.1%) and mean `0.297 ms` -> `0.252 ms` (~15.2%);
+  `predictor-image.pdf` improved p95 `0.051 ms` -> `0.0345 ms` (~32.4%).
+- Protection movement: `image-heavy-repeated-xobject-report.pdf` improved p95
+  ~5.8%, `image-mask-logo.pdf` was neutral on p95, `soft-mask-image.pdf`
+  moved p95 ~1.3% slower, and `image-heavy-rotated-mask-sheet.pdf` moved p95
+  ~4.2% slower. The latter two are under the 5% noise threshold and remain
+  watch items because they do not use the opaque interior writer.
+- Final nearest-base remeasure after the Clippy cleanup confirmed the win:
+  `dct-basic.jpg.pdf` p95 `0.067 ms` -> `0.040 ms` (~40.3%),
+  `image-heavy-repeated-xobject-report.pdf` p95 `0.413 ms` -> `0.360 ms`
+  (~12.8%), `mobile-mixed-compression-scan.pdf` p95 `0.218 ms` ->
+  `0.160 ms` (~26.6%), `scanner-large-image-budget.pdf` p95 `0.333 ms` ->
+  `0.264 ms` (~20.7%), and `soft-mask-image.pdf` p95 `0.079 ms` ->
+  `0.072 ms` (~8.9%).
+- Correctness guards: existing axis-aligned image antialias coverage remained
+  unchanged, and `full_coverage_pixel_range_should_only_include_interior_pixels`
+  pins the interior-only range calculation.
+- Decision: accept as a profile-backed Phase 4 opaque image raster win. This
+  does not solve Flate decode dominance, but it removes avoidable renderer work
+  from the same image/scan family and compounds with the Gray/RGB sampler wins.
+
 Rejected image raster candidate from 2026-06-30:
 
 - Change tested locally but not kept: apply the same row-slice compositing

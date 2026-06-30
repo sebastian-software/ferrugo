@@ -12491,32 +12491,9 @@ fn draw_axis_aligned_opaque_gray_image(
     window: ImageRasterWindow,
 ) -> RasterResult<()> {
     let mut sample_cache = OpaqueGraySampleCache::default();
-    for y in window.min_y..window.max_y {
-        let y_coverage = pixel_coverage_1d(y, window.bounds.min_y, window.bounds.max_y);
-        if y_coverage <= f64::EPSILON {
-            continue;
-        }
-        let sample_y = inverse
-            .d
-            .mul_add(f64::from(y) + 0.5, inverse.f)
-            .clamp(0.0, 1.0);
-        let row = device.row_mut(y)?;
-        for x in window.min_x..window.max_x {
-            let coverage =
-                pixel_coverage_1d(x, window.bounds.min_x, window.bounds.max_x) * y_coverage;
-            if coverage <= f64::EPSILON {
-                continue;
-            }
-            let sample_x = inverse
-                .a
-                .mul_add(f64::from(x) + 0.5, inverse.e)
-                .clamp(0.0, 1.0);
-            let (sample_x, sample_y) = image_sample_coords(&image.image, sample_x, sample_y);
-            let pixel = sample_cache.sample(&image.image, sample_x, sample_y);
-            composite_image_pixel_in_row(row, x, pixel, coverage);
-        }
-    }
-    Ok(())
+    draw_axis_aligned_opaque_image(device, image, inverse, window, |image, x, y| {
+        sample_cache.sample(image, x, y)
+    })
 }
 
 fn draw_axis_aligned_opaque_rgb_image(
@@ -12526,8 +12503,37 @@ fn draw_axis_aligned_opaque_rgb_image(
     window: ImageRasterWindow,
 ) -> RasterResult<()> {
     let mut sample_cache = OpaqueRgbSampleCache::default();
+    draw_axis_aligned_opaque_image(device, image, inverse, window, |image, x, y| {
+        sample_cache.sample(image, x, y)
+    })
+}
+
+fn draw_axis_aligned_opaque_image(
+    device: &mut RasterDevice,
+    image: &ImageDisplayItem,
+    inverse: Matrix,
+    window: ImageRasterWindow,
+    mut sample: impl FnMut(&ImageXObject, u32, u32) -> Rgba,
+) -> RasterResult<()> {
+    let full_x_range = full_coverage_pixel_range(
+        window.min_x,
+        window.max_x,
+        window.bounds.min_x,
+        window.bounds.max_x,
+    );
+    let full_y_range = full_coverage_pixel_range(
+        window.min_y,
+        window.max_y,
+        window.bounds.min_y,
+        window.bounds.max_y,
+    );
     for y in window.min_y..window.max_y {
-        let y_coverage = pixel_coverage_1d(y, window.bounds.min_y, window.bounds.max_y);
+        let row_has_full_coverage = full_y_range.is_some_and(|range| range.contains(y));
+        let y_coverage = if row_has_full_coverage {
+            1.0
+        } else {
+            pixel_coverage_1d(y, window.bounds.min_y, window.bounds.max_y)
+        };
         if y_coverage <= f64::EPSILON {
             continue;
         }
@@ -12536,20 +12542,46 @@ fn draw_axis_aligned_opaque_rgb_image(
             .mul_add(f64::from(y) + 0.5, inverse.f)
             .clamp(0.0, 1.0);
         let row = device.row_mut(y)?;
-        for x in window.min_x..window.max_x {
-            let coverage =
-                pixel_coverage_1d(x, window.bounds.min_x, window.bounds.max_x) * y_coverage;
-            if coverage <= f64::EPSILON {
+        let coverage_context = OpaqueImageCoverageContext {
+            inverse,
+            sample_y,
+            y_coverage,
+            bounds: window.bounds,
+        };
+        if row_has_full_coverage {
+            if let Some(full_x_range) = full_x_range {
+                draw_opaque_coverage_image_range(
+                    row,
+                    image,
+                    coverage_context,
+                    window.min_x..full_x_range.start,
+                    &mut sample,
+                );
+                draw_opaque_full_image_range(
+                    row,
+                    image,
+                    inverse,
+                    sample_y,
+                    full_x_range.start..full_x_range.end,
+                    &mut sample,
+                );
+                draw_opaque_coverage_image_range(
+                    row,
+                    image,
+                    coverage_context,
+                    full_x_range.end..window.max_x,
+                    &mut sample,
+                );
                 continue;
             }
-            let sample_x = inverse
-                .a
-                .mul_add(f64::from(x) + 0.5, inverse.e)
-                .clamp(0.0, 1.0);
-            let (sample_x, sample_y) = image_sample_coords(&image.image, sample_x, sample_y);
-            let pixel = sample_cache.sample(&image.image, sample_x, sample_y);
-            composite_image_pixel_in_row(row, x, pixel, coverage);
         }
+        draw_opaque_coverage_image_range(
+            row,
+            image,
+            coverage_context,
+            window.min_x..window.max_x,
+            &mut sample,
+        );
     }
     Ok(())
 }
@@ -12596,6 +12628,89 @@ fn pixel_coverage_1d(pixel: u32, min: f64, max: f64) -> f64 {
         return 1.0;
     }
     overlap_1d(pixel_min, pixel_max, min, max)
+}
+
+#[derive(Debug, Clone, Copy)]
+struct OpaqueImageCoverageContext {
+    inverse: Matrix,
+    sample_y: f64,
+    y_coverage: f64,
+    bounds: PathBounds,
+}
+
+fn draw_opaque_coverage_image_range(
+    row: &mut [u8],
+    image: &ImageDisplayItem,
+    context: OpaqueImageCoverageContext,
+    x_range: std::ops::Range<u32>,
+    sample: &mut impl FnMut(&ImageXObject, u32, u32) -> Rgba,
+) {
+    for x in x_range {
+        let coverage =
+            pixel_coverage_1d(x, context.bounds.min_x, context.bounds.max_x) * context.y_coverage;
+        if coverage <= f64::EPSILON {
+            continue;
+        }
+        let sample_x = context
+            .inverse
+            .a
+            .mul_add(f64::from(x) + 0.5, context.inverse.e)
+            .clamp(0.0, 1.0);
+        let (sample_x, sample_y) = image_sample_coords(&image.image, sample_x, context.sample_y);
+        let pixel = sample(&image.image, sample_x, sample_y);
+        composite_image_pixel_in_row(row, x, pixel, coverage);
+    }
+}
+
+fn draw_opaque_full_image_range(
+    row: &mut [u8],
+    image: &ImageDisplayItem,
+    inverse: Matrix,
+    sample_y: f64,
+    x_range: std::ops::Range<u32>,
+    sample: &mut impl FnMut(&ImageXObject, u32, u32) -> Rgba,
+) {
+    for x in x_range {
+        let sample_x = inverse
+            .a
+            .mul_add(f64::from(x) + 0.5, inverse.e)
+            .clamp(0.0, 1.0);
+        let (sample_x, sample_y) = image_sample_coords(&image.image, sample_x, sample_y);
+        let pixel = sample(&image.image, sample_x, sample_y);
+        write_opaque_image_pixel_in_row(row, x, pixel);
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct FullCoveragePixelRange {
+    start: u32,
+    end: u32,
+}
+
+impl FullCoveragePixelRange {
+    const fn contains(self, value: u32) -> bool {
+        self.start <= value && value < self.end
+    }
+}
+
+fn full_coverage_pixel_range(
+    window_min: u32,
+    window_max: u32,
+    bounds_min: f64,
+    bounds_max: f64,
+) -> Option<FullCoveragePixelRange> {
+    if window_min >= window_max || !bounds_min.is_finite() || !bounds_max.is_finite() {
+        return None;
+    }
+    let start = bounds_min.ceil().max(f64::from(window_min));
+    let end = bounds_max.floor().min(f64::from(window_max));
+    if end <= start {
+        return None;
+    }
+    Some(FullCoveragePixelRange {
+        start: start as u32,
+        end: end as u32,
+    })
 }
 
 fn image_transform_is_axis_aligned(transform: Matrix) -> bool {
@@ -12883,6 +12998,12 @@ fn composite_image_pixel_in_row(row: &mut [u8], x: u32, source: Rgba, coverage: 
     let blended = source_over(source, dest, coverage);
     row[offset..offset + PixelFormat::Rgba8.bytes_per_pixel()]
         .copy_from_slice(&[blended.r, blended.g, blended.b, blended.a]);
+}
+
+fn write_opaque_image_pixel_in_row(row: &mut [u8], x: u32, source: Rgba) {
+    let offset = x as usize * PixelFormat::Rgba8.bytes_per_pixel();
+    row[offset..offset + PixelFormat::Rgba8.bytes_per_pixel()]
+        .copy_from_slice(&[source.r, source.g, source.b, 255]);
 }
 
 fn cmyk_to_rgba(cyan: u8, magenta: u8, yellow: u8, key: u8) -> Rgba {
@@ -21343,6 +21464,15 @@ mod tests {
         assert_eq!(pixel_coverage_1d(2, 2.0, 5.0), 1.0);
         assert_eq!(pixel_coverage_1d(1, 1.5, 4.0), 0.5);
         assert_eq!(pixel_coverage_1d(5, 1.5, 4.0), 0.0);
+    }
+
+    #[test]
+    fn full_coverage_pixel_range_should_only_include_interior_pixels() {
+        assert_eq!(
+            full_coverage_pixel_range(0, 6, 1.25, 4.75),
+            Some(FullCoveragePixelRange { start: 2, end: 4 })
+        );
+        assert_eq!(full_coverage_pixel_range(0, 3, 0.25, 0.75), None);
     }
 
     #[test]
