@@ -4280,6 +4280,42 @@ Rejected off-bounds axis-span skip candidate from 2026-06-30:
   this builder. Future X-miss work should reduce candidate scans directly,
   not broaden axis-span routing through this shape.
 
+Rejected sampled-blend routing candidate from 2026-06-30:
+
+- Profile basis:
+  `target/trace-technical-repeated-symbols-current-after-axis-skip-rejection.json`
+  and
+  `target/benchmark-repeat-technical-repeated-symbols-current-after-axis-skip-rejection-1000.json`
+  showed `technical-repeated-symbols.pdf` as a small-stroke workload: repeat
+  mean `0.462 ms`, p95 `0.491 ms`, with `raster_paths` `0.232 ms`, `212`
+  stroked items, `212` snapped hairline items, no row-bucket candidates, and
+  no images. This suggested the generic stroke loops might benefit from the
+  existing `SampledPixelBlend` direct-write shortcut for opaque normal
+  full-coverage pixels.
+- Change tested locally but not kept:
+  route the generic stroke fallback, row-bucket stroke ranges, active
+  row-bucket stroke ranges, simple-line stroke spans, and joined axis-stroke
+  spans through `blend_sampled_pixel` instead of manually calling
+  `blend_pixel` when `covered > 0`.
+- A/B artifacts:
+  `target/benchmark-repeat-technical-repeated-symbols-sampled-blend-routing-candidate-1000.json`,
+  `target/benchmark-repeat-vector-stress-sampled-blend-routing-candidate-1000.json`,
+  `target/benchmark-repeat-technical-hatch-sampled-blend-routing-candidate-1000.json`,
+  and
+  `target/performance-matrix-sampled-blend-routing-candidate-technical.json`.
+- Result:
+  rejected by repeat and matrix evidence. `technical-repeated-symbols` repeat
+  mean regressed `0.462 ms` -> `0.469 ms` and p95 regressed `0.491 ms` ->
+  `0.560 ms`. `vector-stress` repeat p95 regressed `0.801 ms` -> `0.848 ms`;
+  the technical matrix showed `vector-stress` p95 `0.768 ms` -> `0.959 ms`
+  and `clipped-paths` p95 `0.406 ms` -> `0.717 ms`.
+- Decision:
+  reverted. The direct-write branch is useful in the existing span-covered
+  route, but adding it to broader sampled stroke loops worsens branch behavior
+  and tail latency on important protection fixtures. Do not reintroduce this
+  shape unless a future profile isolates fully covered opaque sampled strokes
+  as a larger standalone cost.
+
 Current prepress join-bounds optimization from 2026-06-30:
 
 - Profiling basis:
