@@ -4060,6 +4060,32 @@ Rejected flat axis-span clone candidate from 2026-06-30:
   across protection fixtures. Do not reopen this local construction-only axis
   span variant unless a later allocation profile shows a larger isolated cost.
 
+Rejected full-coverage axis-span raster candidate from 2026-06-30:
+
+- Profile basis: the same post-radial CPU sample
+  `target/sample-vector-stress-post-radial.txt` showed
+  `rasterize_span_covered_stroke_ranges`, `blend_pixel`, and per-pixel stroke
+  sample checks in the remaining vector hot path. This retested the open idea
+  from the earlier sampled-blend rejection: only revisit blend-adjacent work if
+  the candidate also eliminates per-pixel sample tests for fully covered stroke
+  interiors.
+- Change tested locally but not kept: compute full-coverage pixel X ranges for
+  joinless axis-span strokes by intersecting the per-sample-row span interiors.
+  Full-coverage opaque normal pixels were written directly, while edge pixels
+  stayed on the existing sampled coverage path.
+- Result: rejected. The primary target regressed on mean:
+  `target/benchmark-repeat-vector-stress-full-span-candidate.json` measured
+  repeat mean `0.732 ms` and p95 `0.810 ms` versus the fresh baseline
+  `0.711 ms` and p95 `0.813 ms`. `prepress-trim-bleed-marks.pdf` stayed
+  effectively flat against the accepted join-bounds artifact at mean
+  `0.326 ms` -> `0.326 ms`, p95 `0.364 ms` -> `0.353 ms`.
+  `technical-hatch-clipping.pdf` moved mean `0.266 ms` -> `0.264 ms`, p95
+  `0.296 ms` -> `0.292 ms`, not enough to offset the primary regression.
+- Decision: reverted. The extra full-range intersection work costs more than
+  it saves on the current `vector-stress` shape. Reopen only with row-level
+  coverage histograms showing many wide fully-covered interiors and a cheaper
+  way to split full and edge pixels.
+
 Current prepress join-bounds optimization from 2026-06-30:
 
 - Profiling basis:
