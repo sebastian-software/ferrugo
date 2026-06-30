@@ -4086,6 +4086,29 @@ Rejected full-coverage axis-span raster candidate from 2026-06-30:
   coverage histograms showing many wide fully-covered interiors and a cheaper
   way to split full and edge pixels.
 
+Rejected flat axis-span builder candidate from 2026-06-30:
+
+- Profile basis: `target/sample-vector-stress-post-radial.txt` showed visible
+  allocator frames under `stroke_path`, including `Vec` growth around axis-span
+  construction. The candidate targeted the `axis_stroke_spans` builder, not the
+  already rejected raster-time clone/full-coverage variants.
+- Change tested locally but not kept: replace the per-sample-row
+  `Vec<Vec<AxisStrokeSpan>>` construction in `axis_stroke_spans` with one flat
+  `Vec<AxisStrokeRowSpan>`, sorted by row and `min_x`, then merged into the
+  same final `AxisStrokeSpans` shape.
+- Result: rejected. The primary target regressed:
+  `target/benchmark-repeat-vector-stress-flat-axis-spans-candidate.json`
+  measured repeat mean `0.733 ms` and p95 `0.830 ms` versus the fresh baseline
+  `0.711 ms` and p95 `0.813 ms`. `prepress-trim-bleed-marks.pdf` was neutral
+  to slightly slower on mean (`0.326 ms` -> `0.329 ms`), and
+  `technical-hatch-clipping.pdf` regressed mean `0.266 ms` -> `0.278 ms` and
+  p95 `0.296 ms` -> `0.308 ms`.
+- Decision: reverted. The single flat allocation removes many tiny row vectors,
+  but the global sort and row-tagged records cost more than they save on the
+  current vector fixtures. Reopen only with allocation counters showing row-Vec
+  growth as a larger standalone cost or with a two-pass flat builder that
+  avoids global sorting.
+
 Current prepress join-bounds optimization from 2026-06-30:
 
 - Profiling basis:
