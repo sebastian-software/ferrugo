@@ -3667,6 +3667,33 @@ Rejected exact-span full-coverage row candidate from 2026-06-30:
   full-coverage pixels dominating more heavily, or if a simpler row-fill shape
   can avoid most of the added range plumbing.
 
+Rejected borrowed row-bucket slice candidate from 2026-06-30:
+
+- Profile basis: `target/sample-vector-stress-post-exact-span.txt` still showed
+  allocator/copy-like frames around `stroke_path` and active row-bucket scans
+  after the exact-span win. The active row-bucket rasterizer still copied each
+  pre-sorted bucket row into scratch `Vec`s before scanning.
+- Change tested locally but not kept: replace `sorted_row_line_indices` and
+  `sorted_row_join_indices` scratch copies with borrowed row slices from the
+  already sorted flat bucket index.
+- Initial signal:
+  `target/benchmark-native-vector-stress-borrowed-row-slices-candidate.json`
+  appeared to move mean `0.764 ms` -> `0.714 ms`, but the matrix p95 movement
+  was small and mixed.
+- Fresh A/B artifacts:
+  `target/benchmark-native-vector-stress-borrowed-row-slices-fresh-base.json`
+  and
+  `target/benchmark-native-vector-stress-borrowed-row-slices-fresh-candidate.json`,
+  both `benchmark-native`, `fixtures/generated/vector-stress.pdf`,
+  `--max-edge 160`, 150,000 iterations.
+- Result: rejected as noise. The direct fresh A/B moved mean `0.721 ms` ->
+  `0.721 ms`. Starter matrices still rendered with no fallback or errors, but
+  the performance effect did not repeat.
+- Decision: reverted. Borrowing the sorted row slices is cleaner on paper, but
+  it does not measurably move the current hot fixture. Keep future row-bucket
+  work focused on reducing visited candidate pixels or predicate calls, not
+  local slice-copy cleanup.
+
 Repeat family phase-summary instrumentation from 2026-06-30:
 
 - Change: `benchmark-repeat-native` now aggregates record-level
