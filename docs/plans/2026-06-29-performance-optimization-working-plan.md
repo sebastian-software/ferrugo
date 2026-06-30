@@ -3132,6 +3132,32 @@ Current scanner profile after default-downsample retest from 2026-06-30:
   cases, or prove via a broader scan fixture that another phase has become
   dominant.
 
+Rejected streaming Flate downsample candidate from 2026-06-30:
+
+- Change tested locally but not kept: add a `ferrugo-object` API that decodes a
+  single Flate stream into a caller-provided writer, then use a render-side
+  row writer to materialize only nearest-neighbor target rows/columns for
+  conservative placement-aware image downsample hints.
+- Scope: the candidate stayed narrow: Flate-only, no Predictor, no Decode
+  array, no ImageMask, no DCT, no SoftMask, and only the existing
+  DeviceGray/DeviceRGB downsample-hint cases.
+- A/B artifacts:
+  `target/benchmark-native-scanner-low-memory-stream-downsample-base.json` and
+  `target/benchmark-native-scanner-low-memory-stream-downsample-candidate.json`,
+  both `benchmark-native`, `fixtures/generated/scanner-large-image-budget.pdf`,
+  `--native-profile low-memory`, `--max-edge 160`, 100,000 iterations. Candidate
+  trace artifact:
+  `target/trace-scanner-low-memory-stream-downsample-candidate.json`.
+- Result: rejected. Low-memory mean regressed `0.180 ms` -> `0.205 ms`
+  (~13.9% slower). The trace still showed `resource_images` as dominant
+  (`0.207 ms`), and final resident image bytes stayed at `18,560`, matching
+  the existing low-memory downsample result.
+- Decision: reverted. Streaming through `Write` avoided the full source output
+  vector conceptually, but the per-row writer overhead was not worth it on the
+  current scanner fixture. Reopen only with allocation high-water evidence or a
+  decoder-level design that reduces inflate work instead of just changing the
+  decoded-byte sink.
+
 Accepted shared image sample Vec result from 2026-06-30:
 
 - Profiling trigger: `target/sample-scanner-large-post-interior.txt` showed a
