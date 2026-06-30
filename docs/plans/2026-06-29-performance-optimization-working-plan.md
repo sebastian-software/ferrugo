@@ -5157,6 +5157,32 @@ Rejected sampled float blend dispatch candidate from 2026-06-30:
   change is scoped to joined axis spans where the row-Vec rebuild was visible
   in the fresh profile.
 
+### Post flat joined-axis profile from 2026-06-30
+
+- Current post-commit artifacts:
+  `target/sample-vector-stress-after-flat-join-raster.txt` and
+  `target/benchmark-repeat-vector-stress-after-flat-join-raster-200k.json`.
+- Current focused baseline:
+  `vector-stress.pdf` repeat mean `0.642 ms`, p95 `0.779 ms`, p99 `0.868 ms`,
+  and repeat mean `raster_paths=0.548 ms`. The run had one large max outlier
+  (`133.433 ms`), so use p95/p99 and repeat mean rather than max for the next
+  local decision.
+- CPU sample:
+  the largest flat symbols are now `blend_pixel` (`1015` samples),
+  `stroke_path` (`967`), `rasterize_span_covered_stroke_ranges` (`918`),
+  `rasterize_row_bucketed_stroke_ranges` (`795`),
+  `axis_stroke_raster_spans` (`559`), `point_in_single_stroke_line` (`499`),
+  and `axis_stroke_span_for_sample_y` (`227`). Allocator/free top-level samples
+  are lower than before the flat joined-axis builder, but `axis_stroke_raster_spans`
+  still has visible copy/sort/build work.
+- Decision:
+  use this as the next vector/report baseline. The next candidate should be
+  based on one of three still-visible classes: row-bucket predicate work,
+  remaining span-covered sample/blend work, or a narrower axis-span build
+  reduction. Do not repeat broad row-slice blend, sampled blend dispatch,
+  simple cursor threshold, joinless raster-span reuse, or row-copy spelling
+  variants already rejected above.
+
 ## Settled Decisions
 
 - [x] `scripts/generate_performance_matrix.sh` defaults to release mode.
