@@ -3496,6 +3496,44 @@ Accepted opaque rectangle row-fill shortcut from 2026-06-30:
   changing generic fill semantics, allocation strategy, dependency surface, or
   unsafe-code policy.
 
+Accepted tiling-pattern rectangle fill shortcut from 2026-06-30:
+
+- Profiling trigger: the broader corpus matrix
+  `target/performance-matrix-corpus-post-row-incremental-axial-current.json`
+  showed `tiling-pattern.pdf` and `uncolored-tiling-pattern.pdf` as the top two
+  rendered fixtures at p95 `1.709 ms` and `1.413 ms`. Focused repeat artifacts
+  `target/benchmark-repeat-tiling-pattern-current.json` and
+  `target/benchmark-repeat-uncolored-tiling-pattern-current.json` measured
+  repeat means `1.570 ms` and `1.304 ms`, almost entirely in `raster_paths`.
+  The traces showed one filled rectangle with a tiling pattern color and no
+  stroke or image work.
+- Change: `fill_path_with_tiling_pattern` now reuses the existing
+  center-sampled axis-aligned rectangle logic when the filled path is a rect
+  and active clips are axis-aligned rectangles. It skips per-pixel supersample
+  `point_in_path` checks for the rectangle interior, still resolves the tiling
+  pattern color per pixel, and falls back to the previous generic path for
+  fractional, non-rectangular, or non-axis-aligned cases.
+- Correctness guard: existing tiling pattern render tests continue to exercise
+  colored and uncolored pattern fills:
+  `rasterize_paths_should_repeat_tiling_pattern_fill` and
+  `rasterize_paths_should_apply_uncolored_tiling_pattern_fill_color`.
+- Focused result:
+  `target/benchmark-repeat-tiling-pattern-rect-fastpath-noinline-candidate.json`
+  improved repeat mean `1.570 ms` -> `0.648 ms`; uncolored tiling improved
+  `1.304 ms` -> `0.452 ms`.
+- Protection result:
+  `target/performance-matrix-corpus-tiling-rect-fastpath-candidate.json`
+  preserved corpus status exactly (`217` rendered, `12` fallback-required,
+  `4` errors). In that corpus matrix, `tiling-pattern.pdf` moved p95
+  `1.709 ms` -> `0.725 ms`, mean `1.592 ms` -> `0.666 ms`, and
+  `uncolored-tiling-pattern.pdf` moved p95 `1.413 ms` -> `0.533 ms`, mean
+  `1.321 ms` -> `0.471 ms`. A direct same-host starter A/B
+  (`target/performance-matrix-temp-baseline-after-tiling-check-starter.json`
+  vs `target/performance-matrix-tiling-rect-fastpath-noinline-starter.json`)
+  kept non-pattern mean movement in the `0.0%` to `3.5%` range.
+- Decision: keep. This is an algorithmic path-raster reduction for a top corpus
+  workload and keeps generic pattern fill semantics as the fallback path.
+
 Rejected row-bucket range-capacity candidate from 2026-06-30:
 
 - Profiling trigger: the fresh post-opaque-rect matrix,

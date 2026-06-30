@@ -10970,6 +10970,19 @@ fn fill_path_with_tiling_pattern(
         .matrix
         .inverse()
         .ok_or_else(|| RasterError::new(RasterErrorKind::InvalidPageBox))?;
+    if let Some(rect) = axis_aligned_rect_fill_bounds(path) {
+        if fill_axis_aligned_rect_with_tiling_pattern(
+            device,
+            rect,
+            pattern,
+            pattern_samples,
+            inverse,
+            state,
+            context,
+        )? {
+            return Ok(());
+        }
+    }
     let samples = u32::from(context.options.supersample);
     let sample_count = samples * samples;
     let dimensions = device.dimensions();
@@ -11010,6 +11023,46 @@ fn fill_path_with_tiling_pattern(
         }
     }
     Ok(())
+}
+
+#[inline(never)]
+fn fill_axis_aligned_rect_with_tiling_pattern(
+    device: &mut RasterDevice,
+    rect: PathBounds,
+    pattern: &TilingPattern,
+    pattern_samples: &[PatternSample],
+    inverse: Matrix,
+    state: GraphicsState,
+    context: PathRasterContext<'_>,
+) -> RasterResult<bool> {
+    let Some(mut bounds) = center_sampled_rect_pixel_bounds(rect, device.dimensions()) else {
+        return Ok(false);
+    };
+    let Some(clip_bounds) =
+        center_sampled_axis_aligned_clip_bounds(context.clips, device.dimensions())
+    else {
+        return Ok(false);
+    };
+    if let Some(clip_bounds) = clip_bounds {
+        let Some(intersection) = intersect_pixel_bounds(bounds, clip_bounds) else {
+            return Ok(true);
+        };
+        bounds = intersection;
+    }
+    for y in bounds.min_y..bounds.max_y {
+        for x in bounds.min_x..bounds.max_x {
+            let user = inverse.transform_point(f64::from(x) + 0.5, f64::from(y) + 0.5);
+            let Some(source) = pattern_color_at(pattern, pattern_samples, user) else {
+                continue;
+            };
+            if can_direct_write_opaque_normal(source, state.blend_mode, state.fill_alpha) {
+                device.set_pixel(x, y, source)?;
+            } else {
+                blend_pixel(device, x, y, source, state.blend_mode, state.fill_alpha)?;
+            }
+        }
+    }
+    Ok(true)
 }
 
 fn validate_pattern_tile_budget(
