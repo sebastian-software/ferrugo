@@ -2464,6 +2464,42 @@ Rejected stream raw-copy candidate from 2026-06-30:
   decode for downsample/crop cases rather than only removing the compressed raw
   staging copy.
 
+Rejected page XObject form-skip candidate from 2026-06-30:
+
+- Profiling trigger: after adding resource subphase attribution, release traces
+  showed image-heavy fixtures dominated by `resource_images`, with smaller but
+  visible `resource_forms` time on image-only pages. For example,
+  `target/trace-scanner-large-resource-subphases-release.json` reported
+  `resource_decode` `0.365 ms`, `resource_images` `0.327 ms`, and
+  `resource_forms` `0.037 ms`.
+- Change tested locally but not kept: resolve page-level image resources before
+  form resources, then skip page-level XObject names already known to be images
+  when building `FormResources`. The candidate preserved those names as known
+  non-form invocations so image `Do` operators would still be ignored by the
+  form display-list builder.
+- Rationale: this removed duplicate page-level image stream lookup and subtype
+  checks in the form-resource pass, without changing image decoding itself.
+- A/B artifacts:
+  `/private/tmp/pdfrust-xobject-form-base/target/performance-matrix-xobject-form-base.json`,
+  `target/performance-matrix-xobject-form-candidate.json`,
+  `/private/tmp/pdfrust-xobject-form-base/target/performance-matrix-xobject-form-base-repeat.json`,
+  `target/performance-matrix-xobject-form-candidate-repeat.json`,
+  `/private/tmp/pdfrust-xobject-form-base/target/performance-matrix-scanner-xobject-form-base-100.json`,
+  `target/performance-matrix-scanner-xobject-form-candidate-100.json`,
+  `/private/tmp/pdfrust-xobject-form-base/target/performance-matrix-repeated-xobject-form-base-100.json`,
+  and `target/performance-matrix-repeated-xobject-form-candidate-100.json`.
+- Result: rejected as a performance candidate. The initial 20-iteration runs
+  were noisy and only showed a plausible p95 win on some fixtures. The
+  stabilizing 100-iteration runs did not confirm it:
+  `scanner-large-image-budget.pdf` mean `0.269 ms` -> `0.266 ms` (~1.1%) and
+  p95 `0.332 ms` -> `0.320 ms` (~3.6%);
+  `image-heavy-repeated-xobject-report.pdf` mean `0.356 ms` -> `0.357 ms`
+  (~0.3% slower) and p95 `0.437 ms` -> `0.449 ms` (~2.8% slower).
+- Decision: reverted. The duplicate page-level form/image subtype check is real
+  but too small to matter versus image decode. Continue Phase 4 with
+  `resource_images` work that reduces decoded bytes, predictor work, or image
+  sample processing.
+
 Rejected image raster candidate from 2026-06-30:
 
 - Change tested locally but not kept: apply the same row-slice compositing
