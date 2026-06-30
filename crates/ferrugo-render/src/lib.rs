@@ -117,6 +117,7 @@ const STROKE_ROW_BUCKET_MIN_LINES: usize = 32;
 const STROKE_AXIS_SPAN_MIN_LINES: usize = 4;
 const STROKE_JOIN_BUCKET_MIN_JOINS: usize = 8;
 const STROKE_SIMPLE_LINE_SPAN_MIN_PIXELS: u32 = 1024;
+const STROKE_AXIS_SIMPLE_LINE_SPAN_MIN_PIXELS: u32 = 128;
 const STROKE_ROW_RANGE_MIN_BUCKET_LINES: usize = 48;
 const STROKE_ROW_ACTIVE_MIN_BUCKET_LINES: usize = 64;
 
@@ -11226,7 +11227,7 @@ fn stroke_path(
         )?;
         return Ok(());
     }
-    if stroke_lines.len() == 1 && joins.is_empty() && !is_axis_aligned_line(stroke_lines[0]) {
+    if stroke_lines.len() == 1 && joins.is_empty() {
         if let Some(spans) = simple_line_stroke_raster_spans(
             stroke_lines[0],
             radius,
@@ -11852,7 +11853,12 @@ fn simple_line_stroke_raster_spans(
     let bounds = line_pixel_bounds(line, radius, dimensions)
         .and_then(|bounds| intersect_pixel_bounds(bounds, stroke_bounds))?;
     let pixel_area = (bounds.max_x - bounds.min_x).saturating_mul(bounds.max_y - bounds.min_y);
-    if pixel_area < STROKE_SIMPLE_LINE_SPAN_MIN_PIXELS {
+    let min_pixels = if is_axis_aligned_line(line) {
+        STROKE_AXIS_SIMPLE_LINE_SPAN_MIN_PIXELS
+    } else {
+        STROKE_SIMPLE_LINE_SPAN_MIN_PIXELS
+    };
+    if pixel_area < min_pixels {
         return None;
     }
     let row_count = (stroke_bounds.max_y - stroke_bounds.min_y).checked_mul(samples)? as usize;
@@ -17526,6 +17532,36 @@ mod tests {
                 candidate_samples < total_samples,
                 "simple line spans should cull at least some samples for {line_cap:?}"
             );
+        }
+    }
+
+    #[test]
+    fn simple_line_stroke_raster_spans_should_accept_axis_aligned_lines() {
+        let dimensions = RasterDimensions::new(160, 120).expect("valid dimensions");
+        let line = LineSegment {
+            from: Point { x: 18.0, y: 40.0 },
+            to: Point { x: 144.0, y: 40.0 },
+        };
+        let radius = 0.5;
+        let bounds = stroke_pixel_bounds(&[line], &[], radius, dimensions).expect("stroke bounds");
+
+        let spans =
+            simple_line_stroke_raster_spans(line, radius, dimensions, bounds, 4, LineCap::Butt)
+                .expect("axis-aligned simple line spans");
+
+        for y in bounds.min_y..bounds.max_y {
+            for x in bounds.min_x..bounds.max_x {
+                for sample_y in 0..4 {
+                    for sample_x in 0..4 {
+                        let point = sample_point(x, y, sample_x, sample_y, 4);
+                        assert!(
+                            point_in_axis_stroke_spans(point, y, sample_y, &spans)
+                                || !point_in_stroke(point, &[line], radius, LineCap::Butt),
+                            "axis span missed stroke sample at pixel ({x},{y}) sample ({sample_x},{sample_y})"
+                        );
+                    }
+                }
+            }
         }
     }
 

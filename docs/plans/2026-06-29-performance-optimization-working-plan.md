@@ -3550,6 +3550,44 @@ Rejected row-bucket sorted-merge candidate from 2026-06-30:
   should target active candidate reduction or a range-fill shortcut that
   eliminates sample tests for fully covered stroke interiors.
 
+Accepted axis-aligned simple-line span routing from 2026-06-30:
+
+- Profiling trigger: after the row-bucket capacity and sorted-merge rejections,
+  the same `vector-stress.pdf` profile still pointed at per-sample stroke
+  coverage work rather than allocation or sorting alone. The fixture contains
+  many single-operation grid strokes such as `x 18 m x 104 l S` and
+  `18 y m 144 y l S`, which were not eligible for the simple-line span
+  rasterizer because only non-axis-aligned single lines used that route.
+- Change: single-line strokes may now use `simple_line_stroke_raster_spans`
+  regardless of axis alignment. Axis-aligned single lines get a lower pixel
+  area threshold (`128` pixels) while non-axis-aligned lines keep the existing
+  `1024` threshold. The final per-sample coverage check still goes through
+  `point_in_single_stroke_line`, so the span route only narrows candidate
+  pixels; it does not replace stroke semantics.
+- Correctness guard:
+  `simple_line_stroke_raster_spans_should_accept_axis_aligned_lines` verifies
+  that the new axis-aligned span route covers all samples that the generic
+  stroke predicate would cover for a representative long grid line.
+- A/B artifacts:
+  `target/benchmark-native-vector-stress-axis-simple-line-base.json`,
+  `target/benchmark-native-vector-stress-axis-simple-line-candidate.json`,
+  `target/benchmark-native-vector-stress-axis-simple-line-candidate-repeat.json`,
+  `target/performance-matrix-report-vector-axis-simple-line-candidate.json`,
+  and `target/performance-matrix-axis-simple-line-candidate.json`.
+- Focused result: `vector-stress.pdf` moved mean `0.856 ms` -> `0.815 ms`
+  (`~4.8%`) on the first 150,000-iteration candidate run, then `0.812 ms`
+  (`~5.1%`) on the repeat. This lands as a cumulative 5% vector-track
+  improvement, not a broad standalone claim.
+- Protection result: the report/vector matrix rendered all `4` records with no
+  fallback or errors, and the full starter matrix rendered all `11` records
+  with no fallback or errors. Compared with
+  `target/performance-matrix-current-post-rect-row.json`, the full matrix moved
+  `vector-stress.pdf` p95 `1.035 ms` -> `0.898 ms` and kept the remaining
+  fixture families rendered.
+- Decision: keep. This reduces candidate stroke samples for common
+  axis-aligned single-line grid strokes without adding dependencies, unsafe
+  code, global state, or alternate stroke geometry.
+
 Repeat family phase-summary instrumentation from 2026-06-30:
 
 - Change: `benchmark-repeat-native` now aggregates record-level
