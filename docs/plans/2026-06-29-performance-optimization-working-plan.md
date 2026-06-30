@@ -4556,6 +4556,33 @@ Profiling build profile from 2026-06-30:
   commits still need release-mode before/after benchmarks and protection-set
   checks.
 
+Stroke routing counters from 2026-06-30:
+
+- Trigger:
+  the `target/sample-prepress-cargo-profiling.txt` run from the new profiling
+  profile mapped the hottest Prepress stacks to `stroke_path` lines around
+  axis-span setup/raster and the generic stroke loop. The previous
+  one-sample span-membership candidate did not help, so the trace needed to
+  show which runtime route each stroked item actually takes.
+- Change:
+  extend `StrokeShapeSummary` and `trace-native` JSON with
+  `axis_span_routed_items`, `simple_line_span_routed_items`,
+  `simple_line_span_below_threshold_items`,
+  `simple_line_span_below_threshold_pixels`, and
+  `generic_stroke_fallback_items`. These are route-shape counters only; they do
+  not inspect rendered pixels or document contents.
+- Fresh Prepress result:
+  `target/trace-prepress-routing-counters.json` reports `20` stroked items:
+  `4` route through axis spans, `0` route through simple-line spans, and `16`
+  short single-line strokes are below the simple-line span threshold and fall
+  through to the generic loop. Their combined conservative pixel area is `912`.
+- Optimization impact:
+  do not lower `STROKE_AXIS_SIMPLE_LINE_SPAN_MIN_PIXELS` broadly; threshold `16`
+  was already rejected on technical protection fixtures. The next candidate
+  should either target the generic small-hairline loop directly or add a
+  discriminator that protects the technical fixtures that regressed in the
+  earlier threshold test.
+
 ## Phase 6: Benchmark Gates And Claims
 
 Goal: turn stable evidence into guardrails, not premature marketing.

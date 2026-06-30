@@ -1406,6 +1406,16 @@ pub struct StrokeShapeSummary {
     pub span_raster_candidate_items: usize,
     /// Flattened line count covered by plausible future span-raster candidates.
     pub span_raster_candidate_lines: usize,
+    /// Number of stroked items expected to route through axis-span rasterization.
+    pub axis_span_routed_items: usize,
+    /// Number of single-line stroked items expected to route through simple-line spans.
+    pub simple_line_span_routed_items: usize,
+    /// Number of single-line stroked items below the simple-line span threshold.
+    pub simple_line_span_below_threshold_items: usize,
+    /// Pixel area covered by single-line stroked items below the span threshold.
+    pub simple_line_span_below_threshold_pixels: usize,
+    /// Number of stroked items expected to fall through to the generic stroke loop.
+    pub generic_stroke_fallback_items: usize,
     /// Total row-index references a row-bucket build would create.
     pub row_index_refs: usize,
     /// Estimated row-bucket line checks before X-bounds filtering.
@@ -1439,6 +1449,12 @@ impl StrokeShapeSummary {
         self.joinless_axis_aligned_items += other.joinless_axis_aligned_items;
         self.span_raster_candidate_items += other.span_raster_candidate_items;
         self.span_raster_candidate_lines += other.span_raster_candidate_lines;
+        self.axis_span_routed_items += other.axis_span_routed_items;
+        self.simple_line_span_routed_items += other.simple_line_span_routed_items;
+        self.simple_line_span_below_threshold_items += other.simple_line_span_below_threshold_items;
+        self.simple_line_span_below_threshold_pixels +=
+            other.simple_line_span_below_threshold_pixels;
+        self.generic_stroke_fallback_items += other.generic_stroke_fallback_items;
         self.row_index_refs += other.row_index_refs;
         self.row_bucket_sample_refs += other.row_bucket_sample_refs;
         self.row_bucket_sample_x_hits += other.row_bucket_sample_x_hits;
@@ -5504,6 +5520,37 @@ fn stroke_shape_summary_for_path(
     let all_axis_aligned = !lines.is_empty() && lines.iter().copied().all(is_axis_aligned_line);
     let joinless_axis_aligned = all_axis_aligned && joins.is_empty();
     let span_raster_candidate = snap_hairline && joinless_axis_aligned;
+    let axis_span_routed =
+        all_axis_aligned && (lines.len() >= STROKE_AXIS_SPAN_MIN_LINES || !joins.is_empty());
+    let row_bucket_candidate = lines.len() >= STROKE_ROW_BUCKET_MIN_LINES;
+    let stroke_bounds = stroke_pixel_bounds(lines, joins, radius, transform.dimensions);
+    let simple_line_pixel_area = if !axis_span_routed && lines.len() == 1 && joins.is_empty() {
+        line_pixel_bounds(lines[0], radius, transform.dimensions)
+            .and_then(|bounds| {
+                stroke_bounds.and_then(|stroke| intersect_pixel_bounds(bounds, stroke))
+            })
+            .map(|bounds| {
+                (bounds.max_x - bounds.min_x).saturating_mul(bounds.max_y - bounds.min_y) as usize
+            })
+            .unwrap_or_default()
+    } else {
+        0
+    };
+    let simple_line_min_pixels = if !axis_span_routed && lines.len() == 1 && joins.is_empty() {
+        if all_axis_aligned {
+            STROKE_AXIS_SIMPLE_LINE_SPAN_MIN_PIXELS
+        } else {
+            STROKE_SIMPLE_LINE_SPAN_MIN_PIXELS
+        }
+    } else {
+        0
+    } as usize;
+    let simple_line_span_routed =
+        simple_line_pixel_area > 0 && simple_line_pixel_area >= simple_line_min_pixels;
+    let simple_line_span_below_threshold =
+        simple_line_pixel_area > 0 && simple_line_pixel_area < simple_line_min_pixels;
+    let generic_stroke_fallback =
+        !axis_span_routed && !simple_line_span_routed && !row_bucket_candidate;
     let mut summary = StrokeShapeSummary {
         stroked_items: 1,
         dashed_items: usize::from(dashed),
@@ -5517,15 +5564,22 @@ fn stroke_shape_summary_for_path(
         } else {
             0
         },
+        axis_span_routed_items: usize::from(axis_span_routed),
+        simple_line_span_routed_items: usize::from(simple_line_span_routed),
+        simple_line_span_below_threshold_items: usize::from(simple_line_span_below_threshold),
+        simple_line_span_below_threshold_pixels: if simple_line_span_below_threshold {
+            simple_line_pixel_area
+        } else {
+            0
+        },
+        generic_stroke_fallback_items: usize::from(generic_stroke_fallback),
         max_lines_per_item: lines.len(),
         ..StrokeShapeSummary::default()
     };
     summary.line_count_buckets.add_line_count(lines.len());
-    let row_bucket_candidate = lines.len() >= STROKE_ROW_BUCKET_MIN_LINES;
     if row_bucket_candidate {
         summary.row_bucket_candidate_items = 1;
     }
-    let stroke_bounds = stroke_pixel_bounds(lines, joins, radius, transform.dimensions);
     let stroke_width = stroke_bounds
         .map(|bounds| (bounds.max_x - bounds.min_x) as usize)
         .unwrap_or_default();
@@ -18037,11 +18091,55 @@ mod tests {
         assert_eq!(summary.axis_aligned_items, 1);
         assert_eq!(summary.joinless_axis_aligned_items, 1);
         assert_eq!(summary.span_raster_candidate_items, 0);
+        assert_eq!(summary.axis_span_routed_items, 1);
+        assert_eq!(summary.simple_line_span_routed_items, 0);
+        assert_eq!(summary.generic_stroke_fallback_items, 0);
         assert_eq!(summary.row_bucket_sample_refs, 0);
         assert_eq!(summary.row_bucket_sample_x_hits, 0);
         assert_eq!(summary.row_bucket_sample_x_misses, 0);
         assert_eq!(summary.line_count_buckets.lt_32, 1);
         assert_eq!(summary.pixel_x_span_buckets.le_16, 10);
+    }
+
+    #[test]
+    fn stroke_shape_summary_should_count_short_simple_line_fallbacks() {
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 100.0,
+                    max_y: 100.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            100,
+        )
+        .expect("valid page transform");
+        let display_list = DisplayList::from_items(vec![DisplayItem::Path(PathDisplayItem {
+            segments: vec![
+                PathSegment::MoveTo(Point { x: 10.0, y: 10.0 }),
+                PathSegment::LineTo(Point { x: 20.0, y: 10.0 }),
+            ],
+            paint: PaintMode::Stroke,
+            state: GraphicsState::default(),
+            fill_pattern: None,
+        })]);
+
+        let summary = display_list_stroke_shape_summary(
+            &display_list,
+            transform,
+            PathRasterOptions::default(),
+        )
+        .expect("stroke shape summary should build");
+
+        assert_eq!(summary.stroked_items, 1);
+        assert_eq!(summary.axis_span_routed_items, 0);
+        assert_eq!(summary.simple_line_span_routed_items, 0);
+        assert_eq!(summary.simple_line_span_below_threshold_items, 1);
+        assert_eq!(summary.simple_line_span_below_threshold_pixels, 56);
+        assert_eq!(summary.generic_stroke_fallback_items, 1);
     }
 
     #[test]
