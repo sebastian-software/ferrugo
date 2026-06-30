@@ -5871,35 +5871,87 @@ fn rasterize_radial_shading(
         return Ok(());
     }
     let dimensions = device.dimensions();
+    let center_distance = (start_center.x - end_center.x).hypot(start_center.y - end_center.y);
+    let start_color = device_color_to_rgba(shading.start_color);
+    let end_color = device_color_to_rgba(shading.end_color);
+    let linear_exponent = (shading.exponent - 1.0).abs() <= f64::EPSILON;
     for y in 0..dimensions.height {
+        let sample_y = f64::from(y) + 0.5;
+        let dy = sample_y - end_center.y;
+        if matches!(state.blend_mode, BlendMode::Normal) {
+            let row = device.row_mut(y)?;
+            for x in 0..dimensions.width {
+                let sample_x = f64::from(x) + 0.5;
+                let dx = sample_x - end_center.x;
+                let distance = dx.hypot(dy);
+                let Some(t) = clamp_shading_t(
+                    (distance + center_distance - start_radius) / radius_delta,
+                    shading.extend_start,
+                    shading.extend_end,
+                ) else {
+                    continue;
+                };
+                let source = sample_shading_color_from_rgba(
+                    start_color,
+                    end_color,
+                    shading.exponent,
+                    linear_exponent,
+                    t,
+                );
+                write_opaque_image_pixel_in_row(row, x, source);
+            }
+            continue;
+        }
         for x in 0..dimensions.width {
             let sample_x = f64::from(x) + 0.5;
-            let sample_y = f64::from(y) + 0.5;
             let dx = sample_x - end_center.x;
-            let dy = sample_y - end_center.y;
             let distance = dx.hypot(dy);
-            let center_distance =
-                (start_center.x - end_center.x).hypot(start_center.y - end_center.y);
-            let mut t = (distance + center_distance - start_radius) / radius_delta;
-            if t < 0.0 {
-                if !shading.extend_start {
-                    continue;
-                }
-                t = 0.0;
-            } else if t > 1.0 {
-                if !shading.extend_end {
-                    continue;
-                }
-                t = 1.0;
-            }
-            let source = sample_radial_color(shading, t);
+            let Some(t) = clamp_shading_t(
+                (distance + center_distance - start_radius) / radius_delta,
+                shading.extend_start,
+                shading.extend_end,
+            ) else {
+                continue;
+            };
+            let source = sample_shading_color_from_rgba(
+                start_color,
+                end_color,
+                shading.exponent,
+                linear_exponent,
+                t,
+            );
             blend_pixel(device, x, y, source, state.blend_mode, 1.0)?;
         }
     }
     Ok(())
 }
 
+fn clamp_shading_t(mut t: f64, extend_start: bool, extend_end: bool) -> Option<f64> {
+    if t < 0.0 {
+        if !extend_start {
+            return None;
+        }
+        t = 0.0;
+    } else if t > 1.0 {
+        if !extend_end {
+            return None;
+        }
+        t = 1.0;
+    }
+    Some(t)
+}
+
 fn sample_axial_color_from_rgba(
+    start: Rgba,
+    end: Rgba,
+    exponent: f64,
+    linear_exponent: bool,
+    t: f64,
+) -> Rgba {
+    sample_shading_color_from_rgba(start, end, exponent, linear_exponent, t)
+}
+
+fn sample_shading_color_from_rgba(
     start: Rgba,
     end: Rgba,
     exponent: f64,
@@ -5916,16 +5968,15 @@ fn sample_axial_color_from_rgba(
     }
 }
 
+#[cfg(test)]
 fn sample_radial_color(shading: RadialShading, t: f64) -> Rgba {
-    let ratio = t.clamp(0.0, 1.0).powf(shading.exponent);
-    let start = device_color_to_rgba(shading.start_color);
-    let end = device_color_to_rgba(shading.end_color);
-    Rgba {
-        r: interpolate_channel(start.r, end.r, ratio),
-        g: interpolate_channel(start.g, end.g, ratio),
-        b: interpolate_channel(start.b, end.b, ratio),
-        a: 255,
-    }
+    sample_shading_color_from_rgba(
+        device_color_to_rgba(shading.start_color),
+        device_color_to_rgba(shading.end_color),
+        shading.exponent,
+        (shading.exponent - 1.0).abs() <= f64::EPSILON,
+        t,
+    )
 }
 
 fn rasterize_mesh_shading(

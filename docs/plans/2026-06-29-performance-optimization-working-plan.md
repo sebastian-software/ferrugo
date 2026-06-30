@@ -3833,6 +3833,37 @@ Accepted row-incremental axial shading projection from 2026-06-30:
   axial shading bottleneck, with no dependency, unsafe code, cache, or visual
   behavior change.
 
+Accepted radial shading raster fast path from 2026-06-30:
+
+- Profile basis: after the row-incremental axial shading work, the focused
+  radial fixture `fixtures/generated/radial-gradient.pdf` measured repeat mean
+  `0.925 ms`; `trace-native` reported one shading operation, no text or image
+  work, and `raster_paths` at `0.933 ms` of `1.036 ms` total. The target was
+  therefore radial shading rasterization.
+- Change: radial shading now computes center distance, start/end `Rgba`
+  colors, and the linear-exponent flag once per shading item. The row loop
+  hoists the `y` sample and delta, uses the shared shading interpolation
+  helper, and writes opaque `BlendMode::Normal` pixels directly through the
+  raster row API. Non-normal blend modes still use `blend_pixel`.
+- Correctness guard:
+  `radial_shading_sampling_should_interpolate_colors` continues to cover radial
+  interpolation through a test-only wrapper around the shared color sampler.
+- Focused result:
+  `target/benchmark-repeat-radial-gradient-fastpath-candidate.json` improved
+  repeat mean `0.925 ms` -> `0.527 ms` and p95 `0.997 ms` -> `0.558 ms`.
+  The matching trace
+  `target/trace-radial-gradient-fastpath-candidate.json` moved `raster_paths`
+  `0.933 ms` -> `0.518 ms`.
+- Protection result:
+  `target/benchmark-repeat-slide-radial-fastpath-candidate.json` kept the
+  axial slide fixture within noise after the previous shading optimizations:
+  repeat mean `0.244 ms` -> `0.252 ms`, p95 `0.264 ms` -> `0.270 ms`.
+  `target/benchmark-repeat-vector-stress-radial-fastpath-candidate.json` stayed
+  neutral on p95 (`0.798 ms` -> `0.796 ms`) with no errors.
+- Decision: keep. This is a profile-backed scalar raster fast path with a
+  large isolated radial-gradient win and no dependency, unsafe code, cache, or
+  clipping/blend behavior change for the supported normal opaque path.
+
 Rejected prepared row-bucket line-metrics candidate from 2026-06-30:
 
 - Profile basis: after the axial-shading fast path,
