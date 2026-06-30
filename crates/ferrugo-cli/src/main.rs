@@ -92,7 +92,7 @@ fn render_direct_command(args: &[OsString]) -> Result<(), CliError> {
     #[cfg(not(feature = "pdfium"))]
     {
         let _ = args;
-        return Err(pdfium_feature_disabled());
+        Err(pdfium_feature_disabled())
     }
 
     #[cfg(feature = "pdfium")]
@@ -105,7 +105,7 @@ fn render_worker_command(args: &[OsString]) -> Result<(), CliError> {
     #[cfg(not(feature = "pdfium"))]
     {
         let _ = args;
-        return Err(pdfium_feature_disabled());
+        Err(pdfium_feature_disabled())
     }
 
     #[cfg(feature = "pdfium")]
@@ -277,7 +277,7 @@ fn render_isolated_command(args: &[OsString]) -> Result<(), CliError> {
     #[cfg(not(feature = "pdfium"))]
     {
         let _ = args;
-        return Err(pdfium_feature_disabled());
+        Err(pdfium_feature_disabled())
     }
 
     #[cfg(feature = "pdfium")]
@@ -296,7 +296,7 @@ fn compare_metadata_command(args: &[OsString]) -> Result<(), CliError> {
     #[cfg(not(feature = "pdfium"))]
     {
         let _ = args;
-        return Err(pdfium_feature_disabled());
+        Err(pdfium_feature_disabled())
     }
 
     #[cfg(feature = "pdfium")]
@@ -654,7 +654,7 @@ fn benchmark_pdfium_command(args: &[OsString]) -> Result<(), CliError> {
     #[cfg(not(feature = "pdfium"))]
     {
         let _ = args;
-        return Err(pdfium_feature_disabled());
+        Err(pdfium_feature_disabled())
     }
 
     #[cfg(feature = "pdfium")]
@@ -1355,7 +1355,7 @@ fn visual_diff_command(args: &[OsString]) -> Result<(), CliError> {
     #[cfg(not(feature = "pdfium"))]
     {
         let _ = args;
-        return Err(pdfium_feature_disabled());
+        Err(pdfium_feature_disabled())
     }
 
     #[cfg(feature = "pdfium")]
@@ -8732,7 +8732,20 @@ fn trace_stroke_raster_route_summary_json(
                 "\"span_coverage_spans\":{},",
                 "\"max_span_coverage_spans_per_call\":{},",
                 "\"span_raster_spans\":{},",
-                "\"max_span_raster_spans_per_call\":{}",
+                "\"max_span_raster_spans_per_call\":{},",
+                "\"row_bucket_range_calls\":{},",
+                "\"row_bucket_active_range_calls\":{},",
+                "\"row_bucket_rows\":{},",
+                "\"row_bucket_x_ranges\":{},",
+                "\"row_bucket_pixels\":{},",
+                "\"row_bucket_sample_points\":{},",
+                "\"row_bucket_line_candidates\":{},",
+                "\"row_bucket_line_x_hits\":{},",
+                "\"row_bucket_line_hits\":{},",
+                "\"row_bucket_join_candidates\":{},",
+                "\"row_bucket_join_x_hits\":{},",
+                "\"row_bucket_join_hits\":{},",
+                "\"row_bucket_covered_pixels\":{}",
                 "}}"
             ),
             summary.span_covered_calls,
@@ -8742,6 +8755,19 @@ fn trace_stroke_raster_route_summary_json(
             summary.max_span_coverage_spans_per_call,
             summary.span_raster_spans,
             summary.max_span_raster_spans_per_call,
+            summary.row_bucket_range_calls,
+            summary.row_bucket_active_range_calls,
+            summary.row_bucket_rows,
+            summary.row_bucket_x_ranges,
+            summary.row_bucket_pixels,
+            summary.row_bucket_sample_points,
+            summary.row_bucket_line_candidates,
+            summary.row_bucket_line_x_hits,
+            summary.row_bucket_line_hits,
+            summary.row_bucket_join_candidates,
+            summary.row_bucket_join_x_hits,
+            summary.row_bucket_join_hits,
+            summary.row_bucket_covered_pixels,
         ),
         Err(error) => format!(
             "{{\"status\":\"error\",\"class\":{},\"bucket\":{}}}",
@@ -11747,6 +11773,10 @@ mod tests {
         assert!(json.contains("\"span_cursor_calls\""));
         assert!(json.contains("\"span_from_start_calls\""));
         assert!(json.contains("\"max_span_coverage_spans_per_call\""));
+        assert!(json.contains("\"row_bucket_range_calls\""));
+        assert!(json.contains("\"row_bucket_sample_points\""));
+        assert!(json.contains("\"row_bucket_line_candidates\""));
+        assert!(json.contains("\"row_bucket_covered_pixels\""));
         assert!(json.contains("\"image_resource_summary\""));
         assert!(json.contains("\"encoded_bytes\""));
         assert!(json.contains("\"resident_bytes\""));

@@ -4896,6 +4896,31 @@ The most likely high-value candidates are:
 If deeper profiler samples point elsewhere inside path rasterization, this
 section should be edited before code changes start.
 
+Row-bucket predicate runtime counters from 2026-06-30:
+
+- Change: `trace-native` stroke raster route summaries now include runtime
+  counters for row-bucket range calls, active-row range calls, rows, merged
+  X-ranges, visited pixels, visited sample points, line candidate checks,
+  line X hits, line geometry hits, join candidate checks, join X hits, join
+  geometry hits, and covered pixels. The counters are only collected through
+  the trace route; normal render and benchmark paths keep the existing
+  non-counting hot loops.
+- Smoke artifact:
+  `target/trace-vector-stress-row-predicate-counters.json`, generated with
+  native `trace-native`, `fixtures/generated/vector-stress.pdf`, `--max-edge
+  160`.
+- Current `vector-stress.pdf` trace signal: `2` row-bucket range calls, both
+  active-row calls, `56` visited rows, `296` merged X-ranges, `3324` visited
+  pixels, `13296` visited sample points, `21822` line candidate checks,
+  `21822` line X hits, `3424` line geometry hits, `1096` join candidate checks,
+  `1096` join X hits, `0` join hits, and `1126` covered pixels.
+- Interpretation: after the accepted row-bucket X-range and active-candidate
+  work, this fixture is no longer dominated by broad X misses in the traced
+  active path. The next vector attempt should focus on reducing line predicate
+  work inside visited ranges, span/coverage loop cost, or blend/write cost.
+  Join-specific optimization is not supported by this trace because the current
+  target pays join checks but records no join coverage hits.
+
 ## Settled Decisions
 
 - [x] `scripts/generate_performance_matrix.sh` defaults to release mode.

@@ -1530,6 +1530,32 @@ pub struct StrokeRasterRouteSummary {
     pub span_raster_spans: usize,
     /// Maximum raster spans seen by one span-covered raster call.
     pub max_span_raster_spans_per_call: usize,
+    /// Number of row-bucket range raster calls.
+    pub row_bucket_range_calls: usize,
+    /// Number of row-bucket range calls that used active X candidates.
+    pub row_bucket_active_range_calls: usize,
+    /// Raster rows visited by row-bucket range calls.
+    pub row_bucket_rows: usize,
+    /// Merged X ranges visited by row-bucket range calls.
+    pub row_bucket_x_ranges: usize,
+    /// Pixels visited after row-bucket range merging.
+    pub row_bucket_pixels: usize,
+    /// Supersample points tested inside row-bucket ranges.
+    pub row_bucket_sample_points: usize,
+    /// Line candidates considered by row-bucket stroke predicates.
+    pub row_bucket_line_candidates: usize,
+    /// Line candidates whose X bounds contained the pixel.
+    pub row_bucket_line_x_hits: usize,
+    /// Line candidates that covered the sample point.
+    pub row_bucket_line_hits: usize,
+    /// Join candidates considered by row-bucket join predicates.
+    pub row_bucket_join_candidates: usize,
+    /// Join candidates whose X bounds contained the pixel.
+    pub row_bucket_join_x_hits: usize,
+    /// Join candidates that covered the sample point.
+    pub row_bucket_join_hits: usize,
+    /// Pixels with at least one covered sample in row-bucket range calls.
+    pub row_bucket_covered_pixels: usize,
 }
 
 impl StrokeRasterRouteSummary {
@@ -1546,6 +1572,55 @@ impl StrokeRasterRouteSummary {
         self.span_raster_spans = self.span_raster_spans.saturating_add(raster_spans);
         self.max_span_raster_spans_per_call = self.max_span_raster_spans_per_call.max(raster_spans);
     }
+
+    fn record_row_bucket_runtime(&mut self, stats: StrokeRowBucketRuntimeStats) {
+        self.row_bucket_range_calls = self
+            .row_bucket_range_calls
+            .saturating_add(stats.range_calls);
+        self.row_bucket_active_range_calls = self
+            .row_bucket_active_range_calls
+            .saturating_add(stats.active_range_calls);
+        self.row_bucket_rows = self.row_bucket_rows.saturating_add(stats.rows);
+        self.row_bucket_x_ranges = self.row_bucket_x_ranges.saturating_add(stats.x_ranges);
+        self.row_bucket_pixels = self.row_bucket_pixels.saturating_add(stats.pixels);
+        self.row_bucket_sample_points = self
+            .row_bucket_sample_points
+            .saturating_add(stats.sample_points);
+        self.row_bucket_line_candidates = self
+            .row_bucket_line_candidates
+            .saturating_add(stats.line_candidates);
+        self.row_bucket_line_x_hits = self
+            .row_bucket_line_x_hits
+            .saturating_add(stats.line_x_hits);
+        self.row_bucket_line_hits = self.row_bucket_line_hits.saturating_add(stats.line_hits);
+        self.row_bucket_join_candidates = self
+            .row_bucket_join_candidates
+            .saturating_add(stats.join_candidates);
+        self.row_bucket_join_x_hits = self
+            .row_bucket_join_x_hits
+            .saturating_add(stats.join_x_hits);
+        self.row_bucket_join_hits = self.row_bucket_join_hits.saturating_add(stats.join_hits);
+        self.row_bucket_covered_pixels = self
+            .row_bucket_covered_pixels
+            .saturating_add(stats.covered_pixels);
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct StrokeRowBucketRuntimeStats {
+    range_calls: usize,
+    active_range_calls: usize,
+    rows: usize,
+    x_ranges: usize,
+    pixels: usize,
+    sample_points: usize,
+    line_candidates: usize,
+    line_x_hits: usize,
+    line_hits: usize,
+    join_candidates: usize,
+    join_x_hits: usize,
+    join_hits: usize,
+    covered_pixels: usize,
 }
 
 /// Stroked item counts by flattened line count.
@@ -11765,6 +11840,36 @@ fn rasterize_row_bucketed_stroke_ranges(
     source: Rgba,
     skip_clip_checks: bool,
 ) -> RasterResult<()> {
+    if let Some(stroke_routes) = context.stroke_routes {
+        if buckets.lines.len() >= STROKE_ROW_ACTIVE_MIN_BUCKET_LINES {
+            return rasterize_active_row_bucketed_stroke_ranges_traced(
+                device,
+                buckets,
+                join_buckets,
+                bounds,
+                state,
+                context,
+                samples,
+                sample_count,
+                source,
+                skip_clip_checks,
+                stroke_routes,
+            );
+        }
+        return rasterize_row_bucketed_stroke_ranges_traced(
+            device,
+            buckets,
+            join_buckets,
+            bounds,
+            state,
+            context,
+            samples,
+            sample_count,
+            source,
+            skip_clip_checks,
+            stroke_routes,
+        );
+    }
     if buckets.lines.len() >= STROKE_ROW_ACTIVE_MIN_BUCKET_LINES {
         return rasterize_active_row_bucketed_stroke_ranges(
             device,
@@ -11830,6 +11935,89 @@ fn rasterize_row_bucketed_stroke_ranges(
             }
         }
     }
+    Ok(())
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "keeps traced stroke state at the callsite explicit"
+)]
+fn rasterize_row_bucketed_stroke_ranges_traced(
+    device: &mut RasterDevice,
+    buckets: &StrokeRowBuckets,
+    join_buckets: Option<&StrokeJoinBuckets>,
+    bounds: PixelBounds,
+    state: StrokeRasterState,
+    context: PathRasterContext<'_>,
+    samples: u32,
+    sample_count: u32,
+    source: Rgba,
+    skip_clip_checks: bool,
+    stroke_routes: &RefCell<StrokeRasterRouteSummary>,
+) -> RasterResult<()> {
+    let radius = stroke_radius_for_device_line_width(state.line_width);
+    let mut stats = StrokeRowBucketRuntimeStats {
+        range_calls: 1,
+        ..StrokeRowBucketRuntimeStats::default()
+    };
+    let mut x_ranges = Vec::new();
+    for y in bounds.min_y..bounds.max_y {
+        stats.rows += 1;
+        x_ranges.clear();
+        append_row_bucket_pixel_x_ranges(buckets, y, bounds, &mut x_ranges);
+        if let Some(join_buckets) = join_buckets {
+            append_join_bucket_pixel_x_ranges(join_buckets, y, bounds, &mut x_ranges);
+        }
+        merge_pixel_ranges(&mut x_ranges);
+        stats.x_ranges = stats.x_ranges.saturating_add(x_ranges.len());
+        for x_range in &x_ranges {
+            for x in x_range.clone() {
+                stats.pixels += 1;
+                let mut covered = 0;
+                for sample_y in 0..samples {
+                    for sample_x in 0..samples {
+                        stats.sample_points += 1;
+                        let point = sample_point(x, y, sample_x, sample_y, samples);
+                        if (skip_clip_checks || point_in_active_clips(point, context.clips))
+                            && (point_in_row_bucketed_stroke_traced(
+                                point,
+                                x,
+                                y,
+                                buckets,
+                                radius,
+                                state.line_cap,
+                                &mut stats,
+                            ) || join_buckets.is_some_and(|join_buckets| {
+                                point_in_join_buckets_traced(
+                                    point,
+                                    x,
+                                    y,
+                                    join_buckets,
+                                    radius,
+                                    state.line_join,
+                                    &mut stats,
+                                )
+                            }))
+                        {
+                            covered += 1;
+                        }
+                    }
+                }
+                if covered > 0 {
+                    stats.covered_pixels += 1;
+                    blend_pixel(
+                        device,
+                        x,
+                        y,
+                        source,
+                        state.blend_mode,
+                        state.alpha * f64::from(covered) / f64::from(sample_count),
+                    )?;
+                }
+            }
+        }
+    }
+    stroke_routes.borrow_mut().record_row_bucket_runtime(stats);
     Ok(())
 }
 
@@ -11934,6 +12122,124 @@ fn rasterize_active_row_bucketed_stroke_ranges(
             }
         }
     }
+    Ok(())
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "keeps traced stroke state at the callsite explicit"
+)]
+fn rasterize_active_row_bucketed_stroke_ranges_traced(
+    device: &mut RasterDevice,
+    buckets: &StrokeRowBuckets,
+    join_buckets: Option<&StrokeJoinBuckets>,
+    bounds: PixelBounds,
+    state: StrokeRasterState,
+    context: PathRasterContext<'_>,
+    samples: u32,
+    sample_count: u32,
+    source: Rgba,
+    skip_clip_checks: bool,
+    stroke_routes: &RefCell<StrokeRasterRouteSummary>,
+) -> RasterResult<()> {
+    let radius = stroke_radius_for_device_line_width(state.line_width);
+    let mut stats = StrokeRowBucketRuntimeStats {
+        range_calls: 1,
+        active_range_calls: 1,
+        ..StrokeRowBucketRuntimeStats::default()
+    };
+    let mut x_ranges = Vec::new();
+    let mut sorted_line_indices = Vec::new();
+    let mut active_line_indices = Vec::new();
+    let mut sorted_join_indices = Vec::new();
+    let mut active_join_indices = Vec::new();
+    for y in bounds.min_y..bounds.max_y {
+        x_ranges.clear();
+        append_row_bucket_pixel_x_ranges(buckets, y, bounds, &mut x_ranges);
+        if let Some(join_buckets) = join_buckets {
+            append_join_bucket_pixel_x_ranges(join_buckets, y, bounds, &mut x_ranges);
+        }
+        merge_pixel_ranges(&mut x_ranges);
+        if x_ranges.is_empty() {
+            continue;
+        }
+        stats.rows += 1;
+        stats.x_ranges = stats.x_ranges.saturating_add(x_ranges.len());
+        sorted_row_line_indices(buckets, y, &mut sorted_line_indices);
+        if let Some(join_buckets) = join_buckets {
+            sorted_row_join_indices(join_buckets, y, &mut sorted_join_indices);
+        } else {
+            sorted_join_indices.clear();
+        }
+        active_line_indices.clear();
+        active_join_indices.clear();
+        let mut next_line_index = 0;
+        let mut next_join_index = 0;
+        for x_range in &x_ranges {
+            for x in x_range.clone() {
+                stats.pixels += 1;
+                advance_active_line_indices(
+                    x,
+                    buckets,
+                    &sorted_line_indices,
+                    &mut next_line_index,
+                    &mut active_line_indices,
+                );
+                if let Some(join_buckets) = join_buckets {
+                    advance_active_join_indices(
+                        x,
+                        join_buckets,
+                        &sorted_join_indices,
+                        &mut next_join_index,
+                        &mut active_join_indices,
+                    );
+                }
+                if active_line_indices.is_empty() && active_join_indices.is_empty() {
+                    continue;
+                }
+                let mut covered = 0;
+                for sample_y in 0..samples {
+                    for sample_x in 0..samples {
+                        stats.sample_points += 1;
+                        let point = sample_point(x, y, sample_x, sample_y, samples);
+                        if (skip_clip_checks || point_in_active_clips(point, context.clips))
+                            && (point_in_row_bucketed_stroke_candidates_traced(
+                                point,
+                                &active_line_indices,
+                                buckets,
+                                radius,
+                                state.line_cap,
+                                &mut stats,
+                            ) || join_buckets.is_some_and(|join_buckets| {
+                                point_in_join_bucket_candidates_traced(
+                                    point,
+                                    &active_join_indices,
+                                    join_buckets,
+                                    radius,
+                                    state.line_join,
+                                    &mut stats,
+                                )
+                            }))
+                        {
+                            covered += 1;
+                        }
+                    }
+                }
+                if covered > 0 {
+                    stats.covered_pixels += 1;
+                    blend_pixel(
+                        device,
+                        x,
+                        y,
+                        source,
+                        state.blend_mode,
+                        state.alpha * f64::from(covered) / f64::from(sample_count),
+                    )?;
+                }
+            }
+        }
+    }
+    stroke_routes.borrow_mut().record_row_bucket_runtime(stats);
     Ok(())
 }
 
@@ -13451,6 +13757,37 @@ fn point_in_row_bucketed_stroke(
     false
 }
 
+fn point_in_row_bucketed_stroke_traced(
+    point: Point,
+    x: u32,
+    y: u32,
+    buckets: &StrokeRowBuckets,
+    radius: f64,
+    line_cap: LineCap,
+    stats: &mut StrokeRowBucketRuntimeStats,
+) -> bool {
+    let Some(row) = y
+        .checked_sub(buckets.min_y)
+        .and_then(|offset| buckets.rows.get(offset as usize))
+    else {
+        return false;
+    };
+    let radius_squared = radius * radius;
+    for &line_index in &buckets.indices[row.clone()] {
+        stats.line_candidates += 1;
+        let bounded = buckets.lines[line_index];
+        if x < bounded.bounds.min_x || x >= bounded.bounds.max_x {
+            continue;
+        }
+        stats.line_x_hits += 1;
+        if point_in_single_stroke_line(point, bounded.line, radius, radius_squared, line_cap) {
+            stats.line_hits += 1;
+            return true;
+        }
+    }
+    false
+}
+
 fn point_in_row_bucketed_stroke_candidates(
     point: Point,
     line_indices: &[usize],
@@ -13463,6 +13800,27 @@ fn point_in_row_bucketed_stroke_candidates(
         let bounded = buckets.lines[line_index];
         point_in_single_stroke_line(point, bounded.line, radius, radius_squared, line_cap)
     })
+}
+
+fn point_in_row_bucketed_stroke_candidates_traced(
+    point: Point,
+    line_indices: &[usize],
+    buckets: &StrokeRowBuckets,
+    radius: f64,
+    line_cap: LineCap,
+    stats: &mut StrokeRowBucketRuntimeStats,
+) -> bool {
+    let radius_squared = radius * radius;
+    for &line_index in line_indices {
+        stats.line_candidates += 1;
+        stats.line_x_hits += 1;
+        let bounded = buckets.lines[line_index];
+        if point_in_single_stroke_line(point, bounded.line, radius, radius_squared, line_cap) {
+            stats.line_hits += 1;
+            return true;
+        }
+    }
+    false
 }
 
 fn point_in_single_stroke_line(
@@ -13561,6 +13919,57 @@ fn point_in_join_buckets(
     false
 }
 
+fn point_in_join_buckets_traced(
+    point: Point,
+    x: u32,
+    y: u32,
+    buckets: &StrokeJoinBuckets,
+    radius: f64,
+    line_join: LineJoin,
+    stats: &mut StrokeRowBucketRuntimeStats,
+) -> bool {
+    let Some(row) = y
+        .checked_sub(buckets.min_y)
+        .and_then(|offset| buckets.rows.get(offset as usize))
+    else {
+        return false;
+    };
+    let radius_squared = radius * radius;
+    for &join_index in &buckets.indices[row.clone()] {
+        stats.join_candidates += 1;
+        match buckets.joins[join_index] {
+            BoundedStrokeJoin::Round { join, bounds } => {
+                if x < bounds.min_x || x >= bounds.max_x {
+                    continue;
+                }
+                stats.join_x_hits += 1;
+                if distance_squared(point, join.point) <= radius_squared {
+                    stats.join_hits += 1;
+                    return true;
+                }
+            }
+            BoundedStrokeJoin::Prepared {
+                prepared_index,
+                bounds,
+            } => {
+                if x < bounds.min_x || x >= bounds.max_x {
+                    continue;
+                }
+                stats.join_x_hits += 1;
+                if prepared_join_contains_point(
+                    point,
+                    buckets.prepared_joins[prepared_index],
+                    line_join,
+                ) {
+                    stats.join_hits += 1;
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
 fn point_in_join_bucket_candidates(
     point: Point,
     join_indices: &[usize],
@@ -13581,6 +13990,36 @@ fn point_in_join_bucket_candidates(
                 line_join,
             ),
         })
+}
+
+fn point_in_join_bucket_candidates_traced(
+    point: Point,
+    join_indices: &[usize],
+    buckets: &StrokeJoinBuckets,
+    radius: f64,
+    line_join: LineJoin,
+    stats: &mut StrokeRowBucketRuntimeStats,
+) -> bool {
+    let radius_squared = radius * radius;
+    for &join_index in join_indices {
+        stats.join_candidates += 1;
+        stats.join_x_hits += 1;
+        let hit = match buckets.joins[join_index] {
+            BoundedStrokeJoin::Round { join, .. } => {
+                distance_squared(point, join.point) <= radius_squared
+            }
+            BoundedStrokeJoin::Prepared { prepared_index, .. } => prepared_join_contains_point(
+                point,
+                buckets.prepared_joins[prepared_index],
+                line_join,
+            ),
+        };
+        if hit {
+            stats.join_hits += 1;
+            return true;
+        }
+    }
+    false
 }
 
 fn prepared_join_contains_point(
@@ -18560,6 +18999,98 @@ mod tests {
         assert_eq!(routes.span_cursor_calls, 1);
         assert_eq!(routes.span_from_start_calls, 0);
         assert!(routes.max_span_coverage_spans_per_call >= STROKE_SPAN_CURSOR_MIN_SPANS);
+    }
+
+    #[test]
+    fn stroke_raster_route_summary_should_count_row_bucket_predicates() {
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 120.0,
+                    max_y: 120.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            120,
+        )
+        .expect("valid page transform");
+        let dimensions = transform.dimensions;
+        let mut lines = Vec::new();
+        for index in 0..STROKE_ROW_RANGE_MIN_BUCKET_LINES {
+            let offset = index as f64 * 0.75;
+            lines.push(LineSegment {
+                from: Point {
+                    x: 8.0 + offset,
+                    y: 12.0,
+                },
+                to: Point {
+                    x: 18.0 + offset,
+                    y: 100.0,
+                },
+            });
+        }
+        let radius = 0.5;
+        let bounds =
+            stroke_pixel_bounds(&lines, &[], radius, dimensions).expect("stroke should overlap");
+        let buckets = stroke_row_buckets(&lines, radius, dimensions, bounds)
+            .expect("row buckets should build");
+        assert!(row_bucket_range_raster_candidate(&buckets));
+        assert!(buckets.lines.len() < STROKE_ROW_ACTIVE_MIN_BUCKET_LINES);
+
+        let mut device = transform.create_device(Rgba::WHITE).expect("valid device");
+        let routes = RefCell::new(StrokeRasterRouteSummary::default());
+        let context = PathRasterContext {
+            transform,
+            options: PathRasterOptions::default(),
+            clips: &[],
+            stroke_routes: Some(&routes),
+        };
+        let state = StrokeRasterState {
+            line_width: 1.0,
+            ctm_scale: 1.0,
+            color: DeviceColor::BLACK,
+            blend_mode: BlendMode::Normal,
+            alpha: 1.0,
+            dash_pattern: StrokeDashPattern::solid(),
+            dash_scale: 1.0,
+            line_cap: LineCap::Butt,
+            line_join: LineJoin::Miter,
+            miter_limit: 10.0,
+        };
+
+        rasterize_row_bucketed_stroke_ranges(
+            &mut device,
+            &buckets,
+            None,
+            bounds,
+            state,
+            context,
+            1,
+            1,
+            Rgba {
+                r: 0,
+                g: 0,
+                b: 0,
+                a: 255,
+            },
+            true,
+        )
+        .expect("row-bucket route should render");
+
+        let routes = routes.into_inner();
+        assert_eq!(routes.row_bucket_range_calls, 1);
+        assert_eq!(routes.row_bucket_active_range_calls, 0);
+        assert!(routes.row_bucket_rows > 0);
+        assert!(routes.row_bucket_x_ranges > 0);
+        assert!(routes.row_bucket_pixels > 0);
+        assert!(routes.row_bucket_sample_points > 0);
+        assert!(routes.row_bucket_line_candidates > 0);
+        assert!(routes.row_bucket_line_x_hits > 0);
+        assert!(routes.row_bucket_line_hits > 0);
+        assert!(routes.row_bucket_covered_pixels > 0);
     }
 
     #[test]
