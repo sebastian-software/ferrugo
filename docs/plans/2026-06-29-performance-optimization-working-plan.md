@@ -1150,6 +1150,27 @@ Stroke row-work trace diagnostics from 2026-06-30:
   to gate a narrower row subdivision or line-span grouping only where the
   estimated X-miss ratio and per-item sample refs justify the overhead.
 
+Technical row-work sweep from 2026-06-30:
+
+- Artifacts: `target/trace-row-work-*.json`, generated from every fixture in
+  `fixtures/technical-drawing-manifest.tsv`.
+- Highest estimated row-bucket sample refs:
+  `engineering-floorplan-precision.pdf` `2872320` refs / `95.0%` X-miss,
+  `engineering-large-transform-detail.pdf` `2131200` / `95.4%`,
+  `technical-large-coordinate-plan.pdf` `2085696` / `95.4%`,
+  `vector-stress.pdf` `485376` / `94.7%`, and
+  `technical-linework-dimensions.pdf` `388080` / `94.9%`.
+- Fixtures with no row-bucket sample refs in this sweep:
+  `technical-hatch-clipping.pdf`, `technical-repeated-symbols.pdf`,
+  `engineering-schematic-symbols.pdf`, `dashed-stroke.pdf`,
+  `clipped-paths.pdf`, and `user-unit-page.pdf`.
+- Next threshold to test: only enable any row X-subdivision candidate for
+  strokes/items that exceed roughly `1_000_000` estimated row-bucket sample
+  refs and have an X-miss ratio above `90%`. That should target the three
+  large linework/plan fixtures while leaving `vector-stress`,
+  `technical-linework-dimensions`, and the zero-row-bucket protection fixtures
+  on the accepted row-bucket path.
+
 ## Hardware-Aware Rust Notes
 
 Goal: use Rust's memory model and the host CPU well without prematurely
