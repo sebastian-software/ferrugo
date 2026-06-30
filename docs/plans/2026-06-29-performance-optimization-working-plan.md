@@ -3694,6 +3694,43 @@ Rejected borrowed row-bucket slice candidate from 2026-06-30:
   work focused on reducing visited candidate pixels or predicate calls, not
   local slice-copy cleanup.
 
+Accepted axial shading raster fast path from 2026-06-30:
+
+- Profile basis: after the exact axis-span work, the next starter top fixture
+  outside the vector-stroke track was
+  `fixtures/generated/slide-title-gradient.pdf`. `trace-native` reported total
+  `0.763 ms`, with `raster_paths` at `0.439 ms`, `resource_decode` at
+  `0.105 ms`, `display_list_build` at `0.094 ms`, and an operator summary with
+  one `sh` axial-shading operation. The target is therefore shading raster
+  work, not text, image, or output encoding.
+- Change: axial shading rasterization now converts start/end colors to `Rgba`
+  once per shading item, shares the projection/extension calculation through a
+  small helper, skips `powf` for the common exponent `1.0` case, and writes
+  opaque `BlendMode::Normal` pixels directly through the raster row API.
+  Non-normal blend modes continue through `blend_pixel`.
+- Correctness rationale: sampled axial shading colors are opaque in the current
+  implementation, so full-coverage normal source-over is equivalent to writing
+  the source pixel. The extension and interpolation behavior is preserved in
+  the helper path, and the existing axial sampling test now covers the
+  precomputed-RGBA color interpolation helper.
+- A/B artifacts:
+  `target/trace-slide-title-gradient-current.json`,
+  `target/benchmark-native-slide-title-gradient-current.json`,
+  `target/benchmark-native-slide-title-gradient-axial-fastpath-candidate.json`,
+  `target/benchmark-native-slide-title-gradient-axial-fastpath-final.json`,
+  and `target/performance-matrix-axial-shading-fastpath-candidate.json`.
+- Focused result: long `benchmark-native` mean moved `0.504 ms` -> `0.304 ms`
+  (`~39.7%`) on `fixtures/generated/slide-title-gradient.pdf`, `--max-edge
+  160`, 150,000 iterations. The pre-refactor candidate run measured
+  `0.310 ms`, so the final Clippy cleanup did not remove the speedup.
+- Protection result: the starter native hot-render matrix rendered all `11`
+  fixtures with no fallback or errors. In that matrix,
+  `slide-title-gradient.pdf` moved from the previous repeat p95 `0.550 ms` and
+  mean `0.504 ms` to p95 `0.349 ms` and mean `0.312 ms`, with unchanged
+  output dimensions and `57600` output bytes.
+- Decision: keep. This is a profile-backed scalar raster fast path with no new
+  dependency, unsafe code, global cache, or alternate shading semantics.
+
 Repeat family phase-summary instrumentation from 2026-06-30:
 
 - Change: `benchmark-repeat-native` now aggregates record-level

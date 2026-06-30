@@ -5837,28 +5837,71 @@ fn rasterize_axial_shading(
     if length_squared <= f64::EPSILON {
         return Ok(());
     }
+    let projection = AxialShadingProjection {
+        start,
+        dx,
+        dy,
+        length_squared,
+        extend_start: shading.extend_start,
+        extend_end: shading.extend_end,
+    };
     let dimensions = device.dimensions();
+    let start_color = device_color_to_rgba(shading.start_color);
+    let end_color = device_color_to_rgba(shading.end_color);
     for y in 0..dimensions.height {
+        let sample_y = f64::from(y) + 0.5;
+        if matches!(state.blend_mode, BlendMode::Normal) {
+            let row = device.row_mut(y)?;
+            for x in 0..dimensions.width {
+                let sample_x = f64::from(x) + 0.5;
+                let Some(t) = projection.t(sample_x, sample_y) else {
+                    continue;
+                };
+                let source =
+                    sample_axial_color_from_rgba(start_color, end_color, shading.exponent, t);
+                write_opaque_image_pixel_in_row(row, x, source);
+            }
+            continue;
+        }
         for x in 0..dimensions.width {
             let sample_x = f64::from(x) + 0.5;
-            let sample_y = f64::from(y) + 0.5;
-            let mut t = ((sample_x - start.x) * dx + (sample_y - start.y) * dy) / length_squared;
-            if t < 0.0 {
-                if !shading.extend_start {
-                    continue;
-                }
-                t = 0.0;
-            } else if t > 1.0 {
-                if !shading.extend_end {
-                    continue;
-                }
-                t = 1.0;
-            }
-            let source = sample_axial_color(shading, t);
+            let Some(t) = projection.t(sample_x, sample_y) else {
+                continue;
+            };
+            let source = sample_axial_color_from_rgba(start_color, end_color, shading.exponent, t);
             blend_pixel(device, x, y, source, state.blend_mode, 1.0)?;
         }
     }
     Ok(())
+}
+
+#[derive(Clone, Copy)]
+struct AxialShadingProjection {
+    start: Point,
+    dx: f64,
+    dy: f64,
+    length_squared: f64,
+    extend_start: bool,
+    extend_end: bool,
+}
+
+impl AxialShadingProjection {
+    fn t(self, sample_x: f64, sample_y: f64) -> Option<f64> {
+        let mut t = ((sample_x - self.start.x) * self.dx + (sample_y - self.start.y) * self.dy)
+            / self.length_squared;
+        if t < 0.0 {
+            if !self.extend_start {
+                return None;
+            }
+            t = 0.0;
+        } else if t > 1.0 {
+            if !self.extend_end {
+                return None;
+            }
+            t = 1.0;
+        }
+        Some(t)
+    }
 }
 
 fn rasterize_radial_shading(
@@ -5912,10 +5955,13 @@ fn rasterize_radial_shading(
     Ok(())
 }
 
-fn sample_axial_color(shading: AxialShading, t: f64) -> Rgba {
-    let ratio = t.clamp(0.0, 1.0).powf(shading.exponent);
-    let start = device_color_to_rgba(shading.start_color);
-    let end = device_color_to_rgba(shading.end_color);
+fn sample_axial_color_from_rgba(start: Rgba, end: Rgba, exponent: f64, t: f64) -> Rgba {
+    let t = t.clamp(0.0, 1.0);
+    let ratio = if (exponent - 1.0).abs() <= f64::EPSILON {
+        t
+    } else {
+        t.powf(exponent)
+    };
     Rgba {
         r: interpolate_channel(start.r, end.r, ratio),
         g: interpolate_channel(start.g, end.g, ratio),
@@ -19376,26 +19422,23 @@ mod tests {
 
     #[test]
     fn axial_shading_sampling_should_interpolate_colors() {
-        let shading = AxialShading {
-            start: Point { x: 0.0, y: 0.0 },
-            end: Point { x: 100.0, y: 0.0 },
-            start_color: DeviceColor::Rgb {
-                r: 1.0,
-                g: 0.0,
-                b: 0.0,
-            },
-            end_color: DeviceColor::Rgb {
-                r: 0.0,
-                g: 0.0,
-                b: 1.0,
-            },
-            exponent: 1.0,
-            extend_start: true,
-            extend_end: true,
-        };
-
         assert_eq!(
-            sample_axial_color(shading, 0.5),
+            sample_axial_color_from_rgba(
+                Rgba {
+                    r: 255,
+                    g: 0,
+                    b: 0,
+                    a: 255,
+                },
+                Rgba {
+                    r: 0,
+                    g: 0,
+                    b: 255,
+                    a: 255,
+                },
+                1.0,
+                0.5,
+            ),
             Rgba {
                 r: 128,
                 g: 0,
