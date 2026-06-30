@@ -2282,6 +2282,48 @@ Accepted Flate image decode capacity result from 2026-06-30:
   decode; it only removes avoidable output-buffer growth on the current Flate
   resource-decode hotspot.
 
+Accepted opaque DeviceRGB image sampling result from 2026-06-30:
+
+- Profiling trigger: after the Flate capacity win, fresh traces still showed
+  mixed image work in the remaining image-heavy set. A long sample on
+  `mobile-mixed-compression-scan.pdf`,
+  `target/sample-mobile-mixed-current-resource-decode.txt`, showed
+  `draw_image` and `ImageSampleCache::sample` as the largest render-side image
+  stacks, with Flate/JPEG decode still visible in resource loading.
+- Change: axis-aligned color images that are plain opaque DeviceRGB now use a
+  narrow direct sampler. The fast path skips the per-sample stencil, soft-mask,
+  indexed-color, and color-space dispatch while keeping the same source
+  coordinate calculation, last-sample cache behavior, row-slice compositing,
+  and edge coverage math.
+- Scope guard: the fast path is disabled for ImageMask/stencil images,
+  Indexed color, and any image with a soft mask. These stay on the existing
+  generic sampler.
+- Candidate artifacts:
+  `target/performance-matrix-opaque-rgb-image-heavy.json` and
+  `target/performance-matrix-opaque-rgb-image-heavy-repeat.json`.
+- Repeated result against
+  `target/performance-matrix-flate-capacity-image-heavy-repeat.json`:
+  `image-heavy-repeated-xobject-report.pdf` improved p95 `0.413 ms` ->
+  `0.369 ms` (~10.7%) and mean `0.367 ms` -> `0.341 ms` (~7.1%). The first
+  candidate matrix showed the same direction: p95 `0.413 ms` -> `0.371 ms`
+  (~10.2%) and mean `0.367 ms` -> `0.340 ms` (~7.4%).
+- Secondary movement: `image-heavy-rotated-mask-sheet.pdf` improved in both
+  runs, with p95 `0.392 ms` -> `0.343 ms` first and `0.392 ms` -> `0.362 ms`
+  on repeat. Protected `image-mask-logo.pdf`, `predictor-image.pdf`, and
+  `soft-mask-image.pdf` stayed neutral to better on p95 in the repeat matrix.
+- Watch item: `mobile-mixed-compression-scan.pdf` moved p95 `0.235 ms` ->
+  `0.242 ms` in the repeat while remaining rendered with no fallback/error.
+  Keep this in the next mobile-focused matrix; the target of this block is the
+  repeated opaque image placement workload.
+- Correctness guard:
+  `image_fast_path_should_only_accept_opaque_device_rgb_samples` freezes the
+  fast-path predicate so soft masks, stencils, and Indexed images cannot enter
+  the direct RGB sampler accidentally. Existing image edge antialias coverage
+  still exercises the axis-aligned opaque RGB draw path.
+- Decision: accept as a Phase 4 repeated opaque image sampling win. It is not a
+  downsample-aware decode implementation and does not close the cropped-decode
+  backlog.
+
 Rejected image raster candidate from 2026-06-30:
 
 - Change tested locally but not kept: apply the same row-slice compositing
