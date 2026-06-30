@@ -1011,6 +1011,31 @@ Stroke-shape trace diagnostics from 2026-06-30:
   choose a shape-specific strategy, for example medium-stroke short-span
   handling, instead of a universal row/X-tile split.
 
+Technical protection-set stroke-shape sweep from 2026-06-30:
+
+- Artifacts: `target/trace-stroke-shapes-*.json`, generated with
+  `trace-native <fixture> --max-edge 160 --max-events 1` for all 11 fixtures in
+  `fixtures/technical-drawing-manifest.tsv`.
+- Aggregate: `648` stroked items, `7330` flattened lines, `70`
+  row-bucket-candidate items, and `59392` row-index references. Of those
+  flattened lines, `6930` were axis-aligned. Line-count buckets were `578`
+  items below 32 lines, `70` items in the 32-127 bucket, and `0` items at
+  `>=128`. Pixel X-span buckets were `<=16`: `7080`, `<=32`: `90`, `<=64`:
+  `48`, `>64`: `112`.
+- Highest row-index-reference fixtures:
+  `engineering-floorplan-precision.pdf` (`2174` lines, `24` row-bucket
+  candidates, `13278` row refs), `engineering-large-transform-detail.pdf`
+  (`1618`, `16`, `9624`), `technical-hatch-clipping.pdf` (`114`, `0`, `9004`),
+  `technical-large-coordinate-plan.pdf` (`1380`, `14`, `8314`), and
+  `technical-linework-dimensions.pdf` (`1268`, `14`, `8042`).
+- Interpretation: the protection set is not dominated by huge single strokes;
+  it is dominated by many small/medium strokes and overwhelmingly
+  axis-aligned line segments. The next code candidate should therefore try a
+  broad axis-aligned stroke predicate inside the existing row-bucket/direct
+  scans before revisiting any heavier spatial index. This targets the hot
+  distance predicate directly while preserving the current accepted row-bucket
+  structure.
+
 ## Hardware-Aware Rust Notes
 
 Goal: use Rust's memory model and the host CPU well without prematurely
