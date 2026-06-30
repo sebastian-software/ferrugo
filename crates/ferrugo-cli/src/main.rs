@@ -1776,6 +1776,7 @@ struct TraceNativeConfig {
     max_edge: u32,
     max_events: usize,
     include_annotations: bool,
+    native_profile: NativeProfile,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2038,6 +2039,7 @@ impl TraceNativeConfig {
         let mut max_edge = DEFAULT_MAX_EDGE;
         let mut max_events = DEFAULT_TRACE_MAX_EVENTS;
         let mut include_annotations = true;
+        let mut native_profile = NativeProfile::Default;
 
         let mut index = 0;
         while index < args.len() {
@@ -2063,6 +2065,11 @@ impl TraceNativeConfig {
                 }
                 "--no-annotations" => {
                     include_annotations = false;
+                }
+                "--native-profile" => {
+                    index += 1;
+                    native_profile =
+                        parse_native_profile(required_str(args, index, "--native-profile")?)?;
                 }
                 value if value.starts_with('-') => {
                     return Err(CliError::Usage(format!("unknown option `{value}`")));
@@ -2096,6 +2103,7 @@ impl TraceNativeConfig {
             max_edge,
             max_events,
             include_annotations,
+            native_profile,
         })
     }
 }
@@ -8422,7 +8430,7 @@ fn native_render_trace_json(config: &TraceNativeConfig) -> Result<String, CliErr
         path: config.input.clone(),
         source,
     })?;
-    let native = NativeBackend::new();
+    let native = config.native_profile.backend();
     let options = ThumbnailOptions {
         page_index: config.page_index,
         max_edge: config.max_edge,
@@ -8519,6 +8527,7 @@ fn native_render_trace_json(config: &TraceNativeConfig) -> Result<String, CliErr
             "  \"input\": {},\n",
             "  \"page_index\": {},\n",
             "  \"max_edge\": {},\n",
+            "  \"native_profile\": {},\n",
             "  \"include_annotations\": {},\n",
             "  \"max_events\": {},\n",
             "  \"events_emitted\": {},\n",
@@ -8538,6 +8547,7 @@ fn native_render_trace_json(config: &TraceNativeConfig) -> Result<String, CliErr
         json_string(&normalize_manifest_path(&config.input)),
         config.page_index,
         config.max_edge,
+        json_string(config.native_profile.as_str()),
         config.include_annotations,
         config.max_events,
         emitted_events,
@@ -11586,6 +11596,8 @@ mod tests {
             OsString::from("160"),
             OsString::from("--max-events"),
             OsString::from("12"),
+            OsString::from("--native-profile"),
+            OsString::from("low-memory"),
             OsString::from("--no-annotations"),
             OsString::from("--output"),
             OsString::from("target/native-trace.json"),
@@ -11595,6 +11607,7 @@ mod tests {
         assert_eq!(config.page_index, 0);
         assert_eq!(config.max_edge, 160);
         assert_eq!(config.max_events, 12);
+        assert_eq!(config.native_profile, NativeProfile::LowMemory);
         assert!(!config.include_annotations);
         assert_eq!(
             config.output,
@@ -11619,12 +11632,14 @@ mod tests {
             max_edge: 160,
             max_events: 2,
             include_annotations: true,
+            native_profile: NativeProfile::Default,
         };
 
         let json = native_render_trace_json(&config).expect("trace should render");
 
         assert!(json.contains("\"trace_kind\": \"native-render-trace\""));
         assert!(json.contains("\"privacy\""));
+        assert!(json.contains("\"native_profile\": \"default\""));
         assert!(json.contains("\"events_emitted\": 2"));
         assert!(json.contains("\"events_truncated\": true"));
         assert!(json.contains("\"phase_timings_ms\""));

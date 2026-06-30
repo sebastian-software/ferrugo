@@ -1525,6 +1525,55 @@ pub struct ImageResources {
     summary: ImageResourceSummary,
 }
 
+/// Placement-derived image decode hints for request-local downsampling.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct ImageDecodeHints {
+    entries: Vec<ImageDecodeHint>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ImageDecodeHint {
+    resource_name: Vec<u8>,
+    max_device_width: u32,
+    max_device_height: u32,
+}
+
+impl ImageDecodeHints {
+    /// Creates an empty hint set.
+    #[must_use]
+    pub const fn empty() -> Self {
+        Self {
+            entries: Vec::new(),
+        }
+    }
+
+    fn record(&mut self, resource_name: PdfName<'_>, device_width: u32, device_height: u32) {
+        if device_width == 0 || device_height == 0 {
+            return;
+        }
+        if let Some(entry) = self
+            .entries
+            .iter_mut()
+            .find(|entry| entry.resource_name.as_slice() == resource_name.as_bytes())
+        {
+            entry.max_device_width = entry.max_device_width.max(device_width);
+            entry.max_device_height = entry.max_device_height.max(device_height);
+            return;
+        }
+        self.entries.push(ImageDecodeHint {
+            resource_name: resource_name.as_bytes().to_vec(),
+            max_device_width: device_width,
+            max_device_height: device_height,
+        });
+    }
+
+    fn get(&self, resource_name: PdfName<'_>) -> Option<&ImageDecodeHint> {
+        self.entries
+            .iter()
+            .find(|entry| entry.resource_name.as_slice() == resource_name.as_bytes())
+    }
+}
+
 impl ImageResources {
     /// Creates an empty image resource map.
     #[must_use]
@@ -1568,6 +1617,32 @@ impl ImageResources {
         Self::from_xobject_dictionary_with_icc_cache(dictionary, resolver, options, &mut icc_cache)
     }
 
+    /// Resolves image XObjects while applying placement-derived decode hints.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`GraphicsError`] when an image resource is malformed,
+    /// references a missing object, uses an unsupported color space or filter,
+    /// or decodes beyond the configured image byte budget.
+    pub fn from_xobject_dictionary_with_decode_hints<'a, R>(
+        dictionary: &[(PdfName<'a>, PdfPrimitive<'a>)],
+        resolver: &'a R,
+        options: DisplayListOptions,
+        hints: &ImageDecodeHints,
+    ) -> GraphicsResult<Self>
+    where
+        R: ImageObjectResolver<'a> + ?Sized,
+    {
+        let mut icc_cache = IccTransformCache::new(options.max_icc_transform_cache_entries);
+        Self::from_xobject_dictionary_with_icc_cache_and_hints(
+            dictionary,
+            resolver,
+            options,
+            &mut icc_cache,
+            hints,
+        )
+    }
+
     /// Resolves image XObjects while reusing a caller-owned ICC transform cache.
     ///
     /// # Errors
@@ -1580,6 +1655,25 @@ impl ImageResources {
         resolver: &'a R,
         options: DisplayListOptions,
         icc_cache: &mut IccTransformCache,
+    ) -> GraphicsResult<Self>
+    where
+        R: ImageObjectResolver<'a> + ?Sized,
+    {
+        Self::from_xobject_dictionary_with_icc_cache_and_hints(
+            dictionary,
+            resolver,
+            options,
+            icc_cache,
+            &ImageDecodeHints::empty(),
+        )
+    }
+
+    fn from_xobject_dictionary_with_icc_cache_and_hints<'a, R>(
+        dictionary: &[(PdfName<'a>, PdfPrimitive<'a>)],
+        resolver: &'a R,
+        options: DisplayListOptions,
+        icc_cache: &mut IccTransformCache,
+        hints: &ImageDecodeHints,
     ) -> GraphicsResult<Self>
     where
         R: ImageObjectResolver<'a> + ?Sized,
@@ -1615,6 +1709,7 @@ impl ImageResources {
                 resolver,
                 ImageDecodeLimits::from_display_options(options),
                 icc_cache,
+                hints.get(*name),
             )?;
             total_image_bytes = total_image_bytes
                 .checked_add(image_resident_bytes(&image))
@@ -5329,6 +5424,26 @@ pub fn display_list_image_placement_summary(
     summary
 }
 
+/// Collects placement-derived image decode hints from top-level image XObject invocations.
+///
+/// The collector is intentionally conservative: it only records visible,
+/// axis-aligned `/Do` placements in the page content stream. Form XObject image
+/// hints are left to a later placement-aware pass.
+///
+/// # Errors
+///
+/// Returns [`GraphicsError`] when tokenization fails or graphics-state stack
+/// operations underflow or overflow.
+pub fn collect_image_decode_hints<'a>(
+    tokens: impl IntoIterator<Item = ContentResult<ContentToken<'a>>>,
+    transform: PageTransform,
+    options: DisplayListOptions,
+) -> GraphicsResult<ImageDecodeHints> {
+    let mut interpreter = ImageDecodeHintInterpreter::new(transform, options);
+    interpreter.interpret(tokens)?;
+    Ok(interpreter.hints)
+}
+
 fn collect_display_list_stroke_shapes(
     display_list: &DisplayList,
     transform: PageTransform,
@@ -7872,6 +7987,135 @@ impl<'r> ImageDisplayListInterpreter<'r> {
     }
 }
 
+struct ImageDecodeHintInterpreter {
+    current: GraphicsState,
+    stack: Vec<GraphicsState>,
+    transform: PageTransform,
+    hints: ImageDecodeHints,
+    options: DisplayListOptions,
+}
+
+impl ImageDecodeHintInterpreter {
+    fn new(transform: PageTransform, options: DisplayListOptions) -> Self {
+        Self {
+            current: GraphicsState::default(),
+            stack: Vec::new(),
+            transform,
+            hints: ImageDecodeHints::empty(),
+            options,
+        }
+    }
+
+    fn interpret<'a>(
+        &mut self,
+        tokens: impl IntoIterator<Item = ContentResult<ContentToken<'a>>>,
+    ) -> GraphicsResult<()> {
+        let mut operands = Vec::new();
+        for token in tokens {
+            match token.map_err(GraphicsError::from_content)? {
+                ContentToken::Operand { value, .. } => operands.push(value),
+                ContentToken::Operator { offset, name } => {
+                    self.apply_operator(offset, name, &operands)?;
+                    operands.clear();
+                }
+                ContentToken::InlineImage { .. } => {
+                    operands.clear();
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn apply_operator(
+        &mut self,
+        offset: ByteOffset,
+        name: OperatorName<'_>,
+        operands: &[PdfPrimitive<'_>],
+    ) -> GraphicsResult<()> {
+        match name.as_bytes() {
+            b"q" => self.save_state(offset, operands),
+            b"Q" => self.restore_state(offset, operands),
+            b"cm" => self.concatenate_matrix(offset, operands),
+            b"Do" => self.record_image_hint(offset, operands),
+            _ => Ok(()),
+        }
+    }
+
+    fn save_state(
+        &mut self,
+        offset: ByteOffset,
+        operands: &[PdfPrimitive<'_>],
+    ) -> GraphicsResult<()> {
+        expect_operand_count(offset, b"q", operands, 0)?;
+        if self.stack.len() >= self.options.max_stack_depth {
+            return Err(GraphicsError::new(
+                Some(offset),
+                GraphicsErrorKind::StackOverflow {
+                    limit: self.options.max_stack_depth,
+                },
+            ));
+        }
+        self.stack.push(self.current);
+        Ok(())
+    }
+
+    fn restore_state(
+        &mut self,
+        offset: ByteOffset,
+        operands: &[PdfPrimitive<'_>],
+    ) -> GraphicsResult<()> {
+        expect_operand_count(offset, b"Q", operands, 0)?;
+        self.current = self
+            .stack
+            .pop()
+            .ok_or_else(|| GraphicsError::new(Some(offset), GraphicsErrorKind::StackUnderflow))?;
+        Ok(())
+    }
+
+    fn concatenate_matrix(
+        &mut self,
+        offset: ByteOffset,
+        operands: &[PdfPrimitive<'_>],
+    ) -> GraphicsResult<()> {
+        expect_operand_count(offset, b"cm", operands, 6)?;
+        self.current.ctm = self.current.ctm.multiply(Matrix::new(
+            number_operand(offset, b"cm", operands, 0)?,
+            number_operand(offset, b"cm", operands, 1)?,
+            number_operand(offset, b"cm", operands, 2)?,
+            number_operand(offset, b"cm", operands, 3)?,
+            number_operand(offset, b"cm", operands, 4)?,
+            number_operand(offset, b"cm", operands, 5)?,
+        ));
+        Ok(())
+    }
+
+    fn record_image_hint(
+        &mut self,
+        offset: ByteOffset,
+        operands: &[PdfPrimitive<'_>],
+    ) -> GraphicsResult<()> {
+        expect_operand_count(offset, b"Do", operands, 1)?;
+        let name = name_operand(offset, b"Do", operands, 0)?;
+        let image_to_device = self.transform.matrix.multiply(self.current.ctm);
+        if !image_transform_is_axis_aligned(image_to_device) {
+            return Ok(());
+        }
+        let Some(bounds) = device_pixel_bounds(
+            transformed_image_bounds(image_to_device),
+            self.transform.dimensions,
+            0.0,
+        ) else {
+            return Ok(());
+        };
+        self.hints.record(
+            name,
+            bounds.max_x - bounds.min_x,
+            bounds.max_y - bounds.min_y,
+        );
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 struct TextState {
     in_text_object: bool,
@@ -9337,11 +9581,12 @@ fn decode_image_xobject<'a, R>(
     resolver: &'a R,
     limits: ImageDecodeLimits,
     icc_cache: &mut IccTransformCache,
+    hint: Option<&ImageDecodeHint>,
 ) -> GraphicsResult<ImageXObject>
 where
     R: ImageObjectResolver<'a> + ?Sized,
 {
-    decode_image_xobject_at_depth(resource_name, stream, resolver, limits, 0, icc_cache)
+    decode_image_xobject_at_depth(resource_name, stream, resolver, limits, 0, icc_cache, hint)
 }
 
 fn decode_image_xobject_at_depth<'a, R>(
@@ -9351,6 +9596,7 @@ fn decode_image_xobject_at_depth<'a, R>(
     limits: ImageDecodeLimits,
     soft_mask_depth: usize,
     icc_cache: &mut IccTransformCache,
+    hint: Option<&ImageDecodeHint>,
 ) -> GraphicsResult<ImageXObject>
 where
     R: ImageObjectResolver<'a> + ?Sized,
@@ -9415,6 +9661,16 @@ where
         ));
     }
     let mut decoded = decoded;
+    let downsample_plan = image_downsample_plan(ImageDownsampleInput {
+        width,
+        height,
+        color_space: color_space.kind,
+        image_filter,
+        image_mask,
+        decode: image_decode_ranges(stream.dictionary())?,
+        dictionary: stream.dictionary(),
+        hint,
+    })?;
     let (kind, soft_mask) = if image_mask {
         (
             ImageKind::StencilMask {
@@ -9440,6 +9696,13 @@ where
                 icc_cache,
             )?,
         )
+    };
+    let (width, height) = if let Some(plan) = downsample_plan.filter(|_| soft_mask.is_none()) {
+        let samples = downsample_image_samples(&decoded, width, height, color_space.kind, plan)?;
+        decoded = samples;
+        (plan.width, plan.height)
+    } else {
+        (width, height)
     };
     Ok(ImageXObject {
         resource_name: resource_name.as_bytes().to_vec(),
@@ -9558,6 +9821,7 @@ where
         limits,
         soft_mask_depth + 1,
         icc_cache,
+        None,
     )?;
     if mask.width != width || mask.height != height {
         return Err(invalid_image_resource(b"SMask"));
@@ -9699,6 +9963,91 @@ fn decode_image_samples(
             decode_dct_image(stream.raw(), width, height, color_space, max_image_bytes)
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ImageDownsamplePlan {
+    width: u32,
+    height: u32,
+}
+
+struct ImageDownsampleInput<'a> {
+    width: u32,
+    height: u32,
+    color_space: ImageColorSpace,
+    image_filter: ImageFilter,
+    image_mask: bool,
+    decode: Option<ImageDecode>,
+    dictionary: &'a [(PdfName<'a>, PdfPrimitive<'a>)],
+    hint: Option<&'a ImageDecodeHint>,
+}
+
+fn image_downsample_plan(
+    input: ImageDownsampleInput<'_>,
+) -> GraphicsResult<Option<ImageDownsamplePlan>> {
+    let Some(hint) = input.hint else {
+        return Ok(None);
+    };
+    if input.image_mask
+        || input.decode.is_some()
+        || !matches!(
+            input.color_space,
+            ImageColorSpace::DeviceGray | ImageColorSpace::DeviceRgb
+        )
+        || image_has_predictor(input.dictionary)?
+        || dictionary_value(input.dictionary, b"SMask").is_some()
+        || !matches!(
+            input.image_filter,
+            ImageFilter::Raw | ImageFilter::StreamDecoded
+        )
+    {
+        return Ok(None);
+    }
+    let device_pixels = u64::from(hint.max_device_width) * u64::from(hint.max_device_height);
+    let source_pixels = u64::from(input.width) * u64::from(input.height);
+    if device_pixels == 0 || source_pixels < device_pixels.saturating_mul(4) {
+        return Ok(None);
+    }
+    let target_width = hint.max_device_width.clamp(1, input.width);
+    let target_height = hint.max_device_height.clamp(1, input.height);
+    if target_width == input.width && target_height == input.height {
+        return Ok(None);
+    }
+    Ok(Some(ImageDownsamplePlan {
+        width: target_width,
+        height: target_height,
+    }))
+}
+
+fn downsample_image_samples(
+    samples: &[u8],
+    source_width: u32,
+    source_height: u32,
+    color_space: ImageColorSpace,
+    plan: ImageDownsamplePlan,
+) -> GraphicsResult<Vec<u8>> {
+    let components = color_space.bytes_per_pixel();
+    let target_len = expected_image_len(plan.width, plan.height, color_space)?;
+    let mut downsampled = Vec::with_capacity(target_len);
+    for target_y in 0..plan.height {
+        let source_y = nearest_source_index(target_y, plan.height, source_height);
+        for target_x in 0..plan.width {
+            let source_x = nearest_source_index(target_x, plan.width, source_width);
+            let source_index =
+                (source_y as usize * source_width as usize + source_x as usize) * components;
+            downsampled.extend_from_slice(&samples[source_index..source_index + components]);
+        }
+    }
+    Ok(downsampled)
+}
+
+fn nearest_source_index(target: u32, target_len: u32, source_len: u32) -> u32 {
+    let numerator = u64::from(target)
+        .saturating_mul(u64::from(source_len))
+        .saturating_add(u64::from(target_len / 2));
+    u32::try_from(numerator / u64::from(target_len))
+        .unwrap_or(u32::MAX)
+        .min(source_len.saturating_sub(1))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -20881,6 +21230,53 @@ mod tests {
         let image = resources.get(PdfName::new(b"Im1")).expect("image resource");
 
         assert_eq!(image.samples.len(), 12);
+    }
+
+    #[test]
+    fn image_resources_should_downsample_with_decode_hints() {
+        let content = b"q 2 0 0 2 0 0 cm /Im1 Do Q";
+        let document = load_image_xobject_pdf(
+            content,
+            b"<< /Type /XObject /Subtype /Image /Width 4 /Height 4 /ColorSpace /DeviceGray /BitsPerComponent 8 /Length 16 >>",
+            &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+        );
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 2.0,
+                    max_y: 2.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            2,
+        )
+        .expect("valid transform");
+        let hints = collect_image_decode_hints(
+            tokenize_content(PdfBytes::new(content)),
+            transform,
+            DisplayListOptions::default(),
+        )
+        .expect("decode hints");
+        let xobjects = vec![(
+            PdfName::new(b"Im1"),
+            PdfPrimitive::Reference(ferrugo_syntax::PdfReference::new(4, 0)),
+        )];
+        let resources = ImageResources::from_xobject_dictionary_with_decode_hints(
+            &xobjects,
+            &document,
+            DisplayListOptions::default(),
+            &hints,
+        )
+        .expect("valid image resources");
+        let image = resources.get(PdfName::new(b"Im1")).expect("image resource");
+
+        assert_eq!(image.width, 2);
+        assert_eq!(image.height, 2);
+        assert_eq!(&*image.samples, &[0, 2, 8, 10]);
+        assert_eq!(resources.resource_summary().decoded_sample_bytes, 4);
     }
 
     #[test]

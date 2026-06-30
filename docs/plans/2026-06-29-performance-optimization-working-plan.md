@@ -2147,8 +2147,10 @@ Goal: make scan/image-heavy documents fast without increasing peak memory.
 
 - [x] Identify image-heavy fixtures from matrix and existing image reports.
 - [x] Profile decode, color conversion, alpha/soft-mask work, and output encode.
-- [ ] Add downsample-aware decode where the source image is much larger than the
-  target raster.
+- [x] Add low-memory downsample-aware decode where the source image is much
+  larger than the target raster.
+- [ ] Extend downsample-aware decode to the default profile only when it is
+  speed-neutral or speed-positive on repeated benchmarks.
 - [ ] Avoid full RGBA expansion when the target raster is smaller and direct
   sampling is possible.
 - [x] Avoid full inverse-matrix work per pixel for axis-aligned image
@@ -2607,6 +2609,37 @@ Image placement footprint instrumentation from 2026-06-30:
   now a concrete downsample-aware decode target; the mobile mixed fixture is a
   watch item where a lower threshold would need stronger quality and speed
   evidence.
+
+Accepted low-memory downsample decode result from 2026-06-30:
+
+- Profiling trigger: the placement trace showed
+  `scanner-large-image-budget.pdf` rendering `563,200` source pixels into
+  `18,560` clipped device pixels at `--max-edge 160`, a `30.34x` source/device
+  pixel ratio.
+- Change: native low-memory render limits now enable request-local
+  placement-aware image decode hints. The first downsample path is deliberately
+  conservative: top-level, visible, axis-aligned Image XObject placements only;
+  Raw/Flate images only; DeviceGray/DeviceRGB only; no Predictor, DCT, Decode
+  array, ImageMask, Indexed color, SoftMask, or Form XObject image cases. The
+  default profile passes empty hints and keeps the previous decode path.
+- Trace artifacts:
+  `target/trace-scanner-large-default-after-gate.json` and
+  `target/trace-scanner-large-low-memory-downsample.json`.
+- Memory result: default keeps the scanner image at `640 x 880`,
+  `563,200` decoded/resident bytes, and still reports a downsample candidate.
+  Low-memory stores the same placement as `116 x 160`, `18,560`
+  decoded/resident bytes, and the placement summary drops to a `1.00x`
+  source/device ratio. This is a `96.7%` resident image-sample reduction for
+  the targeted fixture.
+- Benchmark result, 1000 native hot-render iterations:
+  default remained neutral against the baseline worktree
+  (`0.259 ms` -> `0.260 ms` mean). Low-memory traded speed for memory
+  (`0.246 ms` -> `0.304 ms` mean), so this is accepted only as a low-memory
+  memory optimization, not as a default performance win.
+- Regression guard: targeted tests cover the decode-hint sample reduction,
+  low-memory scanner trace resource counters, and `trace-native
+  --native-profile low-memory`. Existing masks, Predictor images, DCT images,
+  Indexed color, and SoftMask cases remain outside this fast path.
 
 Accepted shared image sample Vec result from 2026-06-30:
 

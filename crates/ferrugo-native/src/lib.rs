@@ -19,13 +19,14 @@ use ferrugo_object::{
 use ferrugo_render::{
     build_form_display_list_with_graphics_resources, build_image_display_list,
     build_path_display_list_with_graphics_resources, build_text_display_list,
-    decode_tiling_pattern, display_list_image_placement_summary, display_list_stroke_shape_summary,
-    rasterize_display_list_into_with_phase_timings, rasterize_images, rasterize_paths_into,
-    rasterize_text, ColorSpaceResources, DisplayItem, DisplayList, DisplayListOptions,
-    ExtGraphicsStateResources, FontResources, FormResources, GraphicsError, GraphicsErrorKind,
-    ImageResources, PageGeometry, PageRotation, PageTransform, PageTransformOptions, PathBounds,
-    PathRasterOptions, Point, RasterDisplayPhase, RasterError, RasterErrorKind, ShadingResources,
-    TextDisplayItem, TextWritingMode, TilingPatternResources,
+    collect_image_decode_hints, decode_tiling_pattern, display_list_image_placement_summary,
+    display_list_stroke_shape_summary, rasterize_display_list_into_with_phase_timings,
+    rasterize_images, rasterize_paths_into, rasterize_text, ColorSpaceResources, DisplayItem,
+    DisplayList, DisplayListOptions, ExtGraphicsStateResources, FontResources, FormResources,
+    GraphicsError, GraphicsErrorKind, ImageDecodeHints, ImageResources, PageGeometry, PageRotation,
+    PageTransform, PageTransformOptions, PathBounds, PathRasterOptions, Point, RasterDisplayPhase,
+    RasterError, RasterErrorKind, ShadingResources, TextDisplayItem, TextWritingMode,
+    TilingPatternResources,
 };
 pub use ferrugo_render::{ImagePlacementSummary, ImageResourceSummary, StrokeShapeSummary};
 use ferrugo_syntax::{PdfBytes, PdfName, PdfNumber, PdfPrimitive, PdfReference, PdfString};
@@ -607,6 +608,8 @@ pub struct NativeRenderLimits {
     pub spooling_enabled: bool,
     /// Maximum bytes allowed for temporary spooling.
     pub max_spool_bytes: usize,
+    /// Whether placement-aware image decode may downsample oversized sources.
+    pub downsample_image_decode: bool,
 }
 
 impl NativeRenderLimits {
@@ -640,6 +643,7 @@ impl NativeRenderLimits {
             max_session_loaded_object_bytes: 32 * 1024 * 1024,
             spooling_enabled: false,
             max_spool_bytes: DEFAULT_SPOOL_BYTES_LIMIT,
+            downsample_image_decode: true,
         }
     }
 
@@ -728,6 +732,7 @@ impl Default for NativeRenderLimits {
             max_session_loaded_object_bytes: 256 * 1024 * 1024,
             spooling_enabled: false,
             max_spool_bytes: DEFAULT_SPOOL_BYTES_LIMIT,
+            downsample_image_decode: false,
         }
     }
 }
@@ -1511,6 +1516,22 @@ fn render_loaded_document_inner(
         limits.page_transform_options(),
     )
     .map_err(map_raster_error)?;
+    let image_decode_hints = if limits.downsample_image_decode {
+        record_render_phase(
+            &mut trace_sinks.timings,
+            NativeRenderPhase::ContentTokenize,
+            || {
+                collect_image_decode_hints(
+                    tokenize_content(PdfBytes::new(&content)),
+                    transform,
+                    display_options,
+                )
+                .map_err(map_graphics_error)
+            },
+        )?
+    } else {
+        ImageDecodeHints::empty()
+    };
     record_stroke_shapes(
         &mut trace_sinks.stroke_shapes,
         &display_list,
@@ -1547,7 +1568,15 @@ fn render_loaded_document_inner(
     let image_resources = record_render_phase(
         &mut trace_sinks.timings,
         NativeRenderPhase::ResourceImages,
-        || page_image_resources(document, page, &xobject_invocations, display_options),
+        || {
+            page_image_resources(
+                document,
+                page,
+                &xobject_invocations,
+                display_options,
+                &image_decode_hints,
+            )
+        },
     )?;
     record_image_resource_summary(
         &mut trace_sinks.image_resources,
@@ -2404,6 +2433,7 @@ fn page_image_resources(
     page: &ObjectPageMetadata,
     xobject_invocations: &[Vec<u8>],
     options: DisplayListOptions,
+    image_decode_hints: &ImageDecodeHints,
 ) -> Result<ImageResources, ThumbnailError> {
     let object = document
         .objects
@@ -2436,8 +2466,13 @@ fn page_image_resources(
         return Ok(ImageResources::empty());
     };
     let xobjects = filter_invoked_resources(xobjects, xobject_invocations);
-    ImageResources::from_xobject_dictionary(xobjects.as_slice(), document, options)
-        .map_err(map_graphics_error)
+    ImageResources::from_xobject_dictionary_with_decode_hints(
+        xobjects.as_slice(),
+        document,
+        options,
+        image_decode_hints,
+    )
+    .map_err(map_graphics_error)
 }
 
 fn page_form_resources(
@@ -4890,6 +4925,33 @@ mod tests {
                 + trace.image_placements.transformed_placements
                 == trace.image_placements.placements
         );
+    }
+
+    #[test]
+    fn low_memory_render_with_trace_should_downsample_large_scanner_image() {
+        let bytes = include_bytes!("../../../fixtures/generated/scanner-large-image-budget.pdf");
+        let options = ThumbnailOptions {
+            page_index: 0,
+            max_edge: 160,
+            background: ferrugo_thumbnail::Rgba::WHITE,
+            output_format: ferrugo_thumbnail::OutputFormat::Rgba,
+            timeout: std::time::Duration::from_secs(5),
+            annotation_mode: AnnotationMode::Screen,
+            form_appearance_mode: FormAppearanceMode::DocumentState,
+        };
+
+        let trace = NativeBackend::low_memory()
+            .render_with_trace(PdfSource::from_bytes(bytes), &options)
+            .expect("scanner fixture should render with low-memory trace");
+
+        assert_eq!(trace.thumbnail.width, 116);
+        assert_eq!(trace.thumbnail.height, 160);
+        assert_eq!(trace.image_resources.decoded_sample_bytes, 18_560);
+        assert_eq!(trace.image_resources.resident_bytes, 18_560);
+        assert_eq!(trace.image_resources.max_width, 116);
+        assert_eq!(trace.image_resources.max_height, 160);
+        assert_eq!(trace.image_placements.source_pixels, 18_560);
+        assert_eq!(trace.image_placements.device_pixels, 18_560);
     }
 
     #[test]
