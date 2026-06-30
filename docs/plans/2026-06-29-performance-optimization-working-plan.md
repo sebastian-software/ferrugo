@@ -3863,6 +3863,37 @@ Repeat family phase-summary instrumentation from 2026-06-30:
 - Performance claim: none. This is benchmark instrumentation and should not be
   counted as a renderer speed win.
 
+Current vector profile and rejected joinless axis-span reuse candidate from
+2026-06-30:
+
+- Profiling basis:
+  `target/performance-matrix-current-profile-selection.json` rendered all `11`
+  starter records with no fallback or errors. `vector-stress.pdf` remained the
+  slowest fixture at mean `0.750 ms`, p95 `0.859 ms`. The focused baseline
+  `target/benchmark-repeat-vector-stress-current-profile-selection.json`
+  measured repeat mean `0.728 ms`, with `raster_paths` at `0.634 ms`.
+- CPU sample:
+  `target/sample-vector-stress-current-profile-selection.txt` sampled a longer
+  `benchmark-repeat-native` run. The dominant top-of-stack buckets were
+  `stroke_path` (`1191` samples), `blend_pixel` (`859`),
+  `rasterize_row_bucketed_stroke_ranges` (`739`), and
+  `point_in_single_stroke_line` (`430`). Allocation/free frames were still
+  visible inside `stroke_path`, but the top predicate and blend work remained
+  larger than the specific allocation hypothesis.
+- Candidate: avoid materializing a duplicate `AxisStrokeSpans` raster structure
+  for joinless axis-aligned strokes by making `AxisStrokeRasterSpans::raster`
+  optional and reusing `coverage` when `joins.is_empty()`.
+- Result: rejected. The focused candidate
+  `target/benchmark-repeat-vector-stress-axis-span-reuse-candidate.json`
+  regressed repeat mean `0.728 ms` -> `0.820 ms`, with `raster_paths` moving
+  `0.634 ms` -> `0.729 ms`. The repeat
+  `target/benchmark-repeat-vector-stress-axis-span-reuse-candidate-repeat.json`
+  confirmed repeat mean `0.821 ms`, with `raster_paths` at `0.730 ms`.
+- Decision: reverted. The shape looked allocation-friendly, but it worsened the
+  current compiler/codegen/runtime path reproducibly. Do not reopen this exact
+  `Option<AxisStrokeSpans>` form unless a lower-level allocation profile shows
+  a different construction strategy can avoid the branch/shape regression.
+
 ## Phase 6: Benchmark Gates And Claims
 
 Goal: turn stable evidence into guardrails, not premature marketing.
