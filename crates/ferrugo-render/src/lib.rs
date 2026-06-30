@@ -1409,8 +1409,24 @@ pub struct StrokeShapeSummary {
     pub span_raster_candidate_lines: usize,
     /// Number of stroked items expected to route through axis-span rasterization.
     pub axis_span_routed_items: usize,
+    /// Number of axis-span routed items large enough for the span cursor route.
+    pub axis_span_cursor_candidate_items: usize,
+    /// Total coverage spans built for axis-span routed stroke items.
+    pub axis_span_coverage_spans: usize,
+    /// Maximum coverage spans built for one axis-span routed stroke item.
+    pub max_axis_span_coverage_spans_per_item: usize,
+    /// Total raster spans built for axis-span routed stroke items.
+    pub axis_span_raster_spans: usize,
+    /// Maximum raster spans built for one axis-span routed stroke item.
+    pub max_axis_span_raster_spans_per_item: usize,
     /// Number of single-line stroked items expected to route through simple-line spans.
     pub simple_line_span_routed_items: usize,
+    /// Number of simple-line span routed items large enough for the span cursor route.
+    pub simple_line_span_cursor_candidate_items: usize,
+    /// Total coverage spans built for simple-line span routed stroke items.
+    pub simple_line_span_coverage_spans: usize,
+    /// Maximum coverage spans built for one simple-line span routed stroke item.
+    pub max_simple_line_span_coverage_spans_per_item: usize,
     /// Number of single-line stroked items below the simple-line span threshold.
     pub simple_line_span_below_threshold_items: usize,
     /// Pixel area covered by single-line stroked items below the span threshold.
@@ -1455,7 +1471,22 @@ impl StrokeShapeSummary {
         self.span_raster_candidate_items += other.span_raster_candidate_items;
         self.span_raster_candidate_lines += other.span_raster_candidate_lines;
         self.axis_span_routed_items += other.axis_span_routed_items;
+        self.axis_span_cursor_candidate_items += other.axis_span_cursor_candidate_items;
+        self.axis_span_coverage_spans += other.axis_span_coverage_spans;
+        self.max_axis_span_coverage_spans_per_item = self
+            .max_axis_span_coverage_spans_per_item
+            .max(other.max_axis_span_coverage_spans_per_item);
+        self.axis_span_raster_spans += other.axis_span_raster_spans;
+        self.max_axis_span_raster_spans_per_item = self
+            .max_axis_span_raster_spans_per_item
+            .max(other.max_axis_span_raster_spans_per_item);
         self.simple_line_span_routed_items += other.simple_line_span_routed_items;
+        self.simple_line_span_cursor_candidate_items +=
+            other.simple_line_span_cursor_candidate_items;
+        self.simple_line_span_coverage_spans += other.simple_line_span_coverage_spans;
+        self.max_simple_line_span_coverage_spans_per_item = self
+            .max_simple_line_span_coverage_spans_per_item
+            .max(other.max_simple_line_span_coverage_spans_per_item);
         self.simple_line_span_below_threshold_items += other.simple_line_span_below_threshold_items;
         self.simple_line_span_below_threshold_pixels +=
             other.simple_line_span_below_threshold_pixels;
@@ -5636,6 +5667,44 @@ fn stroke_shape_summary_for_path(
                 )
             })
             .unwrap_or_default();
+    }
+    if axis_span_routed {
+        if let Some(spans) = stroke_bounds.and_then(|bounds| {
+            axis_stroke_raster_spans(
+                lines,
+                joins,
+                radius,
+                transform.dimensions,
+                bounds,
+                samples as u32,
+                path.state.line_cap,
+            )
+        }) {
+            summary.axis_span_coverage_spans = spans.coverage.spans.len();
+            summary.max_axis_span_coverage_spans_per_item = summary.axis_span_coverage_spans;
+            summary.axis_span_raster_spans = spans.raster.spans.len();
+            summary.max_axis_span_raster_spans_per_item = summary.axis_span_raster_spans;
+            summary.axis_span_cursor_candidate_items =
+                usize::from(spans.coverage.spans.len() >= STROKE_SPAN_CURSOR_MIN_SPANS);
+        }
+    }
+    if simple_line_span_routed {
+        if let Some(spans) = stroke_bounds.and_then(|bounds| {
+            simple_line_stroke_raster_spans(
+                lines[0],
+                radius,
+                transform.dimensions,
+                bounds,
+                samples as u32,
+                path.state.line_cap,
+            )
+        }) {
+            summary.simple_line_span_coverage_spans = spans.spans.len();
+            summary.max_simple_line_span_coverage_spans_per_item =
+                summary.simple_line_span_coverage_spans;
+            summary.simple_line_span_cursor_candidate_items =
+                usize::from(spans.spans.len() >= STROKE_SPAN_CURSOR_MIN_SPANS);
+        }
     }
     summary.max_row_index_refs_per_item = summary.row_index_refs;
     summary.max_row_bucket_sample_refs_per_item = summary.row_bucket_sample_refs;
@@ -18217,6 +18286,16 @@ mod tests {
         assert_eq!(summary.joinless_axis_aligned_items, 1);
         assert_eq!(summary.span_raster_candidate_items, 0);
         assert_eq!(summary.axis_span_routed_items, 1);
+        assert!(summary.axis_span_coverage_spans > 0);
+        assert_eq!(
+            summary.max_axis_span_coverage_spans_per_item,
+            summary.axis_span_coverage_spans
+        );
+        assert!(summary.axis_span_raster_spans > 0);
+        assert_eq!(
+            summary.max_axis_span_raster_spans_per_item,
+            summary.axis_span_raster_spans
+        );
         assert_eq!(summary.simple_line_span_routed_items, 0);
         assert_eq!(summary.generic_stroke_fallback_items, 0);
         assert_eq!(summary.row_bucket_sample_refs, 0);
@@ -18266,6 +18345,95 @@ mod tests {
         assert_eq!(summary.simple_line_span_below_threshold_items, 1);
         assert_eq!(summary.simple_line_span_below_threshold_pixels, 56);
         assert_eq!(summary.generic_stroke_fallback_items, 1);
+    }
+
+    #[test]
+    fn stroke_shape_summary_should_count_axis_span_cursor_candidates() {
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 160.0,
+                    max_y: 160.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            160,
+        )
+        .expect("valid page transform");
+        let mut segments = Vec::new();
+        for index in 0..32 {
+            let x = 10.0 + f64::from(index) * 4.0;
+            segments.push(PathSegment::MoveTo(Point { x, y: 20.0 }));
+            segments.push(PathSegment::LineTo(Point { x, y: 140.0 }));
+        }
+        let display_list = DisplayList::from_items(vec![DisplayItem::Path(PathDisplayItem {
+            segments,
+            paint: PaintMode::Stroke,
+            state: GraphicsState::default(),
+            fill_pattern: None,
+        })]);
+
+        let summary = display_list_stroke_shape_summary(
+            &display_list,
+            transform,
+            PathRasterOptions::default(),
+        )
+        .expect("stroke shape summary should build");
+
+        assert_eq!(summary.axis_span_routed_items, 1);
+        assert_eq!(summary.axis_span_cursor_candidate_items, 1);
+        assert!(summary.axis_span_coverage_spans >= STROKE_SPAN_CURSOR_MIN_SPANS);
+        assert_eq!(
+            summary.max_axis_span_coverage_spans_per_item,
+            summary.axis_span_coverage_spans
+        );
+        assert!(summary.axis_span_raster_spans > 0);
+    }
+
+    #[test]
+    fn stroke_shape_summary_should_count_simple_line_span_cursor_candidates() {
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 400.0,
+                    max_y: 400.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            400,
+        )
+        .expect("valid page transform");
+        let display_list = DisplayList::from_items(vec![DisplayItem::Path(PathDisplayItem {
+            segments: vec![
+                PathSegment::MoveTo(Point { x: 80.0, y: 20.0 }),
+                PathSegment::LineTo(Point { x: 80.0, y: 380.0 }),
+            ],
+            paint: PaintMode::Stroke,
+            state: GraphicsState::default(),
+            fill_pattern: None,
+        })]);
+
+        let summary = display_list_stroke_shape_summary(
+            &display_list,
+            transform,
+            PathRasterOptions::default(),
+        )
+        .expect("stroke shape summary should build");
+
+        assert_eq!(summary.axis_span_routed_items, 0);
+        assert_eq!(summary.simple_line_span_routed_items, 1);
+        assert_eq!(summary.simple_line_span_cursor_candidate_items, 1);
+        assert!(summary.simple_line_span_coverage_spans >= STROKE_SPAN_CURSOR_MIN_SPANS);
+        assert_eq!(
+            summary.max_simple_line_span_coverage_spans_per_item,
+            summary.simple_line_span_coverage_spans
+        );
     }
 
     #[test]

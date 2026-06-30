@@ -8631,7 +8631,15 @@ fn trace_stroke_shape_summary_json(
                 "\"span_raster_candidate_items\":{},",
                 "\"span_raster_candidate_lines\":{},",
                 "\"axis_span_routed_items\":{},",
+                "\"axis_span_cursor_candidate_items\":{},",
+                "\"axis_span_coverage_spans\":{},",
+                "\"max_axis_span_coverage_spans_per_item\":{},",
+                "\"axis_span_raster_spans\":{},",
+                "\"max_axis_span_raster_spans_per_item\":{},",
                 "\"simple_line_span_routed_items\":{},",
+                "\"simple_line_span_cursor_candidate_items\":{},",
+                "\"simple_line_span_coverage_spans\":{},",
+                "\"max_simple_line_span_coverage_spans_per_item\":{},",
                 "\"simple_line_span_below_threshold_items\":{},",
                 "\"simple_line_span_below_threshold_pixels\":{},",
                 "\"generic_stroke_fallback_items\":{},",
@@ -8668,7 +8676,15 @@ fn trace_stroke_shape_summary_json(
             summary.span_raster_candidate_items,
             summary.span_raster_candidate_lines,
             summary.axis_span_routed_items,
+            summary.axis_span_cursor_candidate_items,
+            summary.axis_span_coverage_spans,
+            summary.max_axis_span_coverage_spans_per_item,
+            summary.axis_span_raster_spans,
+            summary.max_axis_span_raster_spans_per_item,
             summary.simple_line_span_routed_items,
+            summary.simple_line_span_cursor_candidate_items,
+            summary.simple_line_span_coverage_spans,
+            summary.max_simple_line_span_coverage_spans_per_item,
             summary.simple_line_span_below_threshold_items,
             summary.simple_line_span_below_threshold_pixels,
             summary.generic_stroke_fallback_items,
@@ -11677,6 +11693,14 @@ mod tests {
         assert!(json.contains("\"max_row_bucket_merged_sample_points_per_item\""));
         assert!(json.contains("\"span_raster_candidate_items\""));
         assert!(json.contains("\"axis_span_routed_items\""));
+        assert!(json.contains("\"axis_span_cursor_candidate_items\""));
+        assert!(json.contains("\"axis_span_coverage_spans\""));
+        assert!(json.contains("\"max_axis_span_coverage_spans_per_item\""));
+        assert!(json.contains("\"axis_span_raster_spans\""));
+        assert!(json.contains("\"max_axis_span_raster_spans_per_item\""));
+        assert!(json.contains("\"simple_line_span_cursor_candidate_items\""));
+        assert!(json.contains("\"simple_line_span_coverage_spans\""));
+        assert!(json.contains("\"max_simple_line_span_coverage_spans_per_item\""));
         assert!(json.contains("\"simple_line_span_below_threshold_items\""));
         assert!(json.contains("\"generic_stroke_fallback_items\""));
         assert!(json.contains("\"pixel_x_span_buckets\""));

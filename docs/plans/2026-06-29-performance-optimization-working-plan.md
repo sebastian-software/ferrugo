@@ -4676,6 +4676,44 @@ Accepted span-row cursor result from 2026-06-30:
   alternate stroke geometry, and the gate keeps the changed loop on large span
   workloads where the cursor can amortize its setup cost.
 
+Post-span-cursor profile and span-route diagnostics from 2026-06-30:
+
+- Current matrix artifact:
+  `target/performance-matrix-current-after-span-cursor-native-hot.json`, native
+  hot-render, `--max-edge 160`, 5 measured iterations after one warmup.
+  `vector-stress.pdf` is still the slowest native hot fixture at mean
+  `0.726 ms`, p95 `0.800 ms`; `technical-hatch-clipping.pdf` follows at mean
+  `0.315 ms`, p95 `0.400 ms`.
+- CPU sample:
+  `target/sample-vector-stress-post-span-cursor.txt`, captured from a profiling
+  build repeat run, still puts the work under `stroke_path`. The visible
+  buckets are `blend_pixel`, `rasterize_row_bucketed_stroke_ranges`,
+  `rasterize_span_covered_stroke_ranges`, `point_in_single_stroke_line`,
+  `RasterDevice::pixel`, `axis_stroke_span_for_sample_y`, `merge_pixel_ranges`,
+  and allocator/free frames. Parser/tokenizer stacks are present but smaller
+  than raster work.
+- Change:
+  `trace-native` now exposes item-level span-route counters in
+  `stroke_shape_summary`: axis-span cursor candidates, axis-span coverage/raster
+  span counts, simple-line span cursor candidates, and simple-line coverage
+  span counts. The counters are collected only in the explicit trace path and
+  do not change normal render or benchmark output.
+- Smoke artifact:
+  `target/trace-vector-stress-span-route-counters.json` reports `20`
+  axis-span routed items, `4016` total axis coverage spans, max `312` coverage
+  spans per axis item, `44` simple-line span routed items, `4508` total
+  simple-line coverage spans, and max `172` coverage spans per simple-line
+  item. Both cursor-candidate counters are `0` at this item-summary level.
+- Interpretation:
+  the post-cursor profile still justifies stroke raster work, but the new
+  counters show that a simple item-level span count is not enough to explain
+  the accepted cursor win or pick the next threshold. Do not tune
+  `STROKE_SPAN_CURSOR_MIN_SPANS` again from these counters alone. The next
+  implementation candidate should either instrument actual
+  `rasterize_span_covered_stroke_ranges` call counts/cursor-route decisions or
+  target the still-visible row-bucket predicate/blend work with a fresh
+  protection run.
+
 ## Phase 6: Benchmark Gates And Claims
 
 Goal: turn stable evidence into guardrails, not premature marketing.
