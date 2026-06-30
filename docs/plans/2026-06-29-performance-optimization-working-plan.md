@@ -4961,6 +4961,33 @@ Accepted single-offset blend write from 2026-06-30:
   avoids new dependencies and unsafe code, preserves existing blend math, and
   keeps the protection set neutral within small absolute timing noise.
 
+Post-offset-blend profile and rejected axis row-copy candidate from 2026-06-30:
+
+- Fresh profile:
+  `target/sample-vector-stress-post-offset-blend.txt`, captured after the
+  single-offset blend write, still showed path rasterization as the hot phase.
+  Visible buckets included `rasterize_span_covered_stroke_ranges`,
+  `blend_pixel`, `rasterize_row_bucketed_stroke_ranges`,
+  `point_in_single_stroke_line`, `advance_active_line_indices`, and allocator
+  frames under `axis_stroke_raster_spans`.
+- Change tested locally but not kept:
+  replace `axis_stroke_span_rows`'s `vec![Vec::new(); rows]` plus
+  `extend_from_slice` loop with a direct iterator using
+  `spans.spans[row.clone()].to_vec()` per row. This targeted row-vector growth
+  in the existing raster-span construction path without reopening the already
+  rejected `coverage.clone()` or `Option<AxisStrokeSpans>` variants.
+- A/B artifacts:
+  `target/benchmark-repeat-vector-stress-single-offset-blend-candidate-20k.json`
+  versus
+  `target/benchmark-repeat-vector-stress-axis-row-tovec-candidate-20k.json`.
+- Result:
+  rejected. `vector-stress.pdf` repeat mean regressed `0.667 ms` -> `0.675 ms`
+  and repeat mean `raster_paths` regressed `0.576 ms` -> `0.582 ms`.
+- Decision:
+  reverted. The allocation frame is real, but this local row-copy spelling does
+  not improve the current target. Keep future axis-span allocation work tied to
+  a more structural reduction, not another local copy-shape rewrite.
+
 ## Settled Decisions
 
 - [x] `scripts/generate_performance_matrix.sh` defaults to release mode.
