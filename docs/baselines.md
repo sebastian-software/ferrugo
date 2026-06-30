@@ -139,6 +139,6 @@ Run a local metadata comparison with:
 ```sh
 FERRUGO_PDFIUM_LIBRARY=/path/to/libpdfium.dylib \
 DYLD_LIBRARY_PATH=/path/to/pdfium/out \
-cargo run -p ferrugo-cli -- compare-metadata fixtures/generated/text-page.pdf \
+cargo run -p ferrugo -- compare-metadata fixtures/generated/text-page.pdf \
   --output target/ferrugo-thumbnails/text-page-metadata-comparison.json
 ```

@@ -27,7 +27,7 @@ case "$PROFILE" in
     ;;
 esac
 
-cargo run -p ferrugo-cli "${profile_args[@]}" --no-default-features -- benchmark-matrix fixtures/generated \
+cargo run -p ferrugo "${profile_args[@]}" --no-default-features -- benchmark-matrix fixtures/generated \
   --manifest fixtures/performance-matrix-manifest.tsv \
   --backend native \
   --mode hot-render \

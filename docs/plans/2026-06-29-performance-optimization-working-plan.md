@@ -238,7 +238,7 @@ PROFILE=dev ./scripts/generate_performance_matrix.sh
 Equivalent direct command:
 
 ```sh
-cargo run -p ferrugo-cli --release --no-default-features -- benchmark-matrix fixtures/generated \
+cargo run -p ferrugo --release --no-default-features -- benchmark-matrix fixtures/generated \
   --manifest fixtures/performance-matrix-manifest.tsv \
   --max-edge 160 \
   --iterations 5 \
@@ -254,7 +254,7 @@ PDFium variant:
 ```sh
 FERRUGO_PDFIUM_LIBRARY=/path/to/libpdfium.dylib \
 DYLD_LIBRARY_PATH=/path/to/pdfium/lib \
-cargo run -p ferrugo-cli --release --features pdfium -- benchmark-matrix fixtures/generated \
+cargo run -p ferrugo --release --features pdfium -- benchmark-matrix fixtures/generated \
   --manifest fixtures/performance-matrix-manifest.tsv \
   --max-edge 160 \
   --iterations 5 \
@@ -1430,7 +1430,7 @@ Accepted axis-aligned span-row result from 2026-06-30:
   `cargo test -p ferrugo-render axis_stroke --no-default-features`,
   `cargo test --workspace --no-default-features`,
   `cargo clippy -p ferrugo-render --all-targets --no-default-features -- -D warnings`,
-  `cargo clippy -p ferrugo-cli --all-targets --all-features -- -D warnings`,
+  `cargo clippy -p ferrugo --all-targets --all-features -- -D warnings`,
   and
   `cargo clippy --workspace --all-targets --all-features -- -D warnings`
   passed.
@@ -4546,8 +4546,8 @@ Profiling build profile from 2026-06-30:
   one codegen unit. It is intended for `sample`, Instruments, Samply, and
   `atos` runs, not for shipped binaries or public speed claims.
 - Usage:
-  `cargo build --profile profiling -p ferrugo-cli --no-default-features`, then
-  run `target/profiling/ferrugo-cli benchmark-repeat-native ...` and attach
+  `cargo build --profile profiling -p ferrugo --no-default-features`, then
+  run `target/profiling/ferrugo benchmark-repeat-native ...` and attach
   `sample` or Instruments to that process. If the local Rust toolchain supports
   it, add `RUSTFLAGS="-C force-frame-pointers=yes"` for more stable native
   call stacks.
@@ -5538,7 +5538,7 @@ Release-mode vector-stress profile from 2026-06-30:
 - Artifacts:
   `target/benchmark-repeat-vector-stress-release-current-200k.json` and
   `target/sample-vector-stress-release-current.txt`, captured from
-  `target/release/ferrugo-cli benchmark-repeat-native
+  `target/release/ferrugo benchmark-repeat-native
   fixtures/generated/vector-stress.pdf --repetitions 200000 --max-edge 160`.
 - Timing result:
   `vector-stress.pdf` rendered natively at `160x120` with `76800` output

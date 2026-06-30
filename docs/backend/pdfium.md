@@ -7,7 +7,7 @@ The PDFium backend is isolated in `crates/ferrugo-pdfium`. Public consumers use
 the backend-neutral types from `ferrugo-thumbnail`; PDFium handles and symbols
 do not appear in the facade API.
 
-PDFium support is optional for `ferrugo-cli`. Default CLI builds are
+PDFium support is optional for `ferrugo`. Default CLI builds are
 native-only. Use `--features pdfium` only when running explicit maintainer
 commands such as PDFium renders, metadata comparisons, PDFium benchmarks, or
 visual diffs. Native-default `render` / `render-auto` commands do not retry
@@ -72,7 +72,7 @@ initialized=true last_error=0 library=/path/to/pdfium/out/ferrugo-dylib/libpdfiu
 After `FERRUGO_PDFIUM_LIBRARY` points at a local PDFium build:
 
 ```sh
-cargo run -p ferrugo-cli --features pdfium -- render-pdfium fixtures/generated/text-page.pdf \
+cargo run -p ferrugo --features pdfium -- render-pdfium fixtures/generated/text-page.pdf \
   --output target/ferrugo-thumbnails/text-page.png \
   --page-index 0 \
   --max-edge 1024 \
@@ -84,7 +84,7 @@ For product-facing timeout behavior, use the isolated runner. It spawns a
 single-use worker process and kills it if the wall-clock timeout expires:
 
 ```sh
-cargo run -p ferrugo-cli --features pdfium -- render-isolated fixtures/generated/text-page.pdf \
+cargo run -p ferrugo --features pdfium -- render-isolated fixtures/generated/text-page.pdf \
   --output target/ferrugo-thumbnails/text-page.png \
   --page-index 0 \
   --max-edge 1024 \
@@ -108,6 +108,6 @@ runtime crate dependencies:
 bash scripts/check_pdfium_quarantine.sh
 ```
 
-The check confirms that native-only `ferrugo-cli` has no `ferrugo-pdfium`
+The check confirms that native-only `ferrugo` has no `ferrugo-pdfium`
 dependency edge and that runtime crates do not contain forbidden PDFium
 integration symbols.

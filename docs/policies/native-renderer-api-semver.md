@@ -18,7 +18,7 @@ The stable consumer boundary is:
   memory diagnostics, single-page rendering through `ThumbnailBackend`,
   metadata inspection through `DocumentMetadataBackend`, first-page preview,
   and partial multi-page preview entry points.
-- `ferrugo-cli` default commands: native-only `render`, `render-auto`, and
+- `ferrugo` default commands: native-only `render`, `render-auto`, and
   `render-native` behavior for smoke tests and operational automation.
 
 Consumer APIs must not expose PDFium handles, PDFium-specific error values, or

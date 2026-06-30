@@ -32,7 +32,7 @@ if [[ -n "${FERRUGO_PDFIUM_LIBRARY:-}" ]]; then
   features=(--features pdfium)
 fi
 
-cargo run -p ferrugo-cli "${profile_args[@]}" "${features[@]}" -- benchmark-matrix fixtures/generated \
+cargo run -p ferrugo "${profile_args[@]}" "${features[@]}" -- benchmark-matrix fixtures/generated \
   --manifest fixtures/performance-matrix-manifest.tsv \
   --max-edge "$MAX_EDGE" \
   --iterations "$ITERATIONS" \

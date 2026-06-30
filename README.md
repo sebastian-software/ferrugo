@@ -18,7 +18,7 @@ compatibility is still a measured goal, not a claim.
 
 The native Rust path is the default development and packaging target.
 
-- `ferrugo-cli` builds without PDFium by default.
+- `ferrugo` builds without PDFium by default.
 - `render` and `render-auto` use the Rust-native backend.
 - Runtime fallback to external PDF renderers has been removed from normal
   rendering.
@@ -67,7 +67,7 @@ cargo test --workspace --no-default-features
 Render a generated fixture with the native backend:
 
 ```sh
-cargo run -p ferrugo-cli --no-default-features -- \
+cargo run -p ferrugo --no-default-features -- \
   render fixtures/generated/text-page.pdf \
   --max-edge 256 \
   --output target/text-page.png
@@ -76,7 +76,7 @@ cargo run -p ferrugo-cli --no-default-features -- \
 Force the native backend explicitly:
 
 ```sh
-cargo run -p ferrugo-cli --no-default-features -- \
+cargo run -p ferrugo --no-default-features -- \
   render-native fixtures/generated/text-page.pdf \
   --max-edge 256 \
   --output target/text-page-native.png
@@ -103,7 +103,7 @@ The workspace is split into small crates so each layer can be tested on its own.
 | `ferrugo-object` | Object graph, xref, streams, and document structure. |
 | `ferrugo-content` | Content stream tokenization and operator handling. |
 | `ferrugo-render` | Display-list and raster rendering pieces. |
-| `ferrugo-cli` | Local CLI for rendering, corpus analysis, benchmarks, and reports. |
+| `ferrugo` | Local CLI for rendering, corpus analysis, benchmarks, and reports. |
 | `ferrugo-pdfium` | Optional PDFium backend for maintainer comparison workflows. |
 | `ferrugo-wasm-smoke` | Small WASM smoke crate for secondary compatibility checks. |
 
@@ -156,8 +156,8 @@ drift?", not "what should the runtime depend on?"
 To build and run PDFium comparison commands, enable the feature explicitly:
 
 ```sh
-cargo build -p ferrugo-cli --features pdfium
-cargo test -p ferrugo-cli --features pdfium
+cargo build -p ferrugo --features pdfium
+cargo test -p ferrugo --features pdfium
 ```
 
 Then point the CLI at a local PDFium dynamic library:

@@ -3,7 +3,7 @@
 Status: accepted.
 Date: 2026-06-24.
 
-`ferrugo-cli` builds native-only by default. The PDFium backend remains in the
+`ferrugo` builds native-only by default. The PDFium backend remains in the
 workspace for maintainer comparison workflows, but it is not part of the
 default CLI dependency graph or normal runtime rendering path.
 
@@ -12,7 +12,7 @@ default CLI dependency graph or normal runtime rendering path.
 Use the default feature set for normal Rust-native renderer work:
 
 ```sh
-cargo build -p ferrugo-cli
+cargo build -p ferrugo
 cargo test --no-default-features
 ```
 
@@ -49,7 +49,7 @@ Before changing CLI features or package dependencies, run:
 bash scripts/check_pdfium_quarantine.sh
 ```
 
-This check fails if native-only `ferrugo-cli` regains a `ferrugo-pdfium`
+This check fails if native-only `ferrugo` regains a `ferrugo-pdfium`
 dependency edge or if runtime crates grow forbidden PDFium integration symbols.
 
 Run the plugin-free distribution check before release packaging or install
@@ -71,17 +71,17 @@ bash scripts/check_native_only_release.sh
 ```
 
 This local CI-equivalent gate runs native-only check/test, plugin-free and
-PDFium quarantine scans, `ferrugo-cli` package file inspection, leaf package
+PDFium quarantine scans, `ferrugo` package file inspection, leaf package
 artifact dry-runs, and all-features clippy. It writes the inspected CLI package
 file list to
-`target/native-only-release-ferrugo-cli-package-files.txt`.
+`target/native-only-release-ferrugo-package-files.txt`.
 
 ## Serverless Profile
 
 Short-lived server rendering can use the explicit Cargo `serverless` profile:
 
 ```sh
-cargo build --profile serverless -p ferrugo-cli --no-default-features
+cargo build --profile serverless -p ferrugo --no-default-features
 ```
 
 The profile inherits release mode, strips symbols, uses ThinLTO, keeps one code
@@ -96,7 +96,7 @@ startup-sensitive code:
 bash scripts/measure_serverless_profile.sh
 ```
 
-The script builds `target/serverless/ferrugo-cli`, inspects the CLI package file
+The script builds `target/serverless/ferrugo`, inspects the CLI package file
 list for PDFium/native runtime assets, and records binary size, process startup,
 and first-render latency in `target/serverless-profile-0197.json`.
 
@@ -114,7 +114,7 @@ platform plugins, or runtime downloads:
 
 ```sh
 cargo install --path crates/ferrugo-cli --no-default-features --locked
-ferrugo-cli render fixtures/generated/text-page.pdf \
+ferrugo render fixtures/generated/text-page.pdf \
   --max-edge 96 \
   --output target/plugin-free-smoke/text-page.png
 ```
@@ -127,7 +127,7 @@ pure Rust except for the Rust standard library and normal Cargo build tooling.
 
 - Remove `FERRUGO_PDFIUM_LIBRARY` and platform dynamic-library packaging from
   normal deployment images.
-- Build `ferrugo-cli` without `--features pdfium` for production native-only
+- Build `ferrugo` without `--features pdfium` for production native-only
   usage.
 - Use `render` / `render-auto` for normal native-only runtime rendering.
 - Use `render-native` when scripts must make the native backend explicit.
@@ -143,8 +143,8 @@ Enable PDFium explicitly when oracle comparison, direct PDFium probes, or PDFium
 benchmark work is needed:
 
 ```sh
-cargo build -p ferrugo-cli --features pdfium
-cargo test -p ferrugo-cli --features pdfium
+cargo build -p ferrugo --features pdfium
+cargo test -p ferrugo --features pdfium
 ```
 
 Then provide the local dynamic library at runtime:
@@ -176,8 +176,8 @@ when the PDFium crate itself must be checked.
 The dependency graph difference is visible with:
 
 ```sh
-cargo tree -p ferrugo-cli --no-default-features
-cargo tree -p ferrugo-cli --features pdfium
+cargo tree -p ferrugo --no-default-features
+cargo tree -p ferrugo --features pdfium
 ```
 
 The native-only graph has no `ferrugo-pdfium` edge. The PDFium-enabled graph
@@ -188,13 +188,13 @@ adds only the optional `ferrugo-pdfium` crate and its shared
 
 The 0120 maintenance gate confirmed that:
 
-- `cargo tree -p ferrugo-cli --no-default-features` has no
+- `cargo tree -p ferrugo --no-default-features` has no
   `ferrugo-pdfium` dependency edge.
-- `cargo tree -p ferrugo-cli --features pdfium` adds the optional
+- `cargo tree -p ferrugo --features pdfium` adds the optional
   `ferrugo-pdfium` dependency only under the explicit feature.
-- `cargo package -p ferrugo-cli --allow-dirty --no-verify --list` contains only
+- `cargo package -p ferrugo --allow-dirty --no-verify --list` contains only
   CLI package files and Cargo metadata.
-- `cargo package -p ferrugo-cli --allow-dirty --no-verify` is blocked until
+- `cargo package -p ferrugo --allow-dirty --no-verify` is blocked until
   internal dependencies such as `ferrugo-native` are available from the
   registry; this is a release-order blocker, not a PDFium dependency leak.
 - `ferrugo-syntax` and `ferrugo-thumbnail` package dry-runs pass as the first
@@ -205,7 +205,7 @@ regression check for this boundary.
 
 ## Package Release Order
 
-Cargo package validation for `ferrugo-cli` expects versioned internal
+Cargo package validation for `ferrugo` expects versioned internal
 dependencies to be available from the registry. Publish or otherwise provide
 the crates in dependency order:
 
@@ -215,7 +215,7 @@ the crates in dependency order:
 4. `ferrugo-render`
 5. `ferrugo-native`
 6. `ferrugo-pdfium` when maintainer PDFium workflows are distributed
-7. `ferrugo-cli`
+7. `ferrugo`
 
 Local package dry-runs can validate leaf crates before the full release train:
 

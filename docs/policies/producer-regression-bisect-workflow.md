@@ -23,7 +23,7 @@ pixels, or extracted text to committed artifacts.
 Generate the producer-grouped report:
 
 ```sh
-cargo run -p ferrugo-cli --no-default-features -- producer-regression-report \
+cargo run -p ferrugo --no-default-features -- producer-regression-report \
   fixtures/generated \
   --manifest fixtures/producer-compatibility-manifest.tsv \
   --max-edge 160 \

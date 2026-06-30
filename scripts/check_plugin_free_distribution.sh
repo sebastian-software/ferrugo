@@ -3,14 +3,14 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-if cargo tree -p ferrugo-cli --no-default-features | rg -q 'ferrugo-pdfium'; then
+if cargo tree -p ferrugo --no-default-features | rg -q 'ferrugo-pdfium'; then
   echo "ferrugo-pdfium leaked into the native-only CLI dependency tree" >&2
   exit 1
 fi
 
 dependency_pattern='\b(curl|fetch|hyper|isahc|native-tls|openssl|plugin|reqwest|rustls|ureq|wget)\b'
 
-if cargo tree -p ferrugo-cli --no-default-features | rg -q "${dependency_pattern}"; then
+if cargo tree -p ferrugo --no-default-features | rg -q "${dependency_pattern}"; then
   echo "network or TLS dependency found in the native-only CLI dependency tree" >&2
   exit 1
 fi

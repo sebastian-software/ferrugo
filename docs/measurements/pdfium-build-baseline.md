@@ -79,7 +79,7 @@ initialized=true last_error=0 library=/private/tmp/ferrugo-tools/pdfium-work/pdf
 The release CLI was used for render measurements:
 
 ```sh
-/usr/bin/time -l target/release/ferrugo-cli \
+/usr/bin/time -l target/release/ferrugo \
   render fixtures/generated/text-page.pdf \
   --output target/ferrugo-thumbnails/text-page-256.png \
   --max-edge 256

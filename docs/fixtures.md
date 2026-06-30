@@ -89,7 +89,7 @@ Store them under `fixtures/local-corpus/` and describe them with
 metadata is aggregate-only and is validated with:
 
 ```sh
-cargo run -p ferrugo-cli --no-default-features -- validate-local-corpus \
+cargo run -p ferrugo --no-default-features -- validate-local-corpus \
   fixtures/local-corpus/metadata.toml --allow-missing
 ```
 

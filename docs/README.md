@@ -32,7 +32,7 @@ Read:
 Useful commands:
 
 ```sh
-cargo run -p ferrugo-cli --no-default-features -- \
+cargo run -p ferrugo --no-default-features -- \
   render fixtures/generated/text-page.pdf \
   --max-edge 256 \
   --output target/text-page.png

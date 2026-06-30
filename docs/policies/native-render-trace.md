@@ -9,7 +9,7 @@ part of the normal runtime hot path and not a stable public consumer API.
 
 ## Trace Format
 
-`ferrugo-cli trace-native` emits JSON with `schema_version: 1` and
+`ferrugo trace-native` emits JSON with `schema_version: 1` and
 `trace_kind: "native-render-trace"`.
 
 The trace records:
@@ -62,7 +62,7 @@ limit.
 
 ## Replay Boundary
 
-`ferrugo-cli replay-operators` accepts only `native-render-trace` JSON produced
+`ferrugo replay-operators` accepts only `native-render-trace` JSON produced
 by this tool and emits a compact `operator-replay` JSON summary. Replay counts
 bounded operator events and is useful for regression reduction, but it is not a
 full PDF interpreter and must not be treated as visual proof.

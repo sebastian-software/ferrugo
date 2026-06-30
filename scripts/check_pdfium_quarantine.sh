@@ -3,8 +3,8 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-if cargo tree -p ferrugo-cli --no-default-features | rg -q 'ferrugo-pdfium'; then
-  echo "ferrugo-pdfium leaked into the native-only ferrugo-cli dependency tree" >&2
+if cargo tree -p ferrugo --no-default-features | rg -q 'ferrugo-pdfium'; then
+  echo "ferrugo-pdfium leaked into the native-only ferrugo dependency tree" >&2
   exit 1
 fi
 

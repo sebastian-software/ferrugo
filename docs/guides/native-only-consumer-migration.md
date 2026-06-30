@@ -19,7 +19,7 @@ CLI production examples:
 
 ```sh
 cargo install --path crates/ferrugo-cli --no-default-features --locked
-ferrugo-cli render input.pdf --max-edge 256 --output thumbnail.png
+ferrugo render input.pdf --max-edge 256 --output thumbnail.png
 ```
 
 Library dependency example:
@@ -87,6 +87,6 @@ bash scripts/check_unsupported_feature_sla.sh
 cargo test -p ferrugo-thumbnail consumer_migration -- --nocapture
 cargo test --workspace --no-default-features
 cargo package -p ferrugo-thumbnail --allow-dirty --no-verify --list
-cargo package -p ferrugo-cli --allow-dirty --no-verify --list
+cargo package -p ferrugo --allow-dirty --no-verify --list
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 ```

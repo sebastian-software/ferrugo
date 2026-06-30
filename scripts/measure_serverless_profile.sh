@@ -4,10 +4,10 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 profile="${FERRUGO_SERVERLESS_PROFILE:-serverless}"
-binary="target/${profile}/ferrugo-cli"
+binary="target/${profile}/ferrugo"
 fixture="${FERRUGO_SERVERLESS_FIXTURE:-fixtures/generated/text-page.pdf}"
 output="${FERRUGO_SERVERLESS_OUTPUT:-target/serverless-profile-0197.json}"
-package_list="${FERRUGO_SERVERLESS_PACKAGE_LIST:-target/serverless-profile-ferrugo-cli-package-files.txt}"
+package_list="${FERRUGO_SERVERLESS_PACKAGE_LIST:-target/serverless-profile-ferrugo-package-files.txt}"
 iterations="${FERRUGO_SERVERLESS_ITERATIONS:-7}"
 max_binary_bytes="${FERRUGO_SERVERLESS_MAX_BINARY_BYTES:-8388608}"
 max_startup_p95_ms="${FERRUGO_SERVERLESS_MAX_STARTUP_P95_MS:-500}"
@@ -18,12 +18,12 @@ max_edge="${FERRUGO_SERVERLESS_MAX_EDGE:-160}"
 mkdir -p target
 
 echo "==> serverless native-only build (${profile})"
-cargo build --profile "${profile}" -p ferrugo-cli --no-default-features
+cargo build --profile "${profile}" -p ferrugo --no-default-features
 
-echo "==> ferrugo-cli package file inspection"
-cargo package -p ferrugo-cli --allow-dirty --no-verify --list > "${package_list}"
+echo "==> ferrugo package file inspection"
+cargo package -p ferrugo --allow-dirty --no-verify --list > "${package_list}"
 if rg -n '\.(dylib|so|dll|a|framework)(/|$)|libpdfium|pdfium\.dll|FERRUGO_PDFIUM_LIBRARY' "${package_list}"; then
-  echo "PDFium runtime asset or native binary found in ferrugo-cli package file list" >&2
+  echo "PDFium runtime asset or native binary found in ferrugo package file list" >&2
   exit 1
 fi
 

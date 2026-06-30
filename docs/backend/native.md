@@ -12,7 +12,7 @@ The Rust-native backend lives in `crates/ferrugo-native` and implements the same
 Callers can switch between `PdfiumBackend` and `NativeBackend` without changing
 the facade input or output types. The native backend returns raw RGBA thumbnail
 buffers through `Thumbnail::rgba`; CLI PNG encoding remains owned by
-`ferrugo-cli`, matching the PDFium backend path.
+`ferrugo`, matching the PDFium backend path.
 
 ## Supported Contract
 
@@ -609,7 +609,7 @@ documents should stay diagnosable.
 Use native directly:
 
 ```sh
-cargo run -p ferrugo-cli -- render-native fixtures/generated/text-page.pdf \
+cargo run -p ferrugo -- render-native fixtures/generated/text-page.pdf \
   --output target/ferrugo-thumbnails/text-page-native.png \
   --page-index 0 \
   --max-edge 1024 \
@@ -620,7 +620,7 @@ cargo run -p ferrugo-cli -- render-native fixtures/generated/text-page.pdf \
 Use native-first automatic rendering for supported categories:
 
 ```sh
-cargo run -p ferrugo-cli -- render fixtures/generated/text-page.pdf \
+cargo run -p ferrugo -- render fixtures/generated/text-page.pdf \
   --output target/ferrugo-thumbnails/text-page-auto.png \
   --page-index 0 \
   --max-edge 1024 \
@@ -645,7 +645,7 @@ commands are maintainer comparison tooling, not runtime fallback paths.
 Summarize a local corpus without rendering PDFium output:
 
 ```sh
-cargo run -p ferrugo-cli -- summarize-fallbacks fixtures/generated \
+cargo run -p ferrugo -- summarize-fallbacks fixtures/generated \
   --manifest fixtures/corpus-manifest.tsv \
   --max-edge 120 \
   --output target/ferrugo-thumbnails/fallback-summary.json
@@ -658,7 +658,7 @@ native-only. Add one or more `--include-family <family>` arguments with a
 manifest to run a supported-category native-only gate:
 
 ```sh
-cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks fixtures/generated \
+cargo run -p ferrugo --no-default-features -- summarize-fallbacks fixtures/generated \
   --manifest fixtures/corpus-manifest.tsv \
   --include-family browser-print \
   --include-family office-export \
@@ -680,7 +680,7 @@ outside the document trust boundary. See
 Extract committed fixture metadata with page sizes and manifest tags:
 
 ```sh
-cargo run -p ferrugo-cli -- extract-corpus-metadata fixtures/generated \
+cargo run -p ferrugo -- extract-corpus-metadata fixtures/generated \
   --manifest fixtures/corpus-manifest.tsv \
   --output target/ferrugo-thumbnails/corpus-metadata.json
 ```
@@ -688,7 +688,7 @@ cargo run -p ferrugo-cli -- extract-corpus-metadata fixtures/generated \
 Compare metadata with PDFium when the local PDFium environment is available:
 
 ```sh
-cargo run -p ferrugo-cli --features pdfium -- compare-metadata fixtures/generated/text-page.pdf \
+cargo run -p ferrugo --features pdfium -- compare-metadata fixtures/generated/text-page.pdf \
   --output target/ferrugo-thumbnails/text-page-metadata-comparison.json
 ```
 

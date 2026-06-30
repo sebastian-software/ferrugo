@@ -1,11 +1,19 @@
 [package]
-name = "ferrugo-cli"
+name = "ferrugo"
 version = "0.1.0"
 edition.workspace = true
-description.workspace = true
+description = "Rust-native PDF thumbnail CLI for bounded server-side previews."
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
+readme = "README.md"
+keywords = ["pdf", "thumbnail", "renderer", "cli", "rust"]
+categories = ["command-line-utilities"]
+include = ["src/**", "Cargo.toml", "README.md"]
+
+[[bin]]
+name = "ferrugo"
+path = "src/main.rs"
 
 [dependencies]
 ferrugo-native = { version = "0.1.0", path = "../ferrugo-native" }

@@ -106,7 +106,7 @@ bash scripts/check_performance_matrix_smoke.sh
 Or call the CLI directly:
 
 ```sh
-cargo run -p ferrugo-cli --no-default-features -- benchmark-matrix fixtures/generated \
+cargo run -p ferrugo --no-default-features -- benchmark-matrix fixtures/generated \
   --manifest fixtures/performance-matrix-manifest.tsv \
   --max-edge 160 \
   --iterations 3 \
@@ -137,7 +137,7 @@ evidence.
 Run the Rust-native benchmark against the generated fixture corpus:
 
 ```sh
-cargo run -p ferrugo-cli -- benchmark-native fixtures/generated \
+cargo run -p ferrugo -- benchmark-native fixtures/generated \
   --manifest fixtures/corpus-manifest.tsv \
   --max-edge 160 \
   --iterations 1 \
@@ -151,7 +151,7 @@ Run the PDFium baseline with the same budgets:
 ```sh
 FERRUGO_PDFIUM_LIBRARY=/path/to/pdfium/out/ferrugo-dylib/libpdfium.dylib \
 DYLD_LIBRARY_PATH=/path/to/pdfium/out/ferrugo-dylib \
-cargo run -p ferrugo-cli --features pdfium -- benchmark-pdfium fixtures/generated \
+cargo run -p ferrugo --features pdfium -- benchmark-pdfium fixtures/generated \
   --manifest fixtures/corpus-manifest.tsv \
   --max-edge 160 \
   --iterations 1 \
@@ -163,7 +163,7 @@ cargo run -p ferrugo-cli --features pdfium -- benchmark-pdfium fixtures/generate
 For a deeper local pass, increase both raster size and iterations:
 
 ```sh
-cargo run -p ferrugo-cli -- benchmark-native fixtures/generated \
+cargo run -p ferrugo -- benchmark-native fixtures/generated \
   --manifest fixtures/corpus-manifest.tsv \
   --max-edge 320 \
   --iterations 3 \
@@ -221,12 +221,12 @@ RSS fields.
 ## Serverless Cold Start
 
 Use `scripts/measure_serverless_profile.sh` for short-lived native-only worker
-checks. It builds `ferrugo-cli` with the Cargo `serverless` profile, verifies
+checks. It builds `ferrugo` with the Cargo `serverless` profile, verifies
 the CLI package file list does not contain PDFium/native runtime assets, then
 measures:
 
-- binary size from `target/serverless/ferrugo-cli`;
-- process startup by invoking `ferrugo-cli --help`;
+- binary size from `target/serverless/ferrugo`;
+- process startup by invoking `ferrugo --help`;
 - first-render latency by invoking a new `render-native` process per sample.
 
 The default fixture is `fixtures/generated/text-page.pdf` at `--max-edge 160`.

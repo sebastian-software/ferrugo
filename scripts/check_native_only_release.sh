@@ -5,7 +5,7 @@ cd "$(dirname "$0")/.."
 
 mkdir -p target
 
-package_list="target/native-only-release-ferrugo-cli-package-files.txt"
+package_list="target/native-only-release-ferrugo-package-files.txt"
 
 echo "==> native-only cargo check"
 cargo check --workspace --no-default-features
@@ -19,11 +19,11 @@ bash scripts/check_plugin_free_distribution.sh
 echo "==> PDFium quarantine check"
 bash scripts/check_pdfium_quarantine.sh
 
-echo "==> ferrugo-cli package file inspection"
-cargo package -p ferrugo-cli --allow-dirty --no-verify --list > "${package_list}"
+echo "==> ferrugo package file inspection"
+cargo package -p ferrugo --allow-dirty --no-verify --list > "${package_list}"
 
 if rg -n '\.(dylib|so|dll|a|framework)(/|$)|libpdfium|pdfium\.dll|FERRUGO_PDFIUM_LIBRARY' "${package_list}"; then
-  echo "PDFium runtime asset or native binary found in ferrugo-cli package file list" >&2
+  echo "PDFium runtime asset or native binary found in ferrugo package file list" >&2
   exit 1
 fi
 

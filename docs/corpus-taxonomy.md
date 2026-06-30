@@ -78,7 +78,7 @@ Use this manifest when a change should prove that everyday business documents
 remain native-renderable without PDFium fallback:
 
 ```sh
-cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks \
+cargo run -p ferrugo --no-default-features -- summarize-fallbacks \
   fixtures/generated \
   --manifest fixtures/business-document-manifest.tsv \
   --include-family invoice \
@@ -101,7 +101,7 @@ fallback cases such as OCMD policy fixtures. Use it for common slide exports
 that should render natively:
 
 ```sh
-cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks \
+cargo run -p ferrugo --no-default-features -- summarize-fallbacks \
   fixtures/generated \
   --manifest fixtures/presentation-slide-manifest.tsv \
   --include-family title-slide \
@@ -123,7 +123,7 @@ policies in the corpus as typed `graphics.optional-content` boundaries.
 Use the supported families as a native-only gate:
 
 ```sh
-cargo run -p ferrugo-cli -- summarize-fallbacks fixtures/generated \
+cargo run -p ferrugo -- summarize-fallbacks fixtures/generated \
   --manifest fixtures/optional-content-ui-state-manifest.tsv \
   --include-family default-on \
   --include-family default-off \
@@ -144,7 +144,7 @@ a typed `annotation.appearance` boundary.
 Use supported families as a native-only gate:
 
 ```sh
-cargo run -p ferrugo-cli -- summarize-fallbacks fixtures/generated \
+cargo run -p ferrugo -- summarize-fallbacks fixtures/generated \
   --manifest fixtures/annotation-print-preview-manifest.tsv \
   --include-family flags \
   --include-family appearance-stream \
@@ -164,7 +164,7 @@ typed `annotation.appearance` boundary.
 Use supported families as a native-only gate:
 
 ```sh
-cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks \
+cargo run -p ferrugo --no-default-features -- summarize-fallbacks \
   fixtures/generated \
   --manifest fixtures/annotation-popup-stamp-freetext-manifest.tsv \
   --include-family appearance-stream \
@@ -188,7 +188,7 @@ overprint approximation, prepress page boxes, and print-visible annotations.
 Use all families as a native-only gate:
 
 ```sh
-cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks \
+cargo run -p ferrugo --no-default-features -- summarize-fallbacks \
   fixtures/generated \
   --manifest fixtures/color-managed-print-preview-manifest.tsv \
   --include-family output-intent \
@@ -211,7 +211,7 @@ bounded static synthesis for missing common widget appearances.
 Use this manifest when a change may affect form preview behavior:
 
 ```sh
-cargo run -p ferrugo-cli -- summarize-fallbacks fixtures/generated \
+cargo run -p ferrugo -- summarize-fallbacks fixtures/generated \
   --manifest fixtures/form-appearance-mutation-manifest.tsv \
   --include-family existing-appearance \
   --include-family stale-appearance \
@@ -231,7 +231,7 @@ boundary.
 Use the supported families as a native-only gate:
 
 ```sh
-cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks \
+cargo run -p ferrugo --no-default-features -- summarize-fallbacks \
   fixtures/generated \
   --manifest fixtures/form-filling-flattening-manifest.tsv \
   --include-family existing-appearance \
@@ -253,7 +253,7 @@ Use this manifest when a change may affect hairline strokes, small text,
 clipping, or repeated path workloads in table-heavy documents:
 
 ```sh
-cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks \
+cargo run -p ferrugo --no-default-features -- summarize-fallbacks \
   fixtures/generated \
   --manifest fixtures/spreadsheet-grid-manifest.tsv \
   --include-family frozen-header \
@@ -275,7 +275,7 @@ Use this manifest when a change may affect path flattening, stroke visibility,
 clipping, page transforms, or repeated vector geometry:
 
 ```sh
-cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks \
+cargo run -p ferrugo --no-default-features -- summarize-fallbacks \
   fixtures/generated \
   --manifest fixtures/technical-drawing-manifest.tsv \
   --include-family linework \
@@ -297,7 +297,7 @@ Use this manifest when a change may affect legend/text placement, dashboard
 panels, alpha compositing, repeated markers, or map-like vector layouts:
 
 ```sh
-cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks \
+cargo run -p ferrugo --no-default-features -- summarize-fallbacks \
   fixtures/generated \
   --manifest fixtures/chart-dashboard-manifest.tsv \
   --include-family chart \
@@ -327,7 +327,7 @@ linework, nested Form XObject clipping, transparency groups, gradients, or
 repeated office vector effects:
 
 ```sh
-cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks \
+cargo run -p ferrugo --no-default-features -- summarize-fallbacks \
   fixtures/generated \
   --manifest fixtures/office-chart-vector-effects-manifest.tsv \
   --include-family chart-legend \
@@ -352,7 +352,7 @@ Use this manifest when a change may affect paper layout, small scientific text,
 figure placement, symbol glyphs, or long-report page scheduling:
 
 ```sh
-cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks \
+cargo run -p ferrugo --no-default-features -- summarize-fallbacks \
   fixtures/generated \
   --manifest fixtures/scientific-report-manifest.tsv \
   --include-family paper \
@@ -375,7 +375,7 @@ sampling, repeated resource reuse, text-heavy thumbnails, or book/manual-style
 layout:
 
 ```sh
-cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks \
+cargo run -p ferrugo --no-default-features -- summarize-fallbacks \
   fixtures/generated \
   --manifest fixtures/longform-text-manifest.tsv \
   --include-family book \
@@ -404,7 +404,7 @@ Use this manifest when a change may affect page-box transforms, print marks,
 process-color vector content, spot-color approximation, or overprint handling:
 
 ```sh
-cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks \
+cargo run -p ferrugo --no-default-features -- summarize-fallbacks \
   fixtures/generated \
   --manifest fixtures/prepress-boundary-manifest.tsv \
   --include-family trim-bleed \
@@ -433,7 +433,7 @@ tint-transform evaluation, DeviceCMYK alternate conversion, or overprint
 thumbnail approximation:
 
 ```sh
-cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks \
+cargo run -p ferrugo --no-default-features -- summarize-fallbacks \
   fixtures/generated \
   --manifest fixtures/spot-color-visual-review-manifest.tsv \
   --include-family separation-business \
@@ -463,7 +463,7 @@ Use this manifest when a change may affect page-box clipping, transformed page
 frames, print marks, or imposed-sheet thumbnail geometry:
 
 ```sh
-cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks \
+cargo run -p ferrugo --no-default-features -- summarize-fallbacks \
   fixtures/generated \
   --manifest fixtures/print-imposition-manifest.tsv \
   --include-family booklet-spread \
@@ -490,7 +490,7 @@ classification, embedded-file presence signals, embedded font rendering, or
 archive-record thumbnail behavior:
 
 ```sh
-cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks \
+cargo run -p ferrugo --no-default-features -- summarize-fallbacks \
   fixtures/generated \
   --manifest fixtures/archival-pdfa-manifest.tsv \
   --include-family pdfa-profile \
@@ -556,7 +556,7 @@ Use this manifest when a change may affect table ruling, text placement,
 column layout, small footnote text, or page furniture:
 
 ```sh
-cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks \
+cargo run -p ferrugo --no-default-features -- summarize-fallbacks \
   fixtures/generated \
   --manifest fixtures/layout-stress-manifest.tsv \
   --include-family layout-stress \
@@ -584,7 +584,7 @@ families; the unsupported filter family is expected to remain in the
 by policy.
 
 ```sh
-cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks \
+cargo run -p ferrugo --no-default-features -- summarize-fallbacks \
   fixtures/generated \
   --manifest fixtures/mobile-scan-manifest.tsv \
   --include-family rotation \
@@ -607,7 +607,7 @@ typed `image.filter` boundaries.
 Use supported families as a native-only gate:
 
 ```sh
-cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks \
+cargo run -p ferrugo --no-default-features -- summarize-fallbacks \
   fixtures/generated \
   --manifest fixtures/image-codec-deployment-manifest.tsv \
   --include-family builtin-raster \
@@ -632,7 +632,7 @@ image state, and pattern color-space state using reduced generated fixtures.
 Use all families as a native-only operator snapshot gate:
 
 ```sh
-cargo run -p ferrugo-cli --no-default-features -- operator-coverage \
+cargo run -p ferrugo --no-default-features -- operator-coverage \
   fixtures/generated \
   --manifest fixtures/operator-semantic-snapshot-manifest.tsv \
   --include-family text-state \
@@ -656,7 +656,7 @@ annotation appearance content, but this manifest does not validate semantic
 redaction security.
 
 ```sh
-cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks \
+cargo run -p ferrugo --no-default-features -- summarize-fallbacks \
   fixtures/generated \
   --manifest fixtures/legal-document-manifest.tsv \
   --include-family contract \
@@ -683,7 +683,7 @@ item caps, raster intermediates, or font/cache limits under constrained
 thumbnail settings.
 
 ```sh
-cargo run -p ferrugo-cli --no-default-features -- summarize-fallbacks \
+cargo run -p ferrugo --no-default-features -- summarize-fallbacks \
   fixtures/generated \
   --manifest fixtures/low-memory-profile-manifest.tsv \
   --include-family common \
@@ -708,7 +708,7 @@ Use this manifest with `benchmark-batch-native` when a change may affect
 multi-input scheduling, server defaults, or per-document isolation.
 
 ```sh
-cargo run -p ferrugo-cli --no-default-features -- benchmark-batch-native \
+cargo run -p ferrugo --no-default-features -- benchmark-batch-native \
   fixtures/generated \
   --manifest fixtures/server-batch-manifest.tsv \
   --include-family small \
@@ -737,7 +737,7 @@ Use this manifest when a change may affect page ordering, cancellation,
 high-count scheduler behavior, or memory reporting:
 
 ```sh
-cargo run -p ferrugo-cli --no-default-features -- benchmark-batch-native \
+cargo run -p ferrugo --no-default-features -- benchmark-batch-native \
   fixtures/generated \
   --manifest fixtures/high-page-count-batch-manifest.tsv \
   --include-family long-document \
@@ -786,7 +786,7 @@ results.
 Validate the local metadata shape without exposing document-level details:
 
 ```sh
-cargo run -p ferrugo-cli --no-default-features -- validate-local-corpus \
+cargo run -p ferrugo --no-default-features -- validate-local-corpus \
   fixtures/local-corpus/metadata.toml --allow-missing
 ```
 
@@ -796,7 +796,7 @@ Use the manifest with the fallback summary command to report native pass rates
 by family:
 
 ```sh
-cargo run -p ferrugo-cli -- summarize-fallbacks fixtures/generated \
+cargo run -p ferrugo -- summarize-fallbacks fixtures/generated \
   --manifest fixtures/corpus-manifest.tsv \
   --max-edge 120 \
   --output target/ferrugo-thumbnails/fallback-summary.json
@@ -806,7 +806,7 @@ Use metadata extraction to capture page count, page size, source/license notes,
 and coarse feature tags for committed fixtures:
 
 ```sh
-cargo run -p ferrugo-cli -- extract-corpus-metadata fixtures/generated \
+cargo run -p ferrugo -- extract-corpus-metadata fixtures/generated \
   --manifest fixtures/corpus-manifest.tsv \
   --output target/ferrugo-thumbnails/corpus-metadata.json
 ```
