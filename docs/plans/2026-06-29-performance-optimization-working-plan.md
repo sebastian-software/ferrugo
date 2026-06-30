@@ -4532,6 +4532,30 @@ Rejected single-sample axis-span range candidate from 2026-06-30:
   next Prepress pass should use a debug-symbol profiling build, Instruments, or
   focused counters inside `stroke_path` before another micro-optimization.
 
+Profiling build profile from 2026-06-30:
+
+- Trigger:
+  the normal release-size-oriented profiling loop still left the hottest
+  Prepress stacks as large `stroke_path + offset` blocks. A local
+  `CARGO_PROFILE_RELEASE_STRIP=none` / `DEBUG=line-tables-only` build improved
+  top-level symbols but did not provide enough line-level detail for inlined
+  stroke raster work.
+- Change:
+  add a dedicated Cargo `profiling` profile that inherits release
+  optimizations, keeps symbols, emits full debug info, disables LTO, and uses
+  one codegen unit. It is intended for `sample`, Instruments, Samply, and
+  `atos` runs, not for shipped binaries or public speed claims.
+- Usage:
+  `cargo build --profile profiling -p ferrugo-cli --no-default-features`, then
+  run `target/profiling/ferrugo-cli benchmark-repeat-native ...` and attach
+  `sample` or Instruments to that process. If the local Rust toolchain supports
+  it, add `RUSTFLAGS="-C force-frame-pointers=yes"` for more stable native
+  call stacks.
+- Acceptance impact:
+  this is profiling infrastructure, not a renderer speed claim. Optimization
+  commits still need release-mode before/after benchmarks and protection-set
+  checks.
+
 ## Phase 6: Benchmark Gates And Claims
 
 Goal: turn stable evidence into guardrails, not premature marketing.
