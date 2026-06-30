@@ -10692,6 +10692,52 @@ fn can_direct_write_opaque_normal(source: Rgba, blend_mode: BlendMode, alpha: f6
     matches!(blend_mode, BlendMode::Normal) && source.a == 255 && alpha >= 1.0
 }
 
+#[derive(Debug, Clone, Copy)]
+struct SampledPixelBlend {
+    source: Rgba,
+    blend_mode: BlendMode,
+    alpha: f64,
+    coverage_scale: f64,
+    sample_count: u32,
+}
+
+impl SampledPixelBlend {
+    fn new(source: Rgba, blend_mode: BlendMode, alpha: f64, sample_count: u32) -> Self {
+        Self {
+            source,
+            blend_mode,
+            alpha,
+            coverage_scale: alpha / f64::from(sample_count),
+            sample_count,
+        }
+    }
+}
+
+fn blend_sampled_pixel(
+    device: &mut RasterDevice,
+    x: u32,
+    y: u32,
+    blend: SampledPixelBlend,
+    covered: u32,
+) -> RasterResult<()> {
+    if covered == 0 {
+        return Ok(());
+    }
+    if covered == blend.sample_count
+        && can_direct_write_opaque_normal(blend.source, blend.blend_mode, blend.alpha)
+    {
+        return device.set_pixel(x, y, blend.source);
+    }
+    blend_pixel(
+        device,
+        x,
+        y,
+        blend.source,
+        blend.blend_mode,
+        f64::from(covered) * blend.coverage_scale,
+    )
+}
+
 fn fill_pixel_bounds_opaque(
     device: &mut RasterDevice,
     bounds: PixelBounds,
@@ -11552,6 +11598,16 @@ fn rasterize_simple_line_stroke_spans(
     source: Rgba,
     skip_clip_checks: bool,
 ) -> RasterResult<()> {
+    if skip_clip_checks && is_axis_aligned_line(line) {
+        return rasterize_span_covered_stroke_ranges(
+            device,
+            &spans,
+            &spans,
+            bounds,
+            SampledPixelBlend::new(source, state.blend_mode, state.alpha, sample_count),
+            samples,
+        );
+    }
     let radius = stroke_radius_for_device_line_width(state.line_width);
     let radius_squared = radius * radius;
     let mut x_ranges = Vec::new();
@@ -11615,6 +11671,16 @@ fn rasterize_axis_stroke_spans(
     source: Rgba,
     skip_clip_checks: bool,
 ) -> RasterResult<()> {
+    if skip_clip_checks && !has_joins {
+        return rasterize_span_covered_stroke_ranges(
+            device,
+            &spans.raster,
+            &spans.coverage,
+            bounds,
+            SampledPixelBlend::new(source, state.blend_mode, state.alpha, sample_count),
+            samples,
+        );
+    }
     let radius = stroke_radius_for_device_line_width(state.line_width);
     let mut x_ranges = Vec::new();
     for y in bounds.min_y..bounds.max_y {
@@ -11674,6 +11740,47 @@ fn rasterize_axis_stroke_spans(
     Ok(())
 }
 
+fn rasterize_span_covered_stroke_ranges(
+    device: &mut RasterDevice,
+    raster_spans: &AxisStrokeSpans,
+    coverage_spans: &AxisStrokeSpans,
+    bounds: PixelBounds,
+    blend: SampledPixelBlend,
+    samples: u32,
+) -> RasterResult<()> {
+    let mut x_ranges = Vec::new();
+    for y in bounds.min_y..bounds.max_y {
+        x_ranges.clear();
+        for sample_y in 0..samples {
+            append_axis_stroke_pixel_x_ranges(raster_spans, bounds, y, sample_y, &mut x_ranges);
+        }
+        merge_pixel_ranges(&mut x_ranges);
+        for x_range in &x_ranges {
+            for x in x_range.clone() {
+                let mut covered = 0;
+                for sample_y in 0..samples {
+                    let sample_row = y
+                        .saturating_mul(coverage_spans.samples)
+                        .saturating_add(sample_y)
+                        .saturating_sub(coverage_spans.min_sample_y);
+                    let Some(row) = coverage_spans.rows.get(sample_row as usize) else {
+                        continue;
+                    };
+                    for sample_x in 0..samples {
+                        let sample_x =
+                            f64::from(x) + (f64::from(sample_x) + 0.5) / f64::from(samples);
+                        if x_in_axis_stroke_span_row(sample_x, row, &coverage_spans.spans) {
+                            covered += 1;
+                        }
+                    }
+                }
+                blend_sampled_pixel(device, x, y, blend, covered)?;
+            }
+        }
+    }
+    Ok(())
+}
+
 fn append_axis_stroke_pixel_x_ranges(
     spans: &AxisStrokeSpans,
     bounds: PixelBounds,
@@ -11693,6 +11800,18 @@ fn append_axis_stroke_pixel_x_ranges(
             x_ranges.push(range);
         }
     }
+}
+
+fn x_in_axis_stroke_span_row(x: f64, row: &Range<usize>, spans: &[AxisStrokeSpan]) -> bool {
+    for span in &spans[row.clone()] {
+        if x < span.min_x {
+            return false;
+        }
+        if x <= span.max_x {
+            return true;
+        }
+    }
+    false
 }
 
 fn axis_stroke_span_pixel_range(span: AxisStrokeSpan, bounds: PixelBounds) -> Option<Range<u32>> {
@@ -17563,6 +17682,86 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn exact_axis_line_span_raster_should_match_sampled_stroke_raster() {
+        let dimensions = RasterDimensions::new(48, 48).expect("valid dimensions");
+        let line = LineSegment {
+            from: Point { x: 6.0, y: 20.0 },
+            to: Point { x: 42.0, y: 20.0 },
+        };
+        let radius = 0.75;
+        let bounds = stroke_pixel_bounds(&[line], &[], radius, dimensions).expect("stroke bounds");
+        let spans =
+            simple_line_stroke_raster_spans(line, radius, dimensions, bounds, 2, LineCap::Square)
+                .expect("axis line spans");
+        let state = StrokeRasterState {
+            line_width: radius * 2.0,
+            ctm_scale: 1.0,
+            color: DeviceColor::Rgb {
+                r: 0.2,
+                g: 0.4,
+                b: 0.8,
+            },
+            blend_mode: BlendMode::Normal,
+            alpha: 1.0,
+            dash_pattern: StrokeDashPattern::solid(),
+            dash_scale: 1.0,
+            line_cap: LineCap::Square,
+            line_join: LineJoin::Miter,
+            miter_limit: 10.0,
+        };
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 48.0,
+                    max_y: 48.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            48,
+        )
+        .expect("valid transform");
+        let context = PathRasterContext {
+            transform,
+            options: PathRasterOptions::default(),
+            clips: &[],
+        };
+        let mut exact = RasterDevice::new(48, 48, Rgba::WHITE).expect("valid raster");
+        let mut sampled = RasterDevice::new(48, 48, Rgba::WHITE).expect("valid raster");
+
+        rasterize_simple_line_stroke_spans(
+            &mut exact,
+            spans.clone(),
+            line,
+            bounds,
+            state,
+            context,
+            2,
+            4,
+            device_color_to_rgba(state.color),
+            true,
+        )
+        .expect("exact span raster should draw");
+        rasterize_simple_line_stroke_spans(
+            &mut sampled,
+            spans,
+            line,
+            bounds,
+            state,
+            context,
+            2,
+            4,
+            device_color_to_rgba(state.color),
+            false,
+        )
+        .expect("sampled span raster should draw");
+
+        assert_eq!(exact.pixels(), sampled.pixels());
     }
 
     #[test]

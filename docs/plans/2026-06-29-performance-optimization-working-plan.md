@@ -3588,6 +3588,61 @@ Accepted axis-aligned simple-line span routing from 2026-06-30:
   axis-aligned single-line grid strokes without adding dependencies, unsafe
   code, global state, or alternate stroke geometry.
 
+Rejected sampled-blend helper candidate from 2026-06-30:
+
+- Profile basis: after the axis-aligned simple-line span routing win,
+  `target/sample-vector-stress-post-axis-line-spans.txt` still showed
+  `stroke_path -> blend_pixel` and `RasterDevice::pixel` as visible costs
+  inside the remaining path raster hot section.
+- Change tested locally but not kept: route sampled fill/stroke pixels through
+  a small `SampledPixelBlend` helper so the supersample scale is computed once
+  per raster pass and full-coverage opaque normal pixels skip the generic
+  `blend_pixel` coverage calculation.
+- A/B artifacts:
+  `target/benchmark-native-vector-stress-post-axis-line-profile-run.json` and
+  `target/benchmark-native-vector-stress-sampled-blend-candidate.json`, both
+  `benchmark-native`, `fixtures/generated/vector-stress.pdf`, `--max-edge 160`,
+  150,000 iterations.
+- Result: rejected as below threshold. Mean moved `0.807 ms` -> `0.784 ms`
+  (`~2.9%`). The direction confirms some blend overhead, but not enough for a
+  5-10% cumulative vector-track commit.
+- Decision: reverted. Do not retest this helper shape unless a later profile
+  shows `blend_pixel` dominating more heavily or the candidate also eliminates
+  per-pixel sample tests for fully covered stroke interiors.
+
+Accepted exact axis-span raster result from 2026-06-30:
+
+- Profile basis: `target/sample-vector-stress-post-axis-line-spans.txt` still
+  showed the remaining vector hot section in `stroke_path`, including
+  `blend_pixel`, `RasterDevice::pixel`, and span/point predicate work after the
+  axis-aligned simple-line span routing commit.
+- Change: add a narrow exact-span raster route for axis-aligned simple-line
+  strokes and joinless axis-stroke span items when active clip checks can be
+  skipped. The route keeps the existing sample coverage math, but tests sample
+  X positions directly against the precomputed span row instead of constructing
+  a `Point` and re-entering the generic stroke predicate. Fully covered opaque
+  normal samples use the same direct-write condition as existing blend paths.
+- Correctness guard:
+  `exact_axis_line_span_raster_should_match_sampled_stroke_raster` renders the
+  same axis-aligned square-capped line through the exact route and through the
+  sampled fallback route, then compares the raw RGBA pixels byte-for-byte.
+- A/B artifacts:
+  `target/benchmark-native-vector-stress-post-axis-line-profile-run.json`,
+  `target/benchmark-native-vector-stress-exact-span-candidate.json`,
+  `target/performance-matrix-exact-span-candidate.json`, and
+  `target/performance-matrix-exact-span-candidate-repeat.json`.
+- Focused result: long `benchmark-native` mean moved `0.807 ms` -> `0.716 ms`
+  (`~11.3%`) on `fixtures/generated/vector-stress.pdf`, `--max-edge 160`,
+  150,000 iterations.
+- Protection result: the repeated starter matrix rendered all `11` fixtures
+  with no fallback or errors. In the `report/vector` family, repeat p95 moved
+  `vector-stress.pdf` `0.912 ms` -> `0.827 ms`, `prepress-trim-bleed-marks.pdf`
+  `0.487 ms` -> `0.466 ms`, `technical-hatch-clipping.pdf` `0.313 ms` ->
+  `0.311 ms`, and `technical-linework-dimensions.pdf` `0.247 ms` -> `0.239 ms`.
+- Decision: keep. This is an algorithmic culling win inside the same vector
+  stroke bottleneck track; it adds no dependency, unsafe code, global cache, or
+  alternate stroke geometry.
+
 Repeat family phase-summary instrumentation from 2026-06-30:
 
 - Change: `benchmark-repeat-native` now aggregates record-level
