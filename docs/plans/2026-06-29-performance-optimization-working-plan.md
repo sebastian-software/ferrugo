@@ -2346,6 +2346,31 @@ Rejected image raster candidate from 2026-06-30:
   image loop until a rotated-image-specific profile shows a cleaner branch
   shape.
 
+Rejected stroke row-blend candidate from 2026-06-30:
+
+- Change tested locally but not kept: route the generic, row-bucketed, simple
+  line-span, and axis-span stroke raster loops through a new row-slice
+  `blend_pixel_in_row` helper instead of calling `RasterDevice::pixel` and
+  `set_pixel` per covered pixel.
+- Rationale: the long `mobile-mixed-compression-scan.pdf` sample showed
+  `stroke_path`, `blend_pixel`, and small allocation frames in the remaining
+  path overlay work, and previous image wins came from making contiguous row
+  writes explicit.
+- Candidate artifacts:
+  `target/performance-matrix-row-blend-image-heavy.json` and
+  `target/performance-matrix-row-blend-image-heavy-repeat.json`, compared
+  against `target/performance-matrix-opaque-rgb-image-heavy-repeat.json`.
+- Result: not repeatable and not protection-set-neutral. The first matrix
+  showed promising p95 movement on `mobile-mixed-compression-scan.pdf`
+  (`0.242 ms` -> `0.229 ms`) and `image-heavy-rotated-mask-sheet.pdf`
+  (`0.362 ms` -> `0.327 ms`), but the repeat only kept a small mobile p95 win
+  (`0.242 ms` -> `0.237 ms`) and regressed rotated-mask p95
+  (`0.362 ms` -> `0.402 ms`). `scanner-large-image-budget.pdf` and
+  `soft-mask-image.pdf` were also slightly worse in both candidate runs.
+- Decision: reverted. Do not apply a broad row-slice stroke blend helper
+  without a narrower target or lower-level evidence; the additional row helper
+  and call shape are not a stable win across the image-heavy protection set.
+
 ## Phase 5: Session Cache, But Bounded
 
 Goal: improve batch and multi-page workloads without introducing hidden global
