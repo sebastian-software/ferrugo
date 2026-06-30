@@ -19,7 +19,7 @@ use ferrugo_object::{
 use ferrugo_render::{
     build_form_display_list_with_graphics_resources, build_image_display_list,
     build_path_display_list_with_graphics_resources, build_text_display_list,
-    decode_tiling_pattern, display_list_stroke_shape_summary,
+    decode_tiling_pattern, display_list_image_placement_summary, display_list_stroke_shape_summary,
     rasterize_display_list_into_with_phase_timings, rasterize_images, rasterize_paths_into,
     rasterize_text, ColorSpaceResources, DisplayItem, DisplayList, DisplayListOptions,
     ExtGraphicsStateResources, FontResources, FormResources, GraphicsError, GraphicsErrorKind,
@@ -27,7 +27,7 @@ use ferrugo_render::{
     PathRasterOptions, Point, RasterDisplayPhase, RasterError, RasterErrorKind, ShadingResources,
     TextDisplayItem, TextWritingMode, TilingPatternResources,
 };
-pub use ferrugo_render::{ImageResourceSummary, StrokeShapeSummary};
+pub use ferrugo_render::{ImagePlacementSummary, ImageResourceSummary, StrokeShapeSummary};
 use ferrugo_syntax::{PdfBytes, PdfName, PdfNumber, PdfPrimitive, PdfReference, PdfString};
 use ferrugo_thumbnail::{
     unsupported_feature_buckets as buckets, AccessibilityMetadata, AnnotationMode,
@@ -125,6 +125,49 @@ pub struct NativeRenderTrace {
     pub stroke_shapes: StrokeShapeSummary,
     /// Request-local image resource summary for renderer profiling.
     pub image_resources: ImageResourceSummary,
+    /// Request-local image placement summary for renderer profiling.
+    pub image_placements: ImagePlacementSummary,
+}
+
+struct RenderTraceSinks<'a> {
+    timings: Option<&'a mut NativeRenderPhaseTimings>,
+    stroke_shapes: Option<&'a mut StrokeShapeSummary>,
+    image_resources: Option<&'a mut ImageResourceSummary>,
+    image_placements: Option<&'a mut ImagePlacementSummary>,
+}
+
+impl<'a> RenderTraceSinks<'a> {
+    fn none() -> Self {
+        Self {
+            timings: None,
+            stroke_shapes: None,
+            image_resources: None,
+            image_placements: None,
+        }
+    }
+
+    fn with_timings(timings: &'a mut NativeRenderPhaseTimings) -> Self {
+        Self {
+            timings: Some(timings),
+            stroke_shapes: None,
+            image_resources: None,
+            image_placements: None,
+        }
+    }
+
+    fn with_trace(
+        timings: &'a mut NativeRenderPhaseTimings,
+        stroke_shapes: &'a mut StrokeShapeSummary,
+        image_resources: &'a mut ImageResourceSummary,
+        image_placements: &'a mut ImagePlacementSummary,
+    ) -> Self {
+        Self {
+            timings: Some(timings),
+            stroke_shapes: Some(stroke_shapes),
+            image_resources: Some(image_resources),
+            image_placements: Some(image_placements),
+        }
+    }
 }
 
 /// Explicit request/session-local native document state.
@@ -378,14 +421,18 @@ impl NativeBackend {
         };
         let mut stroke_shapes = StrokeShapeSummary::default();
         let mut image_resources = ImageResourceSummary::default();
-        let thumbnail = render_loaded_document_with_timings_and_stroke_shapes(
+        let mut image_placements = ImagePlacementSummary::default();
+        let thumbnail = render_loaded_document_with_trace(
             &document,
             &page_tree,
             options,
             self.limits,
-            &mut timings,
-            &mut stroke_shapes,
-            &mut image_resources,
+            RenderTraceSinks::with_trace(
+                &mut timings,
+                &mut stroke_shapes,
+                &mut image_resources,
+                &mut image_placements,
+            ),
         )?;
         timings.total = total_started.elapsed();
         Ok(NativeRenderTrace {
@@ -393,6 +440,7 @@ impl NativeBackend {
             timings,
             stroke_shapes,
             image_resources,
+            image_placements,
         })
     }
 
@@ -1366,7 +1414,13 @@ fn render_loaded_document(
     options: &ThumbnailOptions,
     limits: NativeRenderLimits,
 ) -> Result<Thumbnail, ThumbnailError> {
-    render_loaded_document_inner(document, page_tree, options, limits, None, None, None)
+    render_loaded_document_inner(
+        document,
+        page_tree,
+        options,
+        limits,
+        RenderTraceSinks::none(),
+    )
 }
 
 fn render_loaded_document_with_timings(
@@ -1381,30 +1435,18 @@ fn render_loaded_document_with_timings(
         page_tree,
         options,
         limits,
-        Some(timings),
-        None,
-        None,
+        RenderTraceSinks::with_timings(timings),
     )
 }
 
-fn render_loaded_document_with_timings_and_stroke_shapes(
+fn render_loaded_document_with_trace(
     document: &ClassicDocument<'_>,
     page_tree: &PageTree,
     options: &ThumbnailOptions,
     limits: NativeRenderLimits,
-    timings: &mut NativeRenderPhaseTimings,
-    stroke_shapes: &mut StrokeShapeSummary,
-    image_resource_summary: &mut ImageResourceSummary,
+    trace_sinks: RenderTraceSinks<'_>,
 ) -> Result<Thumbnail, ThumbnailError> {
-    render_loaded_document_inner(
-        document,
-        page_tree,
-        options,
-        limits,
-        Some(timings),
-        Some(stroke_shapes),
-        Some(image_resource_summary),
-    )
+    render_loaded_document_inner(document, page_tree, options, limits, trace_sinks)
 }
 
 fn render_loaded_document_inner(
@@ -1412,38 +1454,46 @@ fn render_loaded_document_inner(
     page_tree: &PageTree,
     options: &ThumbnailOptions,
     limits: NativeRenderLimits,
-    mut timings: Option<&mut NativeRenderPhaseTimings>,
-    mut stroke_shapes: Option<&mut StrokeShapeSummary>,
-    mut image_resource_summary: Option<&mut ImageResourceSummary>,
+    mut trace_sinks: RenderTraceSinks<'_>,
 ) -> Result<Thumbnail, ThumbnailError> {
     enforce_xfa_render_policy(document)?;
     let page = page_tree
         .pages()
         .get(options.page_index as usize)
         .ok_or_else(|| unsupported_feature(BUCKET_RENDERER_UNSUPPORTED))?;
-    let content = record_render_phase(&mut timings, NativeRenderPhase::StreamDecode, || {
-        let content = page_content_stream(document, page)?;
-        let optional_content = page_optional_content_properties(document, page)?;
-        let optional_content_state = document_optional_content_state(document)?;
-        filter_optional_content(&content, &optional_content, &optional_content_state)
-    })?;
-    let xobject_invocations =
-        record_render_phase(&mut timings, NativeRenderPhase::ContentTokenize, || {
-            xobject_invocation_names(&content)
-        })?;
+    let content = record_render_phase(
+        &mut trace_sinks.timings,
+        NativeRenderPhase::StreamDecode,
+        || {
+            let content = page_content_stream(document, page)?;
+            let optional_content = page_optional_content_properties(document, page)?;
+            let optional_content_state = document_optional_content_state(document)?;
+            filter_optional_content(&content, &optional_content, &optional_content_state)
+        },
+    )?;
+    let xobject_invocations = record_render_phase(
+        &mut trace_sinks.timings,
+        NativeRenderPhase::ContentTokenize,
+        || xobject_invocation_names(&content),
+    )?;
     let display_options = limits.display_options();
     let path_options = limits.path_raster_options();
-    let (ext_graphics_states, shadings, patterns, color_spaces) =
-        record_render_phase(&mut timings, NativeRenderPhase::ResourceGraphics, || {
+    let (ext_graphics_states, shadings, patterns, color_spaces) = record_render_phase(
+        &mut trace_sinks.timings,
+        NativeRenderPhase::ResourceGraphics,
+        || {
             Ok((
                 page_ext_graphics_state_resources(document, page)?,
                 page_shading_resources(document, page, display_options)?,
                 page_tiling_pattern_resources(document, page, display_options)?,
                 page_color_space_resources(document, page)?,
             ))
-        })?;
-    let display_list =
-        record_render_phase(&mut timings, NativeRenderPhase::DisplayListBuild, || {
+        },
+    )?;
+    let display_list = record_render_phase(
+        &mut trace_sinks.timings,
+        NativeRenderPhase::DisplayListBuild,
+        || {
             build_path_display_list_with_graphics_resources(
                 tokenize_content(PdfBytes::new(&content)),
                 &ext_graphics_states,
@@ -1453,68 +1503,96 @@ fn render_loaded_document_inner(
                 display_options,
             )
             .map_err(map_graphics_error)
-        })?;
+        },
+    )?;
     let transform = PageTransform::new_with_options(
         page_geometry(*page),
         options.max_edge,
         limits.page_transform_options(),
     )
     .map_err(map_raster_error)?;
-    record_stroke_shapes(&mut stroke_shapes, &display_list, transform, path_options)?;
-    let form_resources =
-        record_render_phase(&mut timings, NativeRenderPhase::ResourceForms, || {
-            page_form_resources(document, page, &xobject_invocations)
-        })?;
-    let form_list = record_render_phase(&mut timings, NativeRenderPhase::DisplayListBuild, || {
-        build_form_display_list_with_graphics_resources(
-            tokenize_content(PdfBytes::new(&content)),
-            &form_resources,
-            &ext_graphics_states,
-            &shadings,
-            &patterns,
-            &color_spaces,
-            display_options,
-        )
-        .map_err(map_graphics_error)
-    })?;
-    record_stroke_shapes(&mut stroke_shapes, &form_list, transform, path_options)?;
-    let image_resources =
-        record_render_phase(&mut timings, NativeRenderPhase::ResourceImages, || {
-            page_image_resources(document, page, &xobject_invocations, display_options)
-        })?;
+    record_stroke_shapes(
+        &mut trace_sinks.stroke_shapes,
+        &display_list,
+        transform,
+        path_options,
+    )?;
+    let form_resources = record_render_phase(
+        &mut trace_sinks.timings,
+        NativeRenderPhase::ResourceForms,
+        || page_form_resources(document, page, &xobject_invocations),
+    )?;
+    let form_list = record_render_phase(
+        &mut trace_sinks.timings,
+        NativeRenderPhase::DisplayListBuild,
+        || {
+            build_form_display_list_with_graphics_resources(
+                tokenize_content(PdfBytes::new(&content)),
+                &form_resources,
+                &ext_graphics_states,
+                &shadings,
+                &patterns,
+                &color_spaces,
+                display_options,
+            )
+            .map_err(map_graphics_error)
+        },
+    )?;
+    record_stroke_shapes(
+        &mut trace_sinks.stroke_shapes,
+        &form_list,
+        transform,
+        path_options,
+    )?;
+    let image_resources = record_render_phase(
+        &mut trace_sinks.timings,
+        NativeRenderPhase::ResourceImages,
+        || page_image_resources(document, page, &xobject_invocations, display_options),
+    )?;
     record_image_resource_summary(
-        &mut image_resource_summary,
+        &mut trace_sinks.image_resources,
         image_resources.resource_summary(),
     );
-    let image_list =
-        record_render_phase(&mut timings, NativeRenderPhase::DisplayListBuild, || {
+    let image_list = record_render_phase(
+        &mut trace_sinks.timings,
+        NativeRenderPhase::DisplayListBuild,
+        || {
             build_image_display_list(
                 tokenize_content(PdfBytes::new(&content)),
                 &image_resources,
                 display_options,
             )
             .map_err(map_graphics_error)
-        })?;
-    let font_resources =
-        record_render_phase(&mut timings, NativeRenderPhase::ResourceFonts, || {
-            page_font_resources(document, page, display_options)
-        })?;
-    let text_list = record_render_phase(&mut timings, NativeRenderPhase::DisplayListBuild, || {
-        build_text_display_list(
-            tokenize_content(PdfBytes::new(&content)),
-            &font_resources,
-            display_options,
-        )
-        .map_err(map_graphics_error)
-    })?;
+        },
+    )?;
+    record_image_placement_summary(&mut trace_sinks.image_placements, &image_list, transform);
+    let font_resources = record_render_phase(
+        &mut trace_sinks.timings,
+        NativeRenderPhase::ResourceFonts,
+        || page_font_resources(document, page, display_options),
+    )?;
+    let text_list = record_render_phase(
+        &mut trace_sinks.timings,
+        NativeRenderPhase::DisplayListBuild,
+        || {
+            build_text_display_list(
+                tokenize_content(PdfBytes::new(&content)),
+                &font_resources,
+                display_options,
+            )
+            .map_err(map_graphics_error)
+        },
+    )?;
     let mut raster = transform
         .create_device(options.background)
         .map_err(map_raster_error)?;
     let paint_order = should_scan_content_order(&display_list, &image_list, &text_list)
         .then(|| {
-            record_render_phase(&mut timings, NativeRenderPhase::ContentTokenize, || {
-                page_paint_order(&content, &image_resources, &form_resources)
-            })
+            record_render_phase(
+                &mut trace_sinks.timings,
+                NativeRenderPhase::ContentTokenize,
+                || page_paint_order(&content, &image_resources, &form_resources),
+            )
         })
         .transpose()?;
     if let Some(paint_order) = paint_order.filter(|paint_order| {
@@ -1538,31 +1616,46 @@ fn render_loaded_document_inner(
             &mut raster,
             transform,
             path_options,
-            &mut timings,
+            &mut trace_sinks.timings,
         )?;
     } else {
-        record_render_phase(&mut timings, NativeRenderPhase::RasterPaths, || {
-            rasterize_paths_into(&display_list, &mut raster, transform, path_options)
-                .map_err(map_raster_error)
-        })?;
-        record_render_phase(&mut timings, NativeRenderPhase::RasterPaths, || {
-            rasterize_paths_into(&form_list, &mut raster, transform, path_options)
-                .map_err(map_raster_error)
-        })?;
-        record_render_phase(&mut timings, NativeRenderPhase::RasterImages, || {
-            rasterize_images(&image_list, &mut raster, transform).map_err(map_raster_error)
-        })?;
-        record_render_phase(&mut timings, NativeRenderPhase::RasterText, || {
-            rasterize_text(&text_list, &mut raster, transform).map_err(map_raster_error)
-        })?;
+        record_render_phase(
+            &mut trace_sinks.timings,
+            NativeRenderPhase::RasterPaths,
+            || {
+                rasterize_paths_into(&display_list, &mut raster, transform, path_options)
+                    .map_err(map_raster_error)
+            },
+        )?;
+        record_render_phase(
+            &mut trace_sinks.timings,
+            NativeRenderPhase::RasterPaths,
+            || {
+                rasterize_paths_into(&form_list, &mut raster, transform, path_options)
+                    .map_err(map_raster_error)
+            },
+        )?;
+        record_render_phase(
+            &mut trace_sinks.timings,
+            NativeRenderPhase::RasterImages,
+            || rasterize_images(&image_list, &mut raster, transform).map_err(map_raster_error),
+        )?;
+        record_render_phase(
+            &mut trace_sinks.timings,
+            NativeRenderPhase::RasterText,
+            || rasterize_text(&text_list, &mut raster, transform).map_err(map_raster_error),
+        )?;
     }
-    let (annotation_forms, annotation_content, annotation_fallback_content) =
-        record_render_phase(&mut timings, NativeRenderPhase::StreamDecode, || {
-            page_annotation_appearance_resources(document, page, options.annotation_mode)
-        })?;
+    let (annotation_forms, annotation_content, annotation_fallback_content) = record_render_phase(
+        &mut trace_sinks.timings,
+        NativeRenderPhase::StreamDecode,
+        || page_annotation_appearance_resources(document, page, options.annotation_mode),
+    )?;
     if !annotation_content.is_empty() {
-        let annotation_list =
-            record_render_phase(&mut timings, NativeRenderPhase::DisplayListBuild, || {
+        let annotation_list = record_render_phase(
+            &mut trace_sinks.timings,
+            NativeRenderPhase::DisplayListBuild,
+            || {
                 build_form_display_list_with_graphics_resources(
                     tokenize_content(PdfBytes::new(&annotation_content)),
                     &annotation_forms,
@@ -1573,25 +1666,33 @@ fn render_loaded_document_inner(
                     display_options,
                 )
                 .map_err(map_graphics_error)
-            })?;
+            },
+        )?;
         record_stroke_shapes(
-            &mut stroke_shapes,
+            &mut trace_sinks.stroke_shapes,
             &annotation_list,
             transform,
             path_options,
         )?;
-        record_render_phase(&mut timings, NativeRenderPhase::RasterPaths, || {
-            rasterize_paths_into(&annotation_list, &mut raster, transform, path_options)
-                .map_err(map_raster_error)
-        })?;
+        record_render_phase(
+            &mut trace_sinks.timings,
+            NativeRenderPhase::RasterPaths,
+            || {
+                rasterize_paths_into(&annotation_list, &mut raster, transform, path_options)
+                    .map_err(map_raster_error)
+            },
+        )?;
     }
     if !annotation_fallback_content.is_empty() {
-        let annotation_ext_graphics_states =
-            record_render_phase(&mut timings, NativeRenderPhase::ResourceAnnotations, || {
-                annotation_fallback_ext_graphics_states().map_err(map_graphics_error)
-            })?;
-        let annotation_list =
-            record_render_phase(&mut timings, NativeRenderPhase::DisplayListBuild, || {
+        let annotation_ext_graphics_states = record_render_phase(
+            &mut trace_sinks.timings,
+            NativeRenderPhase::ResourceAnnotations,
+            || annotation_fallback_ext_graphics_states().map_err(map_graphics_error),
+        )?;
+        let annotation_list = record_render_phase(
+            &mut trace_sinks.timings,
+            NativeRenderPhase::DisplayListBuild,
+            || {
                 build_path_display_list_with_graphics_resources(
                     tokenize_content(PdfBytes::new(&annotation_fallback_content)),
                     &annotation_ext_graphics_states,
@@ -1601,33 +1702,42 @@ fn render_loaded_document_inner(
                     display_options,
                 )
                 .map_err(map_graphics_error)
-            })?;
+            },
+        )?;
         record_stroke_shapes(
-            &mut stroke_shapes,
+            &mut trace_sinks.stroke_shapes,
             &annotation_list,
             transform,
             path_options,
         )?;
-        record_render_phase(&mut timings, NativeRenderPhase::RasterPaths, || {
-            rasterize_paths_into(&annotation_list, &mut raster, transform, path_options)
-                .map_err(map_raster_error)
-        })?;
+        record_render_phase(
+            &mut trace_sinks.timings,
+            NativeRenderPhase::RasterPaths,
+            || {
+                rasterize_paths_into(&annotation_list, &mut raster, transform, path_options)
+                    .map_err(map_raster_error)
+            },
+        )?;
         match build_text_display_list(
             tokenize_content(PdfBytes::new(&annotation_fallback_content)),
             &font_resources,
             display_options,
         ) {
             Ok(annotation_text_list) => {
-                record_render_phase(&mut timings, NativeRenderPhase::RasterText, || {
-                    rasterize_text(&annotation_text_list, &mut raster, transform)
-                        .map_err(map_raster_error)
-                })?;
+                record_render_phase(
+                    &mut trace_sinks.timings,
+                    NativeRenderPhase::RasterText,
+                    || {
+                        rasterize_text(&annotation_text_list, &mut raster, transform)
+                            .map_err(map_raster_error)
+                    },
+                )?;
             }
             Err(error) if is_ignorable_annotation_fallback_text_error(&error) => {}
             Err(error) => return Err(map_graphics_error(error)),
         }
     }
-    record_render_phase(&mut timings, NativeRenderPhase::Output, || {
+    record_render_phase(&mut trace_sinks.timings, NativeRenderPhase::Output, || {
         let dimensions = raster.dimensions();
         Thumbnail::rgba(dimensions.width, dimensions.height, raster.into_pixels())
     })
@@ -1670,6 +1780,20 @@ fn record_image_resource_summary(
         return;
     };
     *image_resource_summary = summary;
+}
+
+fn record_image_placement_summary(
+    image_placement_summary: &mut Option<&mut ImagePlacementSummary>,
+    display_list: &DisplayList,
+    transform: PageTransform,
+) {
+    let Some(image_placement_summary) = image_placement_summary.as_deref_mut() else {
+        return;
+    };
+    image_placement_summary.merge(display_list_image_placement_summary(
+        display_list,
+        transform,
+    ));
 }
 
 fn rasterize_ordered_display_list_with_phase_timings(
@@ -4758,6 +4882,14 @@ mod tests {
         assert!(trace.image_resources.encoded_bytes > 0);
         assert!(trace.image_resources.decoded_sample_bytes > 0);
         assert!(trace.image_resources.resident_bytes >= trace.image_resources.decoded_sample_bytes);
+        assert!(trace.image_placements.placements > 0);
+        assert!(trace.image_placements.source_pixels > 0);
+        assert!(trace.image_placements.device_pixels > 0);
+        assert!(
+            trace.image_placements.axis_aligned_placements
+                + trace.image_placements.transformed_placements
+                == trace.image_placements.placements
+        );
     }
 
     #[test]

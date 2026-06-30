@@ -12,10 +12,10 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use ferrugo_native::{
-    scan_operator_coverage, ImageResourceSummary, NativeBackend, NativeDocumentSessionStats,
-    NativeMemoryDiagnostics, NativePageCacheKey, NativePageCachePolicy, NativeRenderPhaseTimings,
-    NativeRenderTrace, OperatorCoverageEntry, OperatorCoverageOptions, OperatorSupportStatus,
-    StrokeShapeSummary,
+    scan_operator_coverage, ImagePlacementSummary, ImageResourceSummary, NativeBackend,
+    NativeDocumentSessionStats, NativeMemoryDiagnostics, NativePageCacheKey, NativePageCachePolicy,
+    NativeRenderPhaseTimings, NativeRenderTrace, OperatorCoverageEntry, OperatorCoverageOptions,
+    OperatorSupportStatus, StrokeShapeSummary,
 };
 #[cfg(feature = "pdfium")]
 use ferrugo_pdfium::PdfiumBackend;
@@ -8505,6 +8505,9 @@ fn native_render_trace_json(config: &TraceNativeConfig) -> Result<String, CliErr
     let image_resource_summary_json = trace_image_resource_summary_json(
         render_trace.as_ref().map(|trace| &trace.image_resources),
     );
+    let image_placement_summary_json = trace_image_placement_summary_json(
+        render_trace.as_ref().map(|trace| &trace.image_placements),
+    );
     let render_json = trace_render_outcome_json(render_trace);
 
     Ok(format!(
@@ -8526,6 +8529,7 @@ fn native_render_trace_json(config: &TraceNativeConfig) -> Result<String, CliErr
             "  \"phase_timings_ms\": {},\n",
             "  \"stroke_shape_summary\": {},\n",
             "  \"image_resource_summary\": {},\n",
+            "  \"image_placement_summary\": {},\n",
             "  \"operator_coverage\": {},\n",
             "  \"operator_summary\": {},\n",
             "  \"events\": [{}]\n",
@@ -8544,6 +8548,7 @@ fn native_render_trace_json(config: &TraceNativeConfig) -> Result<String, CliErr
         phase_timings_json,
         stroke_shape_summary_json,
         image_resource_summary_json,
+        image_placement_summary_json,
         coverage_json,
         operator_summary,
         events_json
@@ -8711,6 +8716,45 @@ fn trace_image_resource_summary_json(
             summary.max_width,
             summary.max_height,
             summary.max_pixels
+        ),
+        Err(error) => format!(
+            "{{\"status\":\"error\",\"class\":{},\"bucket\":{}}}",
+            json_string(error.class().as_str()),
+            optional_json_string(error.unsupported_feature_bucket())
+        ),
+    }
+}
+
+fn trace_image_placement_summary_json(
+    summary: Result<&ImagePlacementSummary, &ThumbnailError>,
+) -> String {
+    match summary {
+        Ok(summary) => format!(
+            concat!(
+                "{{",
+                "\"status\":\"measured\",",
+                "\"placements\":{},",
+                "\"source_pixels\":{},",
+                "\"device_pixels\":{},",
+                "\"max_source_pixels\":{},",
+                "\"max_device_pixels\":{},",
+                "\"downsample_candidate_placements\":{},",
+                "\"off_device_placements\":{},",
+                "\"axis_aligned_placements\":{},",
+                "\"transformed_placements\":{},",
+                "\"max_source_to_device_ratio_x100\":{}",
+                "}}"
+            ),
+            summary.placements,
+            summary.source_pixels,
+            summary.device_pixels,
+            summary.max_source_pixels,
+            summary.max_device_pixels,
+            summary.downsample_candidate_placements,
+            summary.off_device_placements,
+            summary.axis_aligned_placements,
+            summary.transformed_placements,
+            summary.max_source_to_device_ratio_x100
         ),
         Err(error) => format!(
             "{{\"status\":\"error\",\"class\":{},\"bucket\":{}}}",
@@ -11598,6 +11642,10 @@ mod tests {
         assert!(json.contains("\"image_resource_summary\""));
         assert!(json.contains("\"encoded_bytes\""));
         assert!(json.contains("\"resident_bytes\""));
+        assert!(json.contains("\"image_placement_summary\""));
+        assert!(json.contains("\"source_pixels\""));
+        assert!(json.contains("\"device_pixels\""));
+        assert!(json.contains("\"downsample_candidate_placements\""));
         assert!(json.contains("\"operator_summary\""));
         assert!(!json.contains("stream\n"));
         assert!(!json.contains("ferrugo thumbnail fixture"));

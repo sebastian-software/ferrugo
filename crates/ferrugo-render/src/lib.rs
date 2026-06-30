@@ -1709,6 +1709,49 @@ pub struct ImageResourceSummary {
     pub max_pixels: u64,
 }
 
+/// Aggregate image placement counters for profiling and trace output.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct ImagePlacementSummary {
+    /// Image placements in the display list.
+    pub placements: usize,
+    /// Sum of source pixels across image placements.
+    pub source_pixels: u64,
+    /// Sum of conservative clipped device pixels covered by placements.
+    pub device_pixels: u64,
+    /// Largest source pixel count for one placement.
+    pub max_source_pixels: u64,
+    /// Largest conservative clipped device pixel count for one placement.
+    pub max_device_pixels: u64,
+    /// Placements whose source image has at least 4x the clipped device footprint.
+    pub downsample_candidate_placements: usize,
+    /// Placements with no visible device footprint after clipping.
+    pub off_device_placements: usize,
+    /// Placements whose page-space transform is axis-aligned.
+    pub axis_aligned_placements: usize,
+    /// Placements with rotation or skew in page-space.
+    pub transformed_placements: usize,
+    /// Maximum `source_pixels / device_pixels * 100` ratio for visible placements.
+    pub max_source_to_device_ratio_x100: u64,
+}
+
+impl ImagePlacementSummary {
+    /// Merges another placement summary into this one.
+    pub fn merge(&mut self, other: Self) {
+        self.placements += other.placements;
+        self.source_pixels = self.source_pixels.saturating_add(other.source_pixels);
+        self.device_pixels = self.device_pixels.saturating_add(other.device_pixels);
+        self.max_source_pixels = self.max_source_pixels.max(other.max_source_pixels);
+        self.max_device_pixels = self.max_device_pixels.max(other.max_device_pixels);
+        self.downsample_candidate_placements += other.downsample_candidate_placements;
+        self.off_device_placements += other.off_device_placements;
+        self.axis_aligned_placements += other.axis_aligned_placements;
+        self.transformed_placements += other.transformed_placements;
+        self.max_source_to_device_ratio_x100 = self
+            .max_source_to_device_ratio_x100
+            .max(other.max_source_to_device_ratio_x100);
+    }
+}
+
 impl ImageResourceSummary {
     const EMPTY: Self = Self {
         images: 0,
@@ -5272,6 +5315,20 @@ pub fn display_list_stroke_shape_summary(
     Ok(summary)
 }
 
+/// Summarizes image placements in a display list for performance diagnostics.
+///
+/// This is intended for explicit profiling and trace commands. It does not
+/// inspect PDF bytes, rendered pixels, text contents, or image samples.
+#[must_use]
+pub fn display_list_image_placement_summary(
+    display_list: &DisplayList,
+    transform: PageTransform,
+) -> ImagePlacementSummary {
+    let mut summary = ImagePlacementSummary::default();
+    collect_display_list_image_placements(display_list, transform, &mut summary);
+    summary
+}
+
 fn collect_display_list_stroke_shapes(
     display_list: &DisplayList,
     transform: PageTransform,
@@ -5296,6 +5353,64 @@ fn collect_display_list_stroke_shapes(
         }
     }
     Ok(())
+}
+
+fn collect_display_list_image_placements(
+    display_list: &DisplayList,
+    transform: PageTransform,
+    summary: &mut ImagePlacementSummary,
+) {
+    for item in display_list.items() {
+        match item {
+            DisplayItem::Image(image) => {
+                summary.merge(image_placement_summary_for_item(image, transform));
+            }
+            DisplayItem::TransparencyGroup(group) => {
+                collect_display_list_image_placements(&group.items, transform, summary);
+            }
+            DisplayItem::Path(_)
+            | DisplayItem::ClipPlaceholder { .. }
+            | DisplayItem::Text(_)
+            | DisplayItem::Shading(_) => {}
+        }
+    }
+}
+
+fn image_placement_summary_for_item(
+    image: &ImageDisplayItem,
+    transform: PageTransform,
+) -> ImagePlacementSummary {
+    let source_pixels = u64::from(image.image.width) * u64::from(image.image.height);
+    let device_bounds = device_pixel_bounds(
+        transform_bounds(image.bounds, transform.matrix),
+        transform.dimensions,
+        0.0,
+    );
+    let device_pixels = device_bounds
+        .map(|bounds| {
+            u64::from(bounds.max_x - bounds.min_x) * u64::from(bounds.max_y - bounds.min_y)
+        })
+        .unwrap_or_default();
+    let ratio_x100 = source_pixels
+        .saturating_mul(100)
+        .checked_div(device_pixels)
+        .unwrap_or_default();
+    let page_image_transform = transform.matrix.multiply(image.transform);
+    let axis_aligned = image_transform_is_axis_aligned(page_image_transform);
+    ImagePlacementSummary {
+        placements: 1,
+        source_pixels,
+        device_pixels,
+        max_source_pixels: source_pixels,
+        max_device_pixels: device_pixels,
+        downsample_candidate_placements: usize::from(
+            device_pixels > 0 && source_pixels >= device_pixels.saturating_mul(4),
+        ),
+        off_device_placements: usize::from(device_pixels == 0),
+        axis_aligned_placements: usize::from(axis_aligned),
+        transformed_placements: usize::from(!axis_aligned),
+        max_source_to_device_ratio_x100: ratio_x100,
+    }
 }
 
 fn stroke_shape_summary_for_path(
@@ -21498,6 +21613,54 @@ mod tests {
             }
         );
         assert_eq!(image.image.resource_name, b"inline-image");
+    }
+
+    #[test]
+    fn image_placement_summary_should_count_downsample_candidates() {
+        let image = ImageXObject {
+            resource_name: b"Im1".to_vec(),
+            width: 200,
+            height: 200,
+            bits_per_component: 8,
+            color_space: ImageColorSpace::DeviceRgb,
+            samples: Arc::new(Vec::new()),
+            kind: ImageKind::Color,
+            indexed_lookup: None,
+            soft_mask: None,
+        };
+        let list = DisplayList::from_items(vec![DisplayItem::Image(ImageDisplayItem {
+            image,
+            transform: Matrix::scale(10.0, 10.0),
+            bounds: PathBounds {
+                min_x: 0.0,
+                min_y: 0.0,
+                max_x: 10.0,
+                max_y: 10.0,
+            },
+            state: GraphicsState::default(),
+        })]);
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 100.0,
+                    max_y: 100.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            100,
+        )
+        .expect("valid transform");
+
+        let summary = display_list_image_placement_summary(&list, transform);
+
+        assert_eq!(summary.placements, 1);
+        assert_eq!(summary.source_pixels, 40_000);
+        assert_eq!(summary.device_pixels, 100);
+        assert_eq!(summary.downsample_candidate_placements, 1);
+        assert_eq!(summary.max_source_to_device_ratio_x100, 40_000);
     }
 
     #[test]

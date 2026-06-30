@@ -2581,6 +2581,33 @@ Image resource summary instrumentation from 2026-06-30:
   decoded sample materialization for oversized Flate scans over more
   compressed-stream copy micro-optimizations.
 
+Image placement footprint instrumentation from 2026-06-30:
+
+- Profiling trigger: `image_resource_summary` showed source image bytes and
+  decoded sample size, but did not show whether the decoded source pixels were
+  much larger than the final raster footprint. Downsample/crop-aware decode
+  needs source-vs-device placement evidence before changing decode strategy.
+- Change: `trace-native` now emits `image_placement_summary` with placement
+  count, summed source pixels, conservative clipped device pixels, max source
+  and device footprint, downsample-candidate count, off-device count,
+  axis-aligned/transformed placement counts, and max
+  `source_pixels / device_pixels * 100` ratio. The summary is request-local
+  and only collected in the explicit trace path.
+- Trace artifacts:
+  `target/trace-scanner-large-image-placement-summary.json` and
+  `target/trace-mobile-mixed-image-placement-summary.json`.
+- Initial readings: `scanner-large-image-budget.pdf` has one visible
+  axis-aligned placement with `563,200` source pixels and only `18,560`
+  conservative device pixels at `--max-edge 160`, for a ratio of `30.34x`;
+  it is counted as one downsample candidate. `mobile-mixed-compression-scan.pdf`
+  has two visible axis-aligned placements with `70,416` source pixels and
+  `18,916` device pixels, max ratio `3.96x`, so it stays just below the
+  current 4x downsample-candidate threshold.
+- Decision: accept as Phase 4 profiling infrastructure. The scanner fixture is
+  now a concrete downsample-aware decode target; the mobile mixed fixture is a
+  watch item where a lower threshold would need stronger quality and speed
+  evidence.
+
 Accepted shared image sample Vec result from 2026-06-30:
 
 - Profiling trigger: `target/sample-scanner-large-post-interior.txt` showed a
