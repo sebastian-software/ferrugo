@@ -2283,6 +2283,46 @@ Accepted pixel-aligned rect-clip skip from 2026-06-30:
   behavior, generic clip behavior, allocation strategy, dependency surface, or
   unsafe code.
 
+Accepted opaque normal blend shortcut from 2026-06-30:
+
+- Profile basis: the fresh post-rect-clip-skip `sample` run still put nearly
+  all repeat-render time inside `stroke_path`, with `blend_pixel` and
+  `source_over` now visible as the largest secondary cost after the sample
+  rejection work. Earlier opaque blend experiments were rejected before the
+  clip-skip win because they did not clear the threshold; the changed profile
+  made this narrow retest worthwhile.
+- Change: `blend_pixel` now takes a direct source-over path when the blend mode
+  is `Normal` and both source and destination pixels are fully opaque. This
+  keeps the existing full-coverage direct write, avoids the generic alpha
+  normalization path for partial opaque coverage, and does not add dependencies
+  or unsafe code.
+- Correctness guard:
+  `blend_pixel_should_fast_path_opaque_normal_partial_coverage` compares the
+  fast path against the existing `source_over` result for partial coverage.
+- A/B artifacts:
+  `target/benchmark-repeat-vector-stress-after-rect-clip-skip-profile-run.json`,
+  `target/benchmark-repeat-vector-stress-opaque-blend-post-clip-skip-candidate.json`,
+  `target/performance-matrix-report-vector-opaque-blend-post-clip-skip-candidate.json`,
+  `target/performance-matrix-opaque-blend-post-clip-skip-starter.json`, and
+  `target/trace-native-vector-stress-opaque-blend-post-clip-skip.json`.
+- Result: accepted as a repeated 5-10% cumulative vector/report win. Against
+  the fresh 30k post-rect-clip-skip repeat baseline, `vector-stress.pdf` moved
+  repeat mean `1.051 ms` -> `0.971 ms` (`~7.6%`) and computed p95
+  `1.177 ms` -> `1.086 ms` (`~7.7%`). The repeat phase attribution moved
+  `raster_paths` from `0.956 ms` to `0.876 ms`.
+- Protection result:
+  `target/performance-matrix-opaque-blend-post-clip-skip-starter.json`
+  rendered all `11` native hot-render records with no fallback-required,
+  missing-tool, not-applicable, or error records. The vector family p95 was
+  `1.105 ms`; this is below the previous focused p95 `1.153 ms` and consistent
+  with the 30k repeat improvement. Single-run traces remain noisy, so the
+  acceptance decision is based on the repeat benchmark plus status-neutral
+  protection matrix.
+- Decision: keep. This is a narrow compositing shortcut on the same
+  stroke-raster bottleneck track and preserves the generic blend path for
+  non-normal blend modes, transparent source pixels, and transparent
+  destination pixels.
+
 ## Hardware-Aware Rust Notes
 
 Goal: use Rust's memory model and the host CPU well without prematurely

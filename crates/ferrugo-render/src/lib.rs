@@ -13249,6 +13249,9 @@ fn blend_pixel(
         return device.set_pixel(x, y, source);
     }
     let dest = device.pixel(x, y)?;
+    if matches!(blend_mode, BlendMode::Normal) && source.a == 255 && dest.a == 255 {
+        return device.set_pixel(x, y, source_over_opaque(source, dest, coverage));
+    }
     let blended = blend_source_with_backdrop(source, dest, blend_mode);
     device.set_pixel(
         x,
@@ -13262,6 +13265,23 @@ fn blend_pixel(
             coverage,
         ),
     )
+}
+
+fn source_over_opaque(source: Rgba, dest: Rgba, coverage: f64) -> Rgba {
+    let inverse = 1.0 - coverage;
+    Rgba {
+        r: source_over_opaque_channel(source.r, dest.r, coverage, inverse),
+        g: source_over_opaque_channel(source.g, dest.g, coverage, inverse),
+        b: source_over_opaque_channel(source.b, dest.b, coverage, inverse),
+        a: 255,
+    }
+}
+
+fn source_over_opaque_channel(source: u8, dest: u8, coverage: f64, inverse: f64) -> u8 {
+    f64::from(source)
+        .mul_add(coverage, f64::from(dest) * inverse)
+        .floor()
+        .clamp(0.0, 255.0) as u8
 }
 
 fn blend_source_with_backdrop(source: Rgba, dest: Rgba, blend_mode: BlendMode) -> Rgba {
@@ -18831,6 +18851,29 @@ mod tests {
             .expect("opaque blend should write");
 
         assert_eq!(device.pixel(0, 0), Ok(source));
+    }
+
+    #[test]
+    fn blend_pixel_should_fast_path_opaque_normal_partial_coverage() {
+        let dest = Rgba {
+            r: 20,
+            g: 80,
+            b: 160,
+            a: 255,
+        };
+        let mut device = RasterDevice::new(1, 1, dest).expect("valid device");
+        let source = Rgba {
+            r: 200,
+            g: 40,
+            b: 10,
+            a: 255,
+        };
+        let coverage = 0.375;
+
+        blend_pixel(&mut device, 0, 0, source, BlendMode::Normal, coverage)
+            .expect("opaque partial blend should write");
+
+        assert_eq!(device.pixel(0, 0), Ok(source_over(source, dest, coverage)));
     }
 
     #[test]
