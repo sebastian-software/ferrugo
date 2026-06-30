@@ -5259,6 +5259,33 @@ Rejected sampled float blend dispatch candidate from 2026-06-30:
   blend dispatch, cursor-threshold lowering, joinless raster-span reuse, or
   local row-copy variants already tested above.
 
+Rejected hoisted radius-squared candidate from 2026-06-30:
+
+- Rationale:
+  after row-bucket line metrics, `rasterize_row_bucketed_stroke_ranges` was the
+  largest sampled flat symbol. The candidate tried to compute `radius * radius`
+  once in the row/axis raster loops and pass the squared value through
+  row-bucket and join-bucket predicates instead of recomputing it per sample
+  predicate call.
+- Change tested locally but not kept:
+  thread `radius_squared` through row-bucket line predicates and join-bucket
+  predicates, including traced variants and tests. No geometry or blend math
+  was changed.
+- A/B artifacts:
+  `target/benchmark-repeat-vector-stress-after-row-bucket-metrics-200k.json`
+  versus
+  `target/benchmark-repeat-vector-stress-hoisted-radius-squared-candidate-200k.json`.
+- Result:
+  rejected. `vector-stress.pdf` repeat mean regressed `0.579 ms` -> `0.607 ms`,
+  p95 regressed `0.637 ms` -> `0.693 ms`, and repeat mean `raster_paths`
+  regressed `0.491 ms` -> `0.516 ms`. Output status, dimensions, and bytes
+  stayed unchanged.
+- Decision:
+  reverted. The extra argument threading appears to hurt more than the removed
+  multiplication helps in the optimized build. Do not retry this local
+  hoisting shape unless a future profile isolates `radius * radius` itself,
+  not just the broader row-bucket raster loop.
+
 ## Settled Decisions
 
 - [x] `scripts/generate_performance_matrix.sh` defaults to release mode.
