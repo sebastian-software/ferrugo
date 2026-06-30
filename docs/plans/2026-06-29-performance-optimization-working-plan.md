@@ -3761,6 +3761,35 @@ Rejected prepared row-bucket line-metrics candidate from 2026-06-30:
   rasterization and blending work. Revisit only if a future profile shows line
   metric recomputation dominating independently.
 
+Rejected span row-write and sorted-range merge candidate from 2026-06-30:
+
+- Profile basis: the same `target/sample-vector-stress-current-post-axial.txt`
+  run showed `blend_pixel`, `rasterize_span_covered_stroke_ranges`, and
+  `merge_pixel_ranges` below `stroke_path`. This suggested a cumulative
+  vector-raster candidate: avoid per-pixel `set_pixel`/`pixel` dispatch for
+  opaque normal span samples, and avoid sorting row-bucket X ranges that are
+  already appended in row-bucket X order when no join ranges are present.
+- Changes tested locally but not kept:
+  - add a normal/opaque row-based variant of
+    `rasterize_span_covered_stroke_ranges`, using `row_mut` plus
+    `composite_image_pixel_in_row` for covered samples;
+  - add `merge_sorted_pixel_ranges` and route no-join row-bucket raster ranges
+    through it, keeping the generic sorting merge for join ranges and other
+    callers.
+- A/B artifacts:
+  `target/benchmark-native-vector-stress-current-post-axial-profile-run.json`,
+  `target/benchmark-native-vector-stress-row-opaque-span-candidate.json`, and
+  `target/benchmark-native-vector-stress-row-opaque-sorted-ranges-candidate.json`,
+  all `benchmark-native`, `fixtures/generated/vector-stress.pdf`, `--max-edge
+  160`, 160,000 iterations.
+- Result: rejected as below threshold. The row-write candidate moved mean
+  `0.728 ms` -> `0.708 ms` (`~2.7%`). The combined row-write plus sorted-range
+  candidate moved mean only `0.728 ms` -> `0.711 ms` (`~2.3%`).
+- Decision: reverted. These local reductions touch real sampled stacks, but
+  they do not move the current top fixture enough to justify additional raster
+  branches. The next vector attempt needs a broader algorithmic reduction in
+  sampled stroke/range work, or it should switch to a different top family.
+
 Repeat family phase-summary instrumentation from 2026-06-30:
 
 - Change: `benchmark-repeat-native` now aggregates record-level
