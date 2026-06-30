@@ -1798,6 +1798,38 @@ Rejected opaque normal blend fast path from 2026-06-30:
   land it as a standalone win until profiling shows blend is primary or the
   fast path can be batched at row/pixel-buffer level with stronger evidence.
 
+Current vector profile and rejected scratch-capacity candidate from 2026-06-30:
+
+- Fresh profile evidence:
+  `target/sample-vector-stress-current.txt`, captured from a long release
+  `benchmark-native` process for `fixtures/generated/vector-stress.pdf`,
+  `--max-edge 160`, after the accepted row-bucket and axis-threshold commits.
+- Top-of-stack summary: `stroke_path` remained dominant with `3823` symbol
+  samples. The next visible stacks were `point_in_row_bucketed_stroke` (`929`),
+  `fill_path` (`846`), `blend_pixel` (`361`), `point_in_join` (`276`),
+  `point_in_join_buckets` (`190`), and `source_over` (`184`).
+  `flatten_path_segments` accounted for only `7` samples.
+- Trace evidence from the same current tree:
+  `trace-native fixtures/generated/vector-stress.pdf --max-edge 160
+  --max-events 1` reported `3.234 ms` of `3.499 ms` total in `raster_paths`.
+  The stroke shape summary still showed `485376` row-bucket sample refs,
+  `25672` X hits, and `459704` X misses.
+- Change tested locally but not kept: reserve `x_ranges` scratch vectors from
+  known row-bucket/span row lengths and copy axis span rows with exact row
+  capacity before appending join raster spans.
+- Candidate artifact:
+  `target/benchmark-native-vector-stress-scratch-candidate-rebuilt.json`,
+  native single-fixture run, `--max-edge 160`, `5000` iterations.
+- Result: rejected as a performance candidate. The rebuilt single-fixture run
+  measured `3.198 ms` mean, versus `3.205 ms` in the immediately preceding
+  old-binary signal run. That is below a meaningful threshold and lacks p95
+  matrix evidence. The allocation frames in `sample` are real, but they are
+  currently secondary to row-bucket X-miss and stroke predicate work.
+- Decision: reverted. Do not land broad `Vec::with_capacity` or scratch-shape
+  changes from allocator frames alone. Reopen allocation work only with
+  allocation-volume evidence or a candidate that repeats at least a 5-10%
+  protection-neutral gain as part of the cumulative stroke-raster track.
+
 ## Hardware-Aware Rust Notes
 
 Goal: use Rust's memory model and the host CPU well without prematurely
