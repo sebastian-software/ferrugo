@@ -5593,6 +5593,36 @@ Rejected active row-slice candidate from 2026-06-30:
   reduce visited candidate pixels/sample points or remove measured allocation
   churn with stronger mean and phase support.
 
+Rejected active join-skip candidate from 2026-06-30:
+
+- Rationale:
+  the active row-bucket path still had visible join-bucket work in traces, but
+  `vector-stress.pdf` reported no row-bucket join hits. The candidate tested
+  whether skipping join candidate calls when the current pixel had no active
+  join indices would reduce inner-loop work without changing geometry.
+- Change tested locally but not kept:
+  add a `has_active_joins` guard around
+  `point_in_join_bucket_candidates` and its traced variant inside the active
+  row-bucket raster loops. Geometry predicates, row-bucket maintenance, blend
+  math, output format, dependencies, and unsafe usage stayed unchanged.
+- Correctness checks while the candidate was present:
+  `cargo fmt --all --check` and
+  `cargo test -p ferrugo-render --no-default-features row_bucket`.
+- A/B artifacts:
+  `target/benchmark-repeat-vector-stress-release-current-200k.json` versus
+  `target/benchmark-repeat-vector-stress-active-join-skip-candidate-release-200k.json`.
+- Result:
+  rejected. The focused release repeat regressed mean `0.575 ms` -> `0.607 ms`
+  (~5.6% slower), p95 `0.653 ms` -> `0.710 ms` (~8.7% slower), and repeat
+  mean `raster_paths` `0.487 ms` -> `0.513 ms` (~5.3% slower). Output status,
+  dimensions, and bytes stayed unchanged.
+- Decision:
+  reverted. Avoid adding local boolean guards around the active join path in
+  this shape; the extra branch hurt the optimized build more than the skipped
+  empty join calls helped. Future join work needs either route-level proof that
+  joins can be omitted entirely for a stroke item or a profile that isolates
+  non-empty join candidate evaluation as the dominant cost.
+
 ## Questions Closed For The Next Wave
 
 - [x] What family-specific standalone and cumulative thresholds should replace
