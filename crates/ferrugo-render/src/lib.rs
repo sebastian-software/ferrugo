@@ -10577,13 +10577,16 @@ fn point_in_row_bucketed_stroke(
         return false;
     };
     let radius_squared = radius * radius;
-    buckets.indices[row.clone()].iter().any(|&line_index| {
+    for &line_index in &buckets.indices[row.clone()] {
         let bounded = buckets.lines[line_index];
         if x < bounded.bounds.min_x || x >= bounded.bounds.max_x {
-            return false;
+            continue;
         }
-        point_in_single_stroke_line(point, bounded.line, radius, radius_squared, line_cap)
-    })
+        if point_in_single_stroke_line(point, bounded.line, radius, radius_squared, line_cap) {
+            return true;
+        }
+    }
+    false
 }
 
 fn point_in_single_stroke_line(
@@ -14501,6 +14504,34 @@ mod tests {
             point_in_row_bucketed_stroke(point, 4, 5, &buckets, 0.5, LineCap::Butt),
             point_in_stroke(point, &lines, 0.5, LineCap::Butt)
         );
+    }
+
+    #[test]
+    fn stroke_row_buckets_should_continue_after_x_miss() {
+        let dimensions = RasterDimensions::new(20, 12).expect("valid dimensions");
+        let lines = [
+            LineSegment {
+                from: Point { x: 2.5, y: 5.5 },
+                to: Point { x: 4.5, y: 5.5 },
+            },
+            LineSegment {
+                from: Point { x: 10.5, y: 5.5 },
+                to: Point { x: 14.5, y: 5.5 },
+            },
+        ];
+        let bounds = stroke_pixel_bounds(&lines, &[], 0.5, dimensions)
+            .expect("stroke bounds should overlap");
+        let buckets = stroke_row_buckets(&lines, 0.5, dimensions, bounds).expect("bucketed lines");
+        let point = Point { x: 12.5, y: 5.5 };
+
+        assert!(point_in_row_bucketed_stroke(
+            point,
+            12,
+            5,
+            &buckets,
+            0.5,
+            LineCap::Butt
+        ));
     }
 
     #[test]

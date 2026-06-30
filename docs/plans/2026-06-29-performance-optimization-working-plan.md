@@ -892,27 +892,40 @@ Accepted stroke row-bucket result from 2026-06-30:
   adding another check in front of the same full scan. The data structure is
   request-local, dependency-free, and uses safe `Vec`/slice traversal only.
 - Candidate artifacts:
-  `target/performance-matrix-stroke-row-buckets-technical.json`,
-  `target/performance-matrix-stroke-row-buckets-technical-repeat.json`,
-  `target/performance-matrix-stroke-row-buckets-starter.json`, and
-  `target/performance-matrix-stroke-row-buckets-image.json`.
+  `target/performance-matrix-stroke-row-buckets-xmiss-fix-technical.json`,
+  `target/performance-matrix-stroke-row-buckets-xmiss-fix-technical-repeat.json`,
+  `target/performance-matrix-stroke-row-buckets-xmiss-fix-starter.json`, and
+  `target/performance-matrix-stroke-row-buckets-xmiss-fix-image.json`.
+- Correctness note: the row-bucket scan must continue after a candidate line
+  misses the current X coordinate because later lines in the same row may still
+  cover the pixel. `stroke_row_buckets_should_continue_after_x_miss` protects
+  that case.
 - Repeat technical result against
   `target/performance-matrix-blend-fastpath-technical-repeat-after.json`:
-  `vector-stress.pdf` p95 improved `6.378 ms` -> `5.354 ms` (~16.1%) and mean
-  `6.179 ms` -> `5.230 ms` (~15.4%). `engineering-floorplan-precision.pdf`
-  improved p95 ~6.2% and mean ~8.2%, `clipped-paths.pdf` improved p95 ~7.0%,
-  and `dashed-stroke.pdf` improved p95 ~13.1%. Protection fixtures stayed
-  neutral enough: `technical-hatch-clipping.pdf` p95 improved ~1.7% with mean
-  neutral, and `technical-repeated-symbols.pdf` was about 1-2% slower.
+  `vector-stress.pdf` p95 improved `6.378 ms` -> `5.317 ms` (~16.6%) and mean
+  `6.179 ms` -> `5.144 ms` (~16.8%). `dashed-stroke.pdf` improved p95 ~9.8%,
+  `clipped-paths.pdf` improved p95 ~9.1%, and
+  `engineering-floorplan-precision.pdf` improved mean ~5.4%. Protection
+  fixtures stayed inside the acceptance band: `technical-hatch-clipping.pdf`
+  was neutral to slightly better, `technical-repeated-symbols.pdf` was about
+  3% slower, and `technical-large-coordinate-plan.pdf` was about 4.4% slower
+  p95 / 2.7% slower mean.
 - Starter protection result:
-  `vector-stress.pdf` improved p95 ~18.4% and mean ~18.5%;
-  `technical-hatch-clipping.pdf` improved p95 ~2.1%; text/browser/office/mixed
-  fixtures were neutral to better. `prepress-trim-bleed-marks.pdf` and
-  `scanned-page.pdf` had only sub-2% p95 noise.
+  `vector-stress.pdf` improved p95 ~17.2% and mean ~18.6%;
+  `technical-hatch-clipping.pdf` improved p95 ~1.3%; browser/office fixtures
+  improved about 5-7% p95. `technical-linework-dimensions.pdf` was about 4.6%
+  slower p95 with mean neutral, still inside the protection threshold.
 - Image-heavy protection result:
   all 8 records rendered with no errors or fallback. Image fixtures were
-  neutral to better aside from `dct-image.pdf`, which moved by about -1.6% p95
+  neutral to better aside from `dct-image.pdf`, which moved by about -4.8% p95
   and is below the noise threshold for this change.
+- Rejected follow-up: sorting each row's line indices by `min_x` and breaking
+  early was tested in
+  `target/performance-matrix-stroke-row-buckets-sorted-technical.json` and
+  `target/performance-matrix-stroke-row-buckets-sort128-technical.json`.
+  Although some large plan fixtures improved, protection fixtures regressed
+  badly (`clipped-paths.pdf` and several engineering fixtures), so the sorted
+  variant was reverted.
 - Decision: accept. This is the first post-blend stroke-path win that moves the
   dominant `vector-stress` fixture by more than 10% while keeping the previous
   protection regressions out of the repeat run.
