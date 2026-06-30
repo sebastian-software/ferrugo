@@ -3894,6 +3894,47 @@ Current vector profile and rejected joinless axis-span reuse candidate from
   `Option<AxisStrokeSpans>` form unless a lower-level allocation profile shows
   a different construction strategy can avoid the branch/shape regression.
 
+Current prepress join-bounds optimization from 2026-06-30:
+
+- Profiling basis:
+  `target/benchmark-repeat-prepress-current-profile-selection.json` measured
+  repeat mean `0.409 ms`, with `raster_paths` at `0.363 ms`.
+  `target/trace-prepress-current-profile-selection.json` showed all 32
+  flattened stroke lines were axis-aligned, with 20 stroked items and 16
+  joinless axis-aligned span candidates. The long CPU sample
+  `target/sample-prepress-current-profile-selection.txt` put `point_in_join`
+  at the top of the stack (`4293` samples), ahead of `stroke_path` (`2554`).
+- Change:
+  `PreparedJoinSide` now stores bounds for bevel triangles and wraps miter
+  triangles in `PreparedJoinTriangle`, so join containment rejects points
+  outside the prepared triangle bounds before running `point_in_triangle`.
+  Prepared bucket entries keep only an index plus pixel bounds; the heavier
+  prepared join data stays in a separate vector to avoid widening the hot
+  bucket enum.
+- Target result:
+  `target/benchmark-repeat-prepress-prepared-join-bounds-indexed-candidate.json`
+  improved repeat mean `0.409 ms` -> `0.326 ms`, with `raster_paths` moving
+  `0.363 ms` -> `0.279 ms`. Earlier focused runs of the same bounds check
+  measured repeat means between `0.325 ms` and `0.340 ms`.
+- Protection result:
+  `target/benchmark-repeat-vector-stress-prepared-join-bounds-indexed-candidate.json`
+  was neutral on the current slowest fixture: repeat mean `0.728 ms` ->
+  `0.723 ms`. Focused protection runs for
+  `office-report-header-footer-link.pdf`,
+  `browser-chromium-article-print.pdf`, and `acroform-text-field.pdf` did not
+  show path-raster pressure from the change (`raster_paths` at `0.020 ms`,
+  `0.008 ms`, and `0.007 ms` respectively).
+- Matrix caveat:
+  `target/performance-matrix-prepared-join-bounds-candidate-repeat.json`
+  had broad p95 and mean spikes, including fixtures unrelated to joins. Treat
+  that run as noisy host evidence, not as a standalone regression signal. The
+  optimization is accepted on focused before/after repeat evidence, neutral
+  vector-stress protection, and unchanged fallback/error status.
+- Decision:
+  accepted. This is the first profile-proven renderer speedup in the current
+  performance wave. It is narrow, local, and keeps the next work focused on
+  path-raster predicates rather than allocation guesses.
+
 ## Phase 6: Benchmark Gates And Claims
 
 Goal: turn stable evidence into guardrails, not premature marketing.
@@ -3923,10 +3964,11 @@ of the traced render time on the report/vector candidates.
 
 The most likely high-value candidates are:
 
-1. device-bounds culling before raster work;
-2. broader stroke raster candidate reduction for dense linework;
-3. fixture-level stroke-shape histograms before another spatial-index variant;
-4. clip-before-loop checks.
+1. more join/stroke predicate bounding and early rejection, guided by `sample`;
+2. device-bounds culling before raster work;
+3. broader stroke raster candidate reduction for dense linework;
+4. fixture-level stroke-shape histograms before another spatial-index variant;
+5. clip-before-loop checks.
 
 If deeper profiler samples point elsewhere inside path rasterization, this
 section should be edited before code changes start.

@@ -7242,6 +7242,7 @@ struct StrokeJoinBuckets {
     rows: Vec<Range<usize>>,
     indices: Vec<usize>,
     joins: Vec<BoundedStrokeJoin>,
+    prepared_joins: Vec<PreparedStrokeJoin>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -7251,7 +7252,7 @@ enum BoundedStrokeJoin {
         bounds: PixelBounds,
     },
     Prepared {
-        join: PreparedStrokeJoin,
+        prepared_index: usize,
         bounds: PixelBounds,
     },
 }
@@ -7293,12 +7294,19 @@ struct JoinTriangle {
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct PreparedJoinSide {
     bevel: JoinTriangle,
-    miter: Option<JoinTriangle>,
+    bevel_bounds: PathBounds,
+    miter: Option<PreparedJoinTriangle>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct PreparedStrokeJoin {
     sides: [PreparedJoinSide; 2],
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct PreparedJoinTriangle {
+    triangle: JoinTriangle,
+    bounds: PathBounds,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -12171,6 +12179,7 @@ fn stroke_join_buckets(
         return None;
     }
     let mut bounded_joins = Vec::with_capacity(joins.len());
+    let mut bucket_prepared_joins = Vec::new();
     let mut row_counts = vec![0usize; row_count];
     match line_join {
         LineJoin::Round => {
@@ -12188,14 +12197,17 @@ fn stroke_join_buckets(
             }
         }
         LineJoin::Bevel | LineJoin::Miter => {
+            bucket_prepared_joins.reserve(prepared_joins.len());
             for join in prepared_joins {
                 let Some(bounds) =
                     prepared_join_pixel_bounds(*join, line_join, dimensions, stroke_bounds)
                 else {
                     continue;
                 };
+                let prepared_index = bucket_prepared_joins.len();
+                bucket_prepared_joins.push(*join);
                 bounded_joins.push(BoundedStrokeJoin::Prepared {
-                    join: *join,
+                    prepared_index,
                     bounds,
                 });
                 count_bucket_rows(&mut row_counts, stroke_bounds.min_y, bounds);
@@ -12236,6 +12248,7 @@ fn stroke_join_buckets(
         rows,
         indices,
         joins: bounded_joins,
+        prepared_joins: bucket_prepared_joins,
     })
 }
 
@@ -12273,7 +12286,7 @@ fn prepared_join_pixel_bounds(
     let mut bounds = None;
     for side in join.sides {
         let triangle = if matches!(line_join, LineJoin::Miter) {
-            side.miter.unwrap_or(side.bevel)
+            side.miter.map_or(side.bevel, |prepared| prepared.triangle)
         } else {
             side.bevel
         };
@@ -12990,12 +13003,12 @@ fn point_in_join(
         LineJoin::Bevel => prepared_joins.iter().any(|join| {
             join.sides
                 .iter()
-                .any(|side| point_in_join_triangle(point, side.bevel))
+                .any(|side| point_in_prepared_join_side(point, *side, line_join))
         }),
         LineJoin::Miter => prepared_joins.iter().any(|join| {
             join.sides
                 .iter()
-                .any(|side| point_in_join_triangle(point, side.miter.unwrap_or(side.bevel)))
+                .any(|side| point_in_prepared_join_side(point, *side, line_join))
         }),
     }
 }
@@ -13025,11 +13038,18 @@ fn point_in_join_buckets(
                     return true;
                 }
             }
-            BoundedStrokeJoin::Prepared { join, bounds } => {
+            BoundedStrokeJoin::Prepared {
+                prepared_index,
+                bounds,
+            } => {
                 if x < bounds.min_x || x >= bounds.max_x {
                     continue;
                 }
-                if prepared_join_contains_point(point, join, line_join) {
+                if prepared_join_contains_point(
+                    point,
+                    buckets.prepared_joins[prepared_index],
+                    line_join,
+                ) {
                     return true;
                 }
             }
@@ -13052,9 +13072,11 @@ fn point_in_join_bucket_candidates(
             BoundedStrokeJoin::Round { join, .. } => {
                 distance_squared(point, join.point) <= radius_squared
             }
-            BoundedStrokeJoin::Prepared { join, .. } => {
-                prepared_join_contains_point(point, join, line_join)
-            }
+            BoundedStrokeJoin::Prepared { prepared_index, .. } => prepared_join_contains_point(
+                point,
+                buckets.prepared_joins[prepared_index],
+                line_join,
+            ),
         })
 }
 
@@ -13063,14 +13085,24 @@ fn prepared_join_contains_point(
     join: PreparedStrokeJoin,
     line_join: LineJoin,
 ) -> bool {
-    join.sides.iter().any(|side| {
-        let triangle = if matches!(line_join, LineJoin::Miter) {
-            side.miter.unwrap_or(side.bevel)
-        } else {
-            side.bevel
-        };
-        point_in_join_triangle(point, triangle)
-    })
+    join.sides
+        .iter()
+        .any(|side| point_in_prepared_join_side(point, *side, line_join))
+}
+
+fn point_in_prepared_join_side(point: Point, side: PreparedJoinSide, line_join: LineJoin) -> bool {
+    let prepared = if matches!(line_join, LineJoin::Miter) {
+        side.miter.unwrap_or(PreparedJoinTriangle {
+            triangle: side.bevel,
+            bounds: side.bevel_bounds,
+        })
+    } else {
+        PreparedJoinTriangle {
+            triangle: side.bevel,
+            bounds: side.bevel_bounds,
+        }
+    };
+    point_in_bounds(point, prepared.bounds) && point_in_join_triangle(point, prepared.triangle)
 }
 
 fn prepare_stroke_joins(
@@ -13149,6 +13181,7 @@ fn prepare_join_side(
         b: previous_outer,
         c: next_outer,
     };
+    let bevel_bounds = triangle_bounds(bevel);
     let miter = if matches!(line_join, LineJoin::Miter) {
         line_intersection(
             previous_outer,
@@ -13157,19 +13190,45 @@ fn prepare_join_side(
             next_direction,
         )
         .filter(|miter| distance_squared(join.point, *miter) <= miter_limit_squared)
-        .map(|miter| JoinTriangle {
-            a: previous_outer,
-            b: miter,
-            c: next_outer,
+        .map(|miter| {
+            let triangle = JoinTriangle {
+                a: previous_outer,
+                b: miter,
+                c: next_outer,
+            };
+            PreparedJoinTriangle {
+                triangle,
+                bounds: triangle_bounds(triangle),
+            }
         })
     } else {
         None
     };
-    PreparedJoinSide { bevel, miter }
+    PreparedJoinSide {
+        bevel,
+        bevel_bounds,
+        miter,
+    }
 }
 
 fn point_in_join_triangle(point: Point, triangle: JoinTriangle) -> bool {
     point_in_triangle(point, triangle.a, triangle.b, triangle.c)
+}
+
+fn triangle_bounds(triangle: JoinTriangle) -> PathBounds {
+    PathBounds {
+        min_x: triangle.a.x.min(triangle.b.x).min(triangle.c.x),
+        min_y: triangle.a.y.min(triangle.b.y).min(triangle.c.y),
+        max_x: triangle.a.x.max(triangle.b.x).max(triangle.c.x),
+        max_y: triangle.a.y.max(triangle.b.y).max(triangle.c.y),
+    }
+}
+
+fn point_in_bounds(point: Point, bounds: PathBounds) -> bool {
+    point.x >= bounds.min_x
+        && point.x <= bounds.max_x
+        && point.y >= bounds.min_y
+        && point.y <= bounds.max_y
 }
 
 fn unit_line_direction(line: LineSegment) -> Option<Point> {
@@ -20220,6 +20279,11 @@ mod tests {
             &joins,
             &prepared,
             2.0,
+            LineJoin::Miter,
+        ));
+        assert!(!point_in_prepared_join_side(
+            Point { x: 0.0, y: 20.0 },
+            prepared[0].sides[0],
             LineJoin::Miter,
         ));
     }
