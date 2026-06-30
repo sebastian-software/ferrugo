@@ -5339,6 +5339,38 @@ Rejected sample-scale candidate from 2026-06-30:
   profile isolates floating-point sample-coordinate division as a standalone
   cost, not just the broader span or row-bucket raster loops.
 
+Rejected span sample-scale candidate from 2026-06-30:
+
+- Rationale:
+  `rasterize_span_covered_stroke_ranges` was the second-largest flat symbol in
+  the fresh profile. The prior sample-scale candidate only touched Point-based
+  stroke loops, so this follow-up tested the same arithmetic idea in the
+  span-coverage X membership loops.
+- Change tested locally but not kept:
+  compute `sample_scale = 1.0 / samples` once in the span-covered cursor and
+  from-start routes, including traced variants, then compute sample X
+  coordinates with multiplication instead of division. No row-bucket code,
+  geometry predicates, blend math, clipping, dependencies, or unsafe usage
+  changed.
+- Correctness checks while the candidate was present:
+  `cargo fmt --all --check` and
+  `cargo test -p ferrugo-render --no-default-features axis_stroke`.
+- A/B artifacts:
+  `target/benchmark-repeat-vector-stress-fresh-profile-200k.json` versus
+  `target/benchmark-repeat-vector-stress-span-sample-scale-candidate-200k.json`.
+- Result:
+  rejected as below the repeated 5% acceptance floor for mean and phase timing.
+  The focused repeat moved mean `0.607 ms` -> `0.588 ms` (~3.1%) and repeat
+  mean `raster_paths` `0.514 ms` -> `0.499 ms` (~2.9%). p95 moved
+  `0.693 ms` -> `0.637 ms` (~8.1%), but the p95-only movement is not enough
+  because the fresh baseline p95 was noisier than the previous accepted
+  post-row-bucket metric run. Output status, dimensions, and bytes stayed
+  unchanged.
+- Decision:
+  reverted. Avoid repeating scalar sample-coordinate rewrites in the current
+  vector track; the next accepted change needs to remove actual span or
+  row-bucket work, not just replace division syntax inside the same loops.
+
 ## Settled Decisions
 
 - [x] `scripts/generate_performance_matrix.sh` defaults to release mode.
