@@ -2747,6 +2747,43 @@ Accepted shared image sample Vec result from 2026-06-30:
   renderer-owned copy from the large decoded-image path and compounds with the
   earlier Flate capacity and opaque image raster wins.
 
+Accepted zlib-rs Flate backend result from 2026-06-30:
+
+- Profiling trigger: after the row-bucket vector win, a fresh 10-second
+  `sample` run on `scanner-large-image-budget.pdf` showed the remaining
+  scanner workload dominated by Flate image resource decode:
+  `decode_image_samples` / `StreamObject::decode_with_options` accounted for
+  `4974` of `7314` samples, with `miniz_oxide` inflate/transfer as the largest
+  stack. `draw_image` was much smaller (`957` samples) and `stroke_path` was no
+  longer the next meaningful target (`173` samples).
+- Change: `ferrugo-object` now builds `flate2` with default features disabled
+  and the Rust-native `zlib-rs` backend enabled. This keeps the decoder in Rust
+  while replacing the previous `miniz_oxide` backend for Flate streams.
+- Focused result: two 100,000-iteration native hot-render runs on
+  `scanner-large-image-budget.pdf`, `--max-edge 160`, measured `0.126 ms` and
+  `0.131 ms` mean, compared with the current pre-change image-heavy matrix
+  value of `0.236 ms` mean and the earlier 50,000-iteration scanner baseline of
+  about `0.237 ms`. This is roughly a `44-47%` scanner improvement.
+- Phase trace: `target/trace-scanner-large-zlib-rs-candidate.json` reduced
+  `resource_decode` from `0.412 ms` to `0.219 ms`, and `resource_images` from
+  `0.296 ms` to `0.172 ms`, while preserving image resource and placement
+  counters.
+- Image-heavy protection: repeated 240-iteration image-heavy runs kept all
+  target fixtures rendered with no fallback/error records. The repeat improved
+  `scanner-large-image-budget.pdf` mean `0.236 ms` -> `0.127 ms`
+  (`~46.2%`), `mobile-mixed-compression-scan.pdf` `0.146 ms` -> `0.131 ms`
+  (`~10.3%`), `image-mask-logo.pdf` `0.121 ms` -> `0.110 ms` (`~9.1%`),
+  `soft-mask-image.pdf` `0.074 ms` -> `0.067 ms` (`~9.5%`), and
+  `predictor-image.pdf` `0.035 ms` -> `0.031 ms` (`~11.4%`).
+- Vector protection: the 240-iteration `report/vector` protection run stayed
+  neutral overall against the accepted row-bucket baseline. `vector-stress.pdf`
+  improved `2.837 ms` -> `2.797 ms`, while the small vector fixtures moved only
+  within noise (`prepress` `+1.7%`, `technical-hatch` `+3.2%`,
+  `technical-linework` `-1.8%`).
+- Decision: accept as a Phase 4 decoder-backend optimization. This is not a
+  downsample-aware default decode change; it directly addresses the profiled
+  Flate hotspot and leaves the lower-memory downsample/crop backlog open.
+
 Rejected image raster candidate from 2026-06-30:
 
 - Change tested locally but not kept: apply the same row-slice compositing
