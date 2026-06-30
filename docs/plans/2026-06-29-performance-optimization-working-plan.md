@@ -1058,6 +1058,20 @@ Rejected candidate from 2026-06-30:
   remaining `stroke_path` work instead of another local distance-predicate
   micro-fast-path.
 
+Current profile after rejecting the axis predicate:
+
+- Artifact: `target/sample-vector-stress-after-axis-reject.txt`, a 10-second
+  macOS `sample` run against a long release `benchmark-native` process for
+  `fixtures/generated/vector-stress.pdf`, `--max-edge 160`.
+- Top-of-stack summary: `stroke_path` `6238` samples, `fill_path` `539`,
+  `blend_pixel` `207`, `source_over` `117`, `RasterDevice::pixel` `25`,
+  `flatten_path_segments` `8`.
+- Interpretation: parser, flattening, image decode, and generic allocation
+  churn are not the dominant next target for this fixture. The next accepted
+  vector optimization should reduce work inside `stroke_path` itself, most
+  likely by changing candidate-pixel/line reduction or the dense linework
+  raster algorithm rather than adding another local predicate shortcut.
+
 ## Hardware-Aware Rust Notes
 
 Goal: use Rust's memory model and the host CPU well without prematurely
