@@ -217,6 +217,27 @@ the crates in dependency order:
 6. `ferrugo-pdfium` when maintainer PDFium workflows are distributed
 7. `ferrugo`
 
+Run the local publish-readiness gate before starting the release train:
+
+```sh
+bash scripts/check_crate_publish_ready.sh
+```
+
+The gate writes package-file lists for every publishable crate to
+`target/publish-ready/`, then builds package archives for the two leaf crates
+that have no internal registry dependency: `ferrugo-syntax` and
+`ferrugo-thumbnail`.
+
+Cargo verifies dependency-chain crates such as `ferrugo-object`,
+`ferrugo-render`, and `ferrugo` against crates.io. Their full `cargo package`
+dry-runs are expected to fail until the lower-level internal crates have already
+been published and are visible in the index. After publishing each lower-level
+crate, rerun the gate with registry-backed package checks enabled:
+
+```sh
+FERRUGO_VERIFY_REGISTRY_PACKAGES=1 bash scripts/check_crate_publish_ready.sh
+```
+
 Local package dry-runs can validate leaf crates before the full release train:
 
 ```sh
@@ -224,8 +245,22 @@ cargo package -p ferrugo-syntax --allow-dirty --no-verify
 cargo package -p ferrugo-thumbnail --allow-dirty --no-verify
 ```
 
+Once the previous crates in the sequence are visible on crates.io, publish the
+next crate from the same checkout:
+
+```sh
+cargo publish -p ferrugo-syntax --locked
+cargo publish -p ferrugo-thumbnail --locked
+cargo publish -p ferrugo-object --locked
+cargo publish -p ferrugo-content --locked
+cargo publish -p ferrugo-render --locked
+cargo publish -p ferrugo-native --locked
+cargo publish -p ferrugo-pdfium --locked
+cargo publish -p ferrugo --locked
+```
+
 The workspace package dry-run validates the full local release train through
-Cargo's temporary registry:
+Cargo's temporary registry when the dependency chain is locally resolvable:
 
 ```sh
 cargo package --workspace --allow-dirty
