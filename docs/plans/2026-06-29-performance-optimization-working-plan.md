@@ -5409,6 +5409,52 @@ Rejected span single-pass membership candidate from 2026-06-30:
   narrower profile, or a larger route-selection change that reduces visited
   pixels/sample points.
 
+Rejected direct pixel write candidate from 2026-06-30:
+
+- Rationale:
+  the fresh CPU sample still showed `blend_pixel` as a top flat symbol after
+  the accepted single-offset blend write. The candidate targeted the remaining
+  per-pixel write helper without changing blend routing, source-over math, or
+  sampled blend behavior.
+- Change tested locally but not kept:
+  replace `write_pixel_at_offset`'s four-byte `copy_from_slice` from a
+  temporary array with direct channel assignments into the raster buffer.
+  Public APIs, blend math, geometry, clipping, dependencies, and unsafe usage
+  stayed unchanged.
+- Correctness checks while the candidate was present:
+  `cargo fmt --all --check`,
+  `cargo test -p ferrugo-render --no-default-features blend_pixel`, and
+  `cargo test -p ferrugo-render --no-default-features source_over`.
+- Profiling-build A/B artifacts:
+  `target/benchmark-repeat-vector-stress-fresh-profile-200k.json`,
+  `target/benchmark-repeat-vector-stress-direct-write-candidate-200k.json`,
+  and
+  `target/benchmark-repeat-vector-stress-direct-write-candidate-repeat-200k.json`.
+  The profiling build looked promising: repeat mean `0.607 ms` -> `0.576 ms`
+  and `0.574 ms` on repeat, with p95 `0.693 ms` -> `0.623 ms` and
+  `0.614 ms`.
+- Protection artifacts:
+  `target/benchmark-repeat-prepress-direct-write-candidate-20k.json` and
+  `target/benchmark-repeat-technical-hatch-direct-write-candidate-20k.json`
+  showed small protection regressions versus the accepted bounded-line metric
+  artifacts, but all were below the 5% regression threshold and outputs stayed
+  unchanged.
+- Release-mode A/B artifacts:
+  `target/benchmark-repeat-vector-stress-direct-write-baseline-release-100k.json`
+  versus
+  `target/benchmark-repeat-vector-stress-direct-write-candidate-release-100k.json`.
+- Result:
+  rejected because release mode did not confirm the profiling-build win.
+  Release repeat mean moved only `0.569 ms` -> `0.564 ms` (~0.9%),
+  repeat mean `raster_paths` moved `0.484 ms` -> `0.478 ms` (~1.2%), and p95
+  was neutral to slightly worse (`0.610 ms` -> `0.612 ms`). Output status,
+  dimensions, and bytes stayed unchanged.
+- Decision:
+  reverted. Treat direct byte-write spelling as a profiling-build artifact, not
+  a renderer performance win. Future blend work needs a release-confirmed
+  profile that isolates arithmetic or memory traffic inside `blend_pixel`
+  more narrowly than the write helper.
+
 ## Settled Decisions
 
 - [x] `scripts/generate_performance_matrix.sh` defaults to release mode.
