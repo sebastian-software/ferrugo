@@ -5046,6 +5046,32 @@ Rejected sampled float blend dispatch candidate from 2026-06-30:
   coverage/sample work or route selection before trying another sampled
   blend/write micro-optimization.
 
+### Current span profile and rejected unstable sort candidate from 2026-06-30
+
+- Profile artifact:
+  `target/sample-vector-stress-span-work-current.txt`, a 10-second macOS
+  `sample` run against the profiling build repeat process for
+  `fixtures/generated/vector-stress.pdf`, `--max-edge 160`.
+- CPU sample:
+  the largest flat symbols were `rasterize_span_covered_stroke_ranges` (`888`
+  samples), `blend_pixel` (`884`), `stroke_path` (`819`),
+  `point_in_single_stroke_line` (`483`),
+  `axis_stroke_span_for_sample_y` (`219`), and `merge_pixel_ranges` (`147`).
+- Change tested locally but not kept:
+  switch `merge_pixel_ranges` from `sort_by_key` to `sort_unstable_by_key`.
+  Equal-start ranges do not need stable ordering for the current merge
+  semantics, so this was a valid isolated candidate.
+- Candidate artifact:
+  `target/benchmark-repeat-vector-stress-sort-unstable-candidate-20k.json`.
+- Result:
+  slightly positive but below the acceptance threshold. The focused 20k run
+  moved repeat mean `0.676 ms` -> `0.668 ms` and repeat mean `raster_paths`
+  `0.582 ms` -> `0.576 ms`.
+- Decision:
+  reverted. This is not enough signal for a renderer-wide sort behavior change.
+  Keep the evidence, but spend the next pass on reducing actual span/sample
+  work or row-bucket predicate work rather than changing sort flavor.
+
 ## Settled Decisions
 
 - [x] `scripts/generate_performance_matrix.sh` defaults to release mode.
