@@ -3485,6 +3485,7 @@ impl FontProgramCache {
         let decoded = stream
             .decode_with_options(StreamDecodeOptions {
                 max_decoded_len: max_font_program_bytes,
+                initial_capacity: None,
             })
             .map_err(|error| match error {
                 ferrugo_object::ObjectError::StreamLimitExceeded { .. } => GraphicsError::new(
@@ -3716,6 +3717,7 @@ where
         let content = stream
             .decode_with_options(StreamDecodeOptions {
                 max_decoded_len: max_char_proc_bytes,
+                initial_capacity: None,
             })
             .map_err(|error| match error {
                 ferrugo_object::ObjectError::StreamLimitExceeded { .. } => GraphicsError::new(
@@ -3930,6 +3932,7 @@ where
     let decoded = stream
         .decode_with_options(StreamDecodeOptions {
             max_decoded_len: options.max_cmap_bytes,
+            initial_capacity: None,
         })
         .map_err(|error| match error {
             ferrugo_object::ObjectError::StreamLimitExceeded { .. } => GraphicsError::new(
@@ -8448,6 +8451,7 @@ fn decode_shading_stream(
     let decoded = stream
         .decode_with_options(StreamDecodeOptions {
             max_decoded_len: options.max_mesh_shading_bytes,
+            initial_capacity: None,
         })
         .map_err(|error| match error {
             ferrugo_object::ObjectError::StreamLimitExceeded { .. } => GraphicsError::new(
@@ -9409,8 +9413,19 @@ fn decode_image_samples(
                 } else {
                     max_image_bytes
                 });
+            let initial_capacity = image_stream_decoded_capacity(
+                width,
+                height,
+                color_space,
+                bits_per_component,
+                predictor,
+                max_image_bytes,
+            )?;
             let decoded = stream
-                .decode_with_options(StreamDecodeOptions { max_decoded_len })
+                .decode_with_options(StreamDecodeOptions {
+                    max_decoded_len,
+                    initial_capacity: Some(initial_capacity),
+                })
                 .map_err(|error| {
                     GraphicsError::new(
                         error.offset(),
@@ -9471,6 +9486,24 @@ enum PngFilter {
     Up,
     Average,
     Paeth,
+}
+
+fn image_stream_decoded_capacity(
+    width: u32,
+    height: u32,
+    color_space: ImageColorSpace,
+    bits_per_component: u8,
+    predictor: Option<ImagePredictor>,
+    max_image_bytes: usize,
+) -> GraphicsResult<usize> {
+    let capacity = if let Some(predictor) = predictor {
+        predictor.encoded_len()
+    } else if bits_per_component == 1 {
+        expected_image_mask_len(width, height)?
+    } else {
+        expected_image_len(width, height, color_space)?
+    };
+    Ok(capacity.min(max_image_bytes))
 }
 
 fn image_predictor(
@@ -13483,6 +13516,7 @@ fn decode_icc_transform(
     let profile = stream
         .decode_with_options(StreamDecodeOptions {
             max_decoded_len: max_icc_profile_bytes,
+            initial_capacity: None,
         })
         .map_err(|error| match error {
             ferrugo_object::ObjectError::StreamLimitExceeded { .. } => GraphicsError::new(

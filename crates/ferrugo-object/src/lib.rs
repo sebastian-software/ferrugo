@@ -182,12 +182,15 @@ impl<'a> StreamObject<'a> {
 pub struct StreamDecodeOptions {
     /// Maximum number of bytes any decode step may produce.
     pub max_decoded_len: usize,
+    /// Initial output buffer capacity for decoders with a known expected size.
+    pub initial_capacity: Option<usize>,
 }
 
 impl Default for StreamDecodeOptions {
     fn default() -> Self {
         Self {
             max_decoded_len: DEFAULT_MAX_DECODED_LEN,
+            initial_capacity: None,
         }
     }
 }
@@ -2270,7 +2273,9 @@ fn decode_stream_bytes(
     let mut decoded = raw.to_vec();
     for filter in filters {
         decoded = match filter {
-            StreamFilter::Flate => decode_flate(&decoded, options.max_decoded_len)?,
+            StreamFilter::Flate => {
+                decode_flate(&decoded, options.max_decoded_len, options.initial_capacity)?
+            }
             StreamFilter::AsciiHex => decode_ascii_hex(&decoded, options.max_decoded_len)?,
             StreamFilter::Ascii85 => decode_ascii85(&decoded, options.max_decoded_len)?,
         };
@@ -2278,9 +2283,13 @@ fn decode_stream_bytes(
     Ok(decoded)
 }
 
-fn decode_flate(raw: &[u8], max_decoded_len: usize) -> ObjectResult<Vec<u8>> {
+fn decode_flate(
+    raw: &[u8],
+    max_decoded_len: usize,
+    initial_capacity: Option<usize>,
+) -> ObjectResult<Vec<u8>> {
     let mut decoder = ZlibDecoder::new(raw);
-    let mut decoded = Vec::new();
+    let mut decoded = Vec::with_capacity(initial_capacity.unwrap_or(0).min(max_decoded_len));
     let read_limit = u64::try_from(max_decoded_len)
         .unwrap_or(u64::MAX)
         .saturating_add(1);
@@ -2747,7 +2756,10 @@ mod tests {
     fn stream_decode_should_copy_unfiltered_bytes_within_limit() {
         let decoded = with_test_stream(b"<< /Length 5 >>\nstream\nhello\nendstream", |stream| {
             stream
-                .decode_with_options(StreamDecodeOptions { max_decoded_len: 5 })
+                .decode_with_options(StreamDecodeOptions {
+                    max_decoded_len: 5,
+                    initial_capacity: None,
+                })
                 .expect("decoded stream")
         });
 
@@ -2765,6 +2777,27 @@ mod tests {
         );
         let decoded = with_test_stream(&object, |stream| {
             stream.decode().expect("flate decoded stream")
+        });
+
+        assert_eq!(decoded, b"BT /F1 12 Tf ET");
+    }
+
+    #[test]
+    fn stream_decode_should_decode_flate_with_initial_capacity() {
+        let compressed = zlib_compress(b"BT /F1 12 Tf ET");
+        let object = build_stream_object(
+            b"<< /Length ",
+            compressed.len(),
+            b" /Filter /FlateDecode >>",
+            &compressed,
+        );
+        let decoded = with_test_stream(&object, |stream| {
+            stream
+                .decode_with_options(StreamDecodeOptions {
+                    max_decoded_len: 64,
+                    initial_capacity: Some(16),
+                })
+                .expect("flate decoded stream")
         });
 
         assert_eq!(decoded, b"BT /F1 12 Tf ET");
@@ -2804,7 +2837,10 @@ mod tests {
     fn stream_decode_should_reject_expansion_past_limit() {
         let error = with_test_stream(b"<< /Length 5 >>\nstream\nhello\nendstream", |stream| {
             stream
-                .decode_with_options(StreamDecodeOptions { max_decoded_len: 4 })
+                .decode_with_options(StreamDecodeOptions {
+                    max_decoded_len: 4,
+                    initial_capacity: None,
+                })
                 .expect_err("stream limit")
         });
 

@@ -2240,6 +2240,48 @@ Second image raster optimization result from 2026-06-30:
   byte-identical to `target/axis-image-visual-current/` for `dct-image`,
   `predictor-image`, `scanner-large-image-budget`, and `soft-mask-image`.
 
+Accepted Flate image decode capacity result from 2026-06-30:
+
+- Profiling trigger: fresh traces after the stroke-raster wins showed actual
+  image/resource work on the remaining image-heavy set. The scanner-large trace
+  reported `0.402 ms` in `resource_decode`, `0.095 ms` in `raster_images`, and
+  `0.584 ms` total. A 10-second sample,
+  `target/sample-scanner-large-current.txt`, showed `decode_image_samples` and
+  `StreamObject::decode_with_options` dominated by `miniz_oxide` inflate work,
+  with visible `read_to_end` realloc/memmove frames.
+- Change: `StreamDecodeOptions` now carries an optional initial output
+  capacity. Flate image XObject decoding sets that capacity to the expected
+  decoded image byte length, or the PNG-predictor encoded length when a
+  predictor is present. Other stream decode call sites keep the default
+  `None` capacity.
+- Rationale: this is a narrow allocation/traffic optimization for a measured
+  Flate image decode path. It does not change image bytes, color conversion,
+  sampling, alpha, clipping, or compositing behavior.
+- Candidate artifacts:
+  `target/benchmark-native-scanner-large-flate-capacity.json`,
+  `target/performance-matrix-flate-capacity-image-heavy.json`, and
+  `target/performance-matrix-flate-capacity-image-heavy-repeat.json`.
+- Repeated result against
+  `target/performance-matrix-sparse-axis-image-heavy.json`:
+  `scanner-large-image-budget.pdf` improved p95 `0.369 ms` -> `0.339 ms`
+  (~8.1%) and mean `0.320 ms` -> `0.307 ms` (~4.1%). The first matrix showed
+  the same direction: p95 `0.369 ms` -> `0.344 ms` (~6.8%) and mean
+  `0.320 ms` -> `0.309 ms` (~3.4%).
+- Protection notes: all image-heavy fixtures still rendered with no fallback or
+  error records. P95 movement on tiny fixtures remains noisy:
+  `image-mask-logo.pdf` moved `0.124 ms` -> `0.136 ms` in the repeat while
+  mean stayed neutral-to-better, and `image-heavy-rotated-mask-sheet.pdf` moved
+  p95 `0.360 ms` -> `0.392 ms` with mean `0.333 ms` -> `0.337 ms`. Keep these
+  as watch items in the next broad image matrix rather than treating them as
+  output-risk, because decoded bytes and raster logic are unchanged.
+- Correctness guard:
+  `stream_decode_should_decode_flate_with_initial_capacity` verifies that the
+  capacity hint preserves decoded Flate bytes.
+- Decision: accept as a cumulative 5-10% Phase 4 decode/allocation win for the
+  large-scan fixture. This does not close downsample-aware decode or cropped
+  decode; it only removes avoidable output-buffer growth on the current Flate
+  resource-decode hotspot.
+
 Rejected image raster candidate from 2026-06-30:
 
 - Change tested locally but not kept: apply the same row-slice compositing

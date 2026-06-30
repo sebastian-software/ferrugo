@@ -3991,6 +3991,7 @@ fn catalog_metadata_stream_bytes(
     stream
         .decode_with_options(StreamDecodeOptions {
             max_decoded_len: MAX_METADATA_XMP_BYTES,
+            initial_capacity: None,
         })
         .map(Some)
         .map_err(|_| ThumbnailError::Malformed)
