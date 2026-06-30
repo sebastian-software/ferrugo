@@ -3,6 +3,7 @@
 #![forbid(unsafe_code)]
 
 use std::borrow::Cow;
+use std::cell::RefCell;
 use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -71,6 +72,7 @@ const MAX_METADATA_ATTACHMENT_ANNOTATIONS: usize = 4096;
 const MAX_METADATA_STRUCTURE_ITEMS: usize = 4096;
 const MAX_METADATA_XMP_BYTES: usize = 64 * 1024;
 const DEFAULT_SPOOL_BYTES_LIMIT: usize = 0;
+const MIN_SESSION_IMAGE_RESOURCE_CACHE_BYTES: usize = 4 * 1024;
 
 /// Rust-native thumbnail backend.
 ///
@@ -182,6 +184,7 @@ pub struct NativeDocumentSession<'a> {
     page_tree: PageTree,
     limits: NativeRenderLimits,
     stats: NativeDocumentSessionStats,
+    image_resource_cache: RefCell<SessionImageResourceCache>,
 }
 
 /// Bounded state retained by a [`NativeDocumentSession`].
@@ -203,6 +206,77 @@ pub struct NativeDocumentSessionStats {
     pub page_count: usize,
     /// True when the bounded linearized first-page loader was used.
     pub first_page_only: bool,
+    /// Decoded page image-resource maps retained inside this session.
+    pub cached_image_resource_entries: usize,
+    /// Maximum decoded page image-resource maps retained inside this session.
+    pub max_cached_image_resource_entries: usize,
+    /// Resident decoded image bytes retained by the image-resource cache.
+    pub cached_image_resource_bytes: usize,
+    /// Maximum resident decoded image bytes retained by the image-resource cache.
+    pub max_cached_image_resource_bytes: usize,
+}
+
+#[derive(Debug, Default)]
+struct SessionImageResourceCache {
+    entries: Vec<SessionImageResourceCacheEntry>,
+    resident_bytes: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SessionImageResourceCacheEntry {
+    key: SessionImageResourceCacheKey,
+    resources: ImageResources,
+    resident_bytes: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SessionImageResourceCacheKey {
+    page_index: u32,
+    max_edge: u32,
+    native_profile: &'static str,
+}
+
+impl SessionImageResourceCache {
+    fn get(&self, key: SessionImageResourceCacheKey) -> Option<ImageResources> {
+        self.entries
+            .iter()
+            .find_map(|entry| (entry.key == key).then(|| entry.resources.clone()))
+    }
+
+    fn insert(
+        &mut self,
+        key: SessionImageResourceCacheKey,
+        resources: &ImageResources,
+        max_entries: usize,
+        max_bytes: usize,
+    ) {
+        if self.entries.iter().any(|entry| entry.key == key) || max_entries == 0 {
+            return;
+        }
+        let resident_bytes = resources.resource_summary().resident_bytes;
+        if resident_bytes < MIN_SESSION_IMAGE_RESOURCE_CACHE_BYTES
+            || resident_bytes > max_bytes
+            || self.entries.len() >= max_entries
+            || self.resident_bytes.saturating_add(resident_bytes) > max_bytes
+        {
+            return;
+        }
+        self.entries.push(SessionImageResourceCacheEntry {
+            key,
+            resources: resources.clone(),
+            resident_bytes,
+        });
+        self.resident_bytes += resident_bytes;
+    }
+
+    fn stats(&self, max_entries: usize, max_bytes: usize) -> (usize, usize, usize, usize) {
+        (
+            self.entries.len(),
+            max_entries,
+            self.resident_bytes,
+            max_bytes,
+        )
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -604,6 +678,12 @@ pub struct NativeRenderLimits {
     /// Maximum parsed indirect-object bytes retained in one explicit document
     /// session.
     pub max_session_loaded_object_bytes: usize,
+    /// Maximum decoded image-resource maps retained in one explicit document
+    /// session.
+    pub max_session_image_resource_entries: usize,
+    /// Maximum resident decoded image-resource bytes retained in one explicit
+    /// document session.
+    pub max_session_image_resource_bytes: usize,
     /// Whether temporary spooling is enabled for sensitive intermediates.
     pub spooling_enabled: bool,
     /// Maximum bytes allowed for temporary spooling.
@@ -641,6 +721,8 @@ impl NativeRenderLimits {
             max_pattern_cell_cache_entries: 8,
             max_session_loaded_objects: 16_384,
             max_session_loaded_object_bytes: 32 * 1024 * 1024,
+            max_session_image_resource_entries: 4,
+            max_session_image_resource_bytes: 24 * 1024 * 1024,
             spooling_enabled: false,
             max_spool_bytes: DEFAULT_SPOOL_BYTES_LIMIT,
             downsample_image_decode: true,
@@ -667,6 +749,8 @@ impl NativeRenderLimits {
             max_pattern_cell_cache_entries: self.max_pattern_cell_cache_entries,
             max_session_loaded_objects: self.max_session_loaded_objects,
             max_session_loaded_object_bytes: self.max_session_loaded_object_bytes,
+            max_session_image_resource_entries: self.max_session_image_resource_entries,
+            max_session_image_resource_bytes: self.max_session_image_resource_bytes,
             spooling_enabled: self.spooling_enabled,
             max_spool_bytes: self.max_spool_bytes,
         }
@@ -730,6 +814,8 @@ impl Default for NativeRenderLimits {
             max_pattern_cell_cache_entries: path.max_pattern_cell_cache_entries,
             max_session_loaded_objects: 65_536,
             max_session_loaded_object_bytes: 256 * 1024 * 1024,
+            max_session_image_resource_entries: 16,
+            max_session_image_resource_bytes: display.max_total_image_bytes,
             spooling_enabled: false,
             max_spool_bytes: DEFAULT_SPOOL_BYTES_LIMIT,
             downsample_image_decode: false,
@@ -777,6 +863,12 @@ pub struct NativeMemoryDiagnostics {
     /// Maximum parsed indirect-object bytes retained in one explicit document
     /// session.
     pub max_session_loaded_object_bytes: usize,
+    /// Maximum decoded image-resource maps retained in one explicit document
+    /// session.
+    pub max_session_image_resource_entries: usize,
+    /// Maximum resident decoded image-resource bytes retained in one explicit
+    /// document session.
+    pub max_session_image_resource_bytes: usize,
     /// Whether temporary spooling is enabled for sensitive intermediates.
     pub spooling_enabled: bool,
     /// Maximum bytes allowed for temporary spooling.
@@ -838,19 +930,38 @@ impl<'a> NativeDocumentSession<'a> {
             max_loaded_object_bytes: limits.max_session_loaded_object_bytes,
             page_count: page_tree.pages().len(),
             first_page_only: load_metrics.first_page_only,
+            cached_image_resource_entries: 0,
+            max_cached_image_resource_entries: limits.max_session_image_resource_entries,
+            cached_image_resource_bytes: 0,
+            max_cached_image_resource_bytes: limits.max_session_image_resource_bytes,
         };
         Ok(Self {
             document,
             page_tree,
             limits,
             stats,
+            image_resource_cache: RefCell::new(SessionImageResourceCache::default()),
         })
     }
 
     /// Returns the retained session budget and loader stats.
     #[must_use]
-    pub const fn stats(&self) -> NativeDocumentSessionStats {
-        self.stats
+    pub fn stats(&self) -> NativeDocumentSessionStats {
+        let mut stats = self.stats;
+        let (
+            cached_image_resource_entries,
+            max_cached_image_resource_entries,
+            cached_image_resource_bytes,
+            max_cached_image_resource_bytes,
+        ) = self.image_resource_cache.borrow().stats(
+            self.limits.max_session_image_resource_entries,
+            self.limits.max_session_image_resource_bytes,
+        );
+        stats.cached_image_resource_entries = cached_image_resource_entries;
+        stats.max_cached_image_resource_entries = max_cached_image_resource_entries;
+        stats.cached_image_resource_bytes = cached_image_resource_bytes;
+        stats.max_cached_image_resource_bytes = max_cached_image_resource_bytes;
+        stats
     }
 
     /// Renders one page through the session-retained document and page tree.
@@ -860,7 +971,13 @@ impl<'a> NativeDocumentSession<'a> {
     /// Returns [`ThumbnailError`] when the requested page cannot be rendered.
     pub fn render_page(&self, options: &ThumbnailOptions) -> Result<Thumbnail, ThumbnailError> {
         reject_form_appearance_mutation(options)?;
-        render_loaded_document(&self.document, &self.page_tree, options, self.limits)
+        render_loaded_document_with_session_cache(
+            &self.document,
+            &self.page_tree,
+            options,
+            self.limits,
+            &self.image_resource_cache,
+        )
     }
 
     /// Renders one page and records request-local native phase timings.
@@ -875,12 +992,13 @@ impl<'a> NativeDocumentSession<'a> {
     ) -> Result<Thumbnail, ThumbnailError> {
         reject_form_appearance_mutation(options)?;
         let started = Instant::now();
-        let thumbnail = render_loaded_document_with_timings(
+        let thumbnail = render_loaded_document_with_timings_and_session_cache(
             &self.document,
             &self.page_tree,
             options,
             self.limits,
             timings,
+            &self.image_resource_cache,
         )?;
         timings.total += started.elapsed();
         Ok(thumbnail)
@@ -1425,15 +1543,34 @@ fn render_loaded_document(
         options,
         limits,
         RenderTraceSinks::none(),
+        None,
     )
 }
 
-fn render_loaded_document_with_timings(
+fn render_loaded_document_with_session_cache(
+    document: &ClassicDocument<'_>,
+    page_tree: &PageTree,
+    options: &ThumbnailOptions,
+    limits: NativeRenderLimits,
+    image_resource_cache: &RefCell<SessionImageResourceCache>,
+) -> Result<Thumbnail, ThumbnailError> {
+    render_loaded_document_inner(
+        document,
+        page_tree,
+        options,
+        limits,
+        RenderTraceSinks::none(),
+        Some(image_resource_cache),
+    )
+}
+
+fn render_loaded_document_with_timings_and_session_cache(
     document: &ClassicDocument<'_>,
     page_tree: &PageTree,
     options: &ThumbnailOptions,
     limits: NativeRenderLimits,
     timings: &mut NativeRenderPhaseTimings,
+    image_resource_cache: &RefCell<SessionImageResourceCache>,
 ) -> Result<Thumbnail, ThumbnailError> {
     render_loaded_document_inner(
         document,
@@ -1441,6 +1578,7 @@ fn render_loaded_document_with_timings(
         options,
         limits,
         RenderTraceSinks::with_timings(timings),
+        Some(image_resource_cache),
     )
 }
 
@@ -1451,7 +1589,7 @@ fn render_loaded_document_with_trace(
     limits: NativeRenderLimits,
     trace_sinks: RenderTraceSinks<'_>,
 ) -> Result<Thumbnail, ThumbnailError> {
-    render_loaded_document_inner(document, page_tree, options, limits, trace_sinks)
+    render_loaded_document_inner(document, page_tree, options, limits, trace_sinks, None)
 }
 
 fn render_loaded_document_inner(
@@ -1460,6 +1598,7 @@ fn render_loaded_document_inner(
     options: &ThumbnailOptions,
     limits: NativeRenderLimits,
     mut trace_sinks: RenderTraceSinks<'_>,
+    image_resource_cache: Option<&RefCell<SessionImageResourceCache>>,
 ) -> Result<Thumbnail, ThumbnailError> {
     enforce_xfa_render_policy(document)?;
     let page = page_tree
@@ -1569,12 +1708,20 @@ fn render_loaded_document_inner(
         &mut trace_sinks.timings,
         NativeRenderPhase::ResourceImages,
         || {
-            page_image_resources(
-                document,
-                page,
-                &xobject_invocations,
-                display_options,
-                &image_decode_hints,
+            cached_page_image_resources(
+                PageImageResourceRequest {
+                    document,
+                    page,
+                    xobject_invocations: &xobject_invocations,
+                    options: display_options,
+                    image_decode_hints: &image_decode_hints,
+                },
+                image_resource_cache.map(|cache| SessionImageResourceCacheAccess {
+                    page_index: options.page_index,
+                    max_edge: options.max_edge,
+                    limits,
+                    cache,
+                }),
             )
         },
     )?;
@@ -2426,6 +2573,66 @@ fn page_tiling_pattern_resources(
         );
     }
     Ok(TilingPatternResources::new(decoded))
+}
+
+struct PageImageResourceRequest<'a, 'd> {
+    document: &'a ClassicDocument<'d>,
+    page: &'a ObjectPageMetadata,
+    xobject_invocations: &'a [Vec<u8>],
+    options: DisplayListOptions,
+    image_decode_hints: &'a ImageDecodeHints,
+}
+
+struct SessionImageResourceCacheAccess<'a> {
+    page_index: u32,
+    max_edge: u32,
+    limits: NativeRenderLimits,
+    cache: &'a RefCell<SessionImageResourceCache>,
+}
+
+fn cached_page_image_resources(
+    request: PageImageResourceRequest<'_, '_>,
+    cache_access: Option<SessionImageResourceCacheAccess<'_>>,
+) -> Result<ImageResources, ThumbnailError> {
+    let Some(cache_access) = cache_access else {
+        return page_image_resources(
+            request.document,
+            request.page,
+            request.xobject_invocations,
+            request.options,
+            request.image_decode_hints,
+        );
+    };
+    let key = SessionImageResourceCacheKey {
+        page_index: cache_access.page_index,
+        max_edge: cache_access.max_edge,
+        native_profile: native_profile_name(cache_access.limits),
+    };
+    if let Some(resources) = cache_access.cache.borrow().get(key) {
+        return Ok(resources);
+    }
+    let resources = page_image_resources(
+        request.document,
+        request.page,
+        request.xobject_invocations,
+        request.options,
+        request.image_decode_hints,
+    )?;
+    cache_access.cache.borrow_mut().insert(
+        key,
+        &resources,
+        cache_access.limits.max_session_image_resource_entries,
+        cache_access.limits.max_session_image_resource_bytes,
+    );
+    Ok(resources)
+}
+
+const fn native_profile_name(limits: NativeRenderLimits) -> &'static str {
+    if limits.downsample_image_decode {
+        "low-memory"
+    } else {
+        "default"
+    }
 }
 
 fn page_image_resources(
@@ -4998,6 +5205,33 @@ mod tests {
     }
 
     #[test]
+    fn native_document_session_should_cache_decoded_image_resources_with_budget() {
+        let bytes =
+            include_bytes!("../../../fixtures/generated/image-heavy-repeated-xobject-report.pdf");
+        let options = ThumbnailOptions {
+            max_edge: 160,
+            ..ThumbnailOptions::default()
+        };
+        let backend = NativeBackend::new();
+
+        let session = backend
+            .document_session(bytes, &[0])
+            .expect("document session should load");
+        let first = session
+            .render_page(&options)
+            .expect("first session render should work");
+        let second = session
+            .render_page(&options)
+            .expect("second session render should work");
+        let stats = session.stats();
+
+        assert_eq!(first.bytes, second.bytes);
+        assert_eq!(stats.cached_image_resource_entries, 1);
+        assert!(stats.cached_image_resource_bytes > 0);
+        assert!(stats.cached_image_resource_bytes <= stats.max_cached_image_resource_bytes);
+    }
+
+    #[test]
     fn native_document_session_should_enforce_retained_object_budget() {
         let bytes = include_bytes!("../../../fixtures/generated/vector-paths.pdf");
         let limits = NativeRenderLimits {
@@ -5126,6 +5360,11 @@ mod tests {
             diagnostics.max_session_loaded_object_bytes,
             256 * 1024 * 1024
         );
+        assert_eq!(diagnostics.max_session_image_resource_entries, 16);
+        assert_eq!(
+            diagnostics.max_session_image_resource_bytes,
+            128 * 1024 * 1024
+        );
         assert!(!diagnostics.spooling_enabled);
         assert_eq!(diagnostics.max_spool_bytes, 0);
     }
@@ -5145,6 +5384,13 @@ mod tests {
         assert!(low_memory.max_session_loaded_objects < default.max_session_loaded_objects);
         assert!(
             low_memory.max_session_loaded_object_bytes < default.max_session_loaded_object_bytes
+        );
+        assert!(
+            low_memory.max_session_image_resource_entries
+                < default.max_session_image_resource_entries
+        );
+        assert!(
+            low_memory.max_session_image_resource_bytes < default.max_session_image_resource_bytes
         );
         assert!(low_memory.max_page_pixels > 0);
         assert!(low_memory.max_total_image_bytes >= low_memory.max_image_bytes);

@@ -5421,7 +5421,6 @@ fn benchmark_repeat_fixture(
             return repeat_error_record(path_key, family, options.page_index, cache_key, outcome);
         }
     };
-    let session_stats = session.stats();
     let mut phase_timings = Vec::with_capacity(config.repetitions);
     let mut first_phase_timings = NativeRenderPhaseTimings::default();
     match session.render_page_with_timings(options, &mut first_phase_timings) {
@@ -5437,7 +5436,7 @@ fn benchmark_repeat_fixture(
                 family,
                 options.page_index,
                 cache_key,
-                Some(session_stats),
+                Some(session.stats()),
                 timings_ms,
                 outcome,
             );
@@ -5460,7 +5459,7 @@ fn benchmark_repeat_fixture(
                     family,
                     options.page_index,
                     cache_key,
-                    Some(session_stats),
+                    Some(session.stats()),
                     timings_ms,
                     outcome,
                 );
@@ -5499,7 +5498,7 @@ fn benchmark_repeat_fixture(
         family,
         page_index: options.page_index,
         cache_key,
-        session_stats: Some(session_stats),
+        session_stats: Some(session.stats()),
         timings_ms,
         phase_timings: Some(repeat_phase_timings),
         budget_violations,
@@ -9964,7 +9963,11 @@ fn native_document_session_stats_json(stats: Option<NativeDocumentSessionStats>)
             "\"loaded_object_bytes\":{},",
             "\"max_loaded_object_bytes\":{},",
             "\"page_count\":{},",
-            "\"first_page_only\":{}",
+            "\"first_page_only\":{},",
+            "\"cached_image_resource_entries\":{},",
+            "\"max_cached_image_resource_entries\":{},",
+            "\"cached_image_resource_bytes\":{},",
+            "\"max_cached_image_resource_bytes\":{}",
             "}}"
         ),
         native_page_cache_policy_json(stats.cache_policy),
@@ -9974,7 +9977,11 @@ fn native_document_session_stats_json(stats: Option<NativeDocumentSessionStats>)
         stats.loaded_object_bytes,
         stats.max_loaded_object_bytes,
         stats.page_count,
-        stats.first_page_only
+        stats.first_page_only,
+        stats.cached_image_resource_entries,
+        stats.max_cached_image_resource_entries,
+        stats.cached_image_resource_bytes,
+        stats.max_cached_image_resource_bytes
     )
 }
 

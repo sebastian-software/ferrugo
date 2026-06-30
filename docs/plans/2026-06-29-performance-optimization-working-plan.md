@@ -2842,7 +2842,9 @@ state.
 - [x] Enforce cache-entry budgets by bytes and item count.
 - [x] Report session-retained bytes and item counts.
 - [x] Cache parsed document/page tree data only inside the request/session.
-- [ ] Cache decoded shared resources only when identity and budget are clear.
+- [x] Cache decoded image resources only when identity and budget are clear.
+- [ ] Add font/form decoded-resource caches only after a profile names them as
+  repeat bottlenecks.
 - [x] Make cache use visible in benchmark output.
 
 Acceptance:
@@ -2968,6 +2970,47 @@ Focused shared-resource phase evidence from 2026-06-30:
 - Decision: do not add another content/session cache from this evidence. The
   next cache step still needs a fixture where decoded shared resources are a
   named repeat bottleneck, or the work should return to path rasterization.
+
+Accepted decoded image-resource session cache from 2026-06-30:
+
+- Profiling trigger: after the zlib-rs Flate backend change, a fresh focused
+  `benchmark-repeat-native` run on `fixtures/shared-resource-cache-manifest.tsv`
+  showed only one credible decoded-resource repeat bottleneck:
+  `image-heavy-repeated-xobject-report.pdf` spent `0.073 ms` of `0.354 ms`
+  repeat mean in `resource_decode` / `resource_images`. Other shared-resource
+  fixtures were dominated by raster/text work or had near-zero repeat resource
+  decode.
+- Change: `NativeDocumentSession` now keeps a request-local decoded
+  `ImageResources` cache keyed by page index, `max_edge`, and native profile.
+  The cache is bounded by entry count and resident decoded image-resource bytes,
+  uses no global state or disk persistence, and is visible in repeat benchmark
+  session stats as cached image-resource entries and bytes.
+- Guardrail: resource maps smaller than `4 KiB` are not cached. The first
+  ungated candidate proved this mattered: tiny 12-192 byte resource maps added
+  overhead to small protection fixtures without meaningful reuse benefit.
+- Repeated result against
+  `target/benchmark-repeat-shared-phase-post-zlib-rs-focused-30.json`:
+  `image-heavy-repeated-xobject-report.pdf` repeat mean improved
+  `0.354 ms` -> `0.259 ms` (`~26.8%`) and then `0.257 ms` (`~27.4%`) on the
+  repeat. The final post-refactor confirmation artifact
+  `target/benchmark-repeat-shared-image-cache-final-30.json` measured
+  `0.261 ms` (`~26.3%`). Repeat `resource_decode` moved from `0.073 ms` to
+  `0.001 ms`, and the benchmark reported one cached image-resource entry
+  retaining `20,736` bytes.
+- Protection movement: `long-document-navigation-deck.pdf`,
+  `longform-repeated-resources.pdf`, `subset-type3-repeated-charprocs.pdf`,
+  and `icc-rgb-image.pdf` did not cache their tiny image-resource maps. Their
+  repeat movement stayed at tiny absolute values around one micro-benchmark
+  tick (`-3.4%` to `+5.9%`, at `0.001 ms` absolute scale) with no fallback,
+  error, or budget records.
+- Correctness guards: `native_document_session_should_cache_decoded_image_resources_with_budget`
+  verifies repeated session renders keep identical output while retaining a
+  bounded decoded image-resource entry. Memory diagnostics now expose the new
+  session image-resource entry and byte budgets.
+- Decision: accept as the Phase 5 decoded shared-resource cache step. This
+  closes the open "cache decoded shared resources only when identity and budget
+  are clear" item for decoded image resources; font/form resource caches still
+  require their own profile-backed fixture before being added.
 
 Repeat family phase-summary instrumentation from 2026-06-30:
 
