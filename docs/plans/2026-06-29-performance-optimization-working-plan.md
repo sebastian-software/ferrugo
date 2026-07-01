@@ -26,6 +26,11 @@ profiles, and regressions teach us where the real bottlenecks are.
   `mixed-layout`.
 - [x] First renderer optimization landed: stroke join geometry is prepared once
   per stroke instead of recomputed inside every pixel/sample test.
+- [x] Structural gap analysis exists:
+  [raster architecture gap analysis](../research/2026-07-02-raster-architecture-gap-analysis.md)
+  maps the measured hotspots to the reference engines' coverage-rasterizer
+  architecture and proposes the adoption order (adaptive flattening, coverage
+  fill, stroke-to-fill, span blitters, cache lifetimes, banding).
 
 ## Operating Rules
 
