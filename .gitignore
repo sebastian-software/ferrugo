@@ -1,2 +1,3 @@
 /target/
 /fixtures/local-corpus/
+.DS_Store
