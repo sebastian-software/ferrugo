@@ -21,7 +21,8 @@ use ferrugo_render::{
     build_form_display_list_with_graphics_resources, build_image_display_list,
     build_path_display_list_with_graphics_resources, build_text_display_list,
     collect_image_decode_hints, decode_tiling_pattern, display_list_image_placement_summary,
-    display_list_stroke_shape_summary, rasterize_display_list_into_with_phase_timings,
+    display_list_path_flattening_summary, display_list_stroke_shape_summary,
+    rasterize_display_list_into_with_phase_timings,
     rasterize_display_list_into_with_phase_timings_and_stroke_routes, rasterize_images,
     rasterize_paths_into, rasterize_text, ColorSpaceResources, DisplayItem, DisplayList,
     DisplayListOptions, ExtGraphicsStateResources, FontResources, FormResources, GraphicsError,
@@ -30,7 +31,8 @@ use ferrugo_render::{
     RasterErrorKind, ShadingResources, TextDisplayItem, TextWritingMode, TilingPatternResources,
 };
 pub use ferrugo_render::{
-    ImagePlacementSummary, ImageResourceSummary, StrokeRasterRouteSummary, StrokeShapeSummary,
+    ImagePlacementSummary, ImageResourceSummary, PathFlatteningSummary, StrokeRasterRouteSummary,
+    StrokeShapeSummary, DEFAULT_CURVE_FLATTENING_TOLERANCE,
 };
 use ferrugo_syntax::{PdfBytes, PdfName, PdfNumber, PdfPrimitive, PdfReference, PdfString};
 use ferrugo_thumbnail::{
@@ -126,6 +128,8 @@ pub struct NativeRenderTrace {
     pub thumbnail: Thumbnail,
     /// Request-local phase timings.
     pub timings: NativeRenderPhaseTimings,
+    /// Request-local path-flattening summary for renderer profiling.
+    pub path_flattening: PathFlatteningSummary,
     /// Request-local stroke geometry summary for renderer profiling.
     pub stroke_shapes: StrokeShapeSummary,
     /// Request-local stroke raster route summary for renderer profiling.
@@ -138,6 +142,7 @@ pub struct NativeRenderTrace {
 
 struct RenderTraceSinks<'a> {
     timings: Option<&'a mut NativeRenderPhaseTimings>,
+    path_flattening: Option<&'a mut PathFlatteningSummary>,
     stroke_shapes: Option<&'a mut StrokeShapeSummary>,
     stroke_routes: Option<&'a mut StrokeRasterRouteSummary>,
     image_resources: Option<&'a mut ImageResourceSummary>,
@@ -148,6 +153,7 @@ impl<'a> RenderTraceSinks<'a> {
     fn none() -> Self {
         Self {
             timings: None,
+            path_flattening: None,
             stroke_shapes: None,
             stroke_routes: None,
             image_resources: None,
@@ -158,6 +164,7 @@ impl<'a> RenderTraceSinks<'a> {
     fn with_timings(timings: &'a mut NativeRenderPhaseTimings) -> Self {
         Self {
             timings: Some(timings),
+            path_flattening: None,
             stroke_shapes: None,
             stroke_routes: None,
             image_resources: None,
@@ -167,6 +174,7 @@ impl<'a> RenderTraceSinks<'a> {
 
     fn with_trace(
         timings: &'a mut NativeRenderPhaseTimings,
+        path_flattening: &'a mut PathFlatteningSummary,
         stroke_shapes: &'a mut StrokeShapeSummary,
         stroke_routes: &'a mut StrokeRasterRouteSummary,
         image_resources: &'a mut ImageResourceSummary,
@@ -174,6 +182,7 @@ impl<'a> RenderTraceSinks<'a> {
     ) -> Self {
         Self {
             timings: Some(timings),
+            path_flattening: Some(path_flattening),
             stroke_shapes: Some(stroke_shapes),
             stroke_routes: Some(stroke_routes),
             image_resources: Some(image_resources),
@@ -503,6 +512,7 @@ impl NativeBackend {
             load_xref_object: load_started.elapsed(),
             ..NativeRenderPhaseTimings::default()
         };
+        let mut path_flattening = PathFlatteningSummary::default();
         let mut stroke_shapes = StrokeShapeSummary::default();
         let mut stroke_routes = StrokeRasterRouteSummary::default();
         let mut image_resources = ImageResourceSummary::default();
@@ -514,6 +524,7 @@ impl NativeBackend {
             self.limits,
             RenderTraceSinks::with_trace(
                 &mut timings,
+                &mut path_flattening,
                 &mut stroke_shapes,
                 &mut stroke_routes,
                 &mut image_resources,
@@ -524,6 +535,7 @@ impl NativeBackend {
         Ok(NativeRenderTrace {
             thumbnail,
             timings,
+            path_flattening,
             stroke_shapes,
             stroke_routes,
             image_resources,
@@ -1683,6 +1695,12 @@ fn render_loaded_document_inner(
     } else {
         ImageDecodeHints::empty()
     };
+    record_path_flattening(
+        &mut trace_sinks.path_flattening,
+        &display_list,
+        transform,
+        path_options,
+    )?;
     record_stroke_shapes(
         &mut trace_sinks.stroke_shapes,
         &display_list,
@@ -1709,6 +1727,12 @@ fn render_loaded_document_inner(
             )
             .map_err(map_graphics_error)
         },
+    )?;
+    record_path_flattening(
+        &mut trace_sinks.path_flattening,
+        &form_list,
+        transform,
+        path_options,
     )?;
     record_stroke_shapes(
         &mut trace_sinks.stroke_shapes,
@@ -1867,6 +1891,12 @@ fn render_loaded_document_inner(
                 .map_err(map_graphics_error)
             },
         )?;
+        record_path_flattening(
+            &mut trace_sinks.path_flattening,
+            &annotation_list,
+            transform,
+            path_options,
+        )?;
         record_stroke_shapes(
             &mut trace_sinks.stroke_shapes,
             &annotation_list,
@@ -1907,6 +1937,12 @@ fn render_loaded_document_inner(
                 )
                 .map_err(map_graphics_error)
             },
+        )?;
+        record_path_flattening(
+            &mut trace_sinks.path_flattening,
+            &annotation_list,
+            transform,
+            path_options,
         )?;
         record_stroke_shapes(
             &mut trace_sinks.stroke_shapes,
@@ -1964,6 +2000,21 @@ fn record_render_phase<T>(
     let result = operation();
     timings.record(phase, started.elapsed());
     result
+}
+
+fn record_path_flattening(
+    path_flattening: &mut Option<&mut PathFlatteningSummary>,
+    display_list: &DisplayList,
+    transform: PageTransform,
+    options: PathRasterOptions,
+) -> Result<(), ThumbnailError> {
+    let Some(path_flattening) = path_flattening.as_deref_mut() else {
+        return Ok(());
+    };
+    let summary = display_list_path_flattening_summary(display_list, transform, options)
+        .map_err(map_raster_error)?;
+    path_flattening.merge(summary);
+    Ok(())
 }
 
 fn record_stroke_shapes(
