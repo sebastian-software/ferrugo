@@ -97,6 +97,12 @@ pub const DEFAULT_FORM_RECURSION_DEPTH_LIMIT: usize = 16;
 /// Default maximum flattened path line segments for one rasterization pass.
 pub const DEFAULT_FLATTENED_PATH_SEGMENT_LIMIT: usize = 65_536;
 
+/// Default cubic-curve flattening tolerance in device pixels.
+///
+/// Curves are transformed into device space before this tolerance is applied,
+/// so page scale, rotation, and shear affect the emitted segment count.
+pub const DEFAULT_CURVE_FLATTENING_TOLERANCE: f64 = 0.5;
+
 /// Default maximum pixels in one transparency group intermediate raster.
 pub const DEFAULT_TRANSPARENCY_GROUP_PIXELS_LIMIT: usize = 16 * 1024 * 1024;
 
@@ -117,9 +123,10 @@ const STROKE_AXIS_SPAN_MIN_LINES: usize = 4;
 const STROKE_JOIN_BUCKET_MIN_JOINS: usize = 8;
 const STROKE_SIMPLE_LINE_SPAN_MIN_PIXELS: u32 = 1024;
 const STROKE_AXIS_SIMPLE_LINE_SPAN_MIN_PIXELS: u32 = 128;
-const STROKE_ROW_RANGE_MIN_BUCKET_LINES: usize = 48;
-const STROKE_ROW_ACTIVE_MIN_BUCKET_LINES: usize = 64;
+const STROKE_ROW_RANGE_MIN_BUCKET_LINES: usize = STROKE_ROW_BUCKET_MIN_LINES;
+const STROKE_ROW_ACTIVE_MIN_BUCKET_LINES: usize = 48;
 const STROKE_SPAN_CURSOR_MIN_SPANS: usize = 512;
+const STROKE_CURVE_MIN_FLATTENED_SEGMENTS: usize = 12;
 
 /// Maximum dash segments tracked in the graphics state.
 pub const MAX_STROKE_DASH_SEGMENTS: usize = 8;
@@ -1383,6 +1390,42 @@ pub enum RasterDisplayPhase {
     Images,
     /// Text raster work.
     Text,
+}
+
+/// Path-flattening summary for renderer performance diagnostics.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct PathFlatteningSummary {
+    /// Number of painted path display items inspected.
+    pub path_items: usize,
+    /// Number of clip path items inspected.
+    pub clip_items: usize,
+    /// Number of cubic curves flattened.
+    pub cubic_curves: usize,
+    /// Total line edges emitted by path flattening.
+    pub flattened_edges: usize,
+    /// Total line segments emitted from cubic curves.
+    pub curve_segments: usize,
+    /// Maximum segments emitted by one cubic curve.
+    pub max_curve_segments_per_curve: usize,
+    /// Maximum flattened edge count emitted by one display-list item.
+    pub max_flattened_edges_per_item: usize,
+}
+
+impl PathFlatteningSummary {
+    /// Merges another summary into this one.
+    pub fn merge(&mut self, other: Self) {
+        self.path_items += other.path_items;
+        self.clip_items += other.clip_items;
+        self.cubic_curves += other.cubic_curves;
+        self.flattened_edges += other.flattened_edges;
+        self.curve_segments += other.curve_segments;
+        self.max_curve_segments_per_curve = self
+            .max_curve_segments_per_curve
+            .max(other.max_curve_segments_per_curve);
+        self.max_flattened_edges_per_item = self
+            .max_flattened_edges_per_item
+            .max(other.max_flattened_edges_per_item);
+    }
 }
 
 /// Stroke geometry summary for renderer performance diagnostics.
@@ -5577,6 +5620,25 @@ pub fn rasterize_paths_into(
     Ok(())
 }
 
+/// Summarizes path flattening in a display list for performance diagnostics.
+///
+/// This is intended for explicit profiling and trace commands. It does not
+/// inspect PDF bytes, rendered pixels, text contents, or image samples.
+///
+/// # Errors
+///
+/// Returns [`RasterError`] when flattening exceeds the same path complexity
+/// budget used by rasterization.
+pub fn display_list_path_flattening_summary(
+    display_list: &DisplayList,
+    transform: PageTransform,
+    options: PathRasterOptions,
+) -> RasterResult<PathFlatteningSummary> {
+    let mut summary = PathFlatteningSummary::default();
+    collect_display_list_path_flattening(display_list, transform, options, &mut summary)?;
+    Ok(summary)
+}
+
 /// Summarizes stroke geometry in a display list for performance diagnostics.
 ///
 /// This is intended for explicit profiling and trace commands. It does not
@@ -5594,6 +5656,60 @@ pub fn display_list_stroke_shape_summary(
     let mut summary = StrokeShapeSummary::default();
     collect_display_list_stroke_shapes(display_list, transform, options, &mut summary)?;
     Ok(summary)
+}
+
+fn collect_display_list_path_flattening(
+    display_list: &DisplayList,
+    transform: PageTransform,
+    options: PathRasterOptions,
+    summary: &mut PathFlatteningSummary,
+) -> RasterResult<()> {
+    for item in display_list.items() {
+        match item {
+            DisplayItem::Path(path) => {
+                summary.merge(path_flattening_summary_for_segments(
+                    &path.segments,
+                    transform.matrix,
+                    options.max_flattened_segments,
+                    curve_flattening_policy_for_paint(path.paint),
+                    true,
+                )?);
+            }
+            DisplayItem::ClipPlaceholder { segments, .. } => {
+                summary.merge(path_flattening_summary_for_segments(
+                    segments,
+                    transform.matrix,
+                    options.max_flattened_segments,
+                    CurveFlatteningPolicy::default(),
+                    false,
+                )?);
+            }
+            DisplayItem::TransparencyGroup(group) => {
+                collect_display_list_path_flattening(&group.items, transform, options, summary)?;
+            }
+            DisplayItem::Text(_) | DisplayItem::Image(_) | DisplayItem::Shading(_) => {}
+        }
+    }
+    Ok(())
+}
+
+fn path_flattening_summary_for_segments(
+    segments: &[PathSegment],
+    transform: Matrix,
+    limit: usize,
+    policy: CurveFlatteningPolicy,
+    is_painted_path: bool,
+) -> RasterResult<PathFlatteningSummary> {
+    let flattened = flatten_path_segments(segments, transform, limit, policy)?;
+    Ok(PathFlatteningSummary {
+        path_items: usize::from(is_painted_path),
+        clip_items: usize::from(!is_painted_path),
+        cubic_curves: flattened.stats.cubic_curves,
+        flattened_edges: flattened.lines.len(),
+        curve_segments: flattened.stats.curve_segments,
+        max_curve_segments_per_curve: flattened.stats.max_curve_segments_per_curve,
+        max_flattened_edges_per_item: flattened.lines.len(),
+    })
 }
 
 /// Summarizes image placements in a display list for performance diagnostics.
@@ -5723,6 +5839,7 @@ fn stroke_shape_summary_for_path(
         &path.segments,
         transform.matrix,
         options.max_flattened_segments,
+        CurveFlatteningPolicy::stroke(),
     )?;
     let dashed_lines;
     let dashed = !path.state.stroke_dash.is_solid();
@@ -6506,6 +6623,7 @@ fn rasterize_path_item(
         &path.segments,
         context.transform.matrix,
         context.options.max_flattened_segments,
+        curve_flattening_policy_for_paint(path.paint),
     )?;
     match path.paint {
         PaintMode::Fill { rule } => {
@@ -7698,6 +7816,14 @@ struct FlattenedPath {
     subpaths: Vec<Vec<Point>>,
     lines: Vec<LineSegment>,
     joins: Vec<StrokeJoin>,
+    stats: FlattenedPathStats,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct FlattenedPathStats {
+    cubic_curves: usize,
+    curve_segments: usize,
+    max_curve_segments_per_curve: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -7873,7 +7999,12 @@ fn active_clip_from_segments(
     matrix: Matrix,
     max_flattened_segments: usize,
 ) -> RasterResult<ActiveClip> {
-    let path = flatten_path_segments(segments, matrix, max_flattened_segments)?;
+    let path = flatten_path_segments(
+        segments,
+        matrix,
+        max_flattened_segments,
+        CurveFlatteningPolicy::default(),
+    )?;
     let bounds = flattened_bounds(&path);
     let axis_aligned_rect = axis_aligned_rect_fill_bounds(&path);
     Ok(ActiveClip {
@@ -10948,10 +11079,41 @@ fn enforce_image_byte_budget(byte_len: usize, max_image_bytes: usize) -> Graphic
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+struct CurveFlatteningPolicy {
+    min_segments_per_curve: usize,
+}
+
+impl CurveFlatteningPolicy {
+    const fn stroke() -> Self {
+        Self {
+            min_segments_per_curve: STROKE_CURVE_MIN_FLATTENED_SEGMENTS,
+        }
+    }
+}
+
+impl Default for CurveFlatteningPolicy {
+    fn default() -> Self {
+        Self {
+            min_segments_per_curve: 1,
+        }
+    }
+}
+
+const fn curve_flattening_policy_for_paint(paint: PaintMode) -> CurveFlatteningPolicy {
+    match paint {
+        PaintMode::Stroke | PaintMode::FillStroke { .. } => CurveFlatteningPolicy::stroke(),
+        PaintMode::Fill { .. } => CurveFlatteningPolicy {
+            min_segments_per_curve: 1,
+        },
+    }
+}
+
 fn flatten_path_segments(
     segments: &[PathSegment],
     transform: Matrix,
     limit: usize,
+    policy: CurveFlatteningPolicy,
 ) -> RasterResult<FlattenedPath> {
     let mut flattened = FlattenedPath::default();
     let mut current_subpath: Vec<Point> = Vec::new();
@@ -10983,14 +11145,17 @@ fn flatten_path_segments(
                 let c1 = transform.transform_point(c1.x, c1.y);
                 let c2 = transform.transform_point(c2.x, c2.y);
                 let to = transform.transform_point(to.x, to.y);
-                let mut previous = from;
-                for step in 1..=16 {
-                    let t = f64::from(step) / 16.0;
-                    let point = cubic_point(from, c1, c2, to, t);
-                    push_flattened_line(&mut flattened, previous, point, limit)?;
-                    current_subpath.push(point);
-                    previous = point;
-                }
+                let emitted = flatten_cubic_curve(
+                    &mut flattened,
+                    &mut current_subpath,
+                    CubicSegment { from, c1, c2, to },
+                    limit,
+                    policy,
+                )?;
+                flattened.stats.cubic_curves += 1;
+                flattened.stats.curve_segments += emitted;
+                flattened.stats.max_curve_segments_per_curve =
+                    flattened.stats.max_curve_segments_per_curve.max(emitted);
                 current_point = Some(to);
             }
             PathSegment::Close => {
@@ -11004,6 +11169,91 @@ fn flatten_path_segments(
     finish_subpath(&mut flattened, &mut current_subpath);
     flattened.joins = stroke_joins_from_subpaths(&flattened.subpaths, limit)?;
     Ok(flattened)
+}
+
+#[derive(Debug, Clone, Copy)]
+struct CubicSegment {
+    from: Point,
+    c1: Point,
+    c2: Point,
+    to: Point,
+}
+
+fn flatten_cubic_curve(
+    flattened: &mut FlattenedPath,
+    current_subpath: &mut Vec<Point>,
+    segment: CubicSegment,
+    limit: usize,
+    policy: CurveFlatteningPolicy,
+) -> RasterResult<usize> {
+    let segment_count = adaptive_cubic_segment_count(segment, limit, policy);
+    let mut previous = segment.from;
+    for step in 1..=segment_count {
+        let t = step as f64 / segment_count as f64;
+        let point = cubic_point(segment, t);
+        push_flattened_line(flattened, previous, point, limit)?;
+        current_subpath.push(point);
+        previous = point;
+    }
+    Ok(segment_count)
+}
+
+fn adaptive_cubic_segment_count(
+    segment: CubicSegment,
+    limit: usize,
+    policy: CurveFlatteningPolicy,
+) -> usize {
+    let max_segments = limit.saturating_add(1).max(1);
+    let flatness = cubic_flatness_squared(segment).sqrt();
+    if !flatness.is_finite() {
+        return max_segments;
+    }
+    let segments = (flatness / DEFAULT_CURVE_FLATTENING_TOLERANCE)
+        .sqrt()
+        .ceil()
+        .max(policy.min_segments_per_curve as f64);
+    segments.clamp(1.0, max_segments as f64) as usize
+}
+
+fn cubic_flatness_squared(segment: CubicSegment) -> f64 {
+    point_line_distance_squared(segment.c1, segment.from, segment.to).max(
+        point_line_distance_squared(segment.c2, segment.from, segment.to),
+    )
+}
+
+fn point_line_distance_squared(point: Point, from: Point, to: Point) -> f64 {
+    let dx = to.x - from.x;
+    let dy = to.y - from.y;
+    let len_squared = dx.mul_add(dx, dy * dy);
+    if len_squared <= f64::EPSILON {
+        return point_distance_squared(point, from);
+    }
+    let cross = dx * (from.y - point.y) - (from.x - point.x) * dy;
+    cross * cross / len_squared
+}
+
+fn point_distance_squared(a: Point, b: Point) -> f64 {
+    let dx = a.x - b.x;
+    let dy = a.y - b.y;
+    dx.mul_add(dx, dy * dy)
+}
+
+fn cubic_point(segment: CubicSegment, t: f64) -> Point {
+    let inv = 1.0 - t;
+    let a = inv * inv * inv;
+    let b = 3.0 * inv * inv * t;
+    let c = 3.0 * inv * t * t;
+    let d = t * t * t;
+    Point {
+        x: a.mul_add(
+            segment.from.x,
+            b.mul_add(segment.c1.x, c.mul_add(segment.c2.x, d * segment.to.x)),
+        ),
+        y: a.mul_add(
+            segment.from.y,
+            b.mul_add(segment.c1.y, c.mul_add(segment.c2.y, d * segment.to.y)),
+        ),
+    }
 }
 
 fn finish_subpath(flattened: &mut FlattenedPath, current_subpath: &mut Vec<Point>) {
@@ -11055,18 +11305,6 @@ fn stroke_joins_from_subpaths(
         }
     }
     Ok(joins)
-}
-
-fn cubic_point(from: Point, c1: Point, c2: Point, to: Point, t: f64) -> Point {
-    let inv = 1.0 - t;
-    let a = inv * inv * inv;
-    let b = 3.0 * inv * inv * t;
-    let c = 3.0 * inv * t * t;
-    let d = t * t * t;
-    Point {
-        x: a.mul_add(from.x, b.mul_add(c1.x, c.mul_add(c2.x, d * to.x))),
-        y: a.mul_add(from.y, b.mul_add(c1.y, c.mul_add(c2.y, d * to.y))),
-    }
 }
 
 fn fill_path(
@@ -11691,6 +11929,7 @@ fn build_pattern_samples(
                 &path.segments,
                 Matrix::IDENTITY,
                 options.max_flattened_segments,
+                CurveFlatteningPolicy::default(),
             )?,
             rule,
             color: device_color_to_rgba(match pattern.paint {
@@ -18629,6 +18868,86 @@ mod tests {
     }
 
     #[test]
+    fn flatten_path_segments_should_adapt_cubic_segments_to_device_scale() {
+        let segments = vec![
+            PathSegment::MoveTo(Point { x: 0.0, y: 0.0 }),
+            PathSegment::CubicTo {
+                c1: Point { x: 0.0, y: 0.5 },
+                c2: Point { x: 1.0, y: 0.5 },
+                to: Point { x: 1.0, y: 0.0 },
+            },
+        ];
+
+        let thumbnail = flatten_path_segments(
+            &segments,
+            Matrix::scale(4.0, 4.0),
+            1024,
+            CurveFlatteningPolicy::default(),
+        )
+        .expect("thumbnail curve should flatten");
+        let zoomed = flatten_path_segments(
+            &segments,
+            Matrix::scale(64.0, 64.0),
+            1024,
+            CurveFlatteningPolicy::default(),
+        )
+        .expect("zoomed curve should flatten");
+
+        assert!(thumbnail.stats.max_curve_segments_per_curve < 16);
+        assert!(
+            zoomed.stats.max_curve_segments_per_curve
+                > thumbnail.stats.max_curve_segments_per_curve
+        );
+    }
+
+    #[test]
+    fn path_flattening_summary_should_count_curve_segments_and_edges() {
+        let list = DisplayList::from_items(vec![DisplayItem::Path(PathDisplayItem {
+            segments: vec![
+                PathSegment::MoveTo(Point { x: 0.0, y: 0.0 }),
+                PathSegment::CubicTo {
+                    c1: Point { x: 0.0, y: 0.5 },
+                    c2: Point { x: 1.0, y: 0.5 },
+                    to: Point { x: 1.0, y: 0.0 },
+                },
+                PathSegment::LineTo(Point { x: 2.0, y: 0.0 }),
+            ],
+            paint: PaintMode::Fill {
+                rule: FillRule::Nonzero,
+            },
+            state: GraphicsState::default(),
+            fill_pattern: None,
+        })]);
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 4.0,
+                    max_y: 4.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            16,
+        )
+        .expect("valid transform");
+
+        let summary =
+            display_list_path_flattening_summary(&list, transform, PathRasterOptions::default())
+                .expect("summary should flatten paths");
+
+        assert_eq!(summary.path_items, 1);
+        assert_eq!(summary.clip_items, 0);
+        assert_eq!(summary.cubic_curves, 1);
+        assert_eq!(summary.flattened_edges, summary.curve_segments + 1);
+        assert_eq!(
+            summary.max_flattened_edges_per_item,
+            summary.flattened_edges
+        );
+    }
+
+    #[test]
     fn device_pixel_bounds_should_clip_to_raster_dimensions() {
         let dimensions = RasterDimensions::new(20, 10).expect("valid dimensions");
         let bounds = device_pixel_bounds(
@@ -20930,6 +21249,7 @@ mod tests {
                 },
             ],
             joins: Vec::new(),
+            stats: FlattenedPathStats::default(),
         };
         let transform = PageTransform::new(
             PageGeometry {
