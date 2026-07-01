@@ -12,11 +12,11 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use ferrugo_native::{
-    scan_operator_coverage, ImagePlacementSummary, ImageResourceSummary, NativeBackend,
-    NativeDocumentSessionStats, NativeMemoryDiagnostics, NativePageCacheKey, NativePageCachePolicy,
-    NativeRenderPhaseTimings, NativeRenderTrace, OperatorCoverageEntry, OperatorCoverageOptions,
-    OperatorSupportStatus, PathFlatteningSummary, StrokeRasterRouteSummary, StrokeShapeSummary,
-    DEFAULT_CURVE_FLATTENING_TOLERANCE,
+    scan_operator_coverage, FillRasterRouteSummary, ImagePlacementSummary, ImageResourceSummary,
+    NativeBackend, NativeDocumentSessionStats, NativeMemoryDiagnostics, NativePageCacheKey,
+    NativePageCachePolicy, NativeRenderPhaseTimings, NativeRenderTrace, OperatorCoverageEntry,
+    OperatorCoverageOptions, OperatorSupportStatus, PathFlatteningSummary,
+    StrokeRasterRouteSummary, StrokeShapeSummary, DEFAULT_CURVE_FLATTENING_TOLERANCE,
 };
 #[cfg(feature = "pdfium")]
 use ferrugo_pdfium::PdfiumBackend;
@@ -8513,6 +8513,8 @@ fn native_render_trace_json(config: &TraceNativeConfig) -> Result<String, CliErr
     );
     let stroke_shape_summary_json =
         trace_stroke_shape_summary_json(render_trace.as_ref().map(|trace| &trace.stroke_shapes));
+    let fill_raster_route_summary_json =
+        trace_fill_raster_route_summary_json(render_trace.as_ref().map(|trace| &trace.fill_routes));
     let stroke_raster_route_summary_json = trace_stroke_raster_route_summary_json(
         render_trace.as_ref().map(|trace| &trace.stroke_routes),
     );
@@ -8544,6 +8546,7 @@ fn native_render_trace_json(config: &TraceNativeConfig) -> Result<String, CliErr
             "  \"phase_timings_ms\": {},\n",
             "  \"path_flattening_summary\": {},\n",
             "  \"stroke_shape_summary\": {},\n",
+            "  \"fill_raster_route_summary\": {},\n",
             "  \"stroke_raster_route_summary\": {},\n",
             "  \"image_resource_summary\": {},\n",
             "  \"image_placement_summary\": {},\n",
@@ -8566,6 +8569,7 @@ fn native_render_trace_json(config: &TraceNativeConfig) -> Result<String, CliErr
         phase_timings_json,
         path_flattening_summary_json,
         stroke_shape_summary_json,
+        fill_raster_route_summary_json,
         stroke_raster_route_summary_json,
         image_resource_summary_json,
         image_placement_summary_json,
@@ -8751,6 +8755,39 @@ fn trace_stroke_shape_summary_json(
             summary.pixel_x_span_buckets.le_32,
             summary.pixel_x_span_buckets.le_64,
             summary.pixel_x_span_buckets.gt_64
+        ),
+        Err(error) => format!(
+            "{{\"status\":\"error\",\"class\":{},\"bucket\":{}}}",
+            json_string(error.class().as_str()),
+            optional_json_string(error.unsupported_feature_bucket())
+        ),
+    }
+}
+
+fn trace_fill_raster_route_summary_json(
+    summary: Result<&FillRasterRouteSummary, &ThumbnailError>,
+) -> String {
+    match summary {
+        Ok(summary) => format!(
+            concat!(
+                "{{",
+                "\"status\":\"measured\",",
+                "\"sampled_calls\":{},",
+                "\"complex_clip_fallback_calls\":{},",
+                "\"coverage_span_calls\":{},",
+                "\"coverage_span_rows\":{},",
+                "\"coverage_span_intervals\":{},",
+                "\"coverage_full_pixels\":{},",
+                "\"coverage_sampled_edge_pixels\":{}",
+                "}}"
+            ),
+            summary.sampled_calls,
+            summary.complex_clip_fallback_calls,
+            summary.coverage_span_calls,
+            summary.coverage_span_rows,
+            summary.coverage_span_intervals,
+            summary.coverage_full_pixels,
+            summary.coverage_sampled_edge_pixels
         ),
         Err(error) => format!(
             "{{\"status\":\"error\",\"class\":{},\"bucket\":{}}}",
@@ -11868,6 +11905,10 @@ mod tests {
         assert!(json.contains("\"max_row_bucket_active_line_refs_per_pixel\""));
         assert!(json.contains("\"row_bucket_active_join_refs\""));
         assert!(json.contains("\"max_row_bucket_active_join_refs_per_pixel\""));
+        assert!(json.contains("\"fill_raster_route_summary\""));
+        assert!(json.contains("\"coverage_span_calls\""));
+        assert!(json.contains("\"coverage_full_pixels\""));
+        assert!(json.contains("\"coverage_sampled_edge_pixels\""));
         assert!(json.contains("\"image_resource_summary\""));
         assert!(json.contains("\"encoded_bytes\""));
         assert!(json.contains("\"resident_bytes\""));
