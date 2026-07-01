@@ -259,6 +259,37 @@ cargo publish -p ferrugo-pdfium --locked
 cargo publish -p ferrugo --locked
 ```
 
+## Release Automation
+
+Ferrugo follows the same Release Please and crates.io Trusted Publishing pattern
+used by Ferrocat.
+
+- `.github/workflows/publish.yml` runs on pushes to `main` and on manual
+  dispatch.
+- The first job runs `googleapis/release-please-action` with
+  `.release-please-config.json` and `.release-please-manifest.json`.
+- The config uses `cargo-workspace` plus `linked-versions`, so the Ferrugo
+  release train stays on one version while Release Please updates local Cargo
+  dependency versions.
+- When Release Please creates GitHub releases, the `publish-rust` job requests a
+  temporary crates.io token through `rust-lang/crates-io-auth-action@v1` and
+  runs `scripts/publish_crates.sh`.
+- `scripts/publish_crates.sh` publishes crates in dependency order, skips
+  versions that already exist on crates.io, and retries dependency-chain crates
+  while the registry index catches up.
+
+Repository setup required outside Git:
+
+1. Add a `RELEASE_PLEASE_TOKEN` repository secret if Release Please PRs should
+   trigger normal CI workflows. The workflow falls back to `GITHUB_TOKEN` when
+   the secret is absent.
+2. In crates.io, configure Trusted Publishing for each published crate:
+   `ferrugo-syntax`, `ferrugo-thumbnail`, `ferrugo-object`, `ferrugo-content`,
+   `ferrugo-render`, `ferrugo-native`, `ferrugo-pdfium`, and `ferrugo`.
+3. Point each trusted publisher at repository `sebastian-software/ferrugo` and
+   workflow `.github/workflows/publish.yml`.
+
+
 The workspace package dry-run validates the full local release train through
 Cargo's temporary registry when the dependency chain is locally resolvable:
 

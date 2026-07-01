@@ -1,0 +1,54 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "release-type": "rust",
+  "initial-version": "0.1.0",
+  "separate-pull-requests": false,
+  "plugins": [
+    {
+      "type": "cargo-workspace",
+      "merge": false,
+      "updateAllPackages": true
+    },
+    {
+      "type": "linked-versions",
+      "groupName": "ferrugo",
+      "merge": true,
+      "components": [
+        "ferrugo-syntax",
+        "ferrugo-thumbnail",
+        "ferrugo-object",
+        "ferrugo-content",
+        "ferrugo-render",
+        "ferrugo-native",
+        "ferrugo-pdfium",
+        "ferrugo"
+      ]
+    }
+  ],
+  "packages": {
+    "crates/ferrugo-syntax": {
+      "component": "ferrugo-syntax"
+    },
+    "crates/ferrugo-thumbnail": {
+      "component": "ferrugo-thumbnail"
+    },
+    "crates/ferrugo-object": {
+      "component": "ferrugo-object"
+    },
+    "crates/ferrugo-content": {
+      "component": "ferrugo-content"
+    },
+    "crates/ferrugo-render": {
+      "component": "ferrugo-render"
+    },
+    "crates/ferrugo-native": {
+      "component": "ferrugo-native"
+    },
+    "crates/ferrugo-pdfium": {
+      "component": "ferrugo-pdfium"
+    },
+    "crates/ferrugo-cli": {
+      "component": "ferrugo"
+    }
+  }
+}
