@@ -12,10 +12,10 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use ferrugo_native::{
-    scan_operator_coverage, FillRasterRouteSummary, ImagePlacementSummary, ImageResourceSummary,
-    NativeBackend, NativeDocumentSessionStats, NativeMemoryDiagnostics, NativePageCacheKey,
-    NativePageCachePolicy, NativeRenderPhaseTimings, NativeRenderTrace, OperatorCoverageEntry,
-    OperatorCoverageOptions, OperatorSupportStatus, PathFlatteningSummary,
+    scan_operator_coverage, FillRasterRouteSummary, GlyphBitmapCacheSummary, ImagePlacementSummary,
+    ImageResourceSummary, NativeBackend, NativeDocumentSessionStats, NativeMemoryDiagnostics,
+    NativePageCacheKey, NativePageCachePolicy, NativeRenderPhaseTimings, NativeRenderTrace,
+    OperatorCoverageEntry, OperatorCoverageOptions, OperatorSupportStatus, PathFlatteningSummary,
     StrokeRasterRouteSummary, StrokeShapeSummary, DEFAULT_CURVE_FLATTENING_TOLERANCE,
 };
 #[cfg(feature = "pdfium")]
@@ -7883,6 +7883,8 @@ fn native_memory_diagnostics_json(diagnostics: &NativeMemoryDiagnostics) -> Stri
             "\"max_flattened_segments\":{},",
             "\"max_pattern_tiles\":{},",
             "\"max_pattern_cell_cache_entries\":{},",
+            "\"max_session_glyph_bitmap_entries\":{},",
+            "\"max_session_glyph_bitmap_bytes\":{},",
             "\"spooling_enabled\":{},",
             "\"max_spool_bytes\":{}",
             "}}"
@@ -7900,6 +7902,8 @@ fn native_memory_diagnostics_json(diagnostics: &NativeMemoryDiagnostics) -> Stri
         diagnostics.max_flattened_segments,
         diagnostics.max_pattern_tiles,
         diagnostics.max_pattern_cell_cache_entries,
+        diagnostics.max_session_glyph_bitmap_entries,
+        diagnostics.max_session_glyph_bitmap_bytes,
         diagnostics.spooling_enabled,
         diagnostics.max_spool_bytes
     )
@@ -8524,6 +8528,8 @@ fn native_render_trace_json(config: &TraceNativeConfig) -> Result<String, CliErr
     let image_placement_summary_json = trace_image_placement_summary_json(
         render_trace.as_ref().map(|trace| &trace.image_placements),
     );
+    let glyph_bitmap_summary_json =
+        trace_glyph_bitmap_summary_json(render_trace.as_ref().map(|trace| &trace.glyph_bitmaps));
     let render_json = trace_render_outcome_json(render_trace);
 
     Ok(format!(
@@ -8550,6 +8556,7 @@ fn native_render_trace_json(config: &TraceNativeConfig) -> Result<String, CliErr
             "  \"stroke_raster_route_summary\": {},\n",
             "  \"image_resource_summary\": {},\n",
             "  \"image_placement_summary\": {},\n",
+            "  \"glyph_bitmap_summary\": {},\n",
             "  \"operator_coverage\": {},\n",
             "  \"operator_summary\": {},\n",
             "  \"events\": [{}]\n",
@@ -8573,6 +8580,7 @@ fn native_render_trace_json(config: &TraceNativeConfig) -> Result<String, CliErr
         stroke_raster_route_summary_json,
         image_resource_summary_json,
         image_placement_summary_json,
+        glyph_bitmap_summary_json,
         coverage_json,
         operator_summary,
         events_json
@@ -8942,6 +8950,41 @@ fn trace_image_resource_summary_json(
             summary.max_width,
             summary.max_height,
             summary.max_pixels
+        ),
+        Err(error) => format!(
+            "{{\"status\":\"error\",\"class\":{},\"bucket\":{}}}",
+            json_string(error.class().as_str()),
+            optional_json_string(error.unsupported_feature_bucket())
+        ),
+    }
+}
+
+fn trace_glyph_bitmap_summary_json(
+    summary: Result<&GlyphBitmapCacheSummary, &ThumbnailError>,
+) -> String {
+    match summary {
+        Ok(summary) => format!(
+            concat!(
+                "{{",
+                "\"status\":\"measured\",",
+                "\"entries\":{},",
+                "\"max_entries\":{},",
+                "\"bytes\":{},",
+                "\"max_bytes\":{},",
+                "\"hits\":{},",
+                "\"misses\":{},",
+                "\"inserts\":{},",
+                "\"evictions\":{}",
+                "}}"
+            ),
+            summary.entries,
+            summary.max_entries,
+            summary.bytes,
+            summary.max_bytes,
+            summary.hits,
+            summary.misses,
+            summary.inserts,
+            summary.evictions
         ),
         Err(error) => format!(
             "{{\"status\":\"error\",\"class\":{},\"bucket\":{}}}",
@@ -10188,7 +10231,15 @@ fn native_document_session_stats_json(stats: Option<NativeDocumentSessionStats>)
             "\"cached_image_resource_hits\":{},",
             "\"cached_image_resource_misses\":{},",
             "\"cached_image_resource_inserts\":{},",
-            "\"cached_image_resource_evictions\":{}",
+            "\"cached_image_resource_evictions\":{},",
+            "\"cached_glyph_bitmap_entries\":{},",
+            "\"max_cached_glyph_bitmap_entries\":{},",
+            "\"cached_glyph_bitmap_bytes\":{},",
+            "\"max_cached_glyph_bitmap_bytes\":{},",
+            "\"cached_glyph_bitmap_hits\":{},",
+            "\"cached_glyph_bitmap_misses\":{},",
+            "\"cached_glyph_bitmap_inserts\":{},",
+            "\"cached_glyph_bitmap_evictions\":{}",
             "}}"
         ),
         native_page_cache_policy_json(stats.cache_policy),
@@ -10206,7 +10257,15 @@ fn native_document_session_stats_json(stats: Option<NativeDocumentSessionStats>)
         stats.cached_image_resource_hits,
         stats.cached_image_resource_misses,
         stats.cached_image_resource_inserts,
-        stats.cached_image_resource_evictions
+        stats.cached_image_resource_evictions,
+        stats.cached_glyph_bitmap_entries,
+        stats.max_cached_glyph_bitmap_entries,
+        stats.cached_glyph_bitmap_bytes,
+        stats.max_cached_glyph_bitmap_bytes,
+        stats.cached_glyph_bitmap_hits,
+        stats.cached_glyph_bitmap_misses,
+        stats.cached_glyph_bitmap_inserts,
+        stats.cached_glyph_bitmap_evictions
     )
 }
 
@@ -11948,6 +12007,9 @@ mod tests {
         assert!(json.contains("\"source_pixels\""));
         assert!(json.contains("\"device_pixels\""));
         assert!(json.contains("\"downsample_candidate_placements\""));
+        assert!(json.contains("\"glyph_bitmap_summary\""));
+        assert!(json.contains("\"hits\""));
+        assert!(json.contains("\"misses\""));
         assert!(json.contains("\"operator_summary\""));
         assert!(!json.contains("stream\n"));
         assert!(!json.contains("ferrugo thumbnail fixture"));
