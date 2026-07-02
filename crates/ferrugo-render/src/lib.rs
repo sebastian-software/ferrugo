@@ -16959,6 +16959,7 @@ fn normalized_to_u8(value: f64) -> u8 {
     (value.clamp(0.0, 1.0) * 255.0).round() as u8
 }
 
+#[cfg(test)]
 fn blend_pixel(
     device: &mut RasterDevice,
     x: u32,
@@ -17023,6 +17024,7 @@ fn source_over_opaque_channel(source: u8, dest: u8, coverage: f64, inverse: f64)
         .clamp(0.0, 255.0) as u8
 }
 
+#[cfg(test)]
 fn blend_source_with_backdrop(source: Rgba, dest: Rgba, blend_mode: BlendMode) -> Rgba {
     match blend_mode {
         BlendMode::Normal => source,
