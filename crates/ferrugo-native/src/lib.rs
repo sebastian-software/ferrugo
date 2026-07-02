@@ -2780,14 +2780,18 @@ fn line_only_clip_placeholder_supports_banded_replay(segments: &[PathSegment]) -
 }
 
 fn path_supports_banded_replay(path: &PathDisplayItem) -> bool {
-    path.fill_pattern.is_none()
-        && path.state.fill_pattern.is_none()
-        && path.state.blend_mode == BlendMode::Normal
+    let has_fill_pattern = path.fill_pattern.is_some() || path.state.fill_pattern.is_some();
+    path.state.blend_mode == BlendMode::Normal
         && match path.paint {
-            PaintMode::Fill { .. } => fill_path_supports_banded_replay(path),
+            PaintMode::Fill { .. } => {
+                fill_path_supports_banded_replay(path)
+                    && (!has_fill_pattern || fill_pattern_path_supports_banded_replay(path))
+            }
             PaintMode::Stroke => stroke_path_supports_banded_replay(path),
             PaintMode::FillStroke { .. } => {
-                fill_path_supports_banded_replay(path) && stroke_path_supports_banded_replay(path)
+                !has_fill_pattern
+                    && fill_path_supports_banded_replay(path)
+                    && stroke_path_supports_banded_replay(path)
             }
         }
 }
@@ -2796,8 +2800,14 @@ fn fill_path_supports_banded_replay(path: &PathDisplayItem) -> bool {
     path.state.fill_alpha >= 1.0 && !path.state.fill_overprint
 }
 
+fn fill_pattern_path_supports_banded_replay(path: &PathDisplayItem) -> bool {
+    path.fill_pattern.is_some()
+}
+
 fn stroke_path_supports_banded_replay(path: &PathDisplayItem) -> bool {
-    path.state.stroke_alpha >= 1.0
+    path.fill_pattern.is_none()
+        && path.state.fill_pattern.is_none()
+        && path.state.stroke_alpha >= 1.0
         && !path.state.stroke_overprint
         && (simple_stroke_path_supports_banded_replay(path)
             || joined_outline_stroke_path_supports_banded_replay(path))
@@ -7211,6 +7221,17 @@ mod tests {
             (
                 include_bytes!("../../../fixtures/generated/type4-mesh-shading.pdf").as_slice(),
                 "type4 mesh shading",
+                true,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/tiling-pattern.pdf").as_slice(),
+                "tiling pattern",
+                true,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/uncolored-tiling-pattern.pdf")
+                    .as_slice(),
+                "uncolored tiling pattern",
                 true,
             ),
         ] {
