@@ -7377,6 +7377,11 @@ mod tests {
                 true,
             ),
             (
+                include_bytes!("../../../fixtures/generated/soft-mask-image.pdf").as_slice(),
+                "soft mask image",
+                true,
+            ),
+            (
                 include_bytes!("../../../fixtures/generated/vector-paths.pdf").as_slice(),
                 "vector",
                 true,
@@ -7384,6 +7389,29 @@ mod tests {
             (
                 include_bytes!("../../../fixtures/generated/clipped-paths.pdf").as_slice(),
                 "multi-subpath clipped paths",
+                true,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/office-vector-nested-clips.pdf")
+                    .as_slice(),
+                "office vector nested clips",
+                true,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/spreadsheet-clipped-cells.pdf")
+                    .as_slice(),
+                "spreadsheet clipped cells",
+                true,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/browser-print-clipped-backgrounds.pdf")
+                    .as_slice(),
+                "browser print clipped backgrounds",
+                true,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/dashed-stroke.pdf").as_slice(),
+                "dashed stroke",
                 true,
             ),
             (
