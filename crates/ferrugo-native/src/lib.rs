@@ -2756,10 +2756,26 @@ fn display_list_supports_banded_replay(display_list: &DisplayList) -> bool {
     display_list.items().iter().all(|item| match item {
         DisplayItem::Image(_) | DisplayItem::Text(_) => true,
         DisplayItem::Path(path) => path_supports_banded_replay(path),
-        DisplayItem::ClipPlaceholder { .. }
-        | DisplayItem::TransparencyGroup(_)
-        | DisplayItem::Shading(_) => false,
+        DisplayItem::ClipPlaceholder { segments, .. } => {
+            line_only_clip_placeholder_supports_banded_replay(segments)
+        }
+        DisplayItem::TransparencyGroup(_) | DisplayItem::Shading(_) => false,
     })
+}
+
+fn line_only_clip_placeholder_supports_banded_replay(segments: &[PathSegment]) -> bool {
+    let mut move_count = 0;
+    let mut line_count = 0;
+    let mut closed = false;
+    for segment in segments {
+        match segment {
+            PathSegment::MoveTo(_) => move_count += 1,
+            PathSegment::LineTo(_) => line_count += 1,
+            PathSegment::Close => closed = true,
+            PathSegment::CubicTo { .. } => return false,
+        }
+    }
+    move_count == 1 && line_count >= 2 && closed
 }
 
 fn path_supports_banded_replay(path: &PathDisplayItem) -> bool {
@@ -6867,6 +6883,21 @@ mod tests {
         width: u32,
         height: u32,
     ) -> (Thumbnail, RasterBandSummary) {
+        let (thumbnail, raster_bands, _) = render_test_display_list_with_size_and_fill_routes(
+            display_list,
+            max_raster_band_rows,
+            width,
+            height,
+        );
+        (thumbnail, raster_bands)
+    }
+
+    fn render_test_display_list_with_size_and_fill_routes(
+        display_list: &DisplayList,
+        max_raster_band_rows: usize,
+        width: u32,
+        height: u32,
+    ) -> (Thumbnail, RasterBandSummary, FillRasterRouteSummary) {
         let transform = PageTransform::new(
             PageGeometry {
                 media_box: PathBounds {
@@ -6885,11 +6916,12 @@ mod tests {
         let glyph_bitmap_cache = RefCell::new(GlyphBitmapCache::default());
         let type3_template_cache = RefCell::new(Type3CharProcTemplateCache::default());
         let mut raster_bands = RasterBandSummary::default();
+        let mut fill_routes = FillRasterRouteSummary::default();
         let mut trace_sinks = RenderTraceSinks {
             timings: None,
             path_flattening: None,
             stroke_shapes: None,
-            fill_routes: None,
+            fill_routes: Some(&mut fill_routes),
             stroke_routes: None,
             image_resources: None,
             image_placements: None,
@@ -6920,7 +6952,7 @@ mod tests {
             &type3_template_cache,
         )
         .expect("test display list should render");
-        (thumbnail, raster_bands)
+        (thumbnail, raster_bands, fill_routes)
     }
 
     #[test]
@@ -7083,6 +7115,58 @@ mod tests {
         assert_eq!(banded_bands.max_band_rows, 17);
         assert!(banded_bands.max_band_pixels < banded_bands.full_page_pixels);
         assert!(banded_bands.active_target_byte_reduction_per_mille() > 0);
+    }
+
+    #[test]
+    fn native_banded_raster_should_match_single_target_for_line_clip_paths() {
+        let display_list = DisplayList::from_items(vec![
+            DisplayItem::ClipPlaceholder {
+                segments: vec![
+                    PathSegment::MoveTo(Point { x: 10.0, y: 10.0 }),
+                    PathSegment::LineTo(Point { x: 58.0, y: 16.0 }),
+                    PathSegment::LineTo(Point { x: 46.0, y: 44.0 }),
+                    PathSegment::LineTo(Point { x: 14.0, y: 38.0 }),
+                    PathSegment::Close,
+                ],
+                rule: FillRule::Nonzero,
+                state: GraphicsState::default(),
+            },
+            DisplayItem::Path(PathDisplayItem {
+                segments: vec![
+                    PathSegment::MoveTo(Point { x: 6.25, y: 8.5 }),
+                    PathSegment::LineTo(Point { x: 60.0, y: 12.25 }),
+                    PathSegment::LineTo(Point { x: 54.5, y: 45.0 }),
+                    PathSegment::LineTo(Point { x: 8.5, y: 42.5 }),
+                    PathSegment::Close,
+                ],
+                paint: PaintMode::Fill {
+                    rule: FillRule::Nonzero,
+                },
+                state: GraphicsState {
+                    fill_color: DeviceColor::Rgb {
+                        r: 0.2,
+                        g: 0.6,
+                        b: 0.35,
+                    },
+                    ..GraphicsState::default()
+                },
+                fill_pattern: None,
+            }),
+        ]);
+
+        let (single, single_bands, single_routes) =
+            render_test_display_list_with_size_and_fill_routes(&display_list, 0, 64, 48);
+        let (banded, banded_bands, banded_routes) =
+            render_test_display_list_with_size_and_fill_routes(&display_list, 11, 64, 48);
+
+        assert_eq!(single.bytes, banded.bytes);
+        assert_eq!(single_bands.bands, 1);
+        assert!(banded_bands.bands > 1);
+        assert_eq!(banded_bands.max_band_rows, 11);
+        assert!(banded_bands.max_band_pixels < banded_bands.full_page_pixels);
+        assert!(banded_bands.active_target_byte_reduction_per_mille() > 0);
+        assert!(single_routes.coverage_clip_mask_pixels > 0);
+        assert!(banded_routes.coverage_clip_mask_pixels > 0);
     }
 
     #[test]
