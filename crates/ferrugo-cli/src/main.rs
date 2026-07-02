@@ -8846,6 +8846,7 @@ fn trace_fill_raster_route_summary_json(
                 "\"coverage_blend_mode_row_pixels\":{},",
                 "\"coverage_analytic_edge_pixels\":{},",
                 "\"coverage_cell_accumulator_pixels\":{},",
+                "\"max_coverage_cell_partial_alpha_levels_per_call\":{},",
                 "\"coverage_edge_row_buffer_pixels\":{},",
                 "\"coverage_clip_mask_pixels\":{},",
                 "\"coverage_sampled_edge_pixels\":{}",
@@ -8863,6 +8864,7 @@ fn trace_fill_raster_route_summary_json(
             summary.coverage_blend_mode_row_pixels,
             summary.coverage_analytic_edge_pixels,
             summary.coverage_cell_accumulator_pixels,
+            summary.max_coverage_cell_partial_alpha_levels_per_call,
             summary.coverage_edge_row_buffer_pixels,
             summary.coverage_clip_mask_pixels,
             summary.coverage_sampled_edge_pixels
@@ -12200,6 +12202,7 @@ mod tests {
         assert!(json.contains("\"coverage_blend_mode_row_pixels\""));
         assert!(json.contains("\"coverage_analytic_edge_pixels\""));
         assert!(json.contains("\"coverage_cell_accumulator_pixels\""));
+        assert!(json.contains("\"max_coverage_cell_partial_alpha_levels_per_call\""));
         assert!(json.contains("\"coverage_edge_row_buffer_pixels\""));
         assert!(json.contains("\"coverage_clip_mask_pixels\""));
         assert!(json.contains("\"coverage_sampled_edge_pixels\""));
