@@ -571,11 +571,17 @@ fn benchmark_native_command(args: &[OsString]) -> Result<(), CliError> {
         manifest.as_ref(),
         &config,
         |native, path, options| {
-            native
+            let mut diagnostics = native
                 .render_with_trace(PdfSource::from_path(path), options)
                 .ok()
                 .map(NativeBenchmarkDiagnostics::from_trace)
-                .unwrap_or_default()
+                .unwrap_or_default();
+            if let Ok(raster_bands) =
+                native.render_raster_band_summary(PdfSource::from_path(path), options)
+            {
+                diagnostics.raster_bands = Some(raster_bands);
+            }
+            diagnostics
         },
     );
     write_benchmark_report(config, report)
@@ -2162,6 +2168,7 @@ impl ReplayOperatorsConfig {
 enum NativeProfile {
     Default,
     LowMemory,
+    LowMemoryParallel,
 }
 
 impl NativeProfile {
@@ -2169,6 +2176,7 @@ impl NativeProfile {
         match self {
             Self::Default => NativeBackend::new(),
             Self::LowMemory => NativeBackend::low_memory(),
+            Self::LowMemoryParallel => NativeBackend::low_memory_parallel(),
         }
     }
 
@@ -2176,6 +2184,7 @@ impl NativeProfile {
         match self {
             Self::Default => "default",
             Self::LowMemory => "low-memory",
+            Self::LowMemoryParallel => "low-memory-parallel",
         }
     }
 }
@@ -2184,8 +2193,9 @@ fn parse_native_profile(value: &str) -> Result<NativeProfile, CliError> {
     match value {
         "default" => Ok(NativeProfile::Default),
         "low-memory" => Ok(NativeProfile::LowMemory),
+        "low-memory-parallel" => Ok(NativeProfile::LowMemoryParallel),
         _ => Err(CliError::Usage(format!(
-            "unknown --native-profile `{value}`; expected `default` or `low-memory`"
+            "unknown --native-profile `{value}`; expected `default`, `low-memory`, or `low-memory-parallel`"
         ))),
     }
 }
@@ -7985,6 +7995,7 @@ fn native_memory_diagnostics_json(diagnostics: &NativeMemoryDiagnostics) -> Stri
             "{{",
             "\"max_page_pixels\":{},",
             "\"max_raster_band_rows\":{},",
+            "\"max_raster_band_workers\":{},",
             "\"max_image_bytes\":{},",
             "\"max_total_image_bytes\":{},",
             "\"max_font_program_bytes\":{},",
@@ -8013,6 +8024,7 @@ fn native_memory_diagnostics_json(diagnostics: &NativeMemoryDiagnostics) -> Stri
         ),
         diagnostics.max_page_pixels,
         diagnostics.max_raster_band_rows,
+        diagnostics.max_raster_band_workers,
         diagnostics.max_image_bytes,
         diagnostics.max_total_image_bytes,
         diagnostics.max_font_program_bytes,
@@ -9192,6 +9204,7 @@ fn trace_raster_band_summary_json(summary: Result<&RasterBandSummary, &Thumbnail
                 "\"full_page_pixels\":{},",
                 "\"full_page_bytes\":{},",
                 "\"bands\":{},",
+                "\"workers\":{},",
                 "\"max_band_rows\":{},",
                 "\"max_band_pixels\":{},",
                 "\"max_band_bytes\":{},",
@@ -9206,6 +9219,7 @@ fn trace_raster_band_summary_json(summary: Result<&RasterBandSummary, &Thumbnail
             summary.full_page_pixels,
             summary.full_page_bytes(),
             summary.bands,
+            summary.workers,
             summary.max_band_rows,
             summary.max_band_pixels,
             summary.max_band_bytes(),
@@ -12360,6 +12374,7 @@ mod tests {
         assert!(json.contains("\"type3_template_summary\""));
         assert!(json.contains("\"raster_band_summary\""));
         assert!(json.contains("\"full_page_bytes\""));
+        assert!(json.contains("\"workers\""));
         assert!(json.contains("\"max_band_rows\""));
         assert!(json.contains("\"max_band_bytes\""));
         assert!(json.contains("\"active_target_peak_bytes\""));
@@ -12907,6 +12922,26 @@ status = "candidate"
         .expect("valid benchmark config");
 
         assert_eq!(config.native_profile, NativeProfile::LowMemory);
+    }
+
+    #[test]
+    fn benchmark_config_should_accept_low_memory_parallel_native_profile() {
+        let config = BenchmarkConfig::parse(&[
+            OsString::from("fixtures/generated"),
+            OsString::from("--native-profile"),
+            OsString::from("low-memory-parallel"),
+        ])
+        .expect("valid benchmark config");
+
+        assert_eq!(config.native_profile, NativeProfile::LowMemoryParallel);
+        assert_eq!(
+            config
+                .native_profile
+                .backend()
+                .memory_diagnostics()
+                .max_raster_band_workers,
+            2
+        );
     }
 
     #[test]
@@ -13473,11 +13508,86 @@ status = "candidate"
             .expect("fixture should render with raster band summary");
         assert_eq!(report.native_rendered, 1);
         assert!(raster_bands.bands > 1);
+        assert_eq!(raster_bands.workers, 1);
         assert_eq!(raster_bands.max_band_rows, 64);
         assert!(raster_bands.max_band_pixels < raster_bands.full_page_pixels);
         assert!(raster_bands.active_target_byte_reduction_per_mille() > 0);
         assert!(json.contains("\"raster_band_summary\""));
         assert!(json.contains("\"active_target_byte_reduction_per_mille\""));
+    }
+
+    #[test]
+    fn benchmark_native_should_report_parallel_raster_band_workers() {
+        let fixture_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let paths = vec![fixture_root.join("fixtures/generated/text-page.pdf")];
+        let options = ThumbnailOptions {
+            page_index: 0,
+            max_edge: 160,
+            background: Rgba::WHITE,
+            output_format: ferrugo_thumbnail::OutputFormat::Rgba,
+            timeout: Duration::from_secs(5),
+            annotation_mode: AnnotationMode::Screen,
+            form_appearance_mode: ferrugo_thumbnail::FormAppearanceMode::DocumentState,
+        };
+        let config = BenchmarkConfig {
+            input: fixture_root.join("fixtures/generated"),
+            manifest: None,
+            include_families: Vec::new(),
+            output: None,
+            page_index: 0,
+            max_edge: 160,
+            background: Rgba::WHITE,
+            timeout: Duration::from_secs(5),
+            iterations: 1,
+            max_ms: 60_000,
+            max_output_bytes: 1_048_576,
+            fail_on_budget: false,
+            native_profile: NativeProfile::LowMemoryParallel,
+        };
+
+        let native = NativeProfile::LowMemoryParallel.backend();
+        let report = benchmark_backend(
+            &native,
+            BenchmarkBackendPolicy {
+                name: "rust-native",
+                unsupported_is_fallback: true,
+            },
+            &paths,
+            &options,
+            None,
+            &config,
+            |native, path, options| {
+                let mut diagnostics = native
+                    .render_with_trace(PdfSource::from_path(path), options)
+                    .ok()
+                    .map(NativeBenchmarkDiagnostics::from_trace)
+                    .unwrap_or_default();
+                if let Ok(raster_bands) =
+                    native.render_raster_band_summary(PdfSource::from_path(path), options)
+                {
+                    diagnostics.raster_bands = Some(raster_bands);
+                }
+                diagnostics
+            },
+        );
+        let json = benchmark_report_json(&report);
+
+        let BenchmarkOutcome::NativeRendered { diagnostics, .. } = &report.fixtures[0].outcome
+        else {
+            panic!("fixture should render with native diagnostics");
+        };
+        let raster_bands = diagnostics
+            .raster_bands
+            .as_ref()
+            .expect("fixture should render with raster band summary");
+        assert_eq!(report.native_rendered, 1);
+        assert_eq!(raster_bands.bands, 2);
+        assert_eq!(raster_bands.workers, 2);
+        assert_eq!(
+            raster_bands.active_target_peak_pixels(),
+            raster_bands.full_page_pixels
+        );
+        assert!(json.contains("\"workers\":2"));
     }
 
     #[test]

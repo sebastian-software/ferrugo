@@ -101,6 +101,8 @@ const LOW_MEMORY_SESSION_TYPE3_RENDER_CACHE_ENTRIES: usize = 32;
 const LOW_MEMORY_SESSION_TYPE3_RENDER_CACHE_BYTES: usize = 256 * 1024;
 const DEFAULT_RASTER_BAND_ROWS: usize = 0;
 const LOW_MEMORY_RASTER_BAND_ROWS: usize = 64;
+const DEFAULT_RASTER_BAND_WORKERS: usize = 1;
+const LOW_MEMORY_PARALLEL_RASTER_BAND_WORKERS: usize = 2;
 
 /// Rust-native thumbnail backend.
 ///
@@ -179,6 +181,8 @@ pub struct RasterBandSummary {
     pub full_page_pixels: usize,
     /// Number of raster bands replayed for this page.
     pub bands: usize,
+    /// Maximum band workers scheduled concurrently for this page.
+    pub workers: usize,
     /// Maximum rows in one raster band.
     pub max_band_rows: u32,
     /// Maximum pixels in one raster band target.
@@ -200,14 +204,16 @@ impl RasterBandSummary {
 
     /// Peak pixels in the actively rendered raster target.
     #[must_use]
-    pub const fn active_target_peak_pixels(self) -> usize {
+    pub fn active_target_peak_pixels(self) -> usize {
         self.max_band_pixels
+            .saturating_mul(self.workers.max(1).min(self.bands.max(1)))
+            .min(self.full_page_pixels)
     }
 
     /// Peak RGBA bytes in the actively rendered raster target.
     #[must_use]
     pub fn active_target_peak_bytes(self) -> usize {
-        self.max_band_bytes()
+        raster_pixels_to_bytes(self.active_target_peak_pixels())
     }
 
     /// Pixels retained for the final thumbnail buffer.
@@ -316,6 +322,18 @@ impl<'a> RenderTraceSinks<'a> {
             type3_templates: Some(type3_templates),
             raster_bands: Some(raster_bands),
         }
+    }
+
+    fn supports_parallel_band_replay(&self) -> bool {
+        self.timings.is_none()
+            && self.path_flattening.is_none()
+            && self.stroke_shapes.is_none()
+            && self.fill_routes.is_none()
+            && self.stroke_routes.is_none()
+            && self.image_resources.is_none()
+            && self.image_placements.is_none()
+            && self.glyph_bitmaps.is_none()
+            && self.type3_templates.is_none()
     }
 }
 
@@ -782,6 +800,13 @@ impl NativeBackend {
         Self::with_render_limits(NativeRenderLimits::low_memory())
     }
 
+    /// Creates a Rust-native backend using constrained low-memory budgets plus
+    /// bounded thread-per-band raster replay.
+    #[must_use]
+    pub const fn low_memory_parallel() -> Self {
+        Self::with_render_limits(NativeRenderLimits::low_memory_parallel())
+    }
+
     /// Creates a Rust-native backend using explicit render budgets.
     #[must_use]
     pub const fn with_render_limits(limits: NativeRenderLimits) -> Self {
@@ -899,6 +924,46 @@ impl NativeBackend {
             type3_templates,
             raster_bands,
         })
+    }
+
+    /// Renders one thumbnail and returns only the raster-band scheduler summary.
+    ///
+    /// This diagnostic path keeps the trace sinks narrow, so opt-in parallel
+    /// band replay can report the same worker shape used by normal renders.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ThumbnailError`] when the source cannot be read or rendered.
+    pub fn render_raster_band_summary(
+        &self,
+        source: PdfSource<'_>,
+        options: &ThumbnailOptions,
+    ) -> Result<RasterBandSummary, ThumbnailError> {
+        reject_form_appearance_mutation(options)?;
+        let bytes = load_source(source)?;
+        let input = PdfBytes::new(bytes.as_ref());
+        let (document, page_tree) = load_render_document(input, options.page_index)?;
+        let mut raster_bands = RasterBandSummary::default();
+        let trace_sinks = RenderTraceSinks {
+            timings: None,
+            path_flattening: None,
+            stroke_shapes: None,
+            fill_routes: None,
+            stroke_routes: None,
+            image_resources: None,
+            image_placements: None,
+            glyph_bitmaps: None,
+            type3_templates: None,
+            raster_bands: Some(&mut raster_bands),
+        };
+        render_loaded_document_with_trace(
+            &document,
+            &page_tree,
+            options,
+            self.limits,
+            trace_sinks,
+        )?;
+        Ok(raster_bands)
     }
 
     /// Creates an explicit document session for repeated renders over the same
@@ -1029,6 +1094,9 @@ pub struct NativeRenderLimits {
     /// banding; values at or above the page height keep the legacy single-target
     /// path.
     pub max_raster_band_rows: usize,
+    /// Maximum native raster bands scheduled concurrently. Values below two keep
+    /// the serial band replay path.
+    pub max_raster_band_workers: usize,
     /// Maximum decoded bytes accepted for one image XObject.
     pub max_image_bytes: usize,
     /// Maximum resident decoded image bytes accepted for one page resource map.
@@ -1115,6 +1183,7 @@ impl NativeRenderLimits {
         Self {
             max_page_pixels: 384 * 384,
             max_raster_band_rows: LOW_MEMORY_RASTER_BAND_ROWS,
+            max_raster_band_workers: DEFAULT_RASTER_BAND_WORKERS,
             max_image_bytes: 12 * 1024 * 1024,
             max_total_image_bytes: 24 * 1024 * 1024,
             max_icc_profile_bytes: 256 * 1024,
@@ -1148,10 +1217,20 @@ impl NativeRenderLimits {
         }
     }
 
+    /// Returns constrained low-memory budgets with bounded parallel band replay.
+    #[must_use]
+    pub const fn low_memory_parallel() -> Self {
+        Self {
+            max_raster_band_workers: LOW_MEMORY_PARALLEL_RASTER_BAND_WORKERS,
+            ..Self::low_memory()
+        }
+    }
+
     const fn memory_diagnostics(self) -> NativeMemoryDiagnostics {
         NativeMemoryDiagnostics {
             max_page_pixels: self.max_page_pixels,
             max_raster_band_rows: self.max_raster_band_rows,
+            max_raster_band_workers: self.max_raster_band_workers,
             max_image_bytes: self.max_image_bytes,
             max_total_image_bytes: self.max_total_image_bytes,
             max_icc_profile_bytes: self.max_icc_profile_bytes,
@@ -1226,6 +1305,7 @@ impl Default for NativeRenderLimits {
         Self {
             max_page_pixels: page.max_page_pixels,
             max_raster_band_rows: DEFAULT_RASTER_BAND_ROWS,
+            max_raster_band_workers: DEFAULT_RASTER_BAND_WORKERS,
             max_image_bytes: display.max_image_bytes,
             max_total_image_bytes: display.max_total_image_bytes,
             max_icc_profile_bytes: display.max_icc_profile_bytes,
@@ -1267,6 +1347,8 @@ pub struct NativeMemoryDiagnostics {
     pub max_page_pixels: usize,
     /// Maximum rows rendered into one native raster band. Zero disables banding.
     pub max_raster_band_rows: usize,
+    /// Maximum native raster bands scheduled concurrently.
+    pub max_raster_band_workers: usize,
     /// Maximum decoded bytes accepted for one image XObject.
     pub max_image_bytes: usize,
     /// Maximum resident decoded image bytes accepted for one page resource map.
@@ -2650,7 +2732,17 @@ fn rasterize_native_page_work_to_thumbnail(
 ) -> Result<Thumbnail, ThumbnailError> {
     let band_rows = raster_band_rows(transform.dimensions, limits.max_raster_band_rows)
         .filter(|_| native_raster_work_supports_banded_replay(work));
-    let band_summary = raster_band_summary(transform.dimensions, band_rows);
+    let parallel_band_replay = trace_sinks.supports_parallel_band_replay()
+        && type3_render_cache.is_none()
+        && limits.max_raster_band_workers > DEFAULT_RASTER_BAND_WORKERS;
+    let band_workers = band_rows.map_or(DEFAULT_RASTER_BAND_WORKERS, |band_rows| {
+        raster_band_workers(
+            raster_band_count(transform.dimensions, band_rows),
+            limits.max_raster_band_workers,
+            parallel_band_replay,
+        )
+    });
+    let band_summary = raster_band_summary(transform.dimensions, band_rows, band_workers);
     if let Some(raster_bands) = trace_sinks.raster_bands.as_deref_mut() {
         *raster_bands = band_summary;
     }
@@ -2673,6 +2765,19 @@ fn rasterize_native_page_work_to_thumbnail(
             Thumbnail::rgba(dimensions.width, dimensions.height, raster.into_pixels())
         });
     };
+
+    if band_workers > DEFAULT_RASTER_BAND_WORKERS {
+        return rasterize_native_page_work_to_thumbnail_parallel_bands(
+            work,
+            transform,
+            path_options,
+            background,
+            limits,
+            band_rows,
+            band_workers,
+            trace_sinks,
+        );
+    }
 
     let mut output = transform
         .create_device(background)
@@ -2711,6 +2816,112 @@ fn rasterize_native_page_work_to_thumbnail(
         let dimensions = output.dimensions();
         Thumbnail::rgba(dimensions.width, dimensions.height, output.into_pixels())
     })
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "parallel band replay keeps work, budget, and output sinks explicit"
+)]
+fn rasterize_native_page_work_to_thumbnail_parallel_bands(
+    work: NativeRasterWork<'_>,
+    transform: PageTransform,
+    path_options: PathRasterOptions,
+    background: ferrugo_thumbnail::Rgba,
+    limits: NativeRenderLimits,
+    band_rows: u32,
+    band_workers: usize,
+    trace_sinks: &mut RenderTraceSinks<'_>,
+) -> Result<Thumbnail, ThumbnailError> {
+    let mut output = transform
+        .create_device(background)
+        .map_err(map_raster_error)?;
+    let mut batch_start_y = 0;
+    while batch_start_y < transform.dimensions.height {
+        let batch = raster_band_batch(
+            transform.dimensions.height,
+            batch_start_y,
+            band_rows,
+            band_workers,
+        );
+        let band_results = thread::scope(|scope| {
+            let mut handles = Vec::with_capacity(batch.len());
+            for (band_y, band_height) in batch {
+                handles.push(scope.spawn(move || {
+                    rasterize_native_page_work_band(
+                        work,
+                        transform,
+                        path_options,
+                        background,
+                        limits,
+                        band_y,
+                        band_height,
+                    )
+                }));
+            }
+
+            handles
+                .into_iter()
+                .map(|handle| {
+                    handle
+                        .join()
+                        .map_err(|_| ThumbnailError::internal("parallel band worker panicked"))?
+                })
+                .collect::<Result<Vec<_>, ThumbnailError>>()
+        })?;
+        for (band_y, band_raster) in band_results {
+            copy_band_into_output(&mut output, band_y, band_raster).map_err(map_raster_error)?;
+        }
+        batch_start_y = batch_start_y.saturating_add(band_rows.saturating_mul(band_workers as u32));
+    }
+    record_render_phase(&mut trace_sinks.timings, NativeRenderPhase::Output, || {
+        let dimensions = output.dimensions();
+        Thumbnail::rgba(dimensions.width, dimensions.height, output.into_pixels())
+    })
+}
+
+fn rasterize_native_page_work_band(
+    work: NativeRasterWork<'_>,
+    transform: PageTransform,
+    path_options: PathRasterOptions,
+    background: ferrugo_thumbnail::Rgba,
+    limits: NativeRenderLimits,
+    band_y: u32,
+    band_height: u32,
+) -> Result<(u32, ferrugo_render::RasterDevice), ThumbnailError> {
+    let band_transform =
+        raster_band_transform(transform, band_y, band_height).map_err(map_raster_error)?;
+    let band_path_options = PathRasterOptions {
+        scissor: Some(RasterScissor::new(
+            0,
+            0,
+            transform.dimensions.width,
+            band_height,
+        )),
+        ..path_options
+    };
+    let mut band_raster = band_transform
+        .create_device(background)
+        .map_err(map_raster_error)?;
+    let glyph_bitmap_cache = RefCell::new(GlyphBitmapCache::with_budget(
+        limits.max_session_glyph_bitmap_entries,
+        limits.max_session_glyph_bitmap_bytes,
+    ));
+    let type3_template_cache = RefCell::new(Type3CharProcTemplateCache::with_budget(
+        limits.max_session_type3_template_entries,
+        limits.max_session_type3_template_bytes,
+    ));
+    let mut trace_sinks = RenderTraceSinks::none();
+    rasterize_native_page_work_into(
+        work,
+        &mut band_raster,
+        band_transform,
+        band_path_options,
+        &mut trace_sinks,
+        &glyph_bitmap_cache,
+        &type3_template_cache,
+        None,
+    )?;
+    Ok((band_y, band_raster))
 }
 
 #[expect(
@@ -2845,6 +3056,36 @@ fn raster_band_rows(dimensions: RasterDimensions, max_rows: usize) -> Option<u32
         return None;
     }
     Some(max_rows.max(1) as u32)
+}
+
+fn raster_band_count(dimensions: RasterDimensions, band_rows: u32) -> usize {
+    dimensions
+        .height
+        .saturating_add(band_rows - 1)
+        .saturating_div(band_rows) as usize
+}
+
+fn raster_band_workers(bands: usize, max_workers: usize, parallel_allowed: bool) -> usize {
+    if !parallel_allowed || bands <= 1 || max_workers <= DEFAULT_RASTER_BAND_WORKERS {
+        return DEFAULT_RASTER_BAND_WORKERS;
+    }
+    max_workers.min(bands).max(DEFAULT_RASTER_BAND_WORKERS)
+}
+
+fn raster_band_batch(
+    page_height: u32,
+    start_y: u32,
+    band_rows: u32,
+    band_workers: usize,
+) -> Vec<(u32, u32)> {
+    let mut batch = Vec::with_capacity(band_workers);
+    let mut band_y = start_y;
+    while band_y < page_height && batch.len() < band_workers {
+        let band_height = band_rows.min(page_height - band_y);
+        batch.push((band_y, band_height));
+        band_y += band_height;
+    }
+    batch
 }
 
 fn native_raster_work_supports_banded_replay(work: NativeRasterWork<'_>) -> bool {
@@ -3137,16 +3378,18 @@ fn independent_dashed_single_line_groups_support_banded_replay(path: &PathDispla
     subpaths > 0 && !open_subpath
 }
 
-fn raster_band_summary(dimensions: RasterDimensions, band_rows: Option<u32>) -> RasterBandSummary {
+fn raster_band_summary(
+    dimensions: RasterDimensions,
+    band_rows: Option<u32>,
+    workers: usize,
+) -> RasterBandSummary {
     let full_page_pixels = (dimensions.width as usize) * (dimensions.height as usize);
     let max_band_rows = band_rows.unwrap_or(dimensions.height);
-    let bands = dimensions
-        .height
-        .saturating_add(max_band_rows - 1)
-        .saturating_div(max_band_rows) as usize;
+    let bands = raster_band_count(dimensions, max_band_rows);
     RasterBandSummary {
         full_page_pixels,
         bands,
+        workers,
         max_band_rows,
         max_band_pixels: (dimensions.width as usize) * (max_band_rows as usize),
     }
@@ -4132,7 +4375,11 @@ fn cached_page_font_resources(
 }
 
 const fn native_profile_name(limits: NativeRenderLimits) -> &'static str {
-    if limits.downsample_image_decode {
+    if limits.downsample_image_decode
+        && limits.max_raster_band_workers > DEFAULT_RASTER_BAND_WORKERS
+    {
+        "low-memory-parallel"
+    } else if limits.downsample_image_decode {
         "low-memory"
     } else {
         "default"
@@ -6789,6 +7036,35 @@ mod tests {
     }
 
     #[test]
+    fn low_memory_parallel_render_should_match_serial_large_scanner_image() {
+        let bytes = include_bytes!("../../../fixtures/generated/scanner-large-image-budget.pdf");
+        let options = ThumbnailOptions {
+            page_index: 0,
+            max_edge: 440,
+            background: ferrugo_thumbnail::Rgba::WHITE,
+            output_format: ferrugo_thumbnail::OutputFormat::Rgba,
+            timeout: std::time::Duration::from_secs(5),
+            annotation_mode: AnnotationMode::Screen,
+            form_appearance_mode: FormAppearanceMode::DocumentState,
+        };
+
+        let serial = NativeBackend::low_memory()
+            .render(PdfSource::from_bytes(bytes), &options)
+            .expect("serial low-memory render should succeed");
+        let parallel = NativeBackend::low_memory_parallel()
+            .render(PdfSource::from_bytes(bytes), &options)
+            .expect("parallel low-memory render should succeed");
+        let parallel_bands = NativeBackend::low_memory_parallel()
+            .render_raster_band_summary(PdfSource::from_bytes(bytes), &options)
+            .expect("parallel low-memory band summary should succeed");
+
+        assert_eq!(serial.bytes, parallel.bytes);
+        assert_eq!(parallel_bands.bands, 7);
+        assert_eq!(parallel_bands.workers, 2);
+        assert_eq!(parallel_bands.active_target_peak_bytes(), 163_840);
+    }
+
+    #[test]
     fn native_page_cache_policy_should_be_isolated_by_default() {
         let policy = NativePageCachePolicy::IsolatedRender;
 
@@ -7127,9 +7403,12 @@ mod tests {
         let first = NativePageCacheKey::from_options(0x1111, &options, "default");
         let second_document = NativePageCacheKey::from_options(0x2222, &options, "default");
         let low_memory = NativePageCacheKey::from_options(0x1111, &options, "low-memory");
+        let low_memory_parallel =
+            NativePageCacheKey::from_options(0x1111, &options, "low-memory-parallel");
 
         assert_ne!(first, second_document);
         assert_ne!(first, low_memory);
+        assert_ne!(low_memory, low_memory_parallel);
         assert_eq!(first.page_index, 2);
         assert_eq!(first.max_edge, 160);
         assert_eq!(first.background, [12, 34, 56, 255]);
@@ -7197,6 +7476,7 @@ mod tests {
 
         assert_eq!(diagnostics.max_page_pixels, 16 * 1024 * 1024);
         assert_eq!(diagnostics.max_raster_band_rows, 0);
+        assert_eq!(diagnostics.max_raster_band_workers, 1);
         assert_eq!(diagnostics.max_image_bytes, 32 * 1024 * 1024);
         assert_eq!(diagnostics.max_total_image_bytes, 128 * 1024 * 1024);
         assert_eq!(diagnostics.max_icc_profile_bytes, 1024 * 1024);
@@ -7239,9 +7519,17 @@ mod tests {
     fn native_low_memory_profile_should_expose_tighter_memory_diagnostics() {
         let default = NativeBackend::new().memory_diagnostics();
         let low_memory = NativeBackend::low_memory().memory_diagnostics();
+        let low_memory_parallel = NativeBackend::low_memory_parallel().memory_diagnostics();
 
         assert!(low_memory.max_page_pixels < default.max_page_pixels);
         assert_eq!(default.max_raster_band_rows, 0);
+        assert_eq!(default.max_raster_band_workers, 1);
+        assert_eq!(low_memory.max_raster_band_workers, 1);
+        assert_eq!(
+            low_memory_parallel.max_raster_band_rows,
+            low_memory.max_raster_band_rows
+        );
+        assert_eq!(low_memory_parallel.max_raster_band_workers, 2);
         assert!(low_memory.max_image_bytes < default.max_image_bytes);
         assert!(low_memory.max_total_image_bytes < default.max_total_image_bytes);
         assert!(low_memory.max_font_program_bytes < default.max_font_program_bytes);
@@ -7309,6 +7597,66 @@ mod tests {
         (thumbnail, raster_bands)
     }
 
+    fn render_test_display_list_with_size_and_limits(
+        display_list: &DisplayList,
+        width: u32,
+        height: u32,
+        limits: NativeRenderLimits,
+    ) -> (Thumbnail, RasterBandSummary) {
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: f64::from(width),
+                    max_y: f64::from(height),
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            width,
+        )
+        .expect("valid test page transform");
+        let empty = DisplayList::new();
+        let glyph_bitmap_cache = RefCell::new(GlyphBitmapCache::default());
+        let type3_template_cache = RefCell::new(Type3CharProcTemplateCache::default());
+        let mut raster_bands = RasterBandSummary::default();
+        let mut trace_sinks = RenderTraceSinks {
+            timings: None,
+            path_flattening: None,
+            stroke_shapes: None,
+            fill_routes: None,
+            stroke_routes: None,
+            image_resources: None,
+            image_placements: None,
+            glyph_bitmaps: None,
+            type3_templates: None,
+            raster_bands: Some(&mut raster_bands),
+        };
+        let thumbnail = rasterize_native_page_work_to_thumbnail(
+            NativeRasterWork {
+                display_list,
+                form_list: &empty,
+                image_list: &empty,
+                text_list: &empty,
+                ordered_list: None,
+                annotation_list: None,
+                annotation_fallback_list: None,
+                annotation_fallback_text_list: None,
+            },
+            transform,
+            PathRasterOptions::default(),
+            ferrugo_thumbnail::Rgba::WHITE,
+            limits,
+            &mut trace_sinks,
+            &glyph_bitmap_cache,
+            &type3_template_cache,
+            None,
+        )
+        .expect("test display list should render");
+        (thumbnail, raster_bands)
+    }
+
     fn render_test_display_list_with_size_and_fill_routes(
         display_list: &DisplayList,
         max_raster_band_rows: usize,
@@ -7371,6 +7719,72 @@ mod tests {
         )
         .expect("test display list should render");
         (thumbnail, raster_bands, fill_routes)
+    }
+
+    #[test]
+    fn raster_band_workers_should_bound_parallel_batches() {
+        let dimensions = RasterDimensions::new(64, 48).expect("valid dimensions");
+        let bands = raster_band_count(dimensions, 11);
+
+        assert_eq!(bands, 5);
+        assert_eq!(raster_band_workers(bands, 4, false), 1);
+        assert_eq!(raster_band_workers(bands, 1, true), 1);
+        assert_eq!(raster_band_workers(bands, 4, true), 4);
+        assert_eq!(raster_band_batch(48, 0, 11, 2), vec![(0, 11), (11, 11)]);
+        assert_eq!(raster_band_batch(48, 44, 11, 2), vec![(44, 4)]);
+    }
+
+    #[test]
+    fn native_parallel_banded_raster_should_match_single_target_for_simple_fill_paths() {
+        let display_list = DisplayList::from_items(vec![DisplayItem::Path(PathDisplayItem {
+            segments: vec![
+                PathSegment::MoveTo(Point { x: 8.25, y: 8.25 }),
+                PathSegment::LineTo(Point { x: 58.5, y: 14.75 }),
+                PathSegment::LineTo(Point { x: 36.25, y: 43.5 }),
+                PathSegment::LineTo(Point { x: 12.5, y: 32.0 }),
+                PathSegment::Close,
+            ],
+            paint: PaintMode::Fill {
+                rule: FillRule::Nonzero,
+            },
+            state: GraphicsState {
+                fill_color: DeviceColor::Rgb {
+                    r: 0.1,
+                    g: 0.3,
+                    b: 0.8,
+                },
+                ..GraphicsState::default()
+            },
+            fill_pattern: None,
+        })]);
+        let (single, single_bands) = render_test_display_list_with_size_and_limits(
+            &display_list,
+            64,
+            48,
+            NativeRenderLimits::default(),
+        );
+        let (parallel, parallel_bands) = render_test_display_list_with_size_and_limits(
+            &display_list,
+            64,
+            48,
+            NativeRenderLimits {
+                max_raster_band_rows: 11,
+                max_raster_band_workers: 2,
+                ..NativeRenderLimits::default()
+            },
+        );
+
+        assert_eq!(single.bytes, parallel.bytes);
+        assert_eq!(single_bands.bands, 1);
+        assert_eq!(single_bands.workers, 1);
+        assert_eq!(parallel_bands.bands, 5);
+        assert_eq!(parallel_bands.workers, 2);
+        assert_eq!(parallel_bands.max_band_rows, 11);
+        assert_eq!(parallel_bands.active_target_peak_bytes(), 64 * 11 * 4 * 2);
+        assert_eq!(
+            parallel_bands.estimated_peak_raster_bytes(),
+            parallel_bands.output_buffer_bytes() + parallel_bands.active_target_peak_bytes()
+        );
     }
 
     #[test]
