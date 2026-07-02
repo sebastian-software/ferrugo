@@ -18738,31 +18738,39 @@ fn draw_type3_text_run(
             char_proc_cache.paths_for_key(template_key.clone(), text, type3, base, char_proc)?;
         if let Some(render_cache) = type3_render_cache.as_deref_mut() {
             if type3_paths_support_render_cache(paths.as_ref(), options) {
-                let render_key =
-                    Type3GlyphRenderKey::new(template_key, *origin, page_transform, options);
-                let surface =
-                    render_cache.surface_for(render_key, page_transform.dimensions, |scratch| {
-                        let mut render_pattern_cache =
-                            PatternCellCache::new(options.max_pattern_cell_cache_entries);
-                        for path in paths.as_ref() {
-                            let path = translate_type3_path_template(path, *origin);
-                            rasterize_path_item(
-                                &path,
-                                scratch,
-                                PathRasterContext {
-                                    transform: page_transform,
-                                    options,
-                                    clips: &[],
-                                    fill_routes: None,
-                                    stroke_routes: None,
-                                },
-                                &mut render_pattern_cache,
-                            )?;
-                        }
-                        Ok(())
-                    })?;
-                composite_type3_render_surface(device, &surface)?;
-                continue;
+                if let Some(placement) =
+                    Type3GlyphRenderPlacement::from_origin(*origin, page_transform)
+                {
+                    let render_key =
+                        Type3GlyphRenderKey::new(template_key, placement, page_transform, options);
+                    let cached = render_cache.surface_for(
+                        render_key,
+                        placement,
+                        page_transform.dimensions,
+                        |scratch| {
+                            let mut render_pattern_cache =
+                                PatternCellCache::new(options.max_pattern_cell_cache_entries);
+                            for path in paths.as_ref() {
+                                let path = translate_type3_path_template(path, *origin);
+                                rasterize_path_item(
+                                    &path,
+                                    scratch,
+                                    PathRasterContext {
+                                        transform: page_transform,
+                                        options,
+                                        clips: &[],
+                                        fill_routes: None,
+                                        stroke_routes: None,
+                                    },
+                                    &mut render_pattern_cache,
+                                )?;
+                            }
+                            Ok(())
+                        },
+                    )?;
+                    composite_type3_render_surface(device, &cached.surface, cached.offset)?;
+                    continue;
+                }
             }
         }
         for path in paths.as_ref() {
@@ -18964,10 +18972,11 @@ impl Default for Type3CharProcTemplateCache {
 
 /// Bounded Type 3 rendered-glyph cache.
 ///
-/// The cache stores complete transparent RGBA surfaces for strict repeated
-/// Type 3 render inputs. It is intentionally keyed by the CharProc template
-/// identity, exact glyph origin, target transform, and path raster options so
-/// it cannot reuse pixels across different placement or target geometry.
+/// The cache stores cropped transparent RGBA surfaces for strict repeated
+/// Type 3 render inputs. It is keyed by the CharProc template identity, target
+/// transform, raster options, and glyph-origin device-pixel phase. Same-phase
+/// hits can be composited with an integer pixel offset; different subpixel
+/// phases stay separate so antialiasing does not alias across placements.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Type3GlyphRenderCache {
     entries: Vec<Type3GlyphRenderCacheEntry>,
@@ -19004,8 +19013,15 @@ pub struct Type3GlyphRenderCacheSummary {
 #[derive(Debug, Clone, PartialEq)]
 struct Type3GlyphRenderCacheEntry {
     key: Type3GlyphRenderKey,
+    placement: Type3GlyphRenderPlacement,
     surface: Type3GlyphRenderSurface,
     resident_bytes: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Type3GlyphRenderCacheSurface {
+    surface: Type3GlyphRenderSurface,
+    offset: Type3GlyphRenderOffset,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -19069,6 +19085,37 @@ impl Type3GlyphRenderSurface {
             pixels: Arc::from(cropped.into_boxed_slice()),
         }
     }
+
+    fn can_translate_to(
+        &self,
+        offset: Type3GlyphRenderOffset,
+        dimensions: RasterDimensions,
+    ) -> bool {
+        if self.dimensions != dimensions {
+            return false;
+        }
+        if offset == Type3GlyphRenderOffset::ZERO {
+            return true;
+        }
+        let Some(bounds) = self.bounds else {
+            return true;
+        };
+        if bounds.min_x == 0
+            || bounds.min_y == 0
+            || bounds.max_x == self.dimensions.width
+            || bounds.max_y == self.dimensions.height
+        {
+            return false;
+        }
+        let min_x = i64::from(bounds.min_x).saturating_add(offset.x);
+        let min_y = i64::from(bounds.min_y).saturating_add(offset.y);
+        let max_x = i64::from(bounds.max_x).saturating_add(offset.x);
+        let max_y = i64::from(bounds.max_y).saturating_add(offset.y);
+        min_x >= 0
+            && min_y >= 0
+            && max_x <= i64::from(dimensions.width)
+            && max_y <= i64::from(dimensions.height)
+    }
 }
 
 impl Type3GlyphRenderCache {
@@ -19096,12 +19143,23 @@ impl Type3GlyphRenderCache {
     fn surface_for(
         &mut self,
         key: Type3GlyphRenderKey,
+        placement: Type3GlyphRenderPlacement,
         dimensions: RasterDimensions,
         render: impl FnOnce(&mut RasterDevice) -> RasterResult<()>,
-    ) -> RasterResult<Type3GlyphRenderSurface> {
-        if let Some(index) = self.entries.iter().position(|entry| entry.key == key) {
+    ) -> RasterResult<Type3GlyphRenderCacheSurface> {
+        if let Some(index) = self.entries.iter().position(|entry| {
+            entry.key == key
+                && entry.surface.can_translate_to(
+                    Type3GlyphRenderOffset::between(entry.placement, placement),
+                    dimensions,
+                )
+        }) {
             self.hits = self.hits.saturating_add(1);
-            return Ok(self.entries[index].surface.clone());
+            let entry = &self.entries[index];
+            return Ok(Type3GlyphRenderCacheSurface {
+                surface: entry.surface.clone(),
+                offset: Type3GlyphRenderOffset::between(entry.placement, placement),
+            });
         }
         self.misses = self.misses.saturating_add(1);
         let mut scratch = RasterDevice::new(
@@ -19118,7 +19176,10 @@ impl Type3GlyphRenderCache {
         let surface = Type3GlyphRenderSurface::from_raster(dimensions, scratch.into_pixels());
         let resident_bytes = type3_glyph_render_resident_bytes(&key, &surface);
         if self.max_entries == 0 || resident_bytes > self.max_bytes {
-            return Ok(surface);
+            return Ok(Type3GlyphRenderCacheSurface {
+                surface,
+                offset: Type3GlyphRenderOffset::ZERO,
+            });
         }
         while self.entries.len() >= self.max_entries
             || (self.resident_bytes.saturating_add(resident_bytes) > self.max_bytes
@@ -19129,16 +19190,23 @@ impl Type3GlyphRenderCache {
             self.evictions = self.evictions.saturating_add(1);
         }
         if self.resident_bytes.saturating_add(resident_bytes) > self.max_bytes {
-            return Ok(surface);
+            return Ok(Type3GlyphRenderCacheSurface {
+                surface,
+                offset: Type3GlyphRenderOffset::ZERO,
+            });
         }
         self.entries.push(Type3GlyphRenderCacheEntry {
             key,
+            placement,
             surface: surface.clone(),
             resident_bytes,
         });
         self.resident_bytes = self.resident_bytes.saturating_add(resident_bytes);
         self.inserts = self.inserts.saturating_add(1);
-        Ok(surface)
+        Ok(Type3GlyphRenderCacheSurface {
+            surface,
+            offset: Type3GlyphRenderOffset::ZERO,
+        })
     }
 
     /// Returns observable Type 3 rendered-glyph cache state.
@@ -19198,7 +19266,7 @@ impl Type3CharProcTemplateKey {
         Self {
             name: char_proc.name.clone(),
             content: Arc::clone(&char_proc.content),
-            base: MatrixKey::from_matrix(base),
+            base: MatrixKey::from_matrix(type3_char_proc_template_base(base)),
             font_size: f64_key(text.font_size),
             font_matrix: MatrixKey::from_matrix(type3.font_matrix),
             state: GraphicsStateKey::from_state(text.state),
@@ -19209,7 +19277,7 @@ impl Type3CharProcTemplateKey {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Type3GlyphRenderKey {
     template: Type3CharProcTemplateKey,
-    origin: PointKey,
+    origin_phase: Type3DevicePixelPhaseKey,
     page_transform: PageTransformKey,
     options: PathRasterOptions,
 }
@@ -19217,13 +19285,13 @@ struct Type3GlyphRenderKey {
 impl Type3GlyphRenderKey {
     fn new(
         template: Type3CharProcTemplateKey,
-        origin: Point,
+        placement: Type3GlyphRenderPlacement,
         page_transform: PageTransform,
         options: PathRasterOptions,
     ) -> Self {
         Self {
             template,
-            origin: PointKey::from_point(origin),
+            origin_phase: placement.origin_phase,
             page_transform: PageTransformKey::from_transform(page_transform),
             options,
         }
@@ -19231,18 +19299,68 @@ impl Type3GlyphRenderKey {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct PointKey {
+struct Type3GlyphRenderPlacement {
+    origin_pixel_x: i64,
+    origin_pixel_y: i64,
+    origin_phase: Type3DevicePixelPhaseKey,
+}
+
+impl Type3GlyphRenderPlacement {
+    fn from_origin(origin: Point, page_transform: PageTransform) -> Option<Self> {
+        Self::from_device_point(page_transform.matrix.transform_point(origin.x, origin.y))
+    }
+
+    fn from_device_point(point: Point) -> Option<Self> {
+        let origin_pixel_x = device_pixel_floor_coordinate(point.x)?;
+        let origin_pixel_y = device_pixel_floor_coordinate(point.y)?;
+        Some(Self {
+            origin_pixel_x,
+            origin_pixel_y,
+            origin_phase: Type3DevicePixelPhaseKey {
+                x: device_pixel_phase_key(point.x, origin_pixel_x),
+                y: device_pixel_phase_key(point.y, origin_pixel_y),
+            },
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Type3DevicePixelPhaseKey {
     x: u64,
     y: u64,
 }
 
-impl PointKey {
-    fn from_point(point: Point) -> Self {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Type3GlyphRenderOffset {
+    x: i64,
+    y: i64,
+}
+
+impl Type3GlyphRenderOffset {
+    const ZERO: Self = Self { x: 0, y: 0 };
+
+    fn between(anchor: Type3GlyphRenderPlacement, target: Type3GlyphRenderPlacement) -> Self {
         Self {
-            x: f64_key(point.x),
-            y: f64_key(point.y),
+            x: target.origin_pixel_x.saturating_sub(anchor.origin_pixel_x),
+            y: target.origin_pixel_y.saturating_sub(anchor.origin_pixel_y),
         }
     }
+}
+
+fn device_pixel_floor_coordinate(value: f64) -> Option<i64> {
+    if !value.is_finite() {
+        return None;
+    }
+    let floor = value.floor();
+    if floor < i64::MIN as f64 || floor > i64::MAX as f64 {
+        return None;
+    }
+    Some(floor as i64)
+}
+
+fn device_pixel_phase_key(value: f64, floor: i64) -> u64 {
+    let phase = value - floor as f64;
+    f64_key(if phase == 0.0 { 0.0 } else { phase })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -19441,6 +19559,7 @@ fn type3_glyph_render_resident_bytes(
     surface: &Type3GlyphRenderSurface,
 ) -> usize {
     std::mem::size_of::<Type3GlyphRenderKey>()
+        .saturating_add(std::mem::size_of::<Type3GlyphRenderPlacement>())
         .saturating_add(std::mem::size_of::<Option<Type3GlyphRenderBounds>>())
         .saturating_add(key.template.name.len())
         .saturating_add(key.template.content.len())
@@ -19468,6 +19587,7 @@ fn type3_path_supports_render_cache(path: &PathDisplayItem) -> bool {
 fn composite_type3_render_surface(
     device: &mut RasterDevice,
     surface: &Type3GlyphRenderSurface,
+    offset: Type3GlyphRenderOffset,
 ) -> RasterResult<()> {
     if device.dimensions() != surface.dimensions {
         return Err(RasterError::new(RasterErrorKind::InvalidDimensions));
@@ -19475,12 +19595,26 @@ fn composite_type3_render_surface(
     let Some(bounds) = surface.bounds else {
         return Ok(());
     };
+    let target_min_x = i64::from(bounds.min_x).saturating_add(offset.x);
+    let target_min_y = i64::from(bounds.min_y).saturating_add(offset.y);
+    let target_max_x = i64::from(bounds.max_x).saturating_add(offset.x);
+    let target_max_y = i64::from(bounds.max_y).saturating_add(offset.y);
+    if target_min_x < 0
+        || target_min_y < 0
+        || target_max_x > i64::from(surface.dimensions.width)
+        || target_max_y > i64::from(surface.dimensions.height)
+    {
+        return Err(RasterError::new(RasterErrorKind::InvalidDimensions));
+    }
     let bytes_per_pixel = PixelFormat::Rgba8.bytes_per_pixel();
     let crop_width = (bounds.max_x - bounds.min_x) as usize;
     let crop_stride = crop_width * bytes_per_pixel;
-    let target_start = bounds.min_x as usize * bytes_per_pixel;
-    let target_end = bounds.max_x as usize * bytes_per_pixel;
-    for (source_y, target_y) in (bounds.min_y..bounds.max_y).enumerate() {
+    let target_min_x = target_min_x as usize;
+    let target_min_y = target_min_y as u32;
+    let target_max_x = target_max_x as usize;
+    let target_start = target_min_x * bytes_per_pixel;
+    let target_end = target_max_x * bytes_per_pixel;
+    for (source_y, target_y) in (target_min_y..target_max_y as u32).enumerate() {
         let row_start = source_y * crop_stride;
         let row_end = row_start + crop_stride;
         let source_row = &surface.pixels[row_start..row_end];
@@ -19563,6 +19697,14 @@ fn build_type3_char_proc_template(
             _ => None,
         })
         .collect())
+}
+
+fn type3_char_proc_template_base(base: Matrix) -> Matrix {
+    Matrix {
+        e: 0.0,
+        f: 0.0,
+        ..base
+    }
 }
 
 fn type3_char_proc_ctm(base: Matrix, font_size: f64, font_matrix: Matrix, origin: Point) -> Matrix {
@@ -28853,6 +28995,105 @@ mod tests {
         assert_eq!(summary.hits, 1);
         assert_eq!(summary.inserts, 1);
         assert_eq!(summary.evictions, 0);
+    }
+
+    #[test]
+    fn type3_glyph_render_cache_should_reuse_surface_at_integer_device_offsets() {
+        let document = load_type3_text_pdf(
+            b"BT /F1 20 Tf 10 10 Td (A) Tj ET BT /F1 20 Tf 20 10 Td (A) Tj ET",
+            b"0 0 500 700 re f",
+            b"<< /Type /Font /Subtype /Type3 /FontMatrix [0.001 0 0 0.001 0 0] /FirstChar 65 /LastChar 65 /Widths [500] /Encoding << /Differences [65 /A] >> /CharProcs << /A 6 0 R >> >>",
+        );
+        let resources =
+            font_resources_from_document(&document, &[("F1", 4)]).expect("valid Type3 font");
+        let content = content_stream_from_document(&document);
+        let list = build_text_display_list(
+            tokenize_content(PdfBytes::new(&content)),
+            &resources,
+            DisplayListOptions::default(),
+        )
+        .expect("Type3 text should decode");
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 40.0,
+                    max_y: 40.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            40,
+        )
+        .expect("page transform");
+        let mut direct = transform.create_device(Rgba::WHITE).expect("direct device");
+        let mut cached = transform.create_device(Rgba::WHITE).expect("cached device");
+        let mut direct_glyph_cache = GlyphBitmapCache::default();
+        let mut direct_template_cache = Type3CharProcTemplateCache::default();
+        let mut cached_glyph_cache = GlyphBitmapCache::default();
+        let mut cached_template_cache = Type3CharProcTemplateCache::default();
+        let mut render_cache = Type3GlyphRenderCache::default();
+
+        rasterize_text_with_caches(
+            &list,
+            &mut direct,
+            transform,
+            &mut direct_glyph_cache,
+            &mut direct_template_cache,
+        )
+        .expect("direct Type3 render should succeed");
+        rasterize_text_with_caches_and_type3_render_cache(
+            &list,
+            &mut cached,
+            transform,
+            &mut cached_glyph_cache,
+            &mut cached_template_cache,
+            Some(&mut render_cache),
+        )
+        .expect("cached Type3 render should succeed");
+
+        assert_eq!(cached.pixels(), direct.pixels());
+        let summary = render_cache.summary();
+        assert_eq!(summary.entries, 1);
+        assert_eq!(summary.misses, 1);
+        assert_eq!(summary.hits, 1);
+        assert_eq!(summary.inserts, 1);
+        assert_eq!(summary.evictions, 0);
+    }
+
+    #[test]
+    fn type3_glyph_render_placement_should_key_by_device_pixel_phase() {
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 40.0,
+                    max_y: 40.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            40,
+        )
+        .expect("page transform");
+
+        let anchor = Type3GlyphRenderPlacement::from_origin(Point { x: 10.25, y: 10.0 }, transform)
+            .expect("finite anchor");
+        let same_phase =
+            Type3GlyphRenderPlacement::from_origin(Point { x: 20.25, y: 10.0 }, transform)
+                .expect("finite same-phase origin");
+        let different_phase =
+            Type3GlyphRenderPlacement::from_origin(Point { x: 20.5, y: 10.0 }, transform)
+                .expect("finite different-phase origin");
+
+        assert_eq!(anchor.origin_phase, same_phase.origin_phase);
+        assert_ne!(anchor.origin_phase, different_phase.origin_phase);
+        assert_eq!(
+            Type3GlyphRenderOffset::between(anchor, same_phase),
+            Type3GlyphRenderOffset { x: 10, y: 0 }
+        );
     }
 
     #[test]
