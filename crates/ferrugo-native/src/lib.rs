@@ -22,20 +22,20 @@ use ferrugo_render::{
     build_path_display_list_with_graphics_resources, build_text_display_list,
     collect_image_decode_hints, decode_tiling_pattern, display_list_image_placement_summary,
     display_list_path_flattening_summary, display_list_stroke_shape_summary,
-    rasterize_display_list_into_with_phase_timings_and_glyph_cache,
+    rasterize_display_list_into_with_phase_timings_and_caches,
     rasterize_display_list_into_with_phase_timings_and_route_summaries,
-    rasterize_display_list_into_with_phase_timings_route_summaries_and_glyph_cache,
-    rasterize_images, rasterize_paths_into, rasterize_text_with_glyph_cache, ColorSpaceResources,
-    DisplayItem, DisplayList, DisplayListOptions, ExtGraphicsStateResources, FontResources,
-    FormResources, GlyphBitmapCache, GraphicsError, GraphicsErrorKind, ImageDecodeHints,
-    ImageResources, PageGeometry, PageRotation, PageTransform, PageTransformOptions, PathBounds,
-    PathRasterOptions, Point, RasterDisplayPhase, RasterError, RasterErrorKind, ShadingResources,
-    TextDisplayItem, TextWritingMode, TilingPatternResources,
+    rasterize_display_list_into_with_phase_timings_route_summaries_and_caches, rasterize_images,
+    rasterize_paths_into, rasterize_text_with_caches, ColorSpaceResources, DisplayItem,
+    DisplayList, DisplayListOptions, ExtGraphicsStateResources, FontResources, FormResources,
+    GlyphBitmapCache, GraphicsError, GraphicsErrorKind, ImageDecodeHints, ImageResources,
+    PageGeometry, PageRotation, PageTransform, PageTransformOptions, PathBounds, PathRasterOptions,
+    Point, RasterDisplayPhase, RasterError, RasterErrorKind, ShadingResources, TextDisplayItem,
+    TextWritingMode, TilingPatternResources, Type3CharProcTemplateCache,
 };
 pub use ferrugo_render::{
     FillRasterRouteSummary, GlyphBitmapCacheSummary, ImagePlacementSummary, ImageResourceSummary,
     PathFlatteningSummary, StrokeRasterRouteSummary, StrokeShapeSummary,
-    DEFAULT_CURVE_FLATTENING_TOLERANCE,
+    Type3CharProcTemplateCacheSummary, DEFAULT_CURVE_FLATTENING_TOLERANCE,
 };
 use ferrugo_syntax::{PdfBytes, PdfName, PdfNumber, PdfPrimitive, PdfReference, PdfString};
 use ferrugo_thumbnail::{
@@ -84,6 +84,10 @@ const DEFAULT_SESSION_GLYPH_BITMAP_CACHE_ENTRIES: usize = 1_024;
 const DEFAULT_SESSION_GLYPH_BITMAP_CACHE_BYTES: usize = 1024 * 1024;
 const LOW_MEMORY_SESSION_GLYPH_BITMAP_CACHE_ENTRIES: usize = 256;
 const LOW_MEMORY_SESSION_GLYPH_BITMAP_CACHE_BYTES: usize = 256 * 1024;
+const DEFAULT_SESSION_TYPE3_TEMPLATE_CACHE_ENTRIES: usize = 512;
+const DEFAULT_SESSION_TYPE3_TEMPLATE_CACHE_BYTES: usize = 1024 * 1024;
+const LOW_MEMORY_SESSION_TYPE3_TEMPLATE_CACHE_ENTRIES: usize = 128;
+const LOW_MEMORY_SESSION_TYPE3_TEMPLATE_CACHE_BYTES: usize = 256 * 1024;
 
 /// Rust-native thumbnail backend.
 ///
@@ -149,6 +153,8 @@ pub struct NativeRenderTrace {
     pub image_placements: ImagePlacementSummary,
     /// Request-local fallback glyph bitmap cache summary for renderer profiling.
     pub glyph_bitmaps: GlyphBitmapCacheSummary,
+    /// Request-local Type 3 CharProc template cache summary for renderer profiling.
+    pub type3_templates: Type3CharProcTemplateCacheSummary,
 }
 
 struct RenderTraceSinks<'a> {
@@ -160,6 +166,7 @@ struct RenderTraceSinks<'a> {
     image_resources: Option<&'a mut ImageResourceSummary>,
     image_placements: Option<&'a mut ImagePlacementSummary>,
     glyph_bitmaps: Option<&'a mut GlyphBitmapCacheSummary>,
+    type3_templates: Option<&'a mut Type3CharProcTemplateCacheSummary>,
 }
 
 impl<'a> RenderTraceSinks<'a> {
@@ -173,6 +180,7 @@ impl<'a> RenderTraceSinks<'a> {
             image_resources: None,
             image_placements: None,
             glyph_bitmaps: None,
+            type3_templates: None,
         }
     }
 
@@ -186,6 +194,7 @@ impl<'a> RenderTraceSinks<'a> {
             image_resources: None,
             image_placements: None,
             glyph_bitmaps: None,
+            type3_templates: None,
         }
     }
 
@@ -202,6 +211,7 @@ impl<'a> RenderTraceSinks<'a> {
         image_resources: &'a mut ImageResourceSummary,
         image_placements: &'a mut ImagePlacementSummary,
         glyph_bitmaps: &'a mut GlyphBitmapCacheSummary,
+        type3_templates: &'a mut Type3CharProcTemplateCacheSummary,
     ) -> Self {
         Self {
             timings: Some(timings),
@@ -212,6 +222,7 @@ impl<'a> RenderTraceSinks<'a> {
             image_resources: Some(image_resources),
             image_placements: Some(image_placements),
             glyph_bitmaps: Some(glyph_bitmaps),
+            type3_templates: Some(type3_templates),
         }
     }
 }
@@ -229,6 +240,7 @@ pub struct NativeDocumentSession<'a> {
     stats: NativeDocumentSessionStats,
     image_resource_cache: RefCell<SessionImageResourceCache>,
     glyph_bitmap_cache: RefCell<GlyphBitmapCache>,
+    type3_template_cache: RefCell<Type3CharProcTemplateCache>,
 }
 
 /// Bounded state retained by a [`NativeDocumentSession`].
@@ -282,6 +294,22 @@ pub struct NativeDocumentSessionStats {
     pub cached_glyph_bitmap_inserts: usize,
     /// Fallback glyph bitmap entries evicted from this session cache.
     pub cached_glyph_bitmap_evictions: usize,
+    /// Type 3 CharProc templates retained inside this session.
+    pub cached_type3_template_entries: usize,
+    /// Maximum Type 3 CharProc templates retained inside this session.
+    pub max_cached_type3_template_entries: usize,
+    /// Approximate resident Type 3 CharProc template bytes retained.
+    pub cached_type3_template_bytes: usize,
+    /// Maximum approximate resident Type 3 CharProc template bytes retained.
+    pub max_cached_type3_template_bytes: usize,
+    /// Type 3 CharProc template cache hits inside this session.
+    pub cached_type3_template_hits: usize,
+    /// Type 3 CharProc template cache misses inside this session.
+    pub cached_type3_template_misses: usize,
+    /// Type 3 CharProc template entries inserted into this session cache.
+    pub cached_type3_template_inserts: usize,
+    /// Type 3 CharProc template entries evicted from this session cache.
+    pub cached_type3_template_evictions: usize,
 }
 
 #[derive(Debug, Default)]
@@ -594,6 +622,7 @@ impl NativeBackend {
         let mut image_resources = ImageResourceSummary::default();
         let mut image_placements = ImagePlacementSummary::default();
         let mut glyph_bitmaps = GlyphBitmapCacheSummary::default();
+        let mut type3_templates = Type3CharProcTemplateCacheSummary::default();
         let thumbnail = render_loaded_document_with_trace(
             &document,
             &page_tree,
@@ -608,6 +637,7 @@ impl NativeBackend {
                 &mut image_resources,
                 &mut image_placements,
                 &mut glyph_bitmaps,
+                &mut type3_templates,
             ),
         )?;
         timings.total = total_started.elapsed();
@@ -621,6 +651,7 @@ impl NativeBackend {
             image_resources,
             image_placements,
             glyph_bitmaps,
+            type3_templates,
         })
     }
 
@@ -795,6 +826,12 @@ pub struct NativeRenderLimits {
     /// Maximum approximate resident fallback glyph bitmap bytes retained in one
     /// explicit document session.
     pub max_session_glyph_bitmap_bytes: usize,
+    /// Maximum Type 3 CharProc templates retained in one explicit document
+    /// session.
+    pub max_session_type3_template_entries: usize,
+    /// Maximum approximate resident Type 3 CharProc template bytes retained in
+    /// one explicit document session.
+    pub max_session_type3_template_bytes: usize,
     /// Whether temporary spooling is enabled for sensitive intermediates.
     pub spooling_enabled: bool,
     /// Maximum bytes allowed for temporary spooling.
@@ -836,6 +873,8 @@ impl NativeRenderLimits {
             max_session_image_resource_bytes: 24 * 1024 * 1024,
             max_session_glyph_bitmap_entries: LOW_MEMORY_SESSION_GLYPH_BITMAP_CACHE_ENTRIES,
             max_session_glyph_bitmap_bytes: LOW_MEMORY_SESSION_GLYPH_BITMAP_CACHE_BYTES,
+            max_session_type3_template_entries: LOW_MEMORY_SESSION_TYPE3_TEMPLATE_CACHE_ENTRIES,
+            max_session_type3_template_bytes: LOW_MEMORY_SESSION_TYPE3_TEMPLATE_CACHE_BYTES,
             spooling_enabled: false,
             max_spool_bytes: DEFAULT_SPOOL_BYTES_LIMIT,
             downsample_image_decode: true,
@@ -866,6 +905,8 @@ impl NativeRenderLimits {
             max_session_image_resource_bytes: self.max_session_image_resource_bytes,
             max_session_glyph_bitmap_entries: self.max_session_glyph_bitmap_entries,
             max_session_glyph_bitmap_bytes: self.max_session_glyph_bitmap_bytes,
+            max_session_type3_template_entries: self.max_session_type3_template_entries,
+            max_session_type3_template_bytes: self.max_session_type3_template_bytes,
             spooling_enabled: self.spooling_enabled,
             max_spool_bytes: self.max_spool_bytes,
         }
@@ -933,6 +974,8 @@ impl Default for NativeRenderLimits {
             max_session_image_resource_bytes: display.max_total_image_bytes,
             max_session_glyph_bitmap_entries: DEFAULT_SESSION_GLYPH_BITMAP_CACHE_ENTRIES,
             max_session_glyph_bitmap_bytes: DEFAULT_SESSION_GLYPH_BITMAP_CACHE_BYTES,
+            max_session_type3_template_entries: DEFAULT_SESSION_TYPE3_TEMPLATE_CACHE_ENTRIES,
+            max_session_type3_template_bytes: DEFAULT_SESSION_TYPE3_TEMPLATE_CACHE_BYTES,
             spooling_enabled: false,
             max_spool_bytes: DEFAULT_SPOOL_BYTES_LIMIT,
             downsample_image_decode: false,
@@ -992,6 +1035,12 @@ pub struct NativeMemoryDiagnostics {
     /// Maximum approximate resident fallback glyph bitmap bytes retained in one
     /// explicit document session.
     pub max_session_glyph_bitmap_bytes: usize,
+    /// Maximum Type 3 CharProc templates retained in one explicit document
+    /// session.
+    pub max_session_type3_template_entries: usize,
+    /// Maximum approximate resident Type 3 CharProc template bytes retained in
+    /// one explicit document session.
+    pub max_session_type3_template_bytes: usize,
     /// Whether temporary spooling is enabled for sensitive intermediates.
     pub spooling_enabled: bool,
     /// Maximum bytes allowed for temporary spooling.
@@ -1069,6 +1118,14 @@ impl<'a> NativeDocumentSession<'a> {
             cached_glyph_bitmap_misses: 0,
             cached_glyph_bitmap_inserts: 0,
             cached_glyph_bitmap_evictions: 0,
+            cached_type3_template_entries: 0,
+            max_cached_type3_template_entries: limits.max_session_type3_template_entries,
+            cached_type3_template_bytes: 0,
+            max_cached_type3_template_bytes: limits.max_session_type3_template_bytes,
+            cached_type3_template_hits: 0,
+            cached_type3_template_misses: 0,
+            cached_type3_template_inserts: 0,
+            cached_type3_template_evictions: 0,
         };
         Ok(Self {
             document,
@@ -1079,6 +1136,10 @@ impl<'a> NativeDocumentSession<'a> {
             glyph_bitmap_cache: RefCell::new(GlyphBitmapCache::with_budget(
                 limits.max_session_glyph_bitmap_entries,
                 limits.max_session_glyph_bitmap_bytes,
+            )),
+            type3_template_cache: RefCell::new(Type3CharProcTemplateCache::with_budget(
+                limits.max_session_type3_template_entries,
+                limits.max_session_type3_template_bytes,
             )),
         })
     }
@@ -1117,6 +1178,15 @@ impl<'a> NativeDocumentSession<'a> {
         stats.cached_glyph_bitmap_misses = glyph_summary.misses;
         stats.cached_glyph_bitmap_inserts = glyph_summary.inserts;
         stats.cached_glyph_bitmap_evictions = glyph_summary.evictions;
+        let type3_summary = self.type3_template_cache.borrow().summary();
+        stats.cached_type3_template_entries = type3_summary.entries;
+        stats.max_cached_type3_template_entries = type3_summary.max_entries;
+        stats.cached_type3_template_bytes = type3_summary.bytes;
+        stats.max_cached_type3_template_bytes = type3_summary.max_bytes;
+        stats.cached_type3_template_hits = type3_summary.hits;
+        stats.cached_type3_template_misses = type3_summary.misses;
+        stats.cached_type3_template_inserts = type3_summary.inserts;
+        stats.cached_type3_template_evictions = type3_summary.evictions;
         stats
     }
 
@@ -1134,6 +1204,7 @@ impl<'a> NativeDocumentSession<'a> {
             self.limits,
             &self.image_resource_cache,
             &self.glyph_bitmap_cache,
+            &self.type3_template_cache,
         )
     }
 
@@ -1157,6 +1228,7 @@ impl<'a> NativeDocumentSession<'a> {
             timings,
             &self.image_resource_cache,
             &self.glyph_bitmap_cache,
+            &self.type3_template_cache,
         )?;
         timings.total += started.elapsed();
         Ok(thumbnail)
@@ -1703,6 +1775,7 @@ fn render_loaded_document(
         RenderTraceSinks::none(),
         None,
         None,
+        None,
     )
 }
 
@@ -1713,6 +1786,7 @@ fn render_loaded_document_with_session_cache(
     limits: NativeRenderLimits,
     image_resource_cache: &RefCell<SessionImageResourceCache>,
     glyph_bitmap_cache: &RefCell<GlyphBitmapCache>,
+    type3_template_cache: &RefCell<Type3CharProcTemplateCache>,
 ) -> Result<Thumbnail, ThumbnailError> {
     render_loaded_document_inner(
         document,
@@ -1722,9 +1796,14 @@ fn render_loaded_document_with_session_cache(
         RenderTraceSinks::none(),
         Some(image_resource_cache),
         Some(glyph_bitmap_cache),
+        Some(type3_template_cache),
     )
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "session rendering keeps timing sink and retained caches explicit"
+)]
 fn render_loaded_document_with_timings_and_session_cache(
     document: &ClassicDocument<'_>,
     page_tree: &PageTree,
@@ -1733,6 +1812,7 @@ fn render_loaded_document_with_timings_and_session_cache(
     timings: &mut NativeRenderPhaseTimings,
     image_resource_cache: &RefCell<SessionImageResourceCache>,
     glyph_bitmap_cache: &RefCell<GlyphBitmapCache>,
+    type3_template_cache: &RefCell<Type3CharProcTemplateCache>,
 ) -> Result<Thumbnail, ThumbnailError> {
     render_loaded_document_inner(
         document,
@@ -1742,6 +1822,7 @@ fn render_loaded_document_with_timings_and_session_cache(
         RenderTraceSinks::with_timings(timings),
         Some(image_resource_cache),
         Some(glyph_bitmap_cache),
+        Some(type3_template_cache),
     )
 }
 
@@ -1760,9 +1841,14 @@ fn render_loaded_document_with_trace(
         trace_sinks,
         None,
         None,
+        None,
     )
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "native render pipeline threads optional trace sinks and retained caches explicitly"
+)]
 fn render_loaded_document_inner(
     document: &ClassicDocument<'_>,
     page_tree: &PageTree,
@@ -1771,6 +1857,7 @@ fn render_loaded_document_inner(
     mut trace_sinks: RenderTraceSinks<'_>,
     image_resource_cache: Option<&RefCell<SessionImageResourceCache>>,
     glyph_bitmap_cache: Option<&RefCell<GlyphBitmapCache>>,
+    type3_template_cache: Option<&RefCell<Type3CharProcTemplateCache>>,
 ) -> Result<Thumbnail, ThumbnailError> {
     enforce_xfa_render_policy(document)?;
     let local_glyph_bitmap_cache = RefCell::new(GlyphBitmapCache::with_budget(
@@ -1778,6 +1865,11 @@ fn render_loaded_document_inner(
         limits.max_session_glyph_bitmap_bytes,
     ));
     let glyph_bitmap_cache = glyph_bitmap_cache.unwrap_or(&local_glyph_bitmap_cache);
+    let local_type3_template_cache = RefCell::new(Type3CharProcTemplateCache::with_budget(
+        limits.max_session_type3_template_entries,
+        limits.max_session_type3_template_bytes,
+    ));
+    let type3_template_cache = type3_template_cache.unwrap_or(&local_type3_template_cache);
     let page = page_tree
         .pages()
         .get(options.page_index as usize)
@@ -1985,6 +2077,7 @@ fn render_loaded_document_inner(
             &mut trace_sinks.fill_routes,
             &mut trace_sinks.stroke_routes,
             glyph_bitmap_cache,
+            type3_template_cache,
         )?;
     } else {
         record_render_phase(
@@ -2023,7 +2116,15 @@ fn render_loaded_document_inner(
         record_render_phase(
             &mut trace_sinks.timings,
             NativeRenderPhase::RasterText,
-            || rasterize_text_with_cache(&text_list, &mut raster, transform, glyph_bitmap_cache),
+            || {
+                rasterize_text_with_cache(
+                    &text_list,
+                    &mut raster,
+                    transform,
+                    glyph_bitmap_cache,
+                    type3_template_cache,
+                )
+            },
         )?;
     }
     let (annotation_forms, annotation_content, annotation_fallback_content) = record_render_phase(
@@ -2137,6 +2238,7 @@ fn render_loaded_document_inner(
                             &mut raster,
                             transform,
                             glyph_bitmap_cache,
+                            type3_template_cache,
                         )
                     },
                 )?;
@@ -2147,6 +2249,9 @@ fn render_loaded_document_inner(
     }
     if let Some(glyph_bitmaps) = trace_sinks.glyph_bitmaps.as_deref_mut() {
         *glyph_bitmaps = glyph_bitmap_cache.borrow().summary();
+    }
+    if let Some(type3_templates) = trace_sinks.type3_templates.as_deref_mut() {
+        *type3_templates = type3_template_cache.borrow().summary();
     }
     record_render_phase(&mut trace_sinks.timings, NativeRenderPhase::Output, || {
         let dimensions = raster.dimensions();
@@ -2159,10 +2264,18 @@ fn rasterize_text_with_cache(
     raster: &mut ferrugo_render::RasterDevice,
     transform: PageTransform,
     glyph_bitmap_cache: &RefCell<GlyphBitmapCache>,
+    type3_template_cache: &RefCell<Type3CharProcTemplateCache>,
 ) -> Result<(), ThumbnailError> {
     let mut glyph_cache = glyph_bitmap_cache.borrow_mut();
-    rasterize_text_with_glyph_cache(display_list, raster, transform, &mut glyph_cache)
-        .map_err(map_raster_error)
+    let mut type3_cache = type3_template_cache.borrow_mut();
+    rasterize_text_with_caches(
+        display_list,
+        raster,
+        transform,
+        &mut glyph_cache,
+        &mut type3_cache,
+    )
+    .map_err(map_raster_error)
 }
 
 fn record_render_phase<T>(
@@ -2290,6 +2403,7 @@ fn rasterize_ordered_display_list_with_phase_timings(
     fill_routes: &mut Option<&mut FillRasterRouteSummary>,
     stroke_routes: &mut Option<&mut StrokeRasterRouteSummary>,
     glyph_bitmap_cache: &RefCell<GlyphBitmapCache>,
+    type3_template_cache: &RefCell<Type3CharProcTemplateCache>,
 ) -> Result<(), ThumbnailError> {
     if fill_routes.is_some() || stroke_routes.is_some() {
         let fill_initial = fill_routes
@@ -2302,7 +2416,7 @@ fn rasterize_ordered_display_list_with_phase_timings(
             .unwrap_or_else(StrokeRasterRouteSummary::default);
         let fill_cell = RefCell::new(fill_initial);
         let stroke_cell = RefCell::new(stroke_initial);
-        rasterize_display_list_into_with_phase_timings_route_summaries_and_glyph_cache(
+        rasterize_display_list_into_with_phase_timings_route_summaries_and_caches(
             display_list,
             raster,
             transform,
@@ -2310,6 +2424,7 @@ fn rasterize_ordered_display_list_with_phase_timings(
             &fill_cell,
             &stroke_cell,
             glyph_bitmap_cache,
+            type3_template_cache,
             |phase, duration| {
                 if let Some(timings) = timings.as_deref_mut() {
                     timings.record(native_render_phase_from_raster_phase(phase), duration);
@@ -2328,12 +2443,13 @@ fn rasterize_ordered_display_list_with_phase_timings(
         return Ok(());
     }
 
-    rasterize_display_list_into_with_phase_timings_and_glyph_cache(
+    rasterize_display_list_into_with_phase_timings_and_caches(
         display_list,
         raster,
         transform,
         path_options,
         glyph_bitmap_cache,
+        type3_template_cache,
         |phase, duration| {
             if let Some(timings) = timings.as_deref_mut() {
                 timings.record(native_render_phase_from_raster_phase(phase), duration);
@@ -5474,6 +5590,32 @@ mod tests {
     }
 
     #[test]
+    fn render_with_trace_should_report_type3_template_cache_summary() {
+        let bytes =
+            include_bytes!("../../../fixtures/generated/subset-type3-repeated-charprocs.pdf");
+        let options = ThumbnailOptions {
+            page_index: 0,
+            max_edge: 160,
+            background: ferrugo_thumbnail::Rgba::WHITE,
+            output_format: ferrugo_thumbnail::OutputFormat::Rgba,
+            timeout: std::time::Duration::from_secs(5),
+            annotation_mode: AnnotationMode::Screen,
+            form_appearance_mode: FormAppearanceMode::DocumentState,
+        };
+
+        let trace = NativeBackend::new()
+            .render_with_trace(PdfSource::from_bytes(bytes), &options)
+            .expect("Type3 fixture should render with template cache trace");
+
+        assert!(trace.type3_templates.entries > 0);
+        assert!(trace.type3_templates.bytes > 0);
+        assert!(trace.type3_templates.bytes <= trace.type3_templates.max_bytes);
+        assert!(trace.type3_templates.hits > 0);
+        assert!(trace.type3_templates.misses > 0);
+        assert!(trace.type3_templates.inserts > 0);
+    }
+
+    #[test]
     fn render_with_trace_should_attribute_ordered_images_to_image_phase() {
         let bytes = include_bytes!("../../../fixtures/generated/mobile-mixed-compression-scan.pdf");
         let options = ThumbnailOptions {
@@ -5637,6 +5779,37 @@ mod tests {
         assert!(stats.cached_glyph_bitmap_misses > 0);
         assert!(stats.cached_glyph_bitmap_inserts > 0);
         assert_eq!(stats.cached_glyph_bitmap_evictions, 0);
+    }
+
+    #[test]
+    fn native_document_session_should_reuse_type3_template_cache() {
+        let bytes =
+            include_bytes!("../../../fixtures/generated/subset-type3-repeated-charprocs.pdf");
+        let options = ThumbnailOptions {
+            max_edge: 160,
+            ..ThumbnailOptions::default()
+        };
+        let backend = NativeBackend::new();
+
+        let session = backend
+            .document_session(bytes, &[0])
+            .expect("document session should load");
+        let first = session
+            .render_page(&options)
+            .expect("first session render should work");
+        let second = session
+            .render_page(&options)
+            .expect("second session render should work");
+        let stats = session.stats();
+
+        assert_eq!(first.bytes, second.bytes);
+        assert!(stats.cached_type3_template_entries > 0);
+        assert!(stats.cached_type3_template_bytes > 0);
+        assert!(stats.cached_type3_template_bytes <= stats.max_cached_type3_template_bytes);
+        assert!(stats.cached_type3_template_hits > 0);
+        assert!(stats.cached_type3_template_misses > 0);
+        assert!(stats.cached_type3_template_inserts > 0);
+        assert_eq!(stats.cached_type3_template_evictions, 0);
     }
 
     #[test]
@@ -5808,6 +5981,8 @@ mod tests {
         );
         assert_eq!(diagnostics.max_session_glyph_bitmap_entries, 1_024);
         assert_eq!(diagnostics.max_session_glyph_bitmap_bytes, 1024 * 1024);
+        assert_eq!(diagnostics.max_session_type3_template_entries, 512);
+        assert_eq!(diagnostics.max_session_type3_template_bytes, 1024 * 1024);
         assert!(!diagnostics.spooling_enabled);
         assert_eq!(diagnostics.max_spool_bytes, 0);
     }
@@ -5839,6 +6014,13 @@ mod tests {
             low_memory.max_session_glyph_bitmap_entries < default.max_session_glyph_bitmap_entries
         );
         assert!(low_memory.max_session_glyph_bitmap_bytes < default.max_session_glyph_bitmap_bytes);
+        assert!(
+            low_memory.max_session_type3_template_entries
+                < default.max_session_type3_template_entries
+        );
+        assert!(
+            low_memory.max_session_type3_template_bytes < default.max_session_type3_template_bytes
+        );
         assert!(low_memory.max_page_pixels > 0);
         assert!(low_memory.max_total_image_bytes >= low_memory.max_image_bytes);
         assert!(low_memory.max_total_font_program_bytes >= low_memory.max_font_program_bytes);

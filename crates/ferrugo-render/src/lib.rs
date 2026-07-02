@@ -65,6 +65,12 @@ pub const DEFAULT_GLYPH_BITMAP_CACHE_LIMIT: usize = 256;
 /// Default maximum resident fallback glyph bitmap bytes per rasterization pass.
 pub const DEFAULT_GLYPH_BITMAP_CACHE_BYTES_LIMIT: usize = 256 * 1024;
 
+/// Default maximum cached Type 3 CharProc path templates per rasterization pass.
+pub const DEFAULT_TYPE3_CHAR_PROC_TEMPLATE_CACHE_LIMIT: usize = 128;
+
+/// Default maximum resident Type 3 CharProc path-template bytes per pass.
+pub const DEFAULT_TYPE3_CHAR_PROC_TEMPLATE_CACHE_BYTES_LIMIT: usize = 512 * 1024;
+
 const STANDARD_BASE_FONT_CELL_SCALE: f64 = 0.75;
 
 /// Default maximum cached deterministic font fallback resolutions.
@@ -5784,6 +5790,7 @@ pub fn rasterize_paths_into(
     let mut pattern_cache = PatternCellCache::new(options.max_pattern_cell_cache_entries);
     let mut transparency_scratch = TransparencyGroupScratch::default();
     let glyph_cache = RefCell::new(GlyphBitmapCache::default());
+    let type3_cache = RefCell::new(Type3CharProcTemplateCache::default());
     for item in display_list.items() {
         match item {
             DisplayItem::Path(path) => {
@@ -5838,6 +5845,7 @@ pub fn rasterize_paths_into(
                     &active_clips,
                     &mut transparency_scratch,
                     &glyph_cache,
+                    &type3_cache,
                 )?;
             }
             DisplayItem::Text(_) | DisplayItem::Image(_) => {}
@@ -6295,6 +6303,7 @@ pub fn rasterize_display_list_into(
 ) -> RasterResult<()> {
     let mut transparency_scratch = TransparencyGroupScratch::default();
     let glyph_cache = RefCell::new(GlyphBitmapCache::default());
+    let type3_cache = RefCell::new(Type3CharProcTemplateCache::default());
     rasterize_display_list_into_with_scratch(
         display_list,
         device,
@@ -6302,6 +6311,7 @@ pub fn rasterize_display_list_into(
         options,
         &mut transparency_scratch,
         &glyph_cache,
+        &type3_cache,
         None,
         None,
         None::<&mut fn(RasterDisplayPhase, Duration)>,
@@ -6325,12 +6335,14 @@ pub fn rasterize_display_list_into_with_phase_timings(
     on_phase: impl FnMut(RasterDisplayPhase, Duration),
 ) -> RasterResult<()> {
     let glyph_cache = RefCell::new(GlyphBitmapCache::default());
-    rasterize_display_list_into_with_phase_timings_and_glyph_cache(
+    let type3_cache = RefCell::new(Type3CharProcTemplateCache::default());
+    rasterize_display_list_into_with_phase_timings_and_caches(
         display_list,
         device,
         transform,
         options,
         &glyph_cache,
+        &type3_cache,
         on_phase,
     )
 }
@@ -6349,6 +6361,35 @@ pub fn rasterize_display_list_into_with_phase_timings_and_glyph_cache(
     transform: PageTransform,
     options: PathRasterOptions,
     glyph_cache: &RefCell<GlyphBitmapCache>,
+    on_phase: impl FnMut(RasterDisplayPhase, Duration),
+) -> RasterResult<()> {
+    let type3_cache = RefCell::new(Type3CharProcTemplateCache::default());
+    rasterize_display_list_into_with_phase_timings_and_caches(
+        display_list,
+        device,
+        transform,
+        options,
+        glyph_cache,
+        &type3_cache,
+        on_phase,
+    )
+}
+
+/// Rasterizes all supported display-list items with caller-owned text caches.
+///
+/// This keeps fallback glyph bitmap and Type 3 CharProc template state
+/// observable to callers that retain request/session state.
+///
+/// # Errors
+///
+/// Returns [`RasterError`] when path, image, or text rasterization fails.
+pub fn rasterize_display_list_into_with_phase_timings_and_caches(
+    display_list: &DisplayList,
+    device: &mut RasterDevice,
+    transform: PageTransform,
+    options: PathRasterOptions,
+    glyph_cache: &RefCell<GlyphBitmapCache>,
+    type3_cache: &RefCell<Type3CharProcTemplateCache>,
     mut on_phase: impl FnMut(RasterDisplayPhase, Duration),
 ) -> RasterResult<()> {
     let mut transparency_scratch = TransparencyGroupScratch::default();
@@ -6359,6 +6400,7 @@ pub fn rasterize_display_list_into_with_phase_timings_and_glyph_cache(
         options,
         &mut transparency_scratch,
         glyph_cache,
+        type3_cache,
         None,
         None,
         Some(&mut on_phase),
@@ -6384,6 +6426,7 @@ pub fn rasterize_display_list_into_with_phase_timings_and_stroke_routes(
 ) -> RasterResult<()> {
     let mut transparency_scratch = TransparencyGroupScratch::default();
     let glyph_cache = RefCell::new(GlyphBitmapCache::default());
+    let type3_cache = RefCell::new(Type3CharProcTemplateCache::default());
     rasterize_display_list_into_with_scratch(
         display_list,
         device,
@@ -6391,6 +6434,7 @@ pub fn rasterize_display_list_into_with_phase_timings_and_stroke_routes(
         options,
         &mut transparency_scratch,
         &glyph_cache,
+        &type3_cache,
         None,
         Some(stroke_routes),
         Some(&mut on_phase),
@@ -6416,7 +6460,8 @@ pub fn rasterize_display_list_into_with_phase_timings_and_route_summaries(
     on_phase: impl FnMut(RasterDisplayPhase, Duration),
 ) -> RasterResult<()> {
     let glyph_cache = RefCell::new(GlyphBitmapCache::default());
-    rasterize_display_list_into_with_phase_timings_route_summaries_and_glyph_cache(
+    let type3_cache = RefCell::new(Type3CharProcTemplateCache::default());
+    rasterize_display_list_into_with_phase_timings_route_summaries_and_caches(
         display_list,
         device,
         transform,
@@ -6424,6 +6469,7 @@ pub fn rasterize_display_list_into_with_phase_timings_and_route_summaries(
         fill_routes,
         stroke_routes,
         &glyph_cache,
+        &type3_cache,
         on_phase,
     )
 }
@@ -6446,6 +6492,41 @@ pub fn rasterize_display_list_into_with_phase_timings_route_summaries_and_glyph_
     fill_routes: &RefCell<FillRasterRouteSummary>,
     stroke_routes: &RefCell<StrokeRasterRouteSummary>,
     glyph_cache: &RefCell<GlyphBitmapCache>,
+    on_phase: impl FnMut(RasterDisplayPhase, Duration),
+) -> RasterResult<()> {
+    let type3_cache = RefCell::new(Type3CharProcTemplateCache::default());
+    rasterize_display_list_into_with_phase_timings_route_summaries_and_caches(
+        display_list,
+        device,
+        transform,
+        options,
+        fill_routes,
+        stroke_routes,
+        glyph_cache,
+        &type3_cache,
+        on_phase,
+    )
+}
+
+/// Rasterizes all supported display-list items and records route counts using
+/// caller-owned text caches.
+///
+/// # Errors
+///
+/// Returns [`RasterError`] when path, image, or text rasterization fails.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "diagnostic rendering needs explicit route, cache, and timing sinks"
+)]
+pub fn rasterize_display_list_into_with_phase_timings_route_summaries_and_caches(
+    display_list: &DisplayList,
+    device: &mut RasterDevice,
+    transform: PageTransform,
+    options: PathRasterOptions,
+    fill_routes: &RefCell<FillRasterRouteSummary>,
+    stroke_routes: &RefCell<StrokeRasterRouteSummary>,
+    glyph_cache: &RefCell<GlyphBitmapCache>,
+    type3_cache: &RefCell<Type3CharProcTemplateCache>,
     mut on_phase: impl FnMut(RasterDisplayPhase, Duration),
 ) -> RasterResult<()> {
     let mut transparency_scratch = TransparencyGroupScratch::default();
@@ -6456,6 +6537,7 @@ pub fn rasterize_display_list_into_with_phase_timings_route_summaries_and_glyph_
         options,
         &mut transparency_scratch,
         glyph_cache,
+        type3_cache,
         Some(fill_routes),
         Some(stroke_routes),
         Some(&mut on_phase),
@@ -6473,6 +6555,7 @@ fn rasterize_display_list_into_with_scratch(
     options: PathRasterOptions,
     transparency_scratch: &mut TransparencyGroupScratch,
     glyph_cache: &RefCell<GlyphBitmapCache>,
+    type3_cache: &RefCell<Type3CharProcTemplateCache>,
     fill_routes: Option<&RefCell<FillRasterRouteSummary>>,
     stroke_routes: Option<&RefCell<StrokeRasterRouteSummary>>,
     mut on_phase: Option<&mut impl FnMut(RasterDisplayPhase, Duration)>,
@@ -6546,6 +6629,7 @@ fn rasterize_display_list_into_with_scratch(
                         &active_clips,
                         transparency_scratch,
                         glyph_cache,
+                        type3_cache,
                     )
                 })?;
             }
@@ -6557,7 +6641,15 @@ fn rasterize_display_list_into_with_scratch(
             DisplayItem::Text(text) => {
                 record_raster_display_phase(&mut on_phase, RasterDisplayPhase::Text, || {
                     let mut glyph_cache = glyph_cache.borrow_mut();
-                    draw_text_run(device, text, transform, options, &mut glyph_cache)
+                    let mut type3_cache = type3_cache.borrow_mut();
+                    draw_text_run(
+                        device,
+                        text,
+                        transform,
+                        options,
+                        &mut glyph_cache,
+                        &mut type3_cache,
+                    )
                 })?;
             }
         }
@@ -7085,6 +7177,10 @@ fn device_stroke_scale(state: GraphicsState, transform: PageTransform) -> f64 {
     matrix_average_scale(state.ctm) * transform.scale
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "transparency groups thread active clips, scratch, and caller-owned text caches explicitly"
+)]
 fn rasterize_transparency_group(
     group: &TransparencyGroupDisplayItem,
     device: &mut RasterDevice,
@@ -7093,6 +7189,7 @@ fn rasterize_transparency_group(
     clips: &[ActiveClip],
     scratch: &mut TransparencyGroupScratch,
     glyph_cache: &RefCell<GlyphBitmapCache>,
+    type3_cache: &RefCell<Type3CharProcTemplateCache>,
 ) -> RasterResult<()> {
     let Some(bounds) = transparency_group_device_bounds(group.bounds, transform) else {
         return Ok(());
@@ -7136,6 +7233,7 @@ fn rasterize_transparency_group(
         options,
         &mut nested_transparency_scratch,
         glyph_cache,
+        type3_cache,
         None,
         None,
         None::<&mut fn(RasterDisplayPhase, Duration)>,
@@ -7259,7 +7357,14 @@ pub fn rasterize_text(
     transform: PageTransform,
 ) -> RasterResult<()> {
     let mut glyph_cache = GlyphBitmapCache::default();
-    rasterize_text_with_glyph_cache(display_list, device, transform, &mut glyph_cache)
+    let mut type3_cache = Type3CharProcTemplateCache::default();
+    rasterize_text_with_caches(
+        display_list,
+        device,
+        transform,
+        &mut glyph_cache,
+        &mut type3_cache,
+    )
 }
 
 /// Rasterizes text display-list items using a caller-owned fallback glyph cache.
@@ -7273,6 +7378,28 @@ pub fn rasterize_text_with_glyph_cache(
     transform: PageTransform,
     glyph_cache: &mut GlyphBitmapCache,
 ) -> RasterResult<()> {
+    let mut type3_cache = Type3CharProcTemplateCache::default();
+    rasterize_text_with_caches(
+        display_list,
+        device,
+        transform,
+        glyph_cache,
+        &mut type3_cache,
+    )
+}
+
+/// Rasterizes text display-list items using caller-owned text caches.
+///
+/// # Errors
+///
+/// Returns [`RasterError`] when device access fails.
+pub fn rasterize_text_with_caches(
+    display_list: &DisplayList,
+    device: &mut RasterDevice,
+    transform: PageTransform,
+    glyph_cache: &mut GlyphBitmapCache,
+    type3_cache: &mut Type3CharProcTemplateCache,
+) -> RasterResult<()> {
     for item in display_list.items() {
         let DisplayItem::Text(text) = item else {
             continue;
@@ -7283,6 +7410,7 @@ pub fn rasterize_text_with_glyph_cache(
             transform,
             PathRasterOptions::default(),
             glyph_cache,
+            type3_cache,
         )?;
     }
     Ok(())
@@ -17742,6 +17870,7 @@ fn draw_text_run(
     page_transform: PageTransform,
     options: PathRasterOptions,
     glyph_cache: &mut GlyphBitmapCache,
+    type3_cache: &mut Type3CharProcTemplateCache,
 ) -> RasterResult<()> {
     if !text.rendering_mode.paints_pixels() {
         return Ok(());
@@ -17754,7 +17883,7 @@ fn draw_text_run(
         return Ok(());
     };
     if text.font.type3.is_some() {
-        return draw_type3_text_run(device, text, page_transform, options);
+        return draw_type3_text_run(device, text, page_transform, options, type3_cache);
     }
     let fallback = text.font.fallback.unwrap_or(FontFallback {
         face: FontFallbackFace::Sans,
@@ -17785,6 +17914,7 @@ fn draw_type3_text_run(
     text: &TextDisplayItem,
     page_transform: PageTransform,
     options: PathRasterOptions,
+    char_proc_cache: &mut Type3CharProcTemplateCache,
 ) -> RasterResult<()> {
     let type3 = text.font.type3.as_ref().ok_or_else(|| {
         RasterError::new(RasterErrorKind::Type3Glyph {
@@ -17793,14 +17923,13 @@ fn draw_type3_text_run(
     })?;
     let base = text.state.ctm.multiply(text.text_matrix);
     let mut pattern_cache = PatternCellCache::new(options.max_pattern_cell_cache_entries);
-    let mut char_proc_cache = Type3CharProcTemplateCache::default();
     for (glyph, origin) in text.glyphs.iter().zip(text.glyph_origins.iter()) {
         let Some(char_proc) = type3.char_proc_for_code(glyph.character_code, &text.font.encoding)
         else {
             continue;
         };
         let paths = char_proc_cache.paths_for(text, type3, base, char_proc)?;
-        for path in paths {
+        for path in paths.as_ref() {
             let path = translate_type3_path_template(path, *origin);
             rasterize_path_item(
                 &path,
@@ -17819,73 +17948,374 @@ fn draw_type3_text_run(
     Ok(())
 }
 
-#[derive(Debug, Default)]
-struct Type3CharProcTemplateCache {
+/// Bounded Type 3 CharProc path-template cache.
+///
+/// The cache stores glyph-origin-independent path templates. It is deliberately
+/// keyed by the decoded CharProc content and the graphics/text state that feeds
+/// the CharProc interpreter so repeated names from different Type 3 fonts do
+/// not alias.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Type3CharProcTemplateCache {
     entries: Vec<Type3CharProcTemplate>,
-    #[cfg(test)]
+    max_entries: usize,
+    max_bytes: usize,
+    resident_bytes: usize,
     hits: usize,
-    #[cfg(test)]
     misses: usize,
-    #[cfg(test)]
     inserts: usize,
+    evictions: usize,
+}
+
+/// Observable Type 3 CharProc template cache state.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Type3CharProcTemplateCacheSummary {
+    /// Cached Type 3 CharProc templates retained by the cache.
+    pub entries: usize,
+    /// Maximum Type 3 CharProc templates retained by the cache.
+    pub max_entries: usize,
+    /// Approximate resident bytes retained by cached templates.
+    pub bytes: usize,
+    /// Maximum approximate resident template bytes retained.
+    pub max_bytes: usize,
+    /// Type 3 CharProc template cache hits.
+    pub hits: usize,
+    /// Type 3 CharProc template cache misses.
+    pub misses: usize,
+    /// Type 3 CharProc templates inserted.
+    pub inserts: usize,
+    /// Type 3 CharProc templates evicted.
+    pub evictions: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 struct Type3CharProcTemplate {
-    name: Vec<u8>,
+    key: Type3CharProcTemplateKey,
     paths: Vec<PathDisplayItem>,
+    resident_bytes: usize,
+}
+
+enum Type3CharProcTemplateLookup<'a> {
+    Cached(&'a [PathDisplayItem]),
+    Uncached(Vec<PathDisplayItem>),
+}
+
+impl AsRef<[PathDisplayItem]> for Type3CharProcTemplateLookup<'_> {
+    fn as_ref(&self) -> &[PathDisplayItem] {
+        match self {
+            Self::Cached(paths) => paths,
+            Self::Uncached(paths) => paths,
+        }
+    }
 }
 
 impl Type3CharProcTemplateCache {
+    /// Creates a Type 3 CharProc template cache with a bounded entry count.
+    #[must_use]
+    pub fn new(max_entries: usize) -> Self {
+        Self::with_budget(
+            max_entries,
+            DEFAULT_TYPE3_CHAR_PROC_TEMPLATE_CACHE_BYTES_LIMIT,
+        )
+    }
+
+    /// Creates a Type 3 CharProc template cache with entry and byte budgets.
+    #[must_use]
+    pub const fn with_budget(max_entries: usize, max_bytes: usize) -> Self {
+        Self {
+            entries: Vec::new(),
+            max_entries,
+            max_bytes,
+            resident_bytes: 0,
+            hits: 0,
+            misses: 0,
+            inserts: 0,
+            evictions: 0,
+        }
+    }
+
     fn paths_for(
         &mut self,
         text: &TextDisplayItem,
         type3: &Type3Font,
         base: Matrix,
         char_proc: &Type3CharProc,
-    ) -> RasterResult<&[PathDisplayItem]> {
-        if let Some(index) = self
-            .entries
-            .iter()
-            .position(|entry| entry.name == char_proc.name)
-        {
-            #[cfg(test)]
-            {
-                self.hits = self.hits.saturating_add(1);
-            }
-            return Ok(&self.entries[index].paths);
-        }
-        #[cfg(test)]
-        {
-            self.misses = self.misses.saturating_add(1);
+    ) -> RasterResult<Type3CharProcTemplateLookup<'_>> {
+        let key = Type3CharProcTemplateKey::new(text, type3, base, char_proc);
+        if let Some(index) = self.entries.iter().position(|entry| entry.key == key) {
+            self.hits = self.hits.saturating_add(1);
+            return Ok(Type3CharProcTemplateLookup::Cached(
+                &self.entries[index].paths,
+            ));
         }
         let paths = build_type3_char_proc_template(text, type3, base, char_proc)?;
+        self.misses = self.misses.saturating_add(1);
+        let resident_bytes = type3_char_proc_template_resident_bytes(&key, &paths);
+        if self.max_entries == 0 || resident_bytes > self.max_bytes {
+            return Ok(Type3CharProcTemplateLookup::Uncached(paths));
+        }
+        while self.entries.len() >= self.max_entries
+            || (self.resident_bytes.saturating_add(resident_bytes) > self.max_bytes
+                && !self.entries.is_empty())
+        {
+            let evicted = self.entries.remove(0);
+            self.resident_bytes = self.resident_bytes.saturating_sub(evicted.resident_bytes);
+            self.evictions = self.evictions.saturating_add(1);
+        }
+        if self.resident_bytes.saturating_add(resident_bytes) > self.max_bytes {
+            return Ok(Type3CharProcTemplateLookup::Uncached(paths));
+        }
         let index = self.entries.len();
         self.entries.push(Type3CharProcTemplate {
-            name: char_proc.name.clone(),
+            key,
             paths,
+            resident_bytes,
         });
-        #[cfg(test)]
-        {
-            self.inserts = self.inserts.saturating_add(1);
+        self.resident_bytes = self.resident_bytes.saturating_add(resident_bytes);
+        self.inserts = self.inserts.saturating_add(1);
+        Ok(Type3CharProcTemplateLookup::Cached(
+            &self.entries[index].paths,
+        ))
+    }
+
+    /// Returns observable Type 3 CharProc template cache state.
+    #[must_use]
+    pub fn summary(&self) -> Type3CharProcTemplateCacheSummary {
+        Type3CharProcTemplateCacheSummary {
+            entries: self.entries.len(),
+            max_entries: self.max_entries,
+            bytes: self.resident_bytes,
+            max_bytes: self.max_bytes,
+            hits: self.hits,
+            misses: self.misses,
+            inserts: self.inserts,
+            evictions: self.evictions,
         }
-        Ok(&self.entries[index].paths)
     }
 
-    #[cfg(test)]
-    fn hits(&self) -> usize {
-        self.hits
+    /// Returns the number of cached Type 3 CharProc templates.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.entries.len()
     }
 
-    #[cfg(test)]
-    fn misses(&self) -> usize {
-        self.misses
+    /// Returns true when no Type 3 CharProc templates are cached.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
     }
+}
 
-    #[cfg(test)]
-    fn inserts(&self) -> usize {
-        self.inserts
+impl Default for Type3CharProcTemplateCache {
+    fn default() -> Self {
+        Self::with_budget(
+            DEFAULT_TYPE3_CHAR_PROC_TEMPLATE_CACHE_LIMIT,
+            DEFAULT_TYPE3_CHAR_PROC_TEMPLATE_CACHE_BYTES_LIMIT,
+        )
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Type3CharProcTemplateKey {
+    name: Vec<u8>,
+    content: Arc<[u8]>,
+    base: MatrixKey,
+    font_size: u64,
+    font_matrix: MatrixKey,
+    state: GraphicsStateKey,
+}
+
+impl Type3CharProcTemplateKey {
+    fn new(
+        text: &TextDisplayItem,
+        type3: &Type3Font,
+        base: Matrix,
+        char_proc: &Type3CharProc,
+    ) -> Self {
+        Self {
+            name: char_proc.name.clone(),
+            content: Arc::clone(&char_proc.content),
+            base: MatrixKey::from_matrix(base),
+            font_size: f64_key(text.font_size),
+            font_matrix: MatrixKey::from_matrix(type3.font_matrix),
+            state: GraphicsStateKey::from_state(text.state),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct MatrixKey {
+    a: u64,
+    b: u64,
+    c: u64,
+    d: u64,
+    e: u64,
+    f: u64,
+}
+
+impl MatrixKey {
+    fn from_matrix(matrix: Matrix) -> Self {
+        Self {
+            a: f64_key(matrix.a),
+            b: f64_key(matrix.b),
+            c: f64_key(matrix.c),
+            d: f64_key(matrix.d),
+            e: f64_key(matrix.e),
+            f: f64_key(matrix.f),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct GraphicsStateKey {
+    line_width: u64,
+    fill_gray: u64,
+    stroke_gray: u64,
+    fill_color: DeviceColorKey,
+    stroke_color: DeviceColorKey,
+    fill_color_space: FillColorSpace,
+    stroke_color_space: StrokeColorSpace,
+    fill_pattern: Option<usize>,
+    stroke_dash: StrokeDashPatternKey,
+    line_cap: LineCap,
+    line_join: LineJoin,
+    miter_limit: u64,
+    blend_mode: BlendMode,
+    fill_alpha: u64,
+    stroke_alpha: u64,
+    fill_overprint: bool,
+    stroke_overprint: bool,
+    overprint_mode: u8,
+    graphics_state_depth: usize,
+    graphics_state_scope_id: u64,
+    clip_path_pending: bool,
+}
+
+impl GraphicsStateKey {
+    fn from_state(state: GraphicsState) -> Self {
+        Self {
+            line_width: f64_key(state.line_width),
+            fill_gray: f64_key(state.fill_gray.0),
+            stroke_gray: f64_key(state.stroke_gray.0),
+            fill_color: DeviceColorKey::from_color(state.fill_color),
+            stroke_color: DeviceColorKey::from_color(state.stroke_color),
+            fill_color_space: state.fill_color_space,
+            stroke_color_space: state.stroke_color_space,
+            fill_pattern: state.fill_pattern,
+            stroke_dash: StrokeDashPatternKey::from_dash(state.stroke_dash),
+            line_cap: state.line_cap,
+            line_join: state.line_join,
+            miter_limit: f64_key(state.miter_limit),
+            blend_mode: state.blend_mode,
+            fill_alpha: f64_key(state.fill_alpha),
+            stroke_alpha: f64_key(state.stroke_alpha),
+            fill_overprint: state.fill_overprint,
+            stroke_overprint: state.stroke_overprint,
+            overprint_mode: state.overprint_mode,
+            graphics_state_depth: state.graphics_state_depth,
+            graphics_state_scope_id: state.graphics_state_scope_id,
+            clip_path_pending: state.clip_path_pending,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DeviceColorKey {
+    Gray(u64),
+    Rgb {
+        r: u64,
+        g: u64,
+        b: u64,
+    },
+    Spot {
+        r: u64,
+        g: u64,
+        b: u64,
+        approximation: SpotColorApproximation,
+    },
+}
+
+impl DeviceColorKey {
+    fn from_color(color: DeviceColor) -> Self {
+        match color {
+            DeviceColor::Gray(gray) => Self::Gray(f64_key(gray.0)),
+            DeviceColor::Rgb { r, g, b } => Self::Rgb {
+                r: f64_key(r),
+                g: f64_key(g),
+                b: f64_key(b),
+            },
+            DeviceColor::Spot {
+                r,
+                g,
+                b,
+                approximation,
+            } => Self::Spot {
+                r: f64_key(r),
+                g: f64_key(g),
+                b: f64_key(b),
+                approximation,
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct StrokeDashPatternKey {
+    segments: [u64; MAX_STROKE_DASH_SEGMENTS],
+    len: usize,
+    phase: u64,
+}
+
+impl StrokeDashPatternKey {
+    fn from_dash(dash: StrokeDashPattern) -> Self {
+        let mut segments = [0; MAX_STROKE_DASH_SEGMENTS];
+        for (target, source) in segments.iter_mut().zip(dash.segments) {
+            *target = f64_key(source);
+        }
+        Self {
+            segments,
+            len: dash.len,
+            phase: f64_key(dash.phase),
+        }
+    }
+}
+
+fn f64_key(value: f64) -> u64 {
+    value.to_bits()
+}
+
+fn type3_char_proc_template_resident_bytes(
+    key: &Type3CharProcTemplateKey,
+    paths: &[PathDisplayItem],
+) -> usize {
+    std::mem::size_of::<Type3CharProcTemplateKey>()
+        .saturating_add(key.name.len())
+        .saturating_add(key.content.len())
+        .saturating_add(paths.iter().map(path_template_resident_bytes).sum())
+}
+
+fn path_template_resident_bytes(path: &PathDisplayItem) -> usize {
+    std::mem::size_of::<PathDisplayItem>()
+        .saturating_add(
+            path.segments
+                .len()
+                .saturating_mul(std::mem::size_of::<PathSegment>()),
+        )
+        .saturating_add(
+            path.fill_pattern
+                .as_ref()
+                .map_or(0, tiling_pattern_template_resident_bytes),
+        )
+}
+
+fn tiling_pattern_template_resident_bytes(pattern: &TilingPattern) -> usize {
+    std::mem::size_of::<TilingPattern>()
+        .saturating_add(pattern.resource_name.len())
+        .saturating_add(
+            pattern
+                .items
+                .len()
+                .saturating_mul(std::mem::size_of::<DisplayItem>()),
+        )
 }
 
 fn build_type3_char_proc_template(
@@ -26338,12 +26768,61 @@ mod tests {
                 .paths_for(text, type3, base, char_proc)
                 .expect("template should build");
 
-            assert_eq!(paths.len(), 1);
+            assert_eq!(paths.as_ref().len(), 1);
         }
 
-        assert_eq!(cache.misses(), 1);
-        assert_eq!(cache.hits(), 2);
-        assert_eq!(cache.inserts(), 1);
+        let summary = cache.summary();
+        assert_eq!(summary.entries, 1);
+        assert!(summary.bytes > 0);
+        assert_eq!(summary.misses, 1);
+        assert_eq!(summary.hits, 2);
+        assert_eq!(summary.inserts, 1);
+        assert_eq!(summary.evictions, 0);
+    }
+
+    #[test]
+    fn type3_char_proc_template_cache_should_evict_oldest_entry_at_limit() {
+        let document = load_type3_text_pdf(
+            b"BT /F1 10 Tf (A) Tj ET",
+            b"0 0 700 700 re f",
+            b"<< /Type /Font /Subtype /Type3 /FontMatrix [0.001 0 0 0.001 0 0] /FirstChar 65 /LastChar 65 /Widths [700] /Encoding << /Differences [65 /A] >> /CharProcs << /A 6 0 R >> >>",
+        );
+        let resources =
+            font_resources_from_document(&document, &[("F1", 4)]).expect("valid Type3 font");
+        let content = content_stream_from_document(&document);
+        let list = build_text_display_list(
+            tokenize_content(PdfBytes::new(&content)),
+            &resources,
+            DisplayListOptions::default(),
+        )
+        .expect("Type3 text should decode");
+        let DisplayItem::Text(text) = &list.items()[0] else {
+            panic!("expected text display item");
+        };
+        let type3 = text.font.type3.as_ref().expect("Type3 metadata");
+        let base = text.state.ctm.multiply(text.text_matrix);
+        let mut larger_text = text.clone();
+        larger_text.font_size = 11.0;
+        let larger_base = larger_text.state.ctm.multiply(larger_text.text_matrix);
+        let char_proc = type3
+            .char_proc_for_code(text.glyphs[0].character_code, &text.font.encoding)
+            .expect("mapped Type3 CharProc");
+        let mut cache = Type3CharProcTemplateCache::with_budget(1, usize::MAX);
+
+        for (current_text, current_base) in
+            [(text, base), (&larger_text, larger_base), (text, base)]
+        {
+            cache
+                .paths_for(current_text, type3, current_base, char_proc)
+                .expect("template should build");
+        }
+
+        let summary = cache.summary();
+        assert_eq!(summary.entries, 1);
+        assert_eq!(summary.misses, 3);
+        assert_eq!(summary.hits, 0);
+        assert_eq!(summary.inserts, 3);
+        assert_eq!(summary.evictions, 2);
     }
 
     #[test]
@@ -26376,7 +26855,7 @@ mod tests {
         let template_paths = cache
             .paths_for(text, type3, base, char_proc)
             .expect("template should build");
-        let translated = translate_type3_path_template(&template_paths[0], origin);
+        let translated = translate_type3_path_template(&template_paths.as_ref()[0], origin);
 
         let mut direct_state = text.state;
         direct_state.ctm = type3_char_proc_ctm(base, text.font_size, type3.font_matrix, origin);
@@ -28881,6 +29360,7 @@ mod tests {
         let mut device = transform.create_device(Rgba::WHITE).expect("raster device");
         let mut scratch = TransparencyGroupScratch::default();
         let glyph_cache = RefCell::new(GlyphBitmapCache::default());
+        let type3_cache = RefCell::new(Type3CharProcTemplateCache::default());
 
         rasterize_display_list_into_with_scratch(
             &list,
@@ -28889,6 +29369,7 @@ mod tests {
             PathRasterOptions::default(),
             &mut scratch,
             &glyph_cache,
+            &type3_cache,
             None,
             None,
             None::<&mut fn(RasterDisplayPhase, Duration)>,

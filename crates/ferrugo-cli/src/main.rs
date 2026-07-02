@@ -16,7 +16,8 @@ use ferrugo_native::{
     ImageResourceSummary, NativeBackend, NativeDocumentSessionStats, NativeMemoryDiagnostics,
     NativePageCacheKey, NativePageCachePolicy, NativeRenderPhaseTimings, NativeRenderTrace,
     OperatorCoverageEntry, OperatorCoverageOptions, OperatorSupportStatus, PathFlatteningSummary,
-    StrokeRasterRouteSummary, StrokeShapeSummary, DEFAULT_CURVE_FLATTENING_TOLERANCE,
+    StrokeRasterRouteSummary, StrokeShapeSummary, Type3CharProcTemplateCacheSummary,
+    DEFAULT_CURVE_FLATTENING_TOLERANCE,
 };
 #[cfg(feature = "pdfium")]
 use ferrugo_pdfium::PdfiumBackend;
@@ -7885,6 +7886,8 @@ fn native_memory_diagnostics_json(diagnostics: &NativeMemoryDiagnostics) -> Stri
             "\"max_pattern_cell_cache_entries\":{},",
             "\"max_session_glyph_bitmap_entries\":{},",
             "\"max_session_glyph_bitmap_bytes\":{},",
+            "\"max_session_type3_template_entries\":{},",
+            "\"max_session_type3_template_bytes\":{},",
             "\"spooling_enabled\":{},",
             "\"max_spool_bytes\":{}",
             "}}"
@@ -7904,6 +7907,8 @@ fn native_memory_diagnostics_json(diagnostics: &NativeMemoryDiagnostics) -> Stri
         diagnostics.max_pattern_cell_cache_entries,
         diagnostics.max_session_glyph_bitmap_entries,
         diagnostics.max_session_glyph_bitmap_bytes,
+        diagnostics.max_session_type3_template_entries,
+        diagnostics.max_session_type3_template_bytes,
         diagnostics.spooling_enabled,
         diagnostics.max_spool_bytes
     )
@@ -8530,6 +8535,9 @@ fn native_render_trace_json(config: &TraceNativeConfig) -> Result<String, CliErr
     );
     let glyph_bitmap_summary_json =
         trace_glyph_bitmap_summary_json(render_trace.as_ref().map(|trace| &trace.glyph_bitmaps));
+    let type3_template_summary_json = trace_type3_template_summary_json(
+        render_trace.as_ref().map(|trace| &trace.type3_templates),
+    );
     let render_json = trace_render_outcome_json(render_trace);
 
     Ok(format!(
@@ -8557,6 +8565,7 @@ fn native_render_trace_json(config: &TraceNativeConfig) -> Result<String, CliErr
             "  \"image_resource_summary\": {},\n",
             "  \"image_placement_summary\": {},\n",
             "  \"glyph_bitmap_summary\": {},\n",
+            "  \"type3_template_summary\": {},\n",
             "  \"operator_coverage\": {},\n",
             "  \"operator_summary\": {},\n",
             "  \"events\": [{}]\n",
@@ -8581,6 +8590,7 @@ fn native_render_trace_json(config: &TraceNativeConfig) -> Result<String, CliErr
         image_resource_summary_json,
         image_placement_summary_json,
         glyph_bitmap_summary_json,
+        type3_template_summary_json,
         coverage_json,
         operator_summary,
         events_json
@@ -8963,6 +8973,41 @@ fn trace_image_resource_summary_json(
 
 fn trace_glyph_bitmap_summary_json(
     summary: Result<&GlyphBitmapCacheSummary, &ThumbnailError>,
+) -> String {
+    match summary {
+        Ok(summary) => format!(
+            concat!(
+                "{{",
+                "\"status\":\"measured\",",
+                "\"entries\":{},",
+                "\"max_entries\":{},",
+                "\"bytes\":{},",
+                "\"max_bytes\":{},",
+                "\"hits\":{},",
+                "\"misses\":{},",
+                "\"inserts\":{},",
+                "\"evictions\":{}",
+                "}}"
+            ),
+            summary.entries,
+            summary.max_entries,
+            summary.bytes,
+            summary.max_bytes,
+            summary.hits,
+            summary.misses,
+            summary.inserts,
+            summary.evictions
+        ),
+        Err(error) => format!(
+            "{{\"status\":\"error\",\"class\":{},\"bucket\":{}}}",
+            json_string(error.class().as_str()),
+            optional_json_string(error.unsupported_feature_bucket())
+        ),
+    }
+}
+
+fn trace_type3_template_summary_json(
+    summary: Result<&Type3CharProcTemplateCacheSummary, &ThumbnailError>,
 ) -> String {
     match summary {
         Ok(summary) => format!(
@@ -10241,7 +10286,15 @@ fn native_document_session_stats_json(stats: Option<NativeDocumentSessionStats>)
             "\"cached_glyph_bitmap_hits\":{},",
             "\"cached_glyph_bitmap_misses\":{},",
             "\"cached_glyph_bitmap_inserts\":{},",
-            "\"cached_glyph_bitmap_evictions\":{}",
+            "\"cached_glyph_bitmap_evictions\":{},",
+            "\"cached_type3_template_entries\":{},",
+            "\"max_cached_type3_template_entries\":{},",
+            "\"cached_type3_template_bytes\":{},",
+            "\"max_cached_type3_template_bytes\":{},",
+            "\"cached_type3_template_hits\":{},",
+            "\"cached_type3_template_misses\":{},",
+            "\"cached_type3_template_inserts\":{},",
+            "\"cached_type3_template_evictions\":{}",
             "}}"
         ),
         native_page_cache_policy_json(stats.cache_policy),
@@ -10267,7 +10320,15 @@ fn native_document_session_stats_json(stats: Option<NativeDocumentSessionStats>)
         stats.cached_glyph_bitmap_hits,
         stats.cached_glyph_bitmap_misses,
         stats.cached_glyph_bitmap_inserts,
-        stats.cached_glyph_bitmap_evictions
+        stats.cached_glyph_bitmap_evictions,
+        stats.cached_type3_template_entries,
+        stats.max_cached_type3_template_entries,
+        stats.cached_type3_template_bytes,
+        stats.max_cached_type3_template_bytes,
+        stats.cached_type3_template_hits,
+        stats.cached_type3_template_misses,
+        stats.cached_type3_template_inserts,
+        stats.cached_type3_template_evictions
     )
 }
 
@@ -12011,6 +12072,7 @@ mod tests {
         assert!(json.contains("\"device_pixels\""));
         assert!(json.contains("\"downsample_candidate_placements\""));
         assert!(json.contains("\"glyph_bitmap_summary\""));
+        assert!(json.contains("\"type3_template_summary\""));
         assert!(json.contains("\"hits\""));
         assert!(json.contains("\"misses\""));
         assert!(json.contains("\"operator_summary\""));
@@ -12850,6 +12912,10 @@ status = "candidate"
         assert!(json.contains("\"cached_image_resource_misses\""));
         assert!(json.contains("\"cached_image_resource_inserts\""));
         assert!(json.contains("\"cached_image_resource_evictions\""));
+        assert!(json.contains("\"cached_type3_template_hits\""));
+        assert!(json.contains("\"cached_type3_template_misses\""));
+        assert!(json.contains("\"cached_type3_template_inserts\""));
+        assert!(json.contains("\"cached_type3_template_evictions\""));
         assert!(json.contains("\"cache_key\""));
         assert!(json.contains("\"phase_timings_ms\""));
         assert!(json.contains("\"phase_timings_ms\":{\"first_mean\""));
@@ -13041,6 +13107,8 @@ status = "candidate"
         assert!(json.contains("\"rust_native_memory\""));
         assert!(json.contains("\"max_page_pixels\":16777216"));
         assert!(json.contains("\"max_total_image_bytes\":134217728"));
+        assert!(json.contains("\"max_session_type3_template_entries\":512"));
+        assert!(json.contains("\"max_session_type3_template_bytes\":1048576"));
         assert!(json.contains("\"spooling_enabled\":false"));
     }
 
