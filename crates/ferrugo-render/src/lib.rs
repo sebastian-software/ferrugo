@@ -11974,8 +11974,7 @@ fn fill_path_with_coverage_spans(
                                 multiply_alpha(path_coverage, clip_mask.coverage(pixel_x, y))
                             };
                             if path_coverage > 0 {
-                                stats.analytic_edge_pixels += 1;
-                                stats.sampled_edge_pixels += 1;
+                                edge_coverage.record_edge_pixel(&mut stats);
                             }
                             if coverage > 0 {
                                 stats.clip_mask_pixels += 1;
@@ -11988,8 +11987,7 @@ fn fill_path_with_coverage_spans(
                             let pixel_x = bounds.min_x + run_offset as u32;
                             let path_coverage = edge_coverage.coverage_for_pixel(path, pixel_x, y);
                             if path_coverage > 0 {
-                                stats.analytic_edge_pixels += 1;
-                                stats.sampled_edge_pixels += 1;
+                                edge_coverage.record_edge_pixel(&mut stats);
                             }
                             blitter.write_coverage_alpha_pixel(
                                 device,
@@ -12213,7 +12211,7 @@ fn analytic_fill_coverage_for_pixel(path: &FlattenedPath, rule: FillRule, x: u32
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FillEdgeCoverage {
     Nonzero,
-    EvenOddSingleSimpleSubpath,
+    EvenOddDisjointSimpleSubpaths,
     EvenOddSupersampled,
 }
 
@@ -12221,8 +12219,8 @@ impl FillEdgeCoverage {
     fn for_path(path: &FlattenedPath, rule: FillRule) -> Self {
         match rule {
             FillRule::Nonzero => Self::Nonzero,
-            FillRule::EvenOdd if path_has_single_simple_subpath(path) => {
-                Self::EvenOddSingleSimpleSubpath
+            FillRule::EvenOdd if path_has_disjoint_simple_subpaths(path) => {
+                Self::EvenOddDisjointSimpleSubpaths
             }
             FillRule::EvenOdd => Self::EvenOddSupersampled,
         }
@@ -12230,21 +12228,45 @@ impl FillEdgeCoverage {
 
     fn coverage_for_pixel(self, path: &FlattenedPath, x: u32, y: u32) -> u8 {
         match self {
-            Self::Nonzero | Self::EvenOddSingleSimpleSubpath => {
-                nonzero_fill_coverage_for_pixel(path, x, y)
+            Self::Nonzero => nonzero_fill_coverage_for_pixel(path, x, y),
+            Self::EvenOddDisjointSimpleSubpaths => {
+                disjoint_even_odd_fill_coverage_for_pixel(path, x, y)
             }
             Self::EvenOddSupersampled => {
                 supersampled_fill_coverage_for_pixel(path, FillRule::EvenOdd, x, y, 16)
             }
         }
     }
+
+    fn record_edge_pixel(self, stats: &mut FillCoverageSpanStats) {
+        match self {
+            Self::Nonzero | Self::EvenOddDisjointSimpleSubpaths => {
+                stats.analytic_edge_pixels = stats.analytic_edge_pixels.saturating_add(1);
+            }
+            Self::EvenOddSupersampled => {
+                stats.sampled_edge_pixels = stats.sampled_edge_pixels.saturating_add(1);
+            }
+        }
+    }
 }
 
-fn path_has_single_simple_subpath(path: &FlattenedPath) -> bool {
-    let [points] = path.subpaths.as_slice() else {
+fn path_has_disjoint_simple_subpaths(path: &FlattenedPath) -> bool {
+    if path.subpaths.is_empty()
+        || !path
+            .subpaths
+            .iter()
+            .all(|subpath| simple_polygon_points(subpath))
+    {
         return false;
-    };
-    simple_polygon_points(points)
+    }
+    for (left_index, left) in path.subpaths.iter().enumerate() {
+        for right in path.subpaths.iter().skip(left_index + 1) {
+            if simple_polygons_overlap(left, right) {
+                return false;
+            }
+        }
+    }
+    true
 }
 
 fn simple_polygon_points(points: &[Point]) -> bool {
@@ -12263,6 +12285,21 @@ fn simple_polygon_points(points: &[Point]) -> bool {
         }
     }
     true
+}
+
+fn simple_polygons_overlap(left: &[Point], right: &[Point]) -> bool {
+    for left_edge in polygon_edges(left) {
+        for right_edge in polygon_edges(right) {
+            if line_segments_intersect(left_edge, right_edge) {
+                return true;
+            }
+        }
+    }
+    left.first()
+        .is_some_and(|point| point_in_polygon_even_odd(*point, right))
+        || right
+            .first()
+            .is_some_and(|point| point_in_polygon_even_odd(*point, left))
 }
 
 fn polygon_edges_are_adjacent(left: usize, right: usize, edge_count: usize) -> bool {
@@ -12307,6 +12344,15 @@ fn nonzero_fill_coverage_for_pixel(path: &FlattenedPath, x: u32, y: u32) -> u8 {
         .map(|subpath| clipped_polygon_signed_area_for_pixel(subpath, x, y))
         .sum::<f64>();
     coverage_area_to_alpha(signed_area.abs())
+}
+
+fn disjoint_even_odd_fill_coverage_for_pixel(path: &FlattenedPath, x: u32, y: u32) -> u8 {
+    let area = path
+        .subpaths
+        .iter()
+        .map(|subpath| clipped_polygon_signed_area_for_pixel(subpath, x, y).abs())
+        .sum::<f64>();
+    coverage_area_to_alpha(area)
 }
 
 fn rect_coverage_for_pixel(rect: PathBounds, x: u32, y: u32) -> u8 {
@@ -24046,7 +24092,7 @@ mod tests {
 
         assert_eq!(
             FillEdgeCoverage::for_path(&path, FillRule::EvenOdd),
-            FillEdgeCoverage::EvenOddSingleSimpleSubpath
+            FillEdgeCoverage::EvenOddDisjointSimpleSubpaths
         );
         assert_eq!(
             analytic_fill_coverage_for_pixel(&path, FillRule::EvenOdd, 0, 0),
@@ -24055,8 +24101,72 @@ mod tests {
     }
 
     #[test]
+    fn even_odd_disjoint_simple_subpaths_should_use_exact_cell_area() {
+        let path = FlattenedPath {
+            subpaths: vec![
+                vec![
+                    Point { x: 0.0, y: 0.0 },
+                    Point { x: 0.5, y: 0.0 },
+                    Point { x: 0.0, y: 1.0 },
+                ],
+                vec![
+                    Point { x: 2.0, y: 0.0 },
+                    Point { x: 2.5, y: 0.0 },
+                    Point { x: 2.0, y: 1.0 },
+                ],
+            ],
+            lines: Vec::new(),
+            joins: Vec::new(),
+            stats: FlattenedPathStats::default(),
+        };
+
+        assert_eq!(
+            FillEdgeCoverage::for_path(&path, FillRule::EvenOdd),
+            FillEdgeCoverage::EvenOddDisjointSimpleSubpaths
+        );
+        assert_eq!(
+            analytic_fill_coverage_for_pixel(&path, FillRule::EvenOdd, 0, 0),
+            64
+        );
+        assert_eq!(
+            analytic_fill_coverage_for_pixel(&path, FillRule::EvenOdd, 2, 0),
+            64
+        );
+    }
+
+    #[test]
+    fn even_odd_disjoint_opposite_winding_subpaths_should_not_cancel() {
+        let path = FlattenedPath {
+            subpaths: vec![
+                vec![
+                    Point { x: 0.0, y: 0.0 },
+                    Point { x: 0.4, y: 0.0 },
+                    Point { x: 0.0, y: 0.8 },
+                ],
+                vec![
+                    Point { x: 0.6, y: 0.0 },
+                    Point { x: 1.0, y: 0.8 },
+                    Point { x: 1.0, y: 0.0 },
+                ],
+            ],
+            lines: Vec::new(),
+            joins: Vec::new(),
+            stats: FlattenedPathStats::default(),
+        };
+
+        assert_eq!(
+            FillEdgeCoverage::for_path(&path, FillRule::EvenOdd),
+            FillEdgeCoverage::EvenOddDisjointSimpleSubpaths
+        );
+        assert_eq!(
+            analytic_fill_coverage_for_pixel(&path, FillRule::EvenOdd, 0, 0),
+            82
+        );
+    }
+
+    #[test]
     fn even_odd_complex_subpaths_should_keep_supersampled_edge_coverage() {
-        let multi_subpath = FlattenedPath {
+        let overlapping_subpaths = FlattenedPath {
             subpaths: vec![
                 vec![
                     Point { x: 0.0, y: 0.0 },
@@ -24088,7 +24198,7 @@ mod tests {
         };
 
         assert_eq!(
-            FillEdgeCoverage::for_path(&multi_subpath, FillRule::EvenOdd),
+            FillEdgeCoverage::for_path(&overlapping_subpaths, FillRule::EvenOdd),
             FillEdgeCoverage::EvenOddSupersampled
         );
         assert_eq!(
@@ -24134,6 +24244,87 @@ mod tests {
         assert_eq!(fill_routes.coverage_blend_mode_row_pixels, 0);
         assert!(fill_routes.coverage_analytic_edge_pixels > 0);
         assert_eq!(fill_routes.coverage_clip_mask_pixels, 0);
+        assert_eq!(fill_routes.coverage_sampled_edge_pixels, 0);
+    }
+
+    #[test]
+    fn fill_path_coverage_spans_should_count_sampled_edges_for_complex_even_odd() {
+        let path = FlattenedPath {
+            subpaths: vec![
+                vec![
+                    Point { x: 1.0, y: 1.0 },
+                    Point { x: 9.0, y: 1.0 },
+                    Point { x: 9.0, y: 9.0 },
+                    Point { x: 1.0, y: 9.0 },
+                ],
+                vec![
+                    Point { x: 3.0, y: 3.0 },
+                    Point { x: 11.0, y: 3.0 },
+                    Point { x: 11.0, y: 11.0 },
+                    Point { x: 3.0, y: 11.0 },
+                ],
+            ],
+            lines: vec![
+                LineSegment {
+                    from: Point { x: 1.0, y: 1.0 },
+                    to: Point { x: 9.0, y: 1.0 },
+                },
+                LineSegment {
+                    from: Point { x: 9.0, y: 1.0 },
+                    to: Point { x: 9.0, y: 9.0 },
+                },
+                LineSegment {
+                    from: Point { x: 9.0, y: 9.0 },
+                    to: Point { x: 1.0, y: 9.0 },
+                },
+                LineSegment {
+                    from: Point { x: 1.0, y: 9.0 },
+                    to: Point { x: 1.0, y: 1.0 },
+                },
+                LineSegment {
+                    from: Point { x: 3.0, y: 3.0 },
+                    to: Point { x: 11.0, y: 3.0 },
+                },
+                LineSegment {
+                    from: Point { x: 11.0, y: 3.0 },
+                    to: Point { x: 11.0, y: 11.0 },
+                },
+                LineSegment {
+                    from: Point { x: 11.0, y: 11.0 },
+                    to: Point { x: 3.0, y: 11.0 },
+                },
+                LineSegment {
+                    from: Point { x: 3.0, y: 11.0 },
+                    to: Point { x: 3.0, y: 3.0 },
+                },
+            ],
+            stats: FlattenedPathStats::default(),
+            joins: Vec::new(),
+        };
+        let fill_routes = RefCell::new(FillRasterRouteSummary::default());
+        let mut device = RasterDevice::new(16, 12, Rgba::WHITE).expect("valid raster");
+
+        fill_path(
+            &mut device,
+            &path,
+            FillRule::EvenOdd,
+            DeviceColor::BLACK,
+            BlendMode::Normal,
+            1.0,
+            PathRasterContext {
+                transform: coverage_span_test_transform(),
+                options: PathRasterOptions::default(),
+                clips: &[],
+                fill_routes: Some(&fill_routes),
+                stroke_routes: None,
+            },
+        )
+        .expect("complex even-odd coverage fill should rasterize");
+
+        let fill_routes = fill_routes.into_inner();
+        assert_eq!(fill_routes.coverage_span_calls, 1);
+        assert_eq!(fill_routes.sampled_calls, 0);
+        assert_eq!(fill_routes.coverage_analytic_edge_pixels, 0);
         assert!(fill_routes.coverage_sampled_edge_pixels > 0);
     }
 
