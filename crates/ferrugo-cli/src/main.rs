@@ -3638,6 +3638,7 @@ enum LocalCorpusValue {
 struct BenchmarkReport {
     backend: &'static str,
     platform: PlatformMetadata,
+    process_memory: ProcessMemorySummary,
     total: usize,
     native_rendered: usize,
     fallback_required: usize,
@@ -5806,11 +5807,26 @@ fn sampled_process_memory_summary(
     rss_start_bytes: Option<u64>,
     rss_end_bytes: Option<u64>,
 ) -> ProcessMemorySummary {
+    sampled_process_memory_summary_with_high_water(
+        rss_start_bytes,
+        max_optional_u64(rss_start_bytes, rss_end_bytes),
+        rss_end_bytes,
+    )
+}
+
+fn sampled_process_memory_summary_with_high_water(
+    rss_start_bytes: Option<u64>,
+    rss_high_water_bytes: Option<u64>,
+    rss_end_bytes: Option<u64>,
+) -> ProcessMemorySummary {
     ProcessMemorySummary {
         rss_start_bytes,
-        rss_high_water_bytes: max_optional_u64(rss_start_bytes, rss_end_bytes),
+        rss_high_water_bytes,
         rss_end_bytes,
-        source: if rss_start_bytes.is_some() || rss_end_bytes.is_some() {
+        source: if rss_start_bytes.is_some()
+            || rss_high_water_bytes.is_some()
+            || rss_end_bytes.is_some()
+        {
             "process-rss-sample"
         } else {
             "unavailable"
@@ -6371,6 +6387,8 @@ where
     let mut fallback_required = 0;
     let mut errors = 0;
     let mut budget_failures = 0;
+    let rss_start_bytes = current_rss_kib().map(kib_to_bytes);
+    let mut rss_high_water_bytes = rss_start_bytes;
 
     for path in paths {
         let path_key = normalize_manifest_path(path);
@@ -6398,11 +6416,20 @@ where
             .or_insert_with(FamilyBenchmarkSummary::default)
             .record(&record);
         fixtures.push(record);
+        rss_high_water_bytes =
+            max_optional_u64(rss_high_water_bytes, current_rss_kib().map(kib_to_bytes));
     }
+    let rss_end_bytes = current_rss_kib().map(kib_to_bytes);
+    rss_high_water_bytes = max_optional_u64(rss_high_water_bytes, rss_end_bytes);
 
     BenchmarkReport {
         backend: policy.name,
         platform: PlatformMetadata::current(),
+        process_memory: sampled_process_memory_summary_with_high_water(
+            rss_start_bytes,
+            rss_high_water_bytes,
+            rss_end_bytes,
+        ),
         total: paths.len(),
         native_rendered,
         fallback_required,
@@ -10075,6 +10102,7 @@ fn benchmark_report_json(report: &BenchmarkReport) -> String {
             "  \"platform\": {},\n",
             "  \"config\": {{\"iterations\":{},\"max_ms\":{},\"max_output_bytes\":{}}},\n",
             "  \"summary\": {{\"total\":{},\"native_rendered\":{},\"fallback_required\":{},\"errors\":{},\"budget_failures\":{}}},\n",
+            "  \"process_memory_summary\": {},\n",
             "  \"families\": {},\n",
             "  \"fixtures\": [{}]\n",
             "}}\n"
@@ -10089,6 +10117,7 @@ fn benchmark_report_json(report: &BenchmarkReport) -> String {
         report.fallback_required,
         report.errors,
         report.budget_failures,
+        trace_process_memory_summary_json(&report.process_memory),
         benchmark_family_map_json(&report.families),
         fixtures
     )
@@ -12361,6 +12390,16 @@ mod tests {
         let unavailable = sampled_process_memory_summary(None, None);
         assert_eq!(unavailable.rss_high_water_bytes, None);
         assert_eq!(unavailable.source, "unavailable");
+
+        let sampled_high_water = sampled_process_memory_summary_with_high_water(
+            Some(128 * 1024),
+            Some(192 * 1024),
+            Some(144 * 1024),
+        );
+        assert_eq!(sampled_high_water.rss_start_bytes, Some(128 * 1024));
+        assert_eq!(sampled_high_water.rss_high_water_bytes, Some(192 * 1024));
+        assert_eq!(sampled_high_water.rss_end_bytes, Some(144 * 1024));
+        assert_eq!(sampled_high_water.source, "process-rss-sample");
     }
 
     #[test]
@@ -13291,6 +13330,8 @@ status = "candidate"
         assert!(json.contains("\"logical_cpus\":"));
         assert!(json.contains("\"cpu_brand\":"));
         assert!(json.contains("\"memory_bytes\":"));
+        assert!(json.contains("\"process_memory_summary\""));
+        assert!(json.contains("\"rss_high_water_bytes\""));
         assert!(json.contains("\"family\":\"browser-print\""));
         assert!(json.contains("\"family\":\"presentation\""));
         assert!(json.contains("\"output_bytes\""));
