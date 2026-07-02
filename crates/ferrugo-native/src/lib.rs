@@ -6629,6 +6629,37 @@ mod tests {
     }
 
     #[test]
+    fn low_memory_trace_should_report_large_scanner_image_bands() {
+        let bytes = include_bytes!("../../../fixtures/generated/scanner-large-image-budget.pdf");
+        let options = ThumbnailOptions {
+            page_index: 0,
+            max_edge: 440,
+            background: ferrugo_thumbnail::Rgba::WHITE,
+            output_format: ferrugo_thumbnail::OutputFormat::Rgba,
+            timeout: std::time::Duration::from_secs(5),
+            annotation_mode: AnnotationMode::Screen,
+            form_appearance_mode: FormAppearanceMode::DocumentState,
+        };
+
+        let trace = NativeBackend::low_memory()
+            .render_with_trace(PdfSource::from_bytes(bytes), &options)
+            .expect("scanner fixture should render with low-memory band trace");
+
+        assert_eq!(trace.thumbnail.width, 320);
+        assert_eq!(trace.thumbnail.height, 440);
+        assert_eq!(trace.raster_bands.full_page_pixels, 140_800);
+        assert_eq!(trace.raster_bands.bands, 7);
+        assert_eq!(trace.raster_bands.max_band_rows, 64);
+        assert_eq!(trace.raster_bands.max_band_pixels, 20_480);
+        assert_eq!(trace.raster_bands.active_target_peak_bytes(), 81_920);
+        assert_eq!(trace.raster_bands.full_page_bytes(), 563_200);
+        assert_eq!(
+            trace.raster_bands.active_target_byte_reduction_per_mille(),
+            854
+        );
+    }
+
+    #[test]
     fn native_page_cache_policy_should_be_isolated_by_default() {
         let policy = NativePageCachePolicy::IsolatedRender;
 
