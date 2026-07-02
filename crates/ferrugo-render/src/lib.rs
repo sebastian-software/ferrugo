@@ -6622,6 +6622,7 @@ fn rasterize_axial_shading(
     let start_color = device_color_to_rgba(shading.start_color);
     let end_color = device_color_to_rgba(shading.end_color);
     let linear_exponent = (shading.exponent - 1.0).abs() <= f64::EPSILON;
+    let blitter = VariableSourcePixelBlitter::new(state.blend_mode, 1.0);
     for y in 0..dimensions.height {
         let sample_y = f64::from(y) + 0.5;
         let (mut t, t_step) = projection.row_t_start_and_step(sample_y);
@@ -6656,7 +6657,7 @@ fn rasterize_axial_shading(
                 linear_exponent,
                 sample_t,
             );
-            blend_pixel(device, x, y, source, state.blend_mode, 1.0)?;
+            blitter.write_pixel(device, x, y, source, 1.0)?;
             t += t_step;
         }
     }
@@ -6724,6 +6725,7 @@ fn rasterize_radial_shading(
     let start_color = device_color_to_rgba(shading.start_color);
     let end_color = device_color_to_rgba(shading.end_color);
     let linear_exponent = (shading.exponent - 1.0).abs() <= f64::EPSILON;
+    let blitter = VariableSourcePixelBlitter::new(state.blend_mode, 1.0);
     for y in 0..dimensions.height {
         let sample_y = f64::from(y) + 0.5;
         let dy = sample_y - end_center.y;
@@ -6769,7 +6771,7 @@ fn rasterize_radial_shading(
                 linear_exponent,
                 t,
             );
-            blend_pixel(device, x, y, source, state.blend_mode, 1.0)?;
+            blitter.write_pixel(device, x, y, source, 1.0)?;
         }
     }
     Ok(())
@@ -6894,6 +6896,7 @@ fn rasterize_mesh_triangle(
         return Ok(());
     }
     let colors = vertices.map(|vertex| device_color_to_rgba(vertex.color));
+    let blitter = VariableSourcePixelBlitter::new(state.blend_mode, state.fill_alpha);
     for y in bounds.min_y..bounds.max_y {
         for x in bounds.min_x..bounds.max_x {
             let point = Point {
@@ -6906,13 +6909,12 @@ fn rasterize_mesh_triangle(
             if w0 <= f64::EPSILON || w1 < -f64::EPSILON || w2 < -f64::EPSILON {
                 continue;
             }
-            blend_pixel(
+            blitter.write_pixel(
                 device,
                 x,
                 y,
                 interpolate_triangle_color(colors, [w0, w1, w2]),
-                state.blend_mode,
-                state.fill_alpha,
+                1.0,
             )?;
         }
     }
@@ -7138,6 +7140,7 @@ fn rasterize_transparency_group(
         None,
         None::<&mut fn(RasterDisplayPhase, Duration)>,
     )?;
+    let blitter = VariableSourcePixelBlitter::new(group.state.blend_mode, group.state.fill_alpha);
     for y in 0..bounds.height {
         for x in 0..bounds.width {
             let source = group_device.pixel(x, y)?;
@@ -7150,14 +7153,7 @@ fn rasterize_transparency_group(
             if clip_coverage <= f64::EPSILON {
                 continue;
             }
-            blend_pixel(
-                device,
-                device_x,
-                device_y,
-                source,
-                group.state.blend_mode,
-                group.state.fill_alpha * clip_coverage,
-            )?;
+            blitter.write_pixel(device, device_x, device_y, source, clip_coverage)?;
         }
     }
     Ok(())
@@ -12626,6 +12622,64 @@ impl CoverageDrawBlitter {
 
 type SampledPixelBlend = CoverageDrawBlitter;
 
+#[derive(Debug, Clone, Copy)]
+struct VariableSourcePixelBlitter {
+    alpha: f64,
+    kind: VariableSourcePixelBlitterKind,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum VariableSourcePixelBlitterKind {
+    Normal,
+    Multiply,
+    Screen,
+}
+
+impl VariableSourcePixelBlitter {
+    fn new(blend_mode: BlendMode, alpha: f64) -> Self {
+        let kind = match blend_mode {
+            BlendMode::Normal => VariableSourcePixelBlitterKind::Normal,
+            BlendMode::Multiply => VariableSourcePixelBlitterKind::Multiply,
+            BlendMode::Screen => VariableSourcePixelBlitterKind::Screen,
+        };
+        Self { alpha, kind }
+    }
+
+    fn write_pixel(
+        self,
+        device: &mut RasterDevice,
+        x: u32,
+        y: u32,
+        source: Rgba,
+        coverage: f64,
+    ) -> RasterResult<()> {
+        if source.a == 0 {
+            return Ok(());
+        }
+        let coverage = (coverage * self.alpha).clamp(0.0, 1.0);
+        if coverage <= f64::EPSILON {
+            return Ok(());
+        }
+        match self.kind {
+            VariableSourcePixelBlitterKind::Normal if source.a == 255 && coverage >= 1.0 => {
+                device.set_pixel(x, y, source)
+            }
+            VariableSourcePixelBlitterKind::Normal if source.a == 255 => {
+                blend_source_over_normal_pixel(device, x, y, source, coverage)
+            }
+            VariableSourcePixelBlitterKind::Normal => {
+                blend_normal_alpha_pixel(device, x, y, source, coverage)
+            }
+            VariableSourcePixelBlitterKind::Multiply => {
+                blend_multiply_pixel(device, x, y, source, coverage)
+            }
+            VariableSourcePixelBlitterKind::Screen => {
+                blend_screen_pixel(device, x, y, source, coverage)
+            }
+        }
+    }
+}
+
 fn blend_sampled_pixel(
     device: &mut RasterDevice,
     x: u32,
@@ -13152,6 +13206,7 @@ fn fill_path_with_tiling_pattern(
     else {
         return Ok(());
     };
+    let blitter = VariableSourcePixelBlitter::new(state.blend_mode, state.fill_alpha);
     for y in bounds.min_y..bounds.max_y {
         for x in bounds.min_x..bounds.max_x {
             let mut covered = 0;
@@ -13172,13 +13227,12 @@ fn fill_path_with_tiling_pattern(
             let Some(source) = pattern_color_at(pattern, pattern_samples, user) else {
                 continue;
             };
-            blend_pixel(
+            blitter.write_pixel(
                 device,
                 x,
                 y,
                 source,
-                state.blend_mode,
-                state.fill_alpha * f64::from(covered) / f64::from(sample_count),
+                f64::from(covered) / f64::from(sample_count),
             )?;
         }
     }
@@ -13215,17 +13269,14 @@ fn fill_axis_aligned_rect_with_tiling_pattern(
         };
         bounds = intersection;
     }
+    let blitter = VariableSourcePixelBlitter::new(state.blend_mode, state.fill_alpha);
     for y in bounds.min_y..bounds.max_y {
         for x in bounds.min_x..bounds.max_x {
             let user = inverse.transform_point(f64::from(x) + 0.5, f64::from(y) + 0.5);
             let Some(source) = pattern_color_at(pattern, pattern_samples, user) else {
                 continue;
             };
-            if can_direct_write_opaque_normal(source, state.blend_mode, state.fill_alpha) {
-                device.set_pixel(x, y, source)?;
-            } else {
-                blend_pixel(device, x, y, source, state.blend_mode, state.fill_alpha)?;
-            }
+            blitter.write_pixel(device, x, y, source, 1.0)?;
         }
     }
     Ok(true)
@@ -23874,6 +23925,61 @@ mod tests {
             .expect("opaque partial blend should write");
 
         assert_eq!(device.pixel(0, 0), Ok(source_over(source, dest, coverage)));
+    }
+
+    #[test]
+    fn variable_source_pixel_blitter_should_match_blend_pixel() {
+        let backgrounds = [
+            Rgba {
+                r: 20,
+                g: 80,
+                b: 160,
+                a: 255,
+            },
+            Rgba {
+                r: 20,
+                g: 80,
+                b: 160,
+                a: 128,
+            },
+        ];
+        let sources = [
+            Rgba {
+                r: 200,
+                g: 40,
+                b: 10,
+                a: 255,
+            },
+            Rgba {
+                r: 200,
+                g: 40,
+                b: 10,
+                a: 96,
+            },
+        ];
+        for blend_mode in [BlendMode::Normal, BlendMode::Multiply, BlendMode::Screen] {
+            for background in backgrounds {
+                for source in sources {
+                    for coverage in [0.0, 0.375, 1.0] {
+                        let mut expected =
+                            RasterDevice::new(1, 1, background).expect("valid device");
+                        let mut actual = RasterDevice::new(1, 1, background).expect("valid device");
+
+                        blend_pixel(&mut expected, 0, 0, source, blend_mode, coverage)
+                            .expect("reference blend should write");
+                        VariableSourcePixelBlitter::new(blend_mode, 1.0)
+                            .write_pixel(&mut actual, 0, 0, source, coverage)
+                            .expect("variable source blend should write");
+
+                        assert_eq!(
+                            actual.pixel(0, 0),
+                            expected.pixel(0, 0),
+                            "blend_mode={blend_mode:?} background={background:?} source={source:?} coverage={coverage}"
+                        );
+                    }
+                }
+            }
+        }
     }
 
     #[test]
