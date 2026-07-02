@@ -8780,6 +8780,8 @@ fn trace_fill_raster_route_summary_json(
                 "\"coverage_full_span_runs\":{},",
                 "\"coverage_full_pixels\":{},",
                 "\"coverage_direct_row_pixels\":{},",
+                "\"coverage_source_over_row_pixels\":{},",
+                "\"coverage_blend_mode_row_pixels\":{},",
                 "\"coverage_sampled_edge_pixels\":{}",
                 "}}"
             ),
@@ -8791,6 +8793,8 @@ fn trace_fill_raster_route_summary_json(
             summary.coverage_full_span_runs,
             summary.coverage_full_pixels,
             summary.coverage_direct_row_pixels,
+            summary.coverage_source_over_row_pixels,
+            summary.coverage_blend_mode_row_pixels,
             summary.coverage_sampled_edge_pixels
         ),
         Err(error) => format!(
@@ -11928,6 +11932,8 @@ mod tests {
         assert!(json.contains("\"coverage_full_span_runs\""));
         assert!(json.contains("\"coverage_full_pixels\""));
         assert!(json.contains("\"coverage_direct_row_pixels\""));
+        assert!(json.contains("\"coverage_source_over_row_pixels\""));
+        assert!(json.contains("\"coverage_blend_mode_row_pixels\""));
         assert!(json.contains("\"coverage_sampled_edge_pixels\""));
         assert!(json.contains("\"image_resource_summary\""));
         assert!(json.contains("\"encoded_bytes\""));
