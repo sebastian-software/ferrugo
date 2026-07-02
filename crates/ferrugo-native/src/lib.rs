@@ -2756,10 +2756,11 @@ fn display_list_supports_banded_replay(display_list: &DisplayList) -> bool {
     display_list.items().iter().all(|item| match item {
         DisplayItem::Image(_) | DisplayItem::Text(_) => true,
         DisplayItem::Path(path) => path_supports_banded_replay(path),
+        DisplayItem::Shading(_) => true,
         DisplayItem::ClipPlaceholder { segments, .. } => {
             line_only_clip_placeholder_supports_banded_replay(segments)
         }
-        DisplayItem::TransparencyGroup(_) | DisplayItem::Shading(_) => false,
+        DisplayItem::TransparencyGroup(_) => false,
     })
 }
 
@@ -7195,6 +7196,21 @@ mod tests {
             (
                 include_bytes!("../../../fixtures/generated/vector-paths.pdf").as_slice(),
                 "vector",
+                true,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/axial-gradient.pdf").as_slice(),
+                "axial shading",
+                true,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/radial-gradient.pdf").as_slice(),
+                "radial shading",
+                true,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/type4-mesh-shading.pdf").as_slice(),
+                "type4 mesh shading",
                 true,
             ),
         ] {
