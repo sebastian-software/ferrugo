@@ -18,6 +18,8 @@ The trace records:
 - page index, maximum render edge, annotation-scan mode, and event limit;
 - metadata inspection outcome;
 - native render outcome, including dimensions and output byte count;
+- aggregate path-flattening, stroke, image-resource, and image-placement
+  summaries for renderer profiling;
 - aggregate operator coverage;
 - bounded operator events derived from compact operator coverage.
 

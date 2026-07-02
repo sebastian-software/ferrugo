@@ -96,6 +96,7 @@ Read:
 - [Native renderer conformance backlog](backlogs/native-renderer-conformance-backlog.md)
 - [Native renderer API cleanup backlog](backlogs/native-renderer-api-cleanup-backlog.md)
 - [Fixture policy](fixtures.md)
+- [Raster flattening policy](policies/raster-flattening.md)
 - [PDFium-free 1.4 readiness](reports/pdfium-free-1-4-readiness-2026-06-29.md)
 
 Backlogs and reports are the working record. Keep validation notes, evidence,

@@ -15,7 +15,8 @@ use ferrugo_native::{
     scan_operator_coverage, ImagePlacementSummary, ImageResourceSummary, NativeBackend,
     NativeDocumentSessionStats, NativeMemoryDiagnostics, NativePageCacheKey, NativePageCachePolicy,
     NativeRenderPhaseTimings, NativeRenderTrace, OperatorCoverageEntry, OperatorCoverageOptions,
-    OperatorSupportStatus, StrokeRasterRouteSummary, StrokeShapeSummary,
+    OperatorSupportStatus, PathFlatteningSummary, StrokeRasterRouteSummary, StrokeShapeSummary,
+    DEFAULT_CURVE_FLATTENING_TOLERANCE,
 };
 #[cfg(feature = "pdfium")]
 use ferrugo_pdfium::PdfiumBackend;
@@ -8507,6 +8508,9 @@ fn native_render_trace_json(config: &TraceNativeConfig) -> Result<String, CliErr
     let metadata_json = trace_metadata_json(metadata);
     let phase_timings_json =
         trace_phase_timings_json(render_trace.as_ref().map(|trace| &trace.timings));
+    let path_flattening_summary_json = trace_path_flattening_summary_json(
+        render_trace.as_ref().map(|trace| &trace.path_flattening),
+    );
     let stroke_shape_summary_json =
         trace_stroke_shape_summary_json(render_trace.as_ref().map(|trace| &trace.stroke_shapes));
     let stroke_raster_route_summary_json = trace_stroke_raster_route_summary_json(
@@ -8538,6 +8542,7 @@ fn native_render_trace_json(config: &TraceNativeConfig) -> Result<String, CliErr
             "  \"metadata\": {},\n",
             "  \"render\": {},\n",
             "  \"phase_timings_ms\": {},\n",
+            "  \"path_flattening_summary\": {},\n",
             "  \"stroke_shape_summary\": {},\n",
             "  \"stroke_raster_route_summary\": {},\n",
             "  \"image_resource_summary\": {},\n",
@@ -8559,6 +8564,7 @@ fn native_render_trace_json(config: &TraceNativeConfig) -> Result<String, CliErr
         metadata_json,
         render_json,
         phase_timings_json,
+        path_flattening_summary_json,
         stroke_shape_summary_json,
         stroke_raster_route_summary_json,
         image_resource_summary_json,
@@ -8607,6 +8613,42 @@ fn trace_render_outcome_json(result: Result<NativeRenderTrace, ThumbnailError>) 
             trace.thumbnail.height,
             trace.thumbnail.stride,
             trace.thumbnail.bytes.len()
+        ),
+        Err(error) => format!(
+            "{{\"status\":\"error\",\"class\":{},\"bucket\":{},\"message\":{}}}",
+            json_string(error.class().as_str()),
+            optional_json_string(error.unsupported_feature_bucket()),
+            json_string(&error.to_string())
+        ),
+    }
+}
+
+fn trace_path_flattening_summary_json(
+    summary: Result<&PathFlatteningSummary, &ThumbnailError>,
+) -> String {
+    match summary {
+        Ok(summary) => format!(
+            concat!(
+                "{{",
+                "\"status\":\"measured\",",
+                "\"device_tolerance_px\":{},",
+                "\"path_items\":{},",
+                "\"clip_items\":{},",
+                "\"cubic_curves\":{},",
+                "\"flattened_edges\":{},",
+                "\"curve_segments\":{},",
+                "\"max_curve_segments_per_curve\":{},",
+                "\"max_flattened_edges_per_item\":{}",
+                "}}"
+            ),
+            DEFAULT_CURVE_FLATTENING_TOLERANCE,
+            summary.path_items,
+            summary.clip_items,
+            summary.cubic_curves,
+            summary.flattened_edges,
+            summary.curve_segments,
+            summary.max_curve_segments_per_curve,
+            summary.max_flattened_edges_per_item
         ),
         Err(error) => format!(
             "{{\"status\":\"error\",\"class\":{},\"bucket\":{},\"message\":{}}}",
@@ -11777,6 +11819,13 @@ mod tests {
         assert!(json.contains("\"resource_images\""));
         assert!(json.contains("\"raster_paths\""));
         assert!(json.contains("\"total\""));
+        assert!(json.contains("\"path_flattening_summary\""));
+        assert!(json.contains("\"device_tolerance_px\":0.5"));
+        assert!(json.contains("\"cubic_curves\""));
+        assert!(json.contains("\"flattened_edges\""));
+        assert!(json.contains("\"curve_segments\""));
+        assert!(json.contains("\"max_curve_segments_per_curve\""));
+        assert!(json.contains("\"max_flattened_edges_per_item\""));
         assert!(json.contains("\"stroke_shape_summary\""));
         assert!(json.contains("\"flattened_lines\""));
         assert!(json.contains("\"row_bucket_sample_refs\""));
