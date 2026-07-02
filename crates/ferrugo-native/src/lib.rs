@@ -29,9 +29,9 @@ use ferrugo_render::{
     DisplayList, DisplayListOptions, ExtGraphicsStateResources, FontResources, FormResources,
     GlyphBitmapCache, GraphicsError, GraphicsErrorKind, IccTransformCache, ImageDecodeHints,
     ImageResources, PageGeometry, PageRotation, PageTransform, PageTransformOptions, PaintMode,
-    PathBounds, PathDisplayItem, PathRasterOptions, Point, RasterDimensions, RasterDisplayPhase,
-    RasterError, RasterErrorKind, ShadingResources, TextDisplayItem, TextWritingMode,
-    TilingPatternResources, Type3CharProcTemplateCache,
+    PathBounds, PathDisplayItem, PathRasterOptions, PathSegment, Point, RasterDimensions,
+    RasterDisplayPhase, RasterError, RasterErrorKind, ShadingResources, TextDisplayItem,
+    TextWritingMode, TilingPatternResources, Type3CharProcTemplateCache,
 };
 pub use ferrugo_render::{
     FillRasterRouteSummary, GlyphBitmapCacheSummary, ImagePlacementSummary, ImageResourceSummary,
@@ -49,7 +49,7 @@ use ferrugo_thumbnail::{
 };
 
 #[cfg(test)]
-use ferrugo_render::{DeviceColor, FillRule, GraphicsState, PathSegment};
+use ferrugo_render::{DeviceColor, FillRule, GraphicsState};
 #[cfg(test)]
 use ferrugo_thumbnail::FormAppearanceMode;
 
@@ -2754,12 +2754,37 @@ fn display_list_supports_banded_replay(display_list: &DisplayList) -> bool {
 }
 
 fn path_supports_banded_replay(path: &PathDisplayItem) -> bool {
-    matches!(path.paint, PaintMode::Fill { .. })
-        && path.fill_pattern.is_none()
+    path.fill_pattern.is_none()
         && path.state.fill_pattern.is_none()
         && path.state.blend_mode == BlendMode::Normal
-        && path.state.fill_alpha >= 1.0
-        && !path.state.fill_overprint
+        && match path.paint {
+            PaintMode::Fill { .. } => path.state.fill_alpha >= 1.0 && !path.state.fill_overprint,
+            PaintMode::Stroke => {
+                simple_stroke_path_supports_banded_replay(path)
+                    && path.state.stroke_alpha >= 1.0
+                    && !path.state.stroke_overprint
+            }
+            PaintMode::FillStroke { .. } => false,
+        }
+}
+
+fn simple_stroke_path_supports_banded_replay(path: &PathDisplayItem) -> bool {
+    path.state.line_cap == ferrugo_render::LineCap::Round
+        && path.state.line_join == ferrugo_render::LineJoin::Round
+        && path
+            .segments
+            .iter()
+            .filter(|segment| matches!(segment, PathSegment::MoveTo(_)))
+            .count()
+            == 1
+        && path
+            .segments
+            .iter()
+            .any(|segment| matches!(segment, PathSegment::LineTo(_)))
+        && path
+            .segments
+            .iter()
+            .all(|segment| matches!(segment, PathSegment::MoveTo(_) | PathSegment::LineTo(_)))
 }
 
 fn raster_band_summary(dimensions: RasterDimensions, band_rows: Option<u32>) -> RasterBandSummary {
@@ -6893,6 +6918,41 @@ mod tests {
             banded_bands.estimated_peak_raster_bytes(),
             banded_bands.output_buffer_bytes() + banded_bands.active_target_peak_bytes()
         );
+        assert!(banded_bands.active_target_byte_reduction_per_mille() > 0);
+    }
+
+    #[test]
+    fn native_banded_raster_should_match_single_target_for_stroke_paths() {
+        let display_list = DisplayList::from_items(vec![DisplayItem::Path(PathDisplayItem {
+            segments: vec![
+                PathSegment::MoveTo(Point { x: 7.5, y: 9.25 }),
+                PathSegment::LineTo(Point { x: 55.0, y: 13.75 }),
+                PathSegment::LineTo(Point { x: 38.5, y: 41.25 }),
+                PathSegment::LineTo(Point { x: 13.25, y: 34.0 }),
+            ],
+            paint: PaintMode::Stroke,
+            state: GraphicsState {
+                line_width: 2.25,
+                stroke_color: DeviceColor::Rgb {
+                    r: 0.8,
+                    g: 0.2,
+                    b: 0.1,
+                },
+                line_cap: ferrugo_render::LineCap::Round,
+                line_join: ferrugo_render::LineJoin::Round,
+                ..GraphicsState::default()
+            },
+            fill_pattern: None,
+        })]);
+
+        let (single, single_bands) = render_test_display_list_with_band_rows(&display_list, 0);
+        let (banded, banded_bands) = render_test_display_list_with_band_rows(&display_list, 11);
+
+        assert_eq!(single.bytes, banded.bytes);
+        assert_eq!(single_bands.bands, 1);
+        assert!(banded_bands.bands > 1);
+        assert_eq!(banded_bands.max_band_rows, 11);
+        assert!(banded_bands.max_band_pixels < banded_bands.full_page_pixels);
         assert!(banded_bands.active_target_byte_reduction_per_mille() > 0);
     }
 
