@@ -126,6 +126,7 @@ const STROKE_AXIS_SPAN_MIN_LINES: usize = 4;
 const STROKE_JOIN_BUCKET_MIN_JOINS: usize = 8;
 const STROKE_SIMPLE_LINE_SPAN_MIN_PIXELS: u32 = 1024;
 const STROKE_AXIS_SIMPLE_LINE_SPAN_MIN_PIXELS: u32 = 128;
+const STROKE_JOINED_OUTLINE_MIN_PIXELS: u32 = 8192;
 const STROKE_ROW_RANGE_MIN_BUCKET_LINES: usize = STROKE_ROW_BUCKET_MIN_LINES;
 const STROKE_ROW_ACTIVE_MIN_BUCKET_LINES: usize = 48;
 const STROKE_SPAN_CURSOR_MIN_SPANS: usize = 512;
@@ -1672,6 +1673,8 @@ pub struct StrokeRasterRouteSummary {
     pub outline_fill_calls: usize,
     /// Number of axis-aligned single-line strokes converted to fill outlines.
     pub outline_axis_line_calls: usize,
+    /// Number of joined stroke calls converted to one fill outline.
+    pub outline_joined_calls: usize,
     /// Number of span-covered stroke raster calls.
     pub span_covered_calls: usize,
     /// Number of span-covered calls that used row cursors.
@@ -1749,6 +1752,11 @@ impl StrokeRasterRouteSummary {
         if axis_line {
             self.outline_axis_line_calls += 1;
         }
+    }
+
+    fn record_joined_outline_fill_call(&mut self) {
+        self.outline_fill_calls += 1;
+        self.outline_joined_calls += 1;
     }
 
     fn record_span_covered_call(&mut self, raster_spans: usize, coverage_spans: usize) {
@@ -13352,6 +13360,13 @@ fn scissor_pixel_bounds(
     })
 }
 
+fn pixel_bounds_area(bounds: PixelBounds) -> u32 {
+    bounds
+        .max_x
+        .saturating_sub(bounds.min_x)
+        .saturating_mul(bounds.max_y.saturating_sub(bounds.min_y))
+}
+
 fn stroke_pixel_bounds(
     lines: &[LineSegment],
     joins: &[StrokeJoin],
@@ -13484,6 +13499,129 @@ fn simple_line_stroke_fill_outline(
         }
     }
     polygon_flattened_path(points)
+}
+
+fn joined_stroke_fill_outline(
+    lines: &[LineSegment],
+    joins: &[StrokeJoin],
+    prepared_joins: &[PreparedStrokeJoin],
+    radius: f64,
+    line_cap: LineCap,
+    line_join: LineJoin,
+) -> Option<FlattenedPath> {
+    if radius <= 0.0 || lines.is_empty() || joins.is_empty() {
+        return None;
+    }
+    let mut subpaths = Vec::with_capacity(lines.len().saturating_add(joins.len() * 2));
+    let mut outline_lines = Vec::new();
+    for line in lines {
+        let outline = simple_line_stroke_fill_outline(*line, radius, line_cap)?;
+        append_outline_component(
+            &mut subpaths,
+            &mut outline_lines,
+            outline.subpaths.into_iter().next()?,
+        )?;
+    }
+    match line_join {
+        LineJoin::Round => {
+            for join in joins {
+                append_outline_component(
+                    &mut subpaths,
+                    &mut outline_lines,
+                    circle_outline_points(join.point, radius),
+                )?;
+            }
+        }
+        LineJoin::Bevel | LineJoin::Miter => {
+            for join in prepared_joins {
+                for side in join.sides {
+                    let triangle = if matches!(line_join, LineJoin::Miter) {
+                        side.miter.map_or(side.bevel, |prepared| prepared.triangle)
+                    } else {
+                        side.bevel
+                    };
+                    append_outline_component(
+                        &mut subpaths,
+                        &mut outline_lines,
+                        vec![triangle.a, triangle.b, triangle.c],
+                    )?;
+                }
+            }
+        }
+    }
+    (!subpaths.is_empty()).then_some(FlattenedPath {
+        subpaths,
+        lines: outline_lines,
+        joins: Vec::new(),
+        stats: FlattenedPathStats::default(),
+    })
+}
+
+fn joined_outline_subpath_candidate(subpaths: &[Vec<Point>]) -> bool {
+    let [points] = subpaths else {
+        return false;
+    };
+    points.len() >= 3 && !subpath_is_closed(points)
+}
+
+fn subpath_is_closed(points: &[Point]) -> bool {
+    points
+        .first()
+        .zip(points.last())
+        .is_some_and(|(first, last)| point_distance_squared(*first, *last) <= f64::EPSILON)
+}
+
+fn append_outline_component(
+    subpaths: &mut Vec<Vec<Point>>,
+    lines: &mut Vec<LineSegment>,
+    mut points: Vec<Point>,
+) -> Option<()> {
+    normalize_polygon_for_nonzero_fill(&mut points)?;
+    lines.extend(polygon_edges(&points));
+    subpaths.push(points);
+    Some(())
+}
+
+fn circle_outline_points(center: Point, radius: f64) -> Vec<Point> {
+    let segments = STROKE_CURVE_MIN_FLATTENED_SEGMENTS * 2;
+    let mut points = Vec::with_capacity(segments);
+    for step in 0..segments {
+        let angle = std::f64::consts::TAU * step as f64 / segments as f64;
+        points.push(Point {
+            x: angle.cos().mul_add(radius, center.x),
+            y: angle.sin().mul_add(radius, center.y),
+        });
+    }
+    points
+}
+
+fn normalize_polygon_for_nonzero_fill(points: &mut Vec<Point>) -> Option<()> {
+    points.dedup_by(|left, right| point_distance_squared(*left, *right) <= f64::EPSILON);
+    if points.len() > 1
+        && points
+            .first()
+            .zip(points.last())
+            .is_some_and(|(first, last)| point_distance_squared(*first, *last) <= f64::EPSILON)
+    {
+        points.pop();
+    }
+    let area = polygon_signed_area(points);
+    if area.abs() <= f64::EPSILON {
+        return None;
+    }
+    if area < 0.0 {
+        points.reverse();
+    }
+    Some(())
+}
+
+fn device_color_is_low_chroma(color: DeviceColor) -> bool {
+    match color {
+        DeviceColor::Gray(_) => true,
+        DeviceColor::Rgb { r, g, b } | DeviceColor::Spot { r, g, b, .. } => {
+            r.max(g).max(b) - r.min(g).min(b) <= 0.1
+        }
+    }
 }
 
 fn offset_point(point: Point, normal: Point, distance: f64) -> Point {
@@ -13619,6 +13757,50 @@ fn stroke_path(
             return Ok(());
         }
     }
+    let prepared_joins = prepare_stroke_joins(joins, radius, state.line_join, state.miter_limit);
+    if !snap_hairline
+        && state.dash_pattern.is_solid()
+        && matches!(state.line_cap, LineCap::Butt)
+        && radius >= 1.0
+        && samples > 1
+        && !joins.is_empty()
+        && pixel_bounds_area(bounds) >= STROKE_JOINED_OUTLINE_MIN_PIXELS
+        && joined_outline_subpath_candidate(&path.subpaths)
+    {
+        if let Some(outline) = joined_stroke_fill_outline(
+            stroke_lines,
+            joins,
+            &prepared_joins,
+            radius,
+            state.line_cap,
+            state.line_join,
+        ) {
+            if let Some(stroke_routes) = context.stroke_routes {
+                stroke_routes.borrow_mut().record_joined_outline_fill_call();
+            }
+            let outline_context = if state.alpha < 1.0 || device_color_is_low_chroma(state.color) {
+                PathRasterContext {
+                    options: PathRasterOptions {
+                        fill_route: FillRasterRoute::Sampled,
+                        ..context.options
+                    },
+                    ..context
+                }
+            } else {
+                context
+            };
+            fill_path(
+                device,
+                &outline,
+                FillRule::Nonzero,
+                state.color,
+                state.blend_mode,
+                state.alpha,
+                outline_context,
+            )?;
+            return Ok(());
+        }
+    }
     let axis_spans = axis_stroke_raster_spans(
         stroke_lines,
         joins,
@@ -13628,7 +13810,6 @@ fn stroke_path(
         samples,
         state.line_cap,
     );
-    let prepared_joins = prepare_stroke_joins(joins, radius, state.line_join, state.miter_limit);
     let has_joins = !joins.is_empty();
     if let Some(spans) = axis_spans {
         let join_buckets = has_joins
@@ -21531,6 +21712,66 @@ mod tests {
             device.pixel(40, 40).expect("diagonal stroke center pixel"),
             Rgba::WHITE
         );
+    }
+
+    #[test]
+    fn stroke_raster_route_summary_should_count_joined_outline_fill_calls() {
+        for line_join in [LineJoin::Miter, LineJoin::Bevel, LineJoin::Round] {
+            let transform = PageTransform::new(
+                PageGeometry {
+                    media_box: PathBounds {
+                        min_x: 0.0,
+                        min_y: 0.0,
+                        max_x: 160.0,
+                        max_y: 160.0,
+                    },
+                    crop_box: None,
+                    rotation: PageRotation::Deg0,
+                },
+                160,
+            )
+            .expect("valid page transform");
+            let display_list = DisplayList::from_items(vec![DisplayItem::Path(PathDisplayItem {
+                segments: vec![
+                    PathSegment::MoveTo(Point { x: 16.0, y: 20.0 }),
+                    PathSegment::LineTo(Point { x: 92.0, y: 50.0 }),
+                    PathSegment::LineTo(Point { x: 128.0, y: 132.0 }),
+                ],
+                paint: PaintMode::Stroke,
+                state: GraphicsState {
+                    line_width: 8.0,
+                    line_cap: LineCap::Butt,
+                    line_join,
+                    ..GraphicsState::default()
+                },
+                fill_pattern: None,
+            })]);
+            let mut device = transform.create_device(Rgba::WHITE).expect("valid device");
+            let routes = RefCell::new(StrokeRasterRouteSummary::default());
+
+            rasterize_display_list_into_with_phase_timings_and_stroke_routes(
+                &display_list,
+                &mut device,
+                transform,
+                PathRasterOptions::default(),
+                &routes,
+                |_phase, _duration| {},
+            )
+            .expect("route-aware joined stroke should render");
+
+            let routes = routes.into_inner();
+            assert_eq!(
+                routes.outline_joined_calls, 1,
+                "joined outline calls for {line_join:?}"
+            );
+            assert_eq!(
+                routes.outline_fill_calls, 1,
+                "outline fill calls for {line_join:?}"
+            );
+            assert_eq!(routes.outline_axis_line_calls, 0);
+            assert_eq!(routes.span_covered_calls, 0);
+            assert_eq!(routes.row_bucket_range_calls, 0);
+        }
     }
 
     #[test]
