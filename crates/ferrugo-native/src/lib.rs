@@ -474,18 +474,30 @@ struct SessionFontResourceCacheEntry {
     resident_bytes: usize,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct SessionFontResourceCacheKey {
-    page_index: u32,
-    native_profile: &'static str,
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum SessionFontResourceCacheKey {
+    Page {
+        page_index: u32,
+        native_profile: &'static str,
+    },
+    FontReferences {
+        fonts: Vec<SessionFontResourceReferenceKey>,
+        native_profile: &'static str,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SessionFontResourceReferenceKey {
+    resource_name: Vec<u8>,
+    reference: Reference,
 }
 
 impl SessionFontResourceCache {
-    fn get(&mut self, key: SessionFontResourceCacheKey) -> Option<FontResources> {
+    fn get(&mut self, key: &SessionFontResourceCacheKey) -> Option<FontResources> {
         let resources = self
             .entries
             .iter()
-            .find_map(|entry| (entry.key == key).then(|| entry.resources.clone()));
+            .find_map(|entry| (&entry.key == key).then(|| entry.resources.clone()));
         if resources.is_some() {
             self.hits += 1;
         } else {
@@ -3578,17 +3590,20 @@ fn cached_page_font_resources(
     request: PageFontResourceRequest<'_, '_>,
     cache_access: Option<SessionFontResourceCacheAccess<'_>>,
 ) -> Result<FontResources, ThumbnailError> {
+    let Some(fonts) = page_font_dictionary(request.document, request.page)? else {
+        return Ok(FontResources::empty());
+    };
     let Some(cache_access) = cache_access else {
-        return page_font_resources(request.document, request.page, request.options);
+        return FontResources::from_font_dictionary(fonts, request.document, request.options)
+            .map_err(map_graphics_error);
     };
-    let key = SessionFontResourceCacheKey {
-        page_index: cache_access.page_index,
-        native_profile: native_profile_name(cache_access.limits),
-    };
-    if let Some(resources) = cache_access.cache.borrow_mut().get(key) {
+    let native_profile = native_profile_name(cache_access.limits);
+    let key = font_resource_cache_key(cache_access.page_index, native_profile, fonts)?;
+    if let Some(resources) = cache_access.cache.borrow_mut().get(&key) {
         return Ok(resources);
     }
-    let resources = page_font_resources(request.document, request.page, request.options)?;
+    let resources = FontResources::from_font_dictionary(fonts, request.document, request.options)
+        .map_err(map_graphics_error)?;
     cache_access.cache.borrow_mut().insert(
         key,
         &resources,
@@ -4235,36 +4250,75 @@ fn page_font_resources(
     page: &ObjectPageMetadata,
     options: DisplayListOptions,
 ) -> Result<FontResources, ThumbnailError> {
+    let Some(fonts) = page_font_dictionary(document, page)? else {
+        return Ok(FontResources::empty());
+    };
+    FontResources::from_font_dictionary(fonts, document, options).map_err(map_graphics_error)
+}
+
+fn page_font_dictionary<'a>(
+    document: &'a ClassicDocument<'a>,
+    page: &ObjectPageMetadata,
+) -> Result<Option<&'a [(PdfName<'a>, PdfPrimitive<'a>)]>, ThumbnailError> {
+    let Some(resource_dictionary) = page_resource_dictionary(document, page)? else {
+        return Ok(None);
+    };
+    let Some(PdfPrimitive::Dictionary(fonts)) = dictionary_value(resource_dictionary, b"Font")
+    else {
+        return Ok(None);
+    };
+    Ok(Some(fonts))
+}
+
+fn page_resource_dictionary<'a>(
+    document: &'a ClassicDocument<'a>,
+    page: &ObjectPageMetadata,
+) -> Result<Option<&'a [(PdfName<'a>, PdfPrimitive<'a>)]>, ThumbnailError> {
     let object = document
         .objects
         .get(page.id)
         .ok_or(ThumbnailError::Malformed)?;
     let dictionary = object_dictionary(&object.value)?;
-    let Some(resources) = dictionary_value(dictionary, b"Resources") else {
-        return Ok(FontResources::empty());
+    if let Some(resources) = dictionary_value(dictionary, b"Resources") {
+        return resource_dictionary(document, resources).map(Some);
+    }
+    let Some(reference) = page.resources else {
+        return Ok(None);
     };
-    let resource_dictionary = match resources {
-        PdfPrimitive::Dictionary(dictionary) => dictionary.as_slice(),
-        PdfPrimitive::Reference(reference) => {
-            let object_number =
-                ObjectNumber::new(reference.object).map_err(|_| ThumbnailError::Malformed)?;
-            let reference = Reference::new(ObjectId::new(
-                object_number,
-                GenerationNumber::new(reference.generation),
-            ));
-            let object = document
-                .objects
-                .get(reference.id)
-                .ok_or(ThumbnailError::Malformed)?;
-            object_dictionary(&object.value)?
-        }
-        _ => return Err(ThumbnailError::Malformed),
-    };
-    let Some(PdfPrimitive::Dictionary(fonts)) = dictionary_value(resource_dictionary, b"Font")
-    else {
-        return Ok(FontResources::empty());
-    };
-    FontResources::from_font_dictionary(fonts, document, options).map_err(map_graphics_error)
+    let object = document
+        .objects
+        .get(reference.id)
+        .ok_or(ThumbnailError::Malformed)?;
+    object_dictionary(&object.value).map(Some)
+}
+
+fn font_resource_cache_key(
+    page_index: u32,
+    native_profile: &'static str,
+    fonts: &[(PdfName<'_>, PdfPrimitive<'_>)],
+) -> Result<SessionFontResourceCacheKey, ThumbnailError> {
+    let mut references = Vec::with_capacity(fonts.len());
+    for (name, value) in fonts {
+        let PdfPrimitive::Reference(reference) = value else {
+            return Ok(SessionFontResourceCacheKey::Page {
+                page_index,
+                native_profile,
+            });
+        };
+        references.push(SessionFontResourceReferenceKey {
+            resource_name: name.as_bytes().to_vec(),
+            reference: object_reference(*reference)?,
+        });
+    }
+    references.sort_by(|left, right| {
+        left.resource_name
+            .cmp(&right.resource_name)
+            .then(left.reference.cmp(&right.reference))
+    });
+    Ok(SessionFontResourceCacheKey::FontReferences {
+        fonts: references,
+        native_profile,
+    })
 }
 
 fn annotation_array<'a>(
@@ -6328,6 +6382,32 @@ mod tests {
         assert!(stats.cached_font_resource_hits > 0);
         assert!(stats.cached_font_resource_misses > 0);
         assert!(stats.cached_font_resource_inserts > 0);
+        assert_eq!(stats.cached_font_resource_evictions, 0);
+    }
+
+    #[test]
+    fn native_document_session_should_share_font_resources_across_pages() {
+        let bytes = include_bytes!("../../../fixtures/generated/longform-repeated-resources.pdf");
+        let backend = NativeBackend::new();
+
+        let session = backend
+            .document_session(bytes, &[0, 1, 2])
+            .expect("document session should load");
+        for page_index in 0..3 {
+            session
+                .render_page(&ThumbnailOptions {
+                    page_index,
+                    max_edge: 160,
+                    ..ThumbnailOptions::default()
+                })
+                .expect("session page should render");
+        }
+        let stats = session.stats();
+
+        assert_eq!(stats.cached_font_resource_entries, 1);
+        assert_eq!(stats.cached_font_resource_misses, 1);
+        assert_eq!(stats.cached_font_resource_hits, 2);
+        assert_eq!(stats.cached_font_resource_inserts, 1);
         assert_eq!(stats.cached_font_resource_evictions, 0);
     }
 
