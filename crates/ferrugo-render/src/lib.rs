@@ -12033,7 +12033,7 @@ fn fill_path_with_coverage_spans(
     let mut intervals = Vec::new();
     let mut row_modes = vec![FILL_ROW_EMPTY; width];
     let mut edge_coverages = Vec::new();
-    let edge_coverage = FillEdgeCoverage::for_path(path, rule);
+    let mut edge_coverage = FillEdgeCoverage::for_path(path, rule);
 
     for y in bounds.min_y..bounds.max_y {
         stats.rows += 1;
@@ -12331,41 +12331,87 @@ fn analytic_fill_coverage_for_pixel(path: &FlattenedPath, rule: FillRule, x: u32
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum FillEdgeCoverage {
+enum FillEdgeCoverageMode {
     Nonzero,
     EvenOddNonCrossingSimpleSubpaths,
     EvenOddSupersampled,
 }
 
+#[derive(Debug, Clone)]
+struct FillEdgeCoverage {
+    mode: FillEdgeCoverageMode,
+    even_odd_subpath_depths: Vec<usize>,
+    scratch_a: Vec<Point>,
+    scratch_b: Vec<Point>,
+}
+
 impl FillEdgeCoverage {
     fn for_path(path: &FlattenedPath, rule: FillRule) -> Self {
-        match rule {
-            FillRule::Nonzero => Self::Nonzero,
+        let mode = match rule {
+            FillRule::Nonzero => FillEdgeCoverageMode::Nonzero,
             FillRule::EvenOdd if path_has_non_crossing_simple_subpaths(path) => {
-                Self::EvenOddNonCrossingSimpleSubpaths
+                FillEdgeCoverageMode::EvenOddNonCrossingSimpleSubpaths
             }
-            FillRule::EvenOdd => Self::EvenOddSupersampled,
+            FillRule::EvenOdd => FillEdgeCoverageMode::EvenOddSupersampled,
+        };
+        let even_odd_subpath_depths =
+            if mode == FillEdgeCoverageMode::EvenOddNonCrossingSimpleSubpaths {
+                even_odd_subpath_depths(path)
+            } else {
+                Vec::new()
+            };
+        let scratch_capacity = path
+            .subpaths
+            .iter()
+            .map(Vec::len)
+            .max()
+            .unwrap_or_default()
+            .saturating_add(4);
+        Self {
+            mode,
+            even_odd_subpath_depths,
+            scratch_a: Vec::with_capacity(scratch_capacity),
+            scratch_b: Vec::with_capacity(scratch_capacity),
         }
     }
 
-    fn coverage_for_pixel(self, path: &FlattenedPath, x: u32, y: u32) -> u8 {
-        match self {
-            Self::Nonzero => nonzero_fill_coverage_for_pixel(path, x, y),
-            Self::EvenOddNonCrossingSimpleSubpaths => {
-                non_crossing_even_odd_fill_coverage_for_pixel(path, x, y)
+    #[cfg(test)]
+    fn mode(&self) -> FillEdgeCoverageMode {
+        self.mode
+    }
+
+    fn coverage_for_pixel(&mut self, path: &FlattenedPath, x: u32, y: u32) -> u8 {
+        match self.mode {
+            FillEdgeCoverageMode::Nonzero => nonzero_fill_coverage_for_pixel(
+                path,
+                x,
+                y,
+                &mut self.scratch_a,
+                &mut self.scratch_b,
+            ),
+            FillEdgeCoverageMode::EvenOddNonCrossingSimpleSubpaths => {
+                non_crossing_even_odd_fill_coverage_for_pixel(
+                    path,
+                    &self.even_odd_subpath_depths,
+                    x,
+                    y,
+                    &mut self.scratch_a,
+                    &mut self.scratch_b,
+                )
             }
-            Self::EvenOddSupersampled => {
+            FillEdgeCoverageMode::EvenOddSupersampled => {
                 supersampled_fill_coverage_for_pixel(path, FillRule::EvenOdd, x, y, 16)
             }
         }
     }
 
-    fn record_edge_pixel(self, stats: &mut FillCoverageSpanStats) {
-        match self {
-            Self::Nonzero | Self::EvenOddNonCrossingSimpleSubpaths => {
+    fn record_edge_pixel(&self, stats: &mut FillCoverageSpanStats) {
+        match self.mode {
+            FillEdgeCoverageMode::Nonzero
+            | FillEdgeCoverageMode::EvenOddNonCrossingSimpleSubpaths => {
                 stats.analytic_edge_pixels = stats.analytic_edge_pixels.saturating_add(1);
             }
-            Self::EvenOddSupersampled => {
+            FillEdgeCoverageMode::EvenOddSupersampled => {
                 stats.sampled_edge_pixels = stats.sampled_edge_pixels.saturating_add(1);
             }
         }
@@ -12455,30 +12501,45 @@ fn point_on_segment(point: Point, segment: LineSegment) -> bool {
         && point.y <= segment.from.y.max(segment.to.y) + f64::EPSILON
 }
 
-fn nonzero_fill_coverage_for_pixel(path: &FlattenedPath, x: u32, y: u32) -> u8 {
-    let signed_area = path
-        .subpaths
-        .iter()
-        .map(|subpath| clipped_polygon_signed_area_for_pixel(subpath, x, y))
-        .sum::<f64>();
+fn nonzero_fill_coverage_for_pixel(
+    path: &FlattenedPath,
+    x: u32,
+    y: u32,
+    scratch_a: &mut Vec<Point>,
+    scratch_b: &mut Vec<Point>,
+) -> u8 {
+    let mut signed_area = 0.0;
+    for subpath in &path.subpaths {
+        signed_area += clipped_polygon_signed_area_for_pixel(subpath, x, y, scratch_a, scratch_b);
+    }
     coverage_area_to_alpha(signed_area.abs())
 }
 
-fn non_crossing_even_odd_fill_coverage_for_pixel(path: &FlattenedPath, x: u32, y: u32) -> u8 {
-    let area = path
-        .subpaths
-        .iter()
-        .enumerate()
-        .map(|(index, subpath)| {
-            let area = clipped_polygon_signed_area_for_pixel(subpath, x, y).abs();
-            if even_odd_subpath_depth(path, index) % 2 == 0 {
-                area
-            } else {
-                -area
-            }
-        })
-        .sum::<f64>();
+fn non_crossing_even_odd_fill_coverage_for_pixel(
+    path: &FlattenedPath,
+    subpath_depths: &[usize],
+    x: u32,
+    y: u32,
+    scratch_a: &mut Vec<Point>,
+    scratch_b: &mut Vec<Point>,
+) -> u8 {
+    let mut area = 0.0;
+    for (index, subpath) in path.subpaths.iter().enumerate() {
+        let subpath_area =
+            clipped_polygon_signed_area_for_pixel(subpath, x, y, scratch_a, scratch_b).abs();
+        if subpath_depths.get(index).copied().unwrap_or_default() % 2 == 0 {
+            area += subpath_area;
+        } else {
+            area -= subpath_area;
+        }
+    }
     coverage_area_to_alpha(area)
+}
+
+fn even_odd_subpath_depths(path: &FlattenedPath) -> Vec<usize> {
+    (0..path.subpaths.len())
+        .map(|index| even_odd_subpath_depth(path, index))
+        .collect()
 }
 
 fn even_odd_subpath_depth(path: &FlattenedPath, subpath_index: usize) -> usize {
@@ -12509,7 +12570,13 @@ fn coverage_area_to_alpha(area: f64) -> u8 {
     (area.clamp(0.0, 1.0) * 255.0).round() as u8
 }
 
-fn clipped_polygon_signed_area_for_pixel(polygon: &[Point], x: u32, y: u32) -> f64 {
+fn clipped_polygon_signed_area_for_pixel(
+    polygon: &[Point],
+    x: u32,
+    y: u32,
+    scratch_a: &mut Vec<Point>,
+    scratch_b: &mut Vec<Point>,
+) -> f64 {
     if polygon.len() < 3 {
         return 0.0;
     }
@@ -12517,42 +12584,53 @@ fn clipped_polygon_signed_area_for_pixel(polygon: &[Point], x: u32, y: u32) -> f
     let y0 = f64::from(y);
     let x1 = x0 + 1.0;
     let y1 = y0 + 1.0;
-    let mut clipped = polygon.to_vec();
-    clipped = clip_polygon_by_axis(
-        clipped,
+
+    scratch_a.clear();
+    scratch_a.extend_from_slice(polygon);
+    clip_polygon_by_axis(
+        scratch_a,
+        scratch_b,
         |point| point.x >= x0,
         |a, b| intersect_segment_with_vertical(a, b, x0),
     );
-    clipped = clip_polygon_by_axis(
-        clipped,
+    std::mem::swap(scratch_a, scratch_b);
+    clip_polygon_by_axis(
+        scratch_a,
+        scratch_b,
         |point| point.x <= x1,
         |a, b| intersect_segment_with_vertical(a, b, x1),
     );
-    clipped = clip_polygon_by_axis(
-        clipped,
+    std::mem::swap(scratch_a, scratch_b);
+    clip_polygon_by_axis(
+        scratch_a,
+        scratch_b,
         |point| point.y >= y0,
         |a, b| intersect_segment_with_horizontal(a, b, y0),
     );
-    clipped = clip_polygon_by_axis(
-        clipped,
+    std::mem::swap(scratch_a, scratch_b);
+    clip_polygon_by_axis(
+        scratch_a,
+        scratch_b,
         |point| point.y <= y1,
         |a, b| intersect_segment_with_horizontal(a, b, y1),
     );
-    polygon_signed_area(&clipped)
+    std::mem::swap(scratch_a, scratch_b);
+    polygon_signed_area(scratch_a)
 }
 
 fn clip_polygon_by_axis(
-    polygon: Vec<Point>,
+    polygon: &[Point],
+    output: &mut Vec<Point>,
     inside: impl Fn(Point) -> bool,
     intersection: impl Fn(Point, Point) -> Point,
-) -> Vec<Point> {
+) {
+    output.clear();
     if polygon.is_empty() {
-        return polygon;
+        return;
     }
-    let mut output = Vec::new();
     let mut previous = *polygon.last().expect("polygon is non-empty");
     let mut previous_inside = inside(previous);
-    for current in polygon {
+    for &current in polygon {
         let current_inside = inside(current);
         match (previous_inside, current_inside) {
             (true, true) => output.push(current),
@@ -12566,7 +12644,6 @@ fn clip_polygon_by_axis(
         previous = current;
         previous_inside = current_inside;
     }
-    output
 }
 
 fn intersect_segment_with_vertical(from: Point, to: Point, x: f64) -> Point {
@@ -24230,8 +24307,8 @@ mod tests {
         };
 
         assert_eq!(
-            FillEdgeCoverage::for_path(&path, FillRule::EvenOdd),
-            FillEdgeCoverage::EvenOddNonCrossingSimpleSubpaths
+            FillEdgeCoverage::for_path(&path, FillRule::EvenOdd).mode(),
+            FillEdgeCoverageMode::EvenOddNonCrossingSimpleSubpaths
         );
         assert_eq!(
             analytic_fill_coverage_for_pixel(&path, FillRule::EvenOdd, 0, 0),
@@ -24260,8 +24337,8 @@ mod tests {
         };
 
         assert_eq!(
-            FillEdgeCoverage::for_path(&path, FillRule::EvenOdd),
-            FillEdgeCoverage::EvenOddNonCrossingSimpleSubpaths
+            FillEdgeCoverage::for_path(&path, FillRule::EvenOdd).mode(),
+            FillEdgeCoverageMode::EvenOddNonCrossingSimpleSubpaths
         );
         assert_eq!(
             analytic_fill_coverage_for_pixel(&path, FillRule::EvenOdd, 0, 0),
@@ -24296,8 +24373,8 @@ mod tests {
         };
 
         assert_eq!(
-            FillEdgeCoverage::for_path(&path, FillRule::EvenOdd),
-            FillEdgeCoverage::EvenOddNonCrossingSimpleSubpaths
+            FillEdgeCoverage::for_path(&path, FillRule::EvenOdd).mode(),
+            FillEdgeCoverageMode::EvenOddNonCrossingSimpleSubpaths
         );
         assert_eq!(
             analytic_fill_coverage_for_pixel(&path, FillRule::EvenOdd, 0, 0),
@@ -24326,8 +24403,8 @@ mod tests {
         };
 
         assert_eq!(
-            FillEdgeCoverage::for_path(&path, FillRule::EvenOdd),
-            FillEdgeCoverage::EvenOddNonCrossingSimpleSubpaths
+            FillEdgeCoverage::for_path(&path, FillRule::EvenOdd).mode(),
+            FillEdgeCoverageMode::EvenOddNonCrossingSimpleSubpaths
         );
         assert_eq!(
             analytic_fill_coverage_for_pixel(&path, FillRule::EvenOdd, 0, 0),
@@ -24369,12 +24446,12 @@ mod tests {
         };
 
         assert_eq!(
-            FillEdgeCoverage::for_path(&overlapping_subpaths, FillRule::EvenOdd),
-            FillEdgeCoverage::EvenOddSupersampled
+            FillEdgeCoverage::for_path(&overlapping_subpaths, FillRule::EvenOdd).mode(),
+            FillEdgeCoverageMode::EvenOddSupersampled
         );
         assert_eq!(
-            FillEdgeCoverage::for_path(&self_intersecting, FillRule::EvenOdd),
-            FillEdgeCoverage::EvenOddSupersampled
+            FillEdgeCoverage::for_path(&self_intersecting, FillRule::EvenOdd).mode(),
+            FillEdgeCoverageMode::EvenOddSupersampled
         );
     }
 
