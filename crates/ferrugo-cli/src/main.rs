@@ -7917,6 +7917,8 @@ fn native_memory_diagnostics_json(diagnostics: &NativeMemoryDiagnostics) -> Stri
             "\"max_session_glyph_bitmap_bytes\":{},",
             "\"max_session_type3_template_entries\":{},",
             "\"max_session_type3_template_bytes\":{},",
+            "\"max_session_type3_render_entries\":{},",
+            "\"max_session_type3_render_bytes\":{},",
             "\"spooling_enabled\":{},",
             "\"max_spool_bytes\":{}",
             "}}"
@@ -7943,6 +7945,8 @@ fn native_memory_diagnostics_json(diagnostics: &NativeMemoryDiagnostics) -> Stri
         diagnostics.max_session_glyph_bitmap_bytes,
         diagnostics.max_session_type3_template_entries,
         diagnostics.max_session_type3_template_bytes,
+        diagnostics.max_session_type3_render_entries,
+        diagnostics.max_session_type3_render_bytes,
         diagnostics.spooling_enabled,
         diagnostics.max_spool_bytes
     )
@@ -10418,7 +10422,15 @@ fn native_document_session_stats_json(stats: Option<NativeDocumentSessionStats>)
             "\"cached_type3_template_hits\":{},",
             "\"cached_type3_template_misses\":{},",
             "\"cached_type3_template_inserts\":{},",
-            "\"cached_type3_template_evictions\":{}",
+            "\"cached_type3_template_evictions\":{},",
+            "\"cached_type3_render_entries\":{},",
+            "\"max_cached_type3_render_entries\":{},",
+            "\"cached_type3_render_bytes\":{},",
+            "\"max_cached_type3_render_bytes\":{},",
+            "\"cached_type3_render_hits\":{},",
+            "\"cached_type3_render_misses\":{},",
+            "\"cached_type3_render_inserts\":{},",
+            "\"cached_type3_render_evictions\":{}",
             "}}"
         ),
         native_page_cache_policy_json(stats.cache_policy),
@@ -10467,7 +10479,15 @@ fn native_document_session_stats_json(stats: Option<NativeDocumentSessionStats>)
         stats.cached_type3_template_hits,
         stats.cached_type3_template_misses,
         stats.cached_type3_template_inserts,
-        stats.cached_type3_template_evictions
+        stats.cached_type3_template_evictions,
+        stats.cached_type3_render_entries,
+        stats.max_cached_type3_render_entries,
+        stats.cached_type3_render_bytes,
+        stats.max_cached_type3_render_bytes,
+        stats.cached_type3_render_hits,
+        stats.cached_type3_render_misses,
+        stats.cached_type3_render_inserts,
+        stats.cached_type3_render_evictions
     )
 }
 
@@ -13093,6 +13113,10 @@ status = "candidate"
         assert!(json.contains("\"cached_type3_template_misses\""));
         assert!(json.contains("\"cached_type3_template_inserts\""));
         assert!(json.contains("\"cached_type3_template_evictions\""));
+        assert!(json.contains("\"cached_type3_render_hits\""));
+        assert!(json.contains("\"cached_type3_render_misses\""));
+        assert!(json.contains("\"cached_type3_render_inserts\""));
+        assert!(json.contains("\"cached_type3_render_evictions\""));
         assert!(json.contains("\"cache_key\""));
         assert!(json.contains("\"phase_timings_ms\""));
         assert!(json.contains("\"phase_timings_ms\":{\"first_mean\""));
@@ -13290,6 +13314,8 @@ status = "candidate"
         assert!(json.contains("\"max_session_font_resource_bytes\":67108864"));
         assert!(json.contains("\"max_session_type3_template_entries\":512"));
         assert!(json.contains("\"max_session_type3_template_bytes\":1048576"));
+        assert!(json.contains("\"max_session_type3_render_entries\":128"));
+        assert!(json.contains("\"max_session_type3_render_bytes\":1048576"));
         assert!(json.contains("\"spooling_enabled\":false"));
     }
 

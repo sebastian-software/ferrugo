@@ -71,6 +71,12 @@ pub const DEFAULT_TYPE3_CHAR_PROC_TEMPLATE_CACHE_LIMIT: usize = 128;
 /// Default maximum resident Type 3 CharProc path-template bytes per pass.
 pub const DEFAULT_TYPE3_CHAR_PROC_TEMPLATE_CACHE_BYTES_LIMIT: usize = 512 * 1024;
 
+/// Default maximum cached Type 3 rendered glyph surfaces per session.
+pub const DEFAULT_TYPE3_GLYPH_RENDER_CACHE_LIMIT: usize = 128;
+
+/// Default maximum resident Type 3 rendered glyph-surface bytes per session.
+pub const DEFAULT_TYPE3_GLYPH_RENDER_CACHE_BYTES_LIMIT: usize = 1024 * 1024;
+
 const STANDARD_BASE_FONT_CELL_SCALE: f64 = 0.75;
 
 /// Default maximum cached deterministic font fallback resolutions.
@@ -6012,6 +6018,7 @@ pub fn rasterize_paths_into(
                     &mut transparency_scratch,
                     &glyph_cache,
                     &type3_cache,
+                    None,
                 )?;
             }
             DisplayItem::Text(_) | DisplayItem::Image(_) => {}
@@ -6480,6 +6487,7 @@ pub fn rasterize_display_list_into(
         &type3_cache,
         None,
         None,
+        None,
         None::<&mut fn(RasterDisplayPhase, Duration)>,
     )
 }
@@ -6569,6 +6577,7 @@ pub fn rasterize_display_list_into_with_phase_timings_and_caches(
         type3_cache,
         None,
         None,
+        None,
         Some(&mut on_phase),
     )
 }
@@ -6601,6 +6610,7 @@ pub fn rasterize_display_list_into_with_phase_timings_and_stroke_routes(
         &mut transparency_scratch,
         &glyph_cache,
         &type3_cache,
+        None,
         None,
         Some(stroke_routes),
         Some(&mut on_phase),
@@ -6704,6 +6714,48 @@ pub fn rasterize_display_list_into_with_phase_timings_route_summaries_and_caches
         &mut transparency_scratch,
         glyph_cache,
         type3_cache,
+        None,
+        Some(fill_routes),
+        Some(stroke_routes),
+        Some(&mut on_phase),
+    )
+}
+
+/// Rasterizes all supported display-list items with caller-owned text caches,
+/// including a strict Type 3 rendered-glyph cache.
+///
+/// This keeps the rendered-glyph cache opt-in for explicit document/session
+/// callers while preserving the default one-shot render path.
+///
+/// # Errors
+///
+/// Returns [`RasterError`] when path, image, or text rasterization fails.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "diagnostic session rendering needs explicit route, cache, and timing sinks"
+)]
+pub fn rasterize_display_list_into_with_phase_timings_route_summaries_and_type3_render_cache(
+    display_list: &DisplayList,
+    device: &mut RasterDevice,
+    transform: PageTransform,
+    options: PathRasterOptions,
+    fill_routes: &RefCell<FillRasterRouteSummary>,
+    stroke_routes: &RefCell<StrokeRasterRouteSummary>,
+    glyph_cache: &RefCell<GlyphBitmapCache>,
+    type3_cache: &RefCell<Type3CharProcTemplateCache>,
+    type3_render_cache: &RefCell<Type3GlyphRenderCache>,
+    mut on_phase: impl FnMut(RasterDisplayPhase, Duration),
+) -> RasterResult<()> {
+    let mut transparency_scratch = TransparencyGroupScratch::default();
+    rasterize_display_list_into_with_scratch(
+        display_list,
+        device,
+        transform,
+        options,
+        &mut transparency_scratch,
+        glyph_cache,
+        type3_cache,
+        Some(type3_render_cache),
         Some(fill_routes),
         Some(stroke_routes),
         Some(&mut on_phase),
@@ -6722,6 +6774,7 @@ fn rasterize_display_list_into_with_scratch(
     transparency_scratch: &mut TransparencyGroupScratch,
     glyph_cache: &RefCell<GlyphBitmapCache>,
     type3_cache: &RefCell<Type3CharProcTemplateCache>,
+    type3_render_cache: Option<&RefCell<Type3GlyphRenderCache>>,
     fill_routes: Option<&RefCell<FillRasterRouteSummary>>,
     stroke_routes: Option<&RefCell<StrokeRasterRouteSummary>>,
     mut on_phase: Option<&mut impl FnMut(RasterDisplayPhase, Duration)>,
@@ -6796,6 +6849,7 @@ fn rasterize_display_list_into_with_scratch(
                         transparency_scratch,
                         glyph_cache,
                         type3_cache,
+                        type3_render_cache,
                     )
                 })?;
             }
@@ -6808,14 +6862,28 @@ fn rasterize_display_list_into_with_scratch(
                 record_raster_display_phase(&mut on_phase, RasterDisplayPhase::Text, || {
                     let mut glyph_cache = glyph_cache.borrow_mut();
                     let mut type3_cache = type3_cache.borrow_mut();
-                    draw_text_run(
-                        device,
-                        text,
-                        transform,
-                        options,
-                        &mut glyph_cache,
-                        &mut type3_cache,
-                    )
+                    if let Some(type3_render_cache) = type3_render_cache {
+                        let mut type3_render_cache = type3_render_cache.borrow_mut();
+                        draw_text_run(
+                            device,
+                            text,
+                            transform,
+                            options,
+                            &mut glyph_cache,
+                            &mut type3_cache,
+                            Some(&mut type3_render_cache),
+                        )
+                    } else {
+                        draw_text_run(
+                            device,
+                            text,
+                            transform,
+                            options,
+                            &mut glyph_cache,
+                            &mut type3_cache,
+                            None,
+                        )
+                    }
                 })?;
             }
         }
@@ -7356,6 +7424,7 @@ fn rasterize_transparency_group(
     scratch: &mut TransparencyGroupScratch,
     glyph_cache: &RefCell<GlyphBitmapCache>,
     type3_cache: &RefCell<Type3CharProcTemplateCache>,
+    type3_render_cache: Option<&RefCell<Type3GlyphRenderCache>>,
 ) -> RasterResult<()> {
     let Some(bounds) = transparency_group_device_bounds(group.bounds, transform) else {
         return Ok(());
@@ -7400,6 +7469,7 @@ fn rasterize_transparency_group(
         &mut nested_transparency_scratch,
         glyph_cache,
         type3_cache,
+        type3_render_cache,
         None,
         None,
         None::<&mut fn(RasterDisplayPhase, Duration)>,
@@ -7566,6 +7636,30 @@ pub fn rasterize_text_with_caches(
     glyph_cache: &mut GlyphBitmapCache,
     type3_cache: &mut Type3CharProcTemplateCache,
 ) -> RasterResult<()> {
+    rasterize_text_with_caches_and_type3_render_cache(
+        display_list,
+        device,
+        transform,
+        glyph_cache,
+        type3_cache,
+        None,
+    )
+}
+
+/// Rasterizes text display-list items using caller-owned text caches, including
+/// an optional strict Type 3 rendered-glyph cache.
+///
+/// # Errors
+///
+/// Returns [`RasterError`] when device access fails.
+pub fn rasterize_text_with_caches_and_type3_render_cache(
+    display_list: &DisplayList,
+    device: &mut RasterDevice,
+    transform: PageTransform,
+    glyph_cache: &mut GlyphBitmapCache,
+    type3_cache: &mut Type3CharProcTemplateCache,
+    mut type3_render_cache: Option<&mut Type3GlyphRenderCache>,
+) -> RasterResult<()> {
     for item in display_list.items() {
         let DisplayItem::Text(text) = item else {
             continue;
@@ -7577,6 +7671,7 @@ pub fn rasterize_text_with_caches(
             PathRasterOptions::default(),
             glyph_cache,
             type3_cache,
+            type3_render_cache.as_deref_mut(),
         )?;
     }
     Ok(())
@@ -18561,6 +18656,7 @@ fn draw_text_run(
     options: PathRasterOptions,
     glyph_cache: &mut GlyphBitmapCache,
     type3_cache: &mut Type3CharProcTemplateCache,
+    type3_render_cache: Option<&mut Type3GlyphRenderCache>,
 ) -> RasterResult<()> {
     if !text.rendering_mode.paints_pixels() {
         return Ok(());
@@ -18573,7 +18669,14 @@ fn draw_text_run(
         return Ok(());
     };
     if text.font.type3.is_some() {
-        return draw_type3_text_run(device, text, page_transform, options, type3_cache);
+        return draw_type3_text_run(
+            device,
+            text,
+            page_transform,
+            options,
+            type3_cache,
+            type3_render_cache,
+        );
     }
     let fallback = text.font.fallback.unwrap_or(FontFallback {
         face: FontFallbackFace::Sans,
@@ -18605,6 +18708,7 @@ fn draw_type3_text_run(
     page_transform: PageTransform,
     options: PathRasterOptions,
     char_proc_cache: &mut Type3CharProcTemplateCache,
+    mut type3_render_cache: Option<&mut Type3GlyphRenderCache>,
 ) -> RasterResult<()> {
     let type3 = text.font.type3.as_ref().ok_or_else(|| {
         RasterError::new(RasterErrorKind::Type3Glyph {
@@ -18618,7 +18722,38 @@ fn draw_type3_text_run(
         else {
             continue;
         };
-        let paths = char_proc_cache.paths_for(text, type3, base, char_proc)?;
+        let template_key = Type3CharProcTemplateKey::new(text, type3, base, char_proc);
+        let paths =
+            char_proc_cache.paths_for_key(template_key.clone(), text, type3, base, char_proc)?;
+        if let Some(render_cache) = type3_render_cache.as_deref_mut() {
+            if type3_paths_support_render_cache(paths.as_ref(), options) {
+                let render_key =
+                    Type3GlyphRenderKey::new(template_key, *origin, page_transform, options);
+                let surface =
+                    render_cache.surface_for(render_key, page_transform.dimensions, |scratch| {
+                        let mut render_pattern_cache =
+                            PatternCellCache::new(options.max_pattern_cell_cache_entries);
+                        for path in paths.as_ref() {
+                            let path = translate_type3_path_template(path, *origin);
+                            rasterize_path_item(
+                                &path,
+                                scratch,
+                                PathRasterContext {
+                                    transform: page_transform,
+                                    options,
+                                    clips: &[],
+                                    fill_routes: None,
+                                    stroke_routes: None,
+                                },
+                                &mut render_pattern_cache,
+                            )?;
+                        }
+                        Ok(())
+                    })?;
+                composite_type3_render_surface(device, &surface)?;
+                continue;
+            }
+        }
         for path in paths.as_ref() {
             let path = translate_type3_path_template(path, *origin);
             rasterize_path_item(
@@ -18723,6 +18858,7 @@ impl Type3CharProcTemplateCache {
         }
     }
 
+    #[cfg(test)]
     fn paths_for(
         &mut self,
         text: &TextDisplayItem,
@@ -18731,6 +18867,17 @@ impl Type3CharProcTemplateCache {
         char_proc: &Type3CharProc,
     ) -> RasterResult<Type3CharProcTemplateLookup<'_>> {
         let key = Type3CharProcTemplateKey::new(text, type3, base, char_proc);
+        self.paths_for_key(key, text, type3, base, char_proc)
+    }
+
+    fn paths_for_key(
+        &mut self,
+        key: Type3CharProcTemplateKey,
+        text: &TextDisplayItem,
+        type3: &Type3Font,
+        base: Matrix,
+        char_proc: &Type3CharProc,
+    ) -> RasterResult<Type3CharProcTemplateLookup<'_>> {
         if let Some(index) = self.entries.iter().position(|entry| entry.key == key) {
             self.hits = self.hits.saturating_add(1);
             return Ok(Type3CharProcTemplateLookup::Cached(
@@ -18804,6 +18951,168 @@ impl Default for Type3CharProcTemplateCache {
     }
 }
 
+/// Bounded Type 3 rendered-glyph cache.
+///
+/// The cache stores complete transparent RGBA surfaces for strict repeated
+/// Type 3 render inputs. It is intentionally keyed by the CharProc template
+/// identity, exact glyph origin, target transform, and path raster options so
+/// it cannot reuse pixels across different placement or target geometry.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Type3GlyphRenderCache {
+    entries: Vec<Type3GlyphRenderCacheEntry>,
+    max_entries: usize,
+    max_bytes: usize,
+    resident_bytes: usize,
+    hits: usize,
+    misses: usize,
+    inserts: usize,
+    evictions: usize,
+}
+
+/// Observable Type 3 rendered-glyph cache state.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Type3GlyphRenderCacheSummary {
+    /// Cached Type 3 rendered glyph surfaces retained by the cache.
+    pub entries: usize,
+    /// Maximum Type 3 rendered glyph surfaces retained by the cache.
+    pub max_entries: usize,
+    /// Approximate resident bytes retained by cached rendered glyph surfaces.
+    pub bytes: usize,
+    /// Maximum approximate resident rendered glyph bytes retained.
+    pub max_bytes: usize,
+    /// Type 3 rendered-glyph cache hits.
+    pub hits: usize,
+    /// Type 3 rendered-glyph cache misses.
+    pub misses: usize,
+    /// Type 3 rendered-glyph surfaces inserted.
+    pub inserts: usize,
+    /// Type 3 rendered-glyph surfaces evicted.
+    pub evictions: usize,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct Type3GlyphRenderCacheEntry {
+    key: Type3GlyphRenderKey,
+    surface: Type3GlyphRenderSurface,
+    resident_bytes: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Type3GlyphRenderSurface {
+    dimensions: RasterDimensions,
+    pixels: Arc<[u8]>,
+}
+
+impl Type3GlyphRenderCache {
+    /// Creates a Type 3 rendered-glyph cache with a bounded entry count.
+    #[must_use]
+    pub fn new(max_entries: usize) -> Self {
+        Self::with_budget(max_entries, DEFAULT_TYPE3_GLYPH_RENDER_CACHE_BYTES_LIMIT)
+    }
+
+    /// Creates a Type 3 rendered-glyph cache with entry and byte budgets.
+    #[must_use]
+    pub const fn with_budget(max_entries: usize, max_bytes: usize) -> Self {
+        Self {
+            entries: Vec::new(),
+            max_entries,
+            max_bytes,
+            resident_bytes: 0,
+            hits: 0,
+            misses: 0,
+            inserts: 0,
+            evictions: 0,
+        }
+    }
+
+    fn surface_for(
+        &mut self,
+        key: Type3GlyphRenderKey,
+        dimensions: RasterDimensions,
+        render: impl FnOnce(&mut RasterDevice) -> RasterResult<()>,
+    ) -> RasterResult<Type3GlyphRenderSurface> {
+        if let Some(index) = self.entries.iter().position(|entry| entry.key == key) {
+            self.hits = self.hits.saturating_add(1);
+            return Ok(self.entries[index].surface.clone());
+        }
+        self.misses = self.misses.saturating_add(1);
+        let mut scratch = RasterDevice::new(
+            dimensions.width,
+            dimensions.height,
+            Rgba {
+                r: 0,
+                g: 0,
+                b: 0,
+                a: 0,
+            },
+        )?;
+        render(&mut scratch)?;
+        let surface = Type3GlyphRenderSurface {
+            dimensions,
+            pixels: Arc::from(scratch.into_pixels().into_boxed_slice()),
+        };
+        let resident_bytes = type3_glyph_render_resident_bytes(&key, &surface);
+        if self.max_entries == 0 || resident_bytes > self.max_bytes {
+            return Ok(surface);
+        }
+        while self.entries.len() >= self.max_entries
+            || (self.resident_bytes.saturating_add(resident_bytes) > self.max_bytes
+                && !self.entries.is_empty())
+        {
+            let evicted = self.entries.remove(0);
+            self.resident_bytes = self.resident_bytes.saturating_sub(evicted.resident_bytes);
+            self.evictions = self.evictions.saturating_add(1);
+        }
+        if self.resident_bytes.saturating_add(resident_bytes) > self.max_bytes {
+            return Ok(surface);
+        }
+        self.entries.push(Type3GlyphRenderCacheEntry {
+            key,
+            surface: surface.clone(),
+            resident_bytes,
+        });
+        self.resident_bytes = self.resident_bytes.saturating_add(resident_bytes);
+        self.inserts = self.inserts.saturating_add(1);
+        Ok(surface)
+    }
+
+    /// Returns observable Type 3 rendered-glyph cache state.
+    #[must_use]
+    pub fn summary(&self) -> Type3GlyphRenderCacheSummary {
+        Type3GlyphRenderCacheSummary {
+            entries: self.entries.len(),
+            max_entries: self.max_entries,
+            bytes: self.resident_bytes,
+            max_bytes: self.max_bytes,
+            hits: self.hits,
+            misses: self.misses,
+            inserts: self.inserts,
+            evictions: self.evictions,
+        }
+    }
+
+    /// Returns the number of cached Type 3 rendered glyph surfaces.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    /// Returns true when no Type 3 rendered glyph surfaces are cached.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+}
+
+impl Default for Type3GlyphRenderCache {
+    fn default() -> Self {
+        Self::with_budget(
+            DEFAULT_TYPE3_GLYPH_RENDER_CACHE_LIMIT,
+            DEFAULT_TYPE3_GLYPH_RENDER_CACHE_BYTES_LIMIT,
+        )
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Type3CharProcTemplateKey {
     name: Vec<u8>,
@@ -18828,6 +19137,85 @@ impl Type3CharProcTemplateKey {
             font_size: f64_key(text.font_size),
             font_matrix: MatrixKey::from_matrix(type3.font_matrix),
             state: GraphicsStateKey::from_state(text.state),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Type3GlyphRenderKey {
+    template: Type3CharProcTemplateKey,
+    origin: PointKey,
+    page_transform: PageTransformKey,
+    options: PathRasterOptions,
+}
+
+impl Type3GlyphRenderKey {
+    fn new(
+        template: Type3CharProcTemplateKey,
+        origin: Point,
+        page_transform: PageTransform,
+        options: PathRasterOptions,
+    ) -> Self {
+        Self {
+            template,
+            origin: PointKey::from_point(origin),
+            page_transform: PageTransformKey::from_transform(page_transform),
+            options,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PointKey {
+    x: u64,
+    y: u64,
+}
+
+impl PointKey {
+    fn from_point(point: Point) -> Self {
+        Self {
+            x: f64_key(point.x),
+            y: f64_key(point.y),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PathBoundsKey {
+    min_x: u64,
+    min_y: u64,
+    max_x: u64,
+    max_y: u64,
+}
+
+impl PathBoundsKey {
+    fn from_bounds(bounds: PathBounds) -> Self {
+        Self {
+            min_x: f64_key(bounds.min_x),
+            min_y: f64_key(bounds.min_y),
+            max_x: f64_key(bounds.max_x),
+            max_y: f64_key(bounds.max_y),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PageTransformKey {
+    source_box: PathBoundsKey,
+    rotation: PageRotation,
+    scale: u64,
+    dimensions: RasterDimensions,
+    matrix: MatrixKey,
+}
+
+impl PageTransformKey {
+    fn from_transform(transform: PageTransform) -> Self {
+        Self {
+            source_box: PathBoundsKey::from_bounds(transform.source_box),
+            rotation: transform.rotation,
+            scale: f64_key(transform.scale),
+            dimensions: transform.dimensions,
+            matrix: MatrixKey::from_matrix(transform.matrix),
         }
     }
 }
@@ -18981,6 +19369,73 @@ fn type3_char_proc_template_resident_bytes(
         .saturating_add(key.name.len())
         .saturating_add(key.content.len())
         .saturating_add(paths.iter().map(path_template_resident_bytes).sum())
+}
+
+fn type3_glyph_render_resident_bytes(
+    key: &Type3GlyphRenderKey,
+    surface: &Type3GlyphRenderSurface,
+) -> usize {
+    std::mem::size_of::<Type3GlyphRenderKey>()
+        .saturating_add(key.template.name.len())
+        .saturating_add(key.template.content.len())
+        .saturating_add(surface.pixels.len())
+}
+
+fn type3_paths_support_render_cache(paths: &[PathDisplayItem], options: PathRasterOptions) -> bool {
+    options.scissor.is_none()
+        && !paths.is_empty()
+        && paths.iter().all(type3_path_supports_render_cache)
+}
+
+fn type3_path_supports_render_cache(path: &PathDisplayItem) -> bool {
+    matches!(path.paint, PaintMode::Fill { .. })
+        && path.fill_pattern.is_none()
+        && path.state.fill_pattern.is_none()
+        && path.state.blend_mode == BlendMode::Normal
+        && path.state.fill_alpha.to_bits() == 1.0f64.to_bits()
+        && path.state.stroke_alpha.to_bits() == 1.0f64.to_bits()
+        && !path.state.fill_overprint
+        && !path.state.stroke_overprint
+        && !path.state.clip_path_pending
+}
+
+fn composite_type3_render_surface(
+    device: &mut RasterDevice,
+    surface: &Type3GlyphRenderSurface,
+) -> RasterResult<()> {
+    if device.dimensions() != surface.dimensions {
+        return Err(RasterError::new(RasterErrorKind::InvalidDimensions));
+    }
+    let bytes_per_pixel = PixelFormat::Rgba8.bytes_per_pixel();
+    for y in 0..surface.dimensions.height {
+        let row_start = y as usize * surface.dimensions.stride;
+        let row_end = row_start + surface.dimensions.stride;
+        let source_row = &surface.pixels[row_start..row_end];
+        let target_row = device.row_mut(y)?;
+        for (source, target) in source_row
+            .chunks_exact(bytes_per_pixel)
+            .zip(target_row.chunks_exact_mut(bytes_per_pixel))
+        {
+            let source = Rgba {
+                r: source[0],
+                g: source[1],
+                b: source[2],
+                a: source[3],
+            };
+            if source.a == 0 {
+                continue;
+            }
+            let dest = Rgba {
+                r: target[0],
+                g: target[1],
+                b: target[2],
+                a: target[3],
+            };
+            let blended = source_over(source, dest, 1.0);
+            target.copy_from_slice(&[blended.r, blended.g, blended.b, blended.a]);
+        }
+    }
+    Ok(())
 }
 
 fn path_template_resident_bytes(path: &PathDisplayItem) -> usize {
@@ -28170,6 +28625,125 @@ mod tests {
     }
 
     #[test]
+    fn type3_glyph_render_cache_should_reuse_repeated_rendered_surface() {
+        let document = load_type3_text_pdf(
+            b"BT /F1 20 Tf 10 10 Td (A) Tj ET",
+            b"0 0 500 700 re f",
+            b"<< /Type /Font /Subtype /Type3 /FontMatrix [0.001 0 0 0.001 0 0] /FirstChar 65 /LastChar 65 /Widths [500] /Encoding << /Differences [65 /A] >> /CharProcs << /A 6 0 R >> >>",
+        );
+        let resources =
+            font_resources_from_document(&document, &[("F1", 4)]).expect("valid Type3 font");
+        let content = content_stream_from_document(&document);
+        let list = build_text_display_list(
+            tokenize_content(PdfBytes::new(&content)),
+            &resources,
+            DisplayListOptions::default(),
+        )
+        .expect("Type3 text should decode");
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 40.0,
+                    max_y: 40.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            40,
+        )
+        .expect("page transform");
+        let mut glyph_cache = GlyphBitmapCache::default();
+        let mut template_cache = Type3CharProcTemplateCache::default();
+        let mut render_cache = Type3GlyphRenderCache::default();
+        let mut first = transform.create_device(Rgba::WHITE).expect("first device");
+        let mut second = transform.create_device(Rgba::WHITE).expect("second device");
+
+        rasterize_text_with_caches_and_type3_render_cache(
+            &list,
+            &mut first,
+            transform,
+            &mut glyph_cache,
+            &mut template_cache,
+            Some(&mut render_cache),
+        )
+        .expect("first Type3 render should populate rendered-glyph cache");
+        rasterize_text_with_caches_and_type3_render_cache(
+            &list,
+            &mut second,
+            transform,
+            &mut glyph_cache,
+            &mut template_cache,
+            Some(&mut render_cache),
+        )
+        .expect("second Type3 render should hit rendered-glyph cache");
+
+        assert_eq!(first.pixels(), second.pixels());
+        let summary = render_cache.summary();
+        assert_eq!(summary.entries, 1);
+        assert!(summary.bytes > 0);
+        assert_eq!(summary.misses, 1);
+        assert_eq!(summary.hits, 1);
+        assert_eq!(summary.inserts, 1);
+        assert_eq!(summary.evictions, 0);
+    }
+
+    #[test]
+    fn type3_glyph_render_cache_should_skip_surface_over_byte_budget() {
+        let document = load_type3_text_pdf(
+            b"BT /F1 20 Tf 10 10 Td (A) Tj ET",
+            b"0 0 500 700 re f",
+            b"<< /Type /Font /Subtype /Type3 /FontMatrix [0.001 0 0 0.001 0 0] /FirstChar 65 /LastChar 65 /Widths [500] /Encoding << /Differences [65 /A] >> /CharProcs << /A 6 0 R >> >>",
+        );
+        let resources =
+            font_resources_from_document(&document, &[("F1", 4)]).expect("valid Type3 font");
+        let content = content_stream_from_document(&document);
+        let list = build_text_display_list(
+            tokenize_content(PdfBytes::new(&content)),
+            &resources,
+            DisplayListOptions::default(),
+        )
+        .expect("Type3 text should decode");
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 40.0,
+                    max_y: 40.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            40,
+        )
+        .expect("page transform");
+        let mut glyph_cache = GlyphBitmapCache::default();
+        let mut template_cache = Type3CharProcTemplateCache::default();
+        let mut render_cache = Type3GlyphRenderCache::with_budget(8, 1);
+        let mut device = transform.create_device(Rgba::WHITE).expect("device");
+
+        rasterize_text_with_caches_and_type3_render_cache(
+            &list,
+            &mut device,
+            transform,
+            &mut glyph_cache,
+            &mut template_cache,
+            Some(&mut render_cache),
+        )
+        .expect("Type3 render should succeed without retaining oversized surface");
+
+        let summary = render_cache.summary();
+        assert_eq!(summary.entries, 0);
+        assert_eq!(summary.max_bytes, 1);
+        assert_eq!(summary.misses, 1);
+        assert_eq!(summary.hits, 0);
+        assert_eq!(summary.inserts, 0);
+        assert_eq!(summary.evictions, 0);
+    }
+
+    #[test]
     fn rasterize_text_should_skip_invisible_ocr_layer_pixels() {
         let list = build_text_display_list(
             tokenize_content(PdfBytes::new(
@@ -30620,6 +31194,7 @@ mod tests {
             &mut scratch,
             &glyph_cache,
             &type3_cache,
+            None,
             None,
             None,
             None::<&mut fn(RasterDisplayPhase, Duration)>,
