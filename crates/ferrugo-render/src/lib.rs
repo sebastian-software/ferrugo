@@ -1632,6 +1632,8 @@ pub struct FillRasterRouteSummary {
     pub coverage_blend_mode_row_pixels: usize,
     /// Edge pixels written from analytic 0-255 cell coverage.
     pub coverage_analytic_edge_pixels: usize,
+    /// Edge pixels evaluated through the dense row coverage buffer.
+    pub coverage_edge_row_buffer_pixels: usize,
     /// Pixels whose coverage was multiplied by an active clip mask.
     pub coverage_clip_mask_pixels: usize,
     /// Edge pixels rechecked with the existing supersampled point-in-path route.
@@ -1663,6 +1665,9 @@ impl FillRasterRouteSummary {
         self.coverage_analytic_edge_pixels = self
             .coverage_analytic_edge_pixels
             .saturating_add(stats.analytic_edge_pixels);
+        self.coverage_edge_row_buffer_pixels = self
+            .coverage_edge_row_buffer_pixels
+            .saturating_add(stats.edge_row_buffer_pixels);
         self.coverage_clip_mask_pixels = self
             .coverage_clip_mask_pixels
             .saturating_add(stats.clip_mask_pixels);
@@ -1859,6 +1864,7 @@ struct FillCoverageSpanStats {
     source_over_row_pixels: usize,
     blend_mode_row_pixels: usize,
     analytic_edge_pixels: usize,
+    edge_row_buffer_pixels: usize,
     clip_mask_pixels: usize,
     sampled_edge_pixels: usize,
 }
@@ -12032,8 +12038,8 @@ fn fill_path_with_coverage_spans(
     let mut intersections = Vec::new();
     let mut intervals = Vec::new();
     let mut row_modes = vec![FILL_ROW_EMPTY; width];
-    let mut edge_coverages = Vec::new();
     let mut edge_coverage = FillEdgeCoverage::for_path(path, rule);
+    let mut edge_row_buffer = FillEdgeCoverageRowBuffer::new();
 
     for y in bounds.min_y..bounds.max_y {
         stats.rows += 1;
@@ -12085,25 +12091,21 @@ fn fill_path_with_coverage_spans(
                         .position(|mode| *mode != FILL_ROW_SAMPLED)
                         .map_or(row_modes.len(), |relative| offset + relative);
                     if let Some(clip_mask) = clip_mask.as_mut() {
-                        edge_coverages.clear();
-                        edge_coverages.reserve(run_end - offset);
-                        for run_offset in offset..run_end {
-                            let pixel_x = bounds.min_x + run_offset as u32;
-                            let path_coverage = edge_coverage.coverage_for_pixel(path, pixel_x, y);
-                            let coverage = if path_coverage == 0 {
-                                0
-                            } else {
-                                multiply_alpha(path_coverage, clip_mask.coverage(pixel_x, y))
-                            };
-                            if path_coverage > 0 {
-                                edge_coverage.record_edge_pixel(&mut stats);
-                            }
-                            if coverage > 0 {
-                                stats.clip_mask_pixels += 1;
-                            }
-                            edge_coverages.push(coverage);
-                        }
-                        blitter.write_coverage_alpha_span(device, y, x, &edge_coverages)?;
+                        edge_row_buffer.fill_run(
+                            &mut edge_coverage,
+                            path,
+                            y,
+                            bounds.min_x,
+                            offset..run_end,
+                            &mut stats,
+                        );
+                        edge_row_buffer.apply_clip_mask(clip_mask, y, x, &mut stats);
+                        blitter.write_coverage_alpha_span(
+                            device,
+                            y,
+                            x,
+                            edge_row_buffer.as_slice(),
+                        )?;
                     } else {
                         for run_offset in offset..run_end {
                             let pixel_x = bounds.min_x + run_offset as u32;
@@ -12421,6 +12423,65 @@ impl FillEdgeCoverage {
                 stats.sampled_edge_pixels = stats.sampled_edge_pixels.saturating_add(1);
             }
         }
+    }
+}
+
+#[derive(Debug, Default, Clone)]
+struct FillEdgeCoverageRowBuffer {
+    coverage: Vec<u8>,
+}
+
+impl FillEdgeCoverageRowBuffer {
+    fn new() -> Self {
+        Self {
+            coverage: Vec::new(),
+        }
+    }
+
+    fn fill_run(
+        &mut self,
+        edge_coverage: &mut FillEdgeCoverage,
+        path: &FlattenedPath,
+        y: u32,
+        base_x: u32,
+        run: Range<usize>,
+        stats: &mut FillCoverageSpanStats,
+    ) {
+        let run_len = run.end.saturating_sub(run.start);
+        self.coverage.clear();
+        self.coverage.reserve(run_len);
+        stats.edge_row_buffer_pixels = stats.edge_row_buffer_pixels.saturating_add(run_len);
+
+        for run_offset in run {
+            let pixel_x = base_x + run_offset as u32;
+            let path_coverage = edge_coverage.coverage_for_pixel(path, pixel_x, y);
+            if path_coverage > 0 {
+                edge_coverage.record_edge_pixel(stats);
+            }
+            self.coverage.push(path_coverage);
+        }
+    }
+
+    fn apply_clip_mask(
+        &mut self,
+        clip_mask: &mut FillCoverageClipMask<'_>,
+        y: u32,
+        min_x: u32,
+        stats: &mut FillCoverageSpanStats,
+    ) {
+        for (offset, coverage) in self.coverage.iter_mut().enumerate() {
+            if *coverage == 0 {
+                continue;
+            }
+            *coverage = multiply_alpha(*coverage, clip_mask.coverage(min_x + offset as u32, y));
+            if *coverage > 0 {
+                stats.clip_mask_pixels = stats.clip_mask_pixels.saturating_add(1);
+            }
+        }
+    }
+
+    fn as_slice(&self) -> &[u8] {
+        &self.coverage
     }
 }
 
@@ -24627,6 +24688,7 @@ mod tests {
         assert_eq!(fill_routes.coverage_source_over_row_pixels, 0);
         assert_eq!(fill_routes.coverage_blend_mode_row_pixels, 0);
         assert!(fill_routes.coverage_analytic_edge_pixels > 0);
+        assert_eq!(fill_routes.coverage_edge_row_buffer_pixels, 0);
         assert_eq!(fill_routes.coverage_clip_mask_pixels, 0);
         assert_eq!(fill_routes.coverage_sampled_edge_pixels, 0);
     }
@@ -24710,6 +24772,7 @@ mod tests {
         assert_eq!(fill_routes.sampled_calls, 0);
         assert_eq!(fill_routes.coverage_analytic_edge_pixels, 0);
         assert!(fill_routes.coverage_sampled_edge_pixels > 0);
+        assert_eq!(fill_routes.coverage_edge_row_buffer_pixels, 0);
     }
 
     #[test]
@@ -24791,6 +24854,7 @@ mod tests {
         assert_eq!(fill_routes.sampled_calls, 0);
         assert_eq!(fill_routes.coverage_analytic_edge_pixels, 0);
         assert!(fill_routes.coverage_sampled_edge_pixels > 0);
+        assert_eq!(fill_routes.coverage_edge_row_buffer_pixels, 0);
     }
 
     #[test]
@@ -24833,6 +24897,7 @@ mod tests {
         assert_eq!(fill_routes.coverage_direct_row_pixels, 0);
         assert_eq!(fill_routes.coverage_blend_mode_row_pixels, 0);
         assert!(fill_routes.coverage_analytic_edge_pixels > 0);
+        assert_eq!(fill_routes.coverage_edge_row_buffer_pixels, 0);
     }
 
     #[test]
@@ -24875,6 +24940,7 @@ mod tests {
         assert_eq!(fill_routes.coverage_direct_row_pixels, 0);
         assert_eq!(fill_routes.coverage_source_over_row_pixels, 0);
         assert!(fill_routes.coverage_analytic_edge_pixels > 0);
+        assert_eq!(fill_routes.coverage_edge_row_buffer_pixels, 0);
     }
 
     #[test]
@@ -24936,6 +25002,7 @@ mod tests {
         assert_eq!(fill_routes.coverage_span_calls, 1);
         assert_eq!(fill_routes.sampled_calls, 0);
         assert_eq!(fill_routes.complex_clip_fallback_calls, 0);
+        assert!(fill_routes.coverage_edge_row_buffer_pixels > 0);
         assert!(fill_routes.coverage_clip_mask_pixels > 0);
     }
 
