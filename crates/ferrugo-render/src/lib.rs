@@ -11594,10 +11594,11 @@ fn fill_path_with_coverage_spans(
     let sample_count = samples * samples;
     let blitter = CoverageDrawBlitter::new(source, blend_mode, alpha, sample_count);
     let mut stats = FillCoverageSpanStats::default();
-    let clip_mask = FillCoverageClipMask::new(context.clips, bounds);
+    let mut clip_mask = FillCoverageClipMask::new(context.clips, bounds);
     let mut intersections = Vec::new();
     let mut intervals = Vec::new();
     let mut row_modes = vec![FILL_ROW_EMPTY; width];
+    let mut edge_coverages = Vec::new();
 
     for y in bounds.min_y..bounds.max_y {
         stats.rows += 1;
@@ -11628,17 +11629,15 @@ fn fill_path_with_coverage_spans(
                         .position(|mode| *mode != FILL_ROW_FULL)
                         .map_or(row_modes.len(), |relative| offset + relative);
                     let max_x = bounds.min_x + run_end as u32;
-                    if let Some(clip_mask) = clip_mask.as_ref() {
-                        stats.full_span_runs += 1;
-                        let pixels = (max_x - x) as usize;
-                        stats.full_pixels = stats.full_pixels.saturating_add(pixels);
-                        for pixel_x in x..max_x {
-                            let coverage = clip_mask.coverage(pixel_x, y);
-                            if coverage > 0 {
-                                stats.clip_mask_pixels += 1;
-                                blitter.write_coverage_alpha_pixel(device, pixel_x, y, coverage)?;
-                            }
-                        }
+                    if let Some(clip_mask) = clip_mask.as_mut() {
+                        blitter.write_masked_full_span(
+                            device,
+                            y,
+                            x,
+                            max_x,
+                            clip_mask.row_slice(y, x, max_x),
+                            &mut stats,
+                        )?;
                     } else {
                         blitter.write_full_span(device, y, x, max_x, &mut stats)?;
                     }
@@ -11646,18 +11645,51 @@ fn fill_path_with_coverage_spans(
                     continue;
                 }
                 FILL_ROW_SAMPLED => {
-                    let path_coverage = analytic_fill_coverage_for_pixel(path, rule, x, y);
-                    let coverage = clip_mask.as_ref().map_or(path_coverage, |mask| {
-                        multiply_alpha(path_coverage, mask.coverage(x, y))
-                    });
-                    if path_coverage > 0 {
-                        stats.analytic_edge_pixels += 1;
-                        stats.sampled_edge_pixels += 1;
+                    let run_end = row_modes[offset..]
+                        .iter()
+                        .position(|mode| *mode != FILL_ROW_SAMPLED)
+                        .map_or(row_modes.len(), |relative| offset + relative);
+                    if let Some(clip_mask) = clip_mask.as_mut() {
+                        edge_coverages.clear();
+                        edge_coverages.reserve(run_end - offset);
+                        for run_offset in offset..run_end {
+                            let pixel_x = bounds.min_x + run_offset as u32;
+                            let path_coverage =
+                                analytic_fill_coverage_for_pixel(path, rule, pixel_x, y);
+                            let coverage = if path_coverage == 0 {
+                                0
+                            } else {
+                                multiply_alpha(path_coverage, clip_mask.coverage(pixel_x, y))
+                            };
+                            if path_coverage > 0 {
+                                stats.analytic_edge_pixels += 1;
+                                stats.sampled_edge_pixels += 1;
+                            }
+                            if coverage > 0 {
+                                stats.clip_mask_pixels += 1;
+                            }
+                            edge_coverages.push(coverage);
+                        }
+                        blitter.write_coverage_alpha_span(device, y, x, &edge_coverages)?;
+                    } else {
+                        for run_offset in offset..run_end {
+                            let pixel_x = bounds.min_x + run_offset as u32;
+                            let path_coverage =
+                                analytic_fill_coverage_for_pixel(path, rule, pixel_x, y);
+                            if path_coverage > 0 {
+                                stats.analytic_edge_pixels += 1;
+                                stats.sampled_edge_pixels += 1;
+                            }
+                            blitter.write_coverage_alpha_pixel(
+                                device,
+                                pixel_x,
+                                y,
+                                path_coverage,
+                            )?;
+                        }
                     }
-                    if clip_mask.is_some() && coverage > 0 {
-                        stats.clip_mask_pixels += 1;
-                    }
-                    blitter.write_coverage_alpha_pixel(device, x, y, coverage)?;
+                    offset = run_end;
+                    continue;
                 }
                 FILL_ROW_EMPTY => {}
                 _ => unreachable!("unknown fill row mode"),
@@ -11762,28 +11794,46 @@ fn clamp_fill_row_x(value: i64, bounds: PixelBounds) -> usize {
 }
 
 #[derive(Debug, Clone)]
-struct FillCoverageClipMask {
+struct FillCoverageClipMask<'a> {
+    clips: &'a [ActiveClip],
     bounds: PixelBounds,
-    coverage: Vec<u8>,
+    width: usize,
+    rows: Vec<Option<FillCoverageClipMaskRow>>,
 }
 
-impl FillCoverageClipMask {
-    fn new(clips: &[ActiveClip], bounds: PixelBounds) -> Option<Self> {
+#[derive(Debug, Clone)]
+struct FillCoverageClipMaskRow {
+    coverage: Vec<u8>,
+    computed: Vec<bool>,
+}
+
+impl FillCoverageClipMaskRow {
+    fn new(width: usize) -> Self {
+        Self {
+            coverage: vec![0; width],
+            computed: vec![false; width],
+        }
+    }
+}
+
+impl<'a> FillCoverageClipMask<'a> {
+    fn new(clips: &'a [ActiveClip], bounds: PixelBounds) -> Option<Self> {
         if clips.is_empty() || can_skip_active_clip_checks(clips) {
             return None;
         }
         let width = (bounds.max_x - bounds.min_x) as usize;
         let height = (bounds.max_y - bounds.min_y) as usize;
-        let mut coverage = Vec::with_capacity(width.saturating_mul(height));
-        for y in bounds.min_y..bounds.max_y {
-            for x in bounds.min_x..bounds.max_x {
-                coverage.push(active_clip_coverage_for_pixel(clips, x, y));
-            }
-        }
-        Some(Self { bounds, coverage })
+        let mut rows = Vec::with_capacity(height);
+        rows.resize_with(height, || None);
+        Some(Self {
+            clips,
+            bounds,
+            width,
+            rows,
+        })
     }
 
-    fn coverage(&self, x: u32, y: u32) -> u8 {
+    fn coverage(&mut self, x: u32, y: u32) -> u8 {
         if x < self.bounds.min_x
             || x >= self.bounds.max_x
             || y < self.bounds.min_y
@@ -11791,9 +11841,38 @@ impl FillCoverageClipMask {
         {
             return 0;
         }
-        let width = (self.bounds.max_x - self.bounds.min_x) as usize;
-        let offset = (y - self.bounds.min_y) as usize * width + (x - self.bounds.min_x) as usize;
-        self.coverage[offset]
+        let row_index = (y - self.bounds.min_y) as usize;
+        let x_offset = (x - self.bounds.min_x) as usize;
+        let clips = self.clips;
+        let row =
+            self.rows[row_index].get_or_insert_with(|| FillCoverageClipMaskRow::new(self.width));
+        if !row.computed[x_offset] {
+            row.coverage[x_offset] = active_clip_coverage_for_pixel(clips, x, y);
+            row.computed[x_offset] = true;
+        }
+        row.coverage[x_offset]
+    }
+
+    fn row_slice(&mut self, y: u32, min_x: u32, max_x: u32) -> &[u8] {
+        debug_assert!(y >= self.bounds.min_y && y < self.bounds.max_y);
+        debug_assert!(min_x >= self.bounds.min_x);
+        debug_assert!(max_x <= self.bounds.max_x);
+        debug_assert!(min_x <= max_x);
+        let row_index = (y - self.bounds.min_y) as usize;
+        let start = (min_x - self.bounds.min_x) as usize;
+        let end = (max_x - self.bounds.min_x) as usize;
+        let clips = self.clips;
+        let base_x = self.bounds.min_x;
+        let row =
+            self.rows[row_index].get_or_insert_with(|| FillCoverageClipMaskRow::new(self.width));
+        for x_offset in start..end {
+            if !row.computed[x_offset] {
+                row.coverage[x_offset] =
+                    active_clip_coverage_for_pixel(clips, base_x + x_offset as u32, y);
+                row.computed[x_offset] = true;
+            }
+        }
+        &row.coverage[start..end]
     }
 }
 
@@ -12130,6 +12209,77 @@ impl CoverageDrawBlitter {
         Ok(())
     }
 
+    fn write_masked_full_span(
+        self,
+        device: &mut RasterDevice,
+        y: u32,
+        min_x: u32,
+        max_x: u32,
+        mask: &[u8],
+        stats: &mut FillCoverageSpanStats,
+    ) -> RasterResult<()> {
+        debug_assert_eq!(mask.len(), (max_x - min_x) as usize);
+        let pixels = mask.len();
+        stats.full_span_runs += 1;
+        stats.full_pixels = stats.full_pixels.saturating_add(pixels);
+
+        let mut offset = 0;
+        while offset < mask.len() {
+            match mask[offset] {
+                0 => {
+                    offset += mask[offset..]
+                        .iter()
+                        .position(|coverage| *coverage != 0)
+                        .unwrap_or(mask.len() - offset);
+                }
+                255 => {
+                    let run_len = mask[offset..]
+                        .iter()
+                        .position(|coverage| *coverage != 255)
+                        .unwrap_or(mask.len() - offset);
+                    self.write_untracked_full_span(
+                        device,
+                        y,
+                        min_x + offset as u32,
+                        min_x + (offset + run_len) as u32,
+                    )?;
+                    stats.clip_mask_pixels = stats.clip_mask_pixels.saturating_add(run_len);
+                    self.record_full_span_kind_pixels(stats, run_len);
+                    offset += run_len;
+                }
+                _ => {
+                    let run_len = mask[offset..]
+                        .iter()
+                        .position(|coverage| *coverage == 0 || *coverage == 255)
+                        .unwrap_or(mask.len() - offset);
+                    self.write_coverage_alpha_span(
+                        device,
+                        y,
+                        min_x + offset as u32,
+                        &mask[offset..offset + run_len],
+                    )?;
+                    stats.clip_mask_pixels = stats.clip_mask_pixels.saturating_add(run_len);
+                    offset += run_len;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn record_full_span_kind_pixels(self, stats: &mut FillCoverageSpanStats, pixels: usize) {
+        match self.kind {
+            CoverageDrawBlitterKind::OpaqueNormal => {
+                stats.direct_row_pixels = stats.direct_row_pixels.saturating_add(pixels);
+            }
+            CoverageDrawBlitterKind::SourceOverNormal | CoverageDrawBlitterKind::NormalAlpha => {
+                stats.source_over_row_pixels = stats.source_over_row_pixels.saturating_add(pixels);
+            }
+            CoverageDrawBlitterKind::Multiply | CoverageDrawBlitterKind::Screen => {
+                stats.blend_mode_row_pixels = stats.blend_mode_row_pixels.saturating_add(pixels);
+            }
+        }
+    }
+
     fn write_untracked_full_span(
         self,
         device: &mut RasterDevice,
@@ -12154,6 +12304,23 @@ impl CoverageDrawBlitter {
                 blend_screen_row_span(device, y, min_x, max_x, self.source, self.alpha)
             }
         }
+    }
+
+    fn write_coverage_alpha_span(
+        self,
+        device: &mut RasterDevice,
+        y: u32,
+        min_x: u32,
+        coverage_alphas: &[u8],
+    ) -> RasterResult<()> {
+        let start = min_x as usize * PixelFormat::Rgba8.bytes_per_pixel();
+        let end = start + coverage_alphas.len() * PixelFormat::Rgba8.bytes_per_pixel();
+        for (coverage_alpha, chunk) in coverage_alphas.iter().copied().zip(
+            device.row_mut(y)?[start..end].chunks_exact_mut(PixelFormat::Rgba8.bytes_per_pixel()),
+        ) {
+            self.write_coverage_alpha_chunk(chunk, coverage_alpha);
+        }
+        Ok(())
     }
 
     fn write_full_pixel(self, device: &mut RasterDevice, x: u32, y: u32) -> RasterResult<()> {
@@ -12219,6 +12386,53 @@ impl CoverageDrawBlitter {
                 blend_screen_pixel(device, x, y, self.source, coverage)
             }
         }
+    }
+
+    fn write_coverage_alpha_chunk(self, chunk: &mut [u8], coverage_alpha: u8) {
+        if coverage_alpha == 0 {
+            return;
+        }
+        let coverage = (self.alpha * f64::from(coverage_alpha) / 255.0).clamp(0.0, 1.0);
+        if coverage <= f64::EPSILON {
+            return;
+        }
+        if coverage >= 1.0 && matches!(self.kind, CoverageDrawBlitterKind::OpaqueNormal) {
+            chunk.copy_from_slice(&[self.source.r, self.source.g, self.source.b, self.source.a]);
+            return;
+        }
+        let dest = Rgba {
+            r: chunk[0],
+            g: chunk[1],
+            b: chunk[2],
+            a: chunk[3],
+        };
+        let blended = match self.kind {
+            CoverageDrawBlitterKind::OpaqueNormal | CoverageDrawBlitterKind::SourceOverNormal => {
+                if dest.a == 255 {
+                    source_over_opaque(self.source, dest, coverage)
+                } else {
+                    source_over(self.source, dest, coverage)
+                }
+            }
+            CoverageDrawBlitterKind::NormalAlpha => source_over(self.source, dest, coverage),
+            CoverageDrawBlitterKind::Multiply => source_over(
+                Rgba {
+                    a: self.source.a,
+                    ..multiply_blend_pixel(self.source, dest)
+                },
+                dest,
+                coverage,
+            ),
+            CoverageDrawBlitterKind::Screen => source_over(
+                Rgba {
+                    a: self.source.a,
+                    ..screen_blend_pixel(self.source, dest)
+                },
+                dest,
+                coverage,
+            ),
+        };
+        chunk.copy_from_slice(&[blended.r, blended.g, blended.b, blended.a]);
     }
 }
 
@@ -22885,6 +23099,76 @@ mod tests {
         assert_eq!(fill_routes.sampled_calls, 0);
         assert_eq!(fill_routes.complex_clip_fallback_calls, 0);
         assert!(fill_routes.coverage_clip_mask_pixels > 0);
+    }
+
+    #[test]
+    fn fill_path_coverage_spans_should_row_blit_full_clip_mask_runs() {
+        let path = coverage_span_test_path();
+        let transform = coverage_span_test_transform();
+        let clip_path = FlattenedPath {
+            subpaths: vec![vec![
+                Point { x: 0.0, y: 0.0 },
+                Point { x: 16.0, y: 0.0 },
+                Point { x: 16.0, y: 12.0 },
+                Point { x: 0.0, y: 12.0 },
+            ]],
+            lines: vec![
+                LineSegment {
+                    from: Point { x: 0.0, y: 0.0 },
+                    to: Point { x: 16.0, y: 0.0 },
+                },
+                LineSegment {
+                    from: Point { x: 16.0, y: 0.0 },
+                    to: Point { x: 16.0, y: 12.0 },
+                },
+                LineSegment {
+                    from: Point { x: 16.0, y: 12.0 },
+                    to: Point { x: 0.0, y: 12.0 },
+                },
+                LineSegment {
+                    from: Point { x: 0.0, y: 12.0 },
+                    to: Point { x: 0.0, y: 0.0 },
+                },
+            ],
+            stats: FlattenedPathStats::default(),
+            joins: Vec::new(),
+        };
+        let clip = ActiveClip {
+            bounds: flattened_bounds(&clip_path),
+            path: clip_path,
+            axis_aligned_rect: None,
+            rule: FillRule::Nonzero,
+            graphics_state_depth: 0,
+            graphics_state_scope_id: 0,
+        };
+        let fill_routes = RefCell::new(FillRasterRouteSummary::default());
+        let mut device = RasterDevice::new(16, 12, Rgba::WHITE).expect("valid raster");
+
+        fill_path(
+            &mut device,
+            &path,
+            FillRule::Nonzero,
+            DeviceColor::BLACK,
+            BlendMode::Normal,
+            1.0,
+            PathRasterContext {
+                transform,
+                options: PathRasterOptions::default(),
+                clips: &[clip],
+                fill_routes: Some(&fill_routes),
+                stroke_routes: None,
+            },
+        )
+        .expect("clipped coverage fill should rasterize");
+
+        let fill_routes = fill_routes.into_inner();
+        assert_eq!(fill_routes.coverage_span_calls, 1);
+        assert_eq!(fill_routes.sampled_calls, 0);
+        assert!(fill_routes.coverage_clip_mask_pixels > 0);
+        assert_eq!(
+            fill_routes.coverage_direct_row_pixels,
+            fill_routes.coverage_full_pixels
+        );
     }
 
     #[test]
