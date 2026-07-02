@@ -16410,8 +16410,11 @@ fn axis_stroke_spans(
         if !is_axis_aligned_line(*line) {
             return None;
         }
-        let bounds = line_pixel_bounds(*line, radius, dimensions)
-            .and_then(|bounds| intersect_pixel_bounds(bounds, stroke_bounds))?;
+        let Some(bounds) = line_pixel_bounds(*line, radius, dimensions)
+            .and_then(|bounds| intersect_pixel_bounds(bounds, stroke_bounds))
+        else {
+            continue;
+        };
         let start = (bounds.min_y - stroke_bounds.min_y).saturating_mul(samples) as usize;
         let end = (bounds.max_y - stroke_bounds.min_y).saturating_mul(samples) as usize;
         for (sample_row, count) in row_counts
@@ -16447,8 +16450,11 @@ fn axis_stroke_spans(
     ];
     let mut row_offsets: Vec<usize> = rows.iter().map(|row| row.start).collect();
     for line in lines {
-        let bounds = line_pixel_bounds(*line, radius, dimensions)
-            .and_then(|bounds| intersect_pixel_bounds(bounds, stroke_bounds))?;
+        let Some(bounds) = line_pixel_bounds(*line, radius, dimensions)
+            .and_then(|bounds| intersect_pixel_bounds(bounds, stroke_bounds))
+        else {
+            continue;
+        };
         let start = (bounds.min_y - stroke_bounds.min_y).saturating_mul(samples) as usize;
         let end = (bounds.max_y - stroke_bounds.min_y).saturating_mul(samples) as usize;
         for (sample_row, offset) in row_offsets
@@ -18348,7 +18354,11 @@ fn image_transform_is_axis_aligned(transform: Matrix) -> bool {
 }
 
 fn overlap_1d(pixel_min: f64, pixel_max: f64, min: f64, max: f64) -> f64 {
-    (pixel_max.min(max) - pixel_min.max(min)).clamp(0.0, 1.0)
+    quantize_coverage((pixel_max.min(max) - pixel_min.max(min)).clamp(0.0, 1.0))
+}
+
+fn quantize_coverage(coverage: f64) -> f64 {
+    (coverage * 65_536.0).round() / 65_536.0
 }
 
 fn transformed_image_bounds(transform: Matrix) -> PathBounds {
@@ -22969,6 +22979,46 @@ mod tests {
                         assert_eq!(
                             point_in_axis_stroke_spans(point, y, sample_y, &spans),
                             point_in_stroke(point, &lines, radius, LineCap::Butt),
+                            "mismatch at pixel ({x},{y}) sample ({sample_x},{sample_y}) point {point:?}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn axis_stroke_spans_should_skip_lines_outside_scissored_bounds() {
+        let dimensions = RasterDimensions::new(64, 64).expect("valid dimensions");
+        let lines = [
+            LineSegment {
+                from: Point { x: 8.0, y: 12.0 },
+                to: Point { x: 56.0, y: 12.0 },
+            },
+            LineSegment {
+                from: Point { x: 8.0, y: 40.0 },
+                to: Point { x: 56.0, y: 40.0 },
+            },
+        ];
+        let radius = 0.5;
+        let bounds = PixelBounds {
+            min_x: 0,
+            min_y: 0,
+            max_x: 64,
+            max_y: 24,
+        };
+
+        let spans = axis_stroke_spans(&lines, radius, dimensions, bounds, 2, LineCap::Butt)
+            .expect("visible axis line should produce spans");
+
+        for y in bounds.min_y..bounds.max_y {
+            for x in bounds.min_x..bounds.max_x {
+                for sample_y in 0..2 {
+                    for sample_x in 0..2 {
+                        let point = sample_point(x, y, sample_x, sample_y, 2);
+                        assert_eq!(
+                            point_in_axis_stroke_spans(point, y, sample_y, &spans),
+                            point_in_stroke(point, &lines[..1], radius, LineCap::Butt),
                             "mismatch at pixel ({x},{y}) sample ({sample_x},{sample_y}) point {point:?}"
                         );
                     }
@@ -30753,6 +30803,14 @@ mod tests {
         assert_eq!(pixel_coverage_1d(2, 2.0, 5.0), 1.0);
         assert_eq!(pixel_coverage_1d(1, 1.5, 4.0), 0.5);
         assert_eq!(pixel_coverage_1d(5, 1.5, 4.0), 0.0);
+    }
+
+    #[test]
+    fn pixel_coverage_1d_should_tolerate_tiny_edge_noise() {
+        let low = pixel_coverage_1d(46, 46.25 - 1e-14, 90.0);
+        let high = pixel_coverage_1d(46, 46.25 + 1e-14, 90.0);
+
+        assert_eq!(low, high);
     }
 
     #[test]
