@@ -14807,9 +14807,50 @@ fn stroke_path(
         }
     }
     let prepared_joins = prepare_stroke_joins(joins, radius, state.line_join, state.miter_limit);
+    let axis_spans = axis_stroke_raster_spans(
+        stroke_lines,
+        joins,
+        radius,
+        dimensions,
+        bounds,
+        samples,
+        state.line_cap,
+    );
+    let has_joins = !joins.is_empty();
+    if let Some(spans) = axis_spans {
+        let join_buckets = has_joins
+            .then(|| {
+                stroke_join_buckets(
+                    joins,
+                    &prepared_joins,
+                    radius,
+                    state.line_join,
+                    dimensions,
+                    bounds,
+                )
+            })
+            .flatten();
+        rasterize_axis_stroke_spans(
+            device,
+            spans,
+            joins,
+            &prepared_joins,
+            join_buckets.as_ref(),
+            has_joins,
+            bounds,
+            state,
+            context,
+            samples,
+            sample_count,
+            source,
+            skip_clip_checks,
+        )?;
+        return Ok(());
+    }
     if !snap_hairline
         && state.dash_pattern.is_solid()
         && matches!(state.line_cap, LineCap::Butt)
+        && !matches!(state.line_join, LineJoin::Round)
         && radius >= 1.0
         && samples > 1
         && !joins.is_empty()
@@ -14850,46 +14891,6 @@ fn stroke_path(
             )?;
             return Ok(());
         }
-    }
-    let axis_spans = axis_stroke_raster_spans(
-        stroke_lines,
-        joins,
-        radius,
-        dimensions,
-        bounds,
-        samples,
-        state.line_cap,
-    );
-    let has_joins = !joins.is_empty();
-    if let Some(spans) = axis_spans {
-        let join_buckets = has_joins
-            .then(|| {
-                stroke_join_buckets(
-                    joins,
-                    &prepared_joins,
-                    radius,
-                    state.line_join,
-                    dimensions,
-                    bounds,
-                )
-            })
-            .flatten();
-        rasterize_axis_stroke_spans(
-            device,
-            spans,
-            joins,
-            &prepared_joins,
-            join_buckets.as_ref(),
-            has_joins,
-            bounds,
-            state,
-            context,
-            samples,
-            sample_count,
-            source,
-            skip_clip_checks,
-        )?;
-        return Ok(());
     }
     if stroke_lines.len() == 1 && joins.is_empty() {
         if let Some(spans) = simple_line_stroke_raster_spans(
@@ -23668,7 +23669,7 @@ mod tests {
 
     #[test]
     fn stroke_raster_route_summary_should_count_joined_outline_fill_calls() {
-        for line_join in [LineJoin::Miter, LineJoin::Bevel, LineJoin::Round] {
+        for line_join in [LineJoin::Miter, LineJoin::Bevel] {
             let transform = PageTransform::new(
                 PageGeometry {
                     media_box: PathBounds {
@@ -23724,6 +23725,55 @@ mod tests {
             assert_eq!(routes.span_covered_calls, 0);
             assert_eq!(routes.row_bucket_range_calls, 0);
         }
+    }
+
+    #[test]
+    fn stroke_raster_route_summary_should_skip_joined_outline_for_round_joins() {
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 160.0,
+                    max_y: 160.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            160,
+        )
+        .expect("valid page transform");
+        let display_list = DisplayList::from_items(vec![DisplayItem::Path(PathDisplayItem {
+            segments: vec![
+                PathSegment::MoveTo(Point { x: 16.0, y: 20.0 }),
+                PathSegment::LineTo(Point { x: 92.0, y: 50.0 }),
+                PathSegment::LineTo(Point { x: 128.0, y: 132.0 }),
+            ],
+            paint: PaintMode::Stroke,
+            state: GraphicsState {
+                line_width: 8.0,
+                line_cap: LineCap::Butt,
+                line_join: LineJoin::Round,
+                ..GraphicsState::default()
+            },
+            fill_pattern: None,
+        })]);
+        let mut device = transform.create_device(Rgba::WHITE).expect("valid device");
+        let routes = RefCell::new(StrokeRasterRouteSummary::default());
+
+        rasterize_display_list_into_with_phase_timings_and_stroke_routes(
+            &display_list,
+            &mut device,
+            transform,
+            PathRasterOptions::default(),
+            &routes,
+            |_phase, _duration| {},
+        )
+        .expect("route-aware joined stroke should render");
+
+        let routes = routes.into_inner();
+        assert_eq!(routes.outline_joined_calls, 0);
+        assert_eq!(routes.outline_fill_calls, 0);
     }
 
     #[test]

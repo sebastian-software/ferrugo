@@ -2913,6 +2913,7 @@ fn stroke_path_supports_banded_replay(path: &PathDisplayItem) -> bool {
         && !path.state.stroke_overprint
         && (solid_axis_aligned_single_line_stroke_path_supports_banded_replay(path)
             || simple_stroke_path_supports_banded_replay(path)
+            || axis_aligned_round_join_stroke_path_supports_banded_replay(path)
             || joined_outline_stroke_path_supports_banded_replay(path)
             || independent_single_line_stroke_path_supports_banded_replay(path)
             || dashed_single_line_stroke_path_supports_banded_replay(path)
@@ -2990,6 +2991,39 @@ fn joined_outline_stroke_path_supports_banded_replay(path: &PathDisplayItem) -> 
                 PathSegment::MoveTo(_) | PathSegment::LineTo(_) | PathSegment::Close
             )
         })
+}
+
+fn axis_aligned_round_join_stroke_path_supports_banded_replay(path: &PathDisplayItem) -> bool {
+    if path.state.stroke_dash != ferrugo_render::StrokeDashPattern::solid()
+        || path.state.line_cap != ferrugo_render::LineCap::Butt
+        || path.state.line_join != ferrugo_render::LineJoin::Round
+    {
+        return false;
+    }
+
+    let mut current = None;
+    let mut subpaths = 0;
+    let mut lines = 0;
+    for segment in &path.segments {
+        match segment {
+            PathSegment::MoveTo(point) if current.is_none() => {
+                current = Some(*point);
+                subpaths += 1;
+            }
+            PathSegment::LineTo(point) => {
+                let Some(start) = current else {
+                    return false;
+                };
+                if start.x != point.x && start.y != point.y {
+                    return false;
+                }
+                current = Some(*point);
+                lines += 1;
+            }
+            _ => return false,
+        }
+    }
+    subpaths == 1 && lines > 0
 }
 
 fn independent_single_line_stroke_path_supports_banded_replay(path: &PathDisplayItem) -> bool {
@@ -8011,7 +8045,7 @@ mod tests {
             (
                 include_bytes!("../../../fixtures/generated/line-joins.pdf").as_slice(),
                 "line joins",
-                false,
+                true,
             ),
             (
                 include_bytes!("../../../fixtures/generated/axial-gradient.pdf").as_slice(),
