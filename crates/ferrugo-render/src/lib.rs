@@ -1637,6 +1637,8 @@ pub struct FillRasterRouteSummary {
     pub coverage_analytic_edge_pixels: usize,
     /// Edge pixels evaluated by the signed-area scanline cell accumulator.
     pub coverage_cell_accumulator_pixels: usize,
+    /// Maximum distinct partial alpha levels emitted by the cell accumulator in one fill call.
+    pub max_coverage_cell_partial_alpha_levels_per_call: usize,
     /// Edge pixels evaluated through the dense row coverage buffer.
     pub coverage_edge_row_buffer_pixels: usize,
     /// Pixels whose coverage was multiplied by an active clip mask.
@@ -1673,6 +1675,9 @@ impl FillRasterRouteSummary {
         self.coverage_cell_accumulator_pixels = self
             .coverage_cell_accumulator_pixels
             .saturating_add(stats.cell_accumulator_pixels);
+        self.max_coverage_cell_partial_alpha_levels_per_call = self
+            .max_coverage_cell_partial_alpha_levels_per_call
+            .max(stats.cell_partial_alpha_level_count());
         self.coverage_edge_row_buffer_pixels = self
             .coverage_edge_row_buffer_pixels
             .saturating_add(stats.edge_row_buffer_pixels);
@@ -1873,9 +1878,33 @@ struct FillCoverageSpanStats {
     blend_mode_row_pixels: usize,
     analytic_edge_pixels: usize,
     cell_accumulator_pixels: usize,
+    cell_partial_alpha_levels: [u64; 4],
     edge_row_buffer_pixels: usize,
     clip_mask_pixels: usize,
     sampled_edge_pixels: usize,
+}
+
+impl FillCoverageSpanStats {
+    fn record_cell_accumulator_coverage(&mut self, coverage: &[u8]) {
+        self.cell_accumulator_pixels = self.cell_accumulator_pixels.saturating_add(coverage.len());
+        self.analytic_edge_pixels = self
+            .analytic_edge_pixels
+            .saturating_add(coverage.iter().filter(|coverage| **coverage > 0).count());
+        for alpha in coverage.iter().copied() {
+            if alpha == 0 || alpha == 255 {
+                continue;
+            }
+            let alpha = usize::from(alpha);
+            self.cell_partial_alpha_levels[alpha / 64] |= 1 << (alpha % 64);
+        }
+    }
+
+    fn cell_partial_alpha_level_count(self) -> usize {
+        self.cell_partial_alpha_levels
+            .iter()
+            .map(|bits| bits.count_ones() as usize)
+            .sum()
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -12465,11 +12494,7 @@ impl FillEdgeCoverage {
                     run,
                     coverage,
                 );
-                stats.cell_accumulator_pixels =
-                    stats.cell_accumulator_pixels.saturating_add(coverage.len());
-                stats.analytic_edge_pixels = stats
-                    .analytic_edge_pixels
-                    .saturating_add(coverage.iter().filter(|coverage| **coverage > 0).count());
+                stats.record_cell_accumulator_coverage(coverage);
                 true
             }
             FillEdgeCoverageMode::NonzeroSupersampled
@@ -25008,6 +25033,61 @@ mod tests {
         assert_eq!(coverage, expected);
         assert_eq!(stats.cell_accumulator_pixels, 4);
         assert!(stats.analytic_edge_pixels > 0);
+        assert!(stats.cell_partial_alpha_level_count() > 0);
+        assert_eq!(stats.sampled_edge_pixels, 0);
+    }
+
+    #[test]
+    fn fill_scanline_cell_accumulator_should_report_many_partial_alpha_levels() {
+        let path = FlattenedPath {
+            subpaths: vec![vec![
+                Point { x: 0.0, y: 0.0 },
+                Point { x: 4.0, y: 0.0 },
+                Point { x: 4.0, y: 255.0 },
+                Point { x: 1.0, y: 255.0 },
+            ]],
+            lines: vec![
+                LineSegment {
+                    from: Point { x: 0.0, y: 0.0 },
+                    to: Point { x: 4.0, y: 0.0 },
+                },
+                LineSegment {
+                    from: Point { x: 4.0, y: 0.0 },
+                    to: Point { x: 4.0, y: 255.0 },
+                },
+                LineSegment {
+                    from: Point { x: 4.0, y: 255.0 },
+                    to: Point { x: 1.0, y: 255.0 },
+                },
+                LineSegment {
+                    from: Point { x: 1.0, y: 255.0 },
+                    to: Point { x: 0.0, y: 0.0 },
+                },
+            ],
+            joins: Vec::new(),
+            stats: FlattenedPathStats::default(),
+        };
+        let mut edge_coverage = FillEdgeCoverage::for_path(&path, FillRule::Nonzero);
+        let mut coverage = Vec::new();
+        let mut stats = FillCoverageSpanStats::default();
+
+        for y in 0..255 {
+            assert!(edge_coverage.fill_scanline_cell_run(
+                &path,
+                y,
+                0,
+                0..1,
+                &mut coverage,
+                &mut stats
+            ));
+        }
+
+        let alpha_levels = stats.cell_partial_alpha_level_count();
+        assert_eq!(stats.cell_accumulator_pixels, 255);
+        assert!(
+            alpha_levels > 16,
+            "expected more partial alpha levels than 4x4 supersampling can encode, got {alpha_levels}"
+        );
         assert_eq!(stats.sampled_edge_pixels, 0);
     }
 
@@ -25048,6 +25128,10 @@ mod tests {
         assert_eq!(fill_routes.coverage_blend_mode_row_pixels, 0);
         assert!(fill_routes.coverage_analytic_edge_pixels > 0);
         assert_eq!(fill_routes.coverage_cell_accumulator_pixels, 0);
+        assert_eq!(
+            fill_routes.max_coverage_cell_partial_alpha_levels_per_call,
+            0
+        );
         assert_eq!(fill_routes.coverage_edge_row_buffer_pixels, 0);
         assert_eq!(fill_routes.coverage_clip_mask_pixels, 0);
         assert_eq!(fill_routes.coverage_sampled_edge_pixels, 0);
@@ -25090,6 +25174,7 @@ mod tests {
         assert_eq!(fill_routes.sampled_calls, 0);
         assert!(fill_routes.coverage_cell_accumulator_pixels > 0);
         assert!(fill_routes.coverage_analytic_edge_pixels > 0);
+        assert!(fill_routes.max_coverage_cell_partial_alpha_levels_per_call > 0);
         assert_eq!(fill_routes.coverage_sampled_edge_pixels, 0);
     }
 
@@ -25126,6 +25211,7 @@ mod tests {
         assert_eq!(fill_routes.sampled_calls, 0);
         assert!(fill_routes.coverage_cell_accumulator_pixels > 0);
         assert!(fill_routes.coverage_analytic_edge_pixels > 0);
+        assert!(fill_routes.max_coverage_cell_partial_alpha_levels_per_call > 0);
         assert_eq!(fill_routes.coverage_sampled_edge_pixels, 0);
     }
 
