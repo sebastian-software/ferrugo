@@ -3808,6 +3808,14 @@ struct BatchMemorySummary {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ProcessMemorySummary {
+    rss_start_bytes: Option<u64>,
+    rss_high_water_bytes: Option<u64>,
+    rss_end_bytes: Option<u64>,
+    source: &'static str,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct BatchIsolationSummary {
     cache_policy: NativePageCachePolicy,
     cancel_after_jobs: Option<usize>,
@@ -5741,6 +5749,22 @@ fn current_rss_kib() -> Option<u64> {
         .trim()
         .parse::<u64>()
         .ok()
+}
+
+fn sampled_process_memory_summary(
+    rss_start_bytes: Option<u64>,
+    rss_end_bytes: Option<u64>,
+) -> ProcessMemorySummary {
+    ProcessMemorySummary {
+        rss_start_bytes,
+        rss_high_water_bytes: max_optional_u64(rss_start_bytes, rss_end_bytes),
+        rss_end_bytes,
+        source: if rss_start_bytes.is_some() || rss_end_bytes.is_some() {
+            "process-rss-sample"
+        } else {
+            "unavailable"
+        },
+    }
 }
 
 const fn max_optional_u64(left: Option<u64>, right: Option<u64>) -> Option<u64> {
@@ -8445,6 +8469,7 @@ fn operator_entry_json(entry: &OperatorCoverageEntry) -> String {
 }
 
 fn native_render_trace_json(config: &TraceNativeConfig) -> Result<String, CliError> {
+    let rss_start_bytes = current_rss_kib().map(kib_to_bytes);
     let bytes = fs::read(&config.input).map_err(|source| CliError::ReadFile {
         path: config.input.clone(),
         source,
@@ -8550,6 +8575,9 @@ fn native_render_trace_json(config: &TraceNativeConfig) -> Result<String, CliErr
     );
     let raster_band_summary_json =
         trace_raster_band_summary_json(render_trace.as_ref().map(|trace| &trace.raster_bands));
+    let process_memory_summary =
+        sampled_process_memory_summary(rss_start_bytes, current_rss_kib().map(kib_to_bytes));
+    let process_memory_summary_json = trace_process_memory_summary_json(&process_memory_summary);
     let render_json = trace_render_outcome_json(render_trace);
 
     Ok(format!(
@@ -8579,6 +8607,7 @@ fn native_render_trace_json(config: &TraceNativeConfig) -> Result<String, CliErr
             "  \"glyph_bitmap_summary\": {},\n",
             "  \"type3_template_summary\": {},\n",
             "  \"raster_band_summary\": {},\n",
+            "  \"process_memory_summary\": {},\n",
             "  \"operator_coverage\": {},\n",
             "  \"operator_summary\": {},\n",
             "  \"events\": [{}]\n",
@@ -8605,6 +8634,7 @@ fn native_render_trace_json(config: &TraceNativeConfig) -> Result<String, CliErr
         glyph_bitmap_summary_json,
         type3_template_summary_json,
         raster_band_summary_json,
+        process_memory_summary_json,
         coverage_json,
         operator_summary,
         events_json
@@ -9094,6 +9124,24 @@ fn trace_raster_band_summary_json(summary: Result<&RasterBandSummary, &Thumbnail
             optional_json_string(error.unsupported_feature_bucket())
         ),
     }
+}
+
+fn trace_process_memory_summary_json(summary: &ProcessMemorySummary) -> String {
+    format!(
+        concat!(
+            "{{",
+            "\"status\":\"measured\",",
+            "\"rss_start_bytes\":{},",
+            "\"rss_high_water_bytes\":{},",
+            "\"rss_end_bytes\":{},",
+            "\"source\":{}",
+            "}}"
+        ),
+        optional_json_u64(summary.rss_start_bytes),
+        optional_json_u64(summary.rss_high_water_bytes),
+        optional_json_u64(summary.rss_end_bytes),
+        json_string(summary.source)
+    )
 }
 
 fn trace_image_placement_summary_json(
@@ -12166,11 +12214,30 @@ mod tests {
         assert!(json.contains("\"output_buffer_bytes\""));
         assert!(json.contains("\"estimated_peak_raster_bytes\""));
         assert!(json.contains("\"active_target_byte_reduction_per_mille\""));
+        assert!(json.contains("\"process_memory_summary\""));
+        assert!(json.contains("\"rss_start_bytes\""));
+        assert!(json.contains("\"rss_high_water_bytes\""));
+        assert!(json.contains("\"rss_end_bytes\""));
+        assert!(json.contains("\"source\""));
         assert!(json.contains("\"hits\""));
         assert!(json.contains("\"misses\""));
         assert!(json.contains("\"operator_summary\""));
         assert!(!json.contains("stream\n"));
         assert!(!json.contains("ferrugo thumbnail fixture"));
+    }
+
+    #[test]
+    fn sampled_process_memory_summary_should_report_sample_high_water() {
+        let summary = sampled_process_memory_summary(Some(128 * 1024), Some(160 * 1024));
+
+        assert_eq!(summary.rss_start_bytes, Some(128 * 1024));
+        assert_eq!(summary.rss_high_water_bytes, Some(160 * 1024));
+        assert_eq!(summary.rss_end_bytes, Some(160 * 1024));
+        assert_eq!(summary.source, "process-rss-sample");
+
+        let unavailable = sampled_process_memory_summary(None, None);
+        assert_eq!(unavailable.rss_high_water_bytes, None);
+        assert_eq!(unavailable.source, "unavailable");
     }
 
     #[test]
