@@ -2827,7 +2827,8 @@ fn stroke_path_supports_banded_replay(path: &PathDisplayItem) -> bool {
         && path.state.stroke_alpha >= 1.0
         && !path.state.stroke_overprint
         && (simple_stroke_path_supports_banded_replay(path)
-            || joined_outline_stroke_path_supports_banded_replay(path))
+            || joined_outline_stroke_path_supports_banded_replay(path)
+            || dashed_single_line_stroke_path_supports_banded_replay(path))
 }
 
 fn simple_stroke_path_supports_banded_replay(path: &PathDisplayItem) -> bool {
@@ -2867,7 +2868,34 @@ fn joined_outline_stroke_path_supports_banded_replay(path: &PathDisplayItem) -> 
             .iter()
             .filter(|segment| matches!(segment, PathSegment::LineTo(_)))
             .count()
-            >= 2
+            >= 1
+        && path.segments.iter().all(|segment| {
+            matches!(
+                segment,
+                PathSegment::MoveTo(_) | PathSegment::LineTo(_) | PathSegment::Close
+            )
+        })
+}
+
+fn dashed_single_line_stroke_path_supports_banded_replay(path: &PathDisplayItem) -> bool {
+    path.state.stroke_dash != ferrugo_render::StrokeDashPattern::solid()
+        && path.state.line_cap == ferrugo_render::LineCap::Butt
+        && matches!(
+            path.state.line_join,
+            ferrugo_render::LineJoin::Bevel | ferrugo_render::LineJoin::Miter
+        )
+        && path
+            .segments
+            .iter()
+            .filter(|segment| matches!(segment, PathSegment::MoveTo(_)))
+            .count()
+            == 1
+        && path
+            .segments
+            .iter()
+            .filter(|segment| matches!(segment, PathSegment::LineTo(_)))
+            .count()
+            == 1
         && path
             .segments
             .iter()
@@ -7146,6 +7174,101 @@ mod tests {
     }
 
     #[test]
+    fn native_banded_raster_should_match_single_target_for_single_line_butt_strokes() {
+        let display_list = DisplayList::from_items(vec![
+            DisplayItem::Path(PathDisplayItem {
+                segments: vec![
+                    PathSegment::MoveTo(Point { x: 8.0, y: 12.0 }),
+                    PathSegment::LineTo(Point { x: 58.0, y: 38.0 }),
+                ],
+                paint: PaintMode::Stroke,
+                state: GraphicsState {
+                    line_width: 1.5,
+                    stroke_color: DeviceColor::Rgb {
+                        r: 0.16,
+                        g: 0.3,
+                        b: 0.78,
+                    },
+                    line_cap: ferrugo_render::LineCap::Butt,
+                    line_join: ferrugo_render::LineJoin::Miter,
+                    ..GraphicsState::default()
+                },
+                fill_pattern: None,
+            }),
+            DisplayItem::Path(PathDisplayItem {
+                segments: vec![
+                    PathSegment::MoveTo(Point { x: 12.0, y: 10.0 }),
+                    PathSegment::LineTo(Point { x: 54.0, y: 10.0 }),
+                    PathSegment::LineTo(Point { x: 54.0, y: 34.0 }),
+                    PathSegment::LineTo(Point { x: 12.0, y: 34.0 }),
+                    PathSegment::Close,
+                ],
+                paint: PaintMode::Stroke,
+                state: GraphicsState {
+                    line_width: 0.75,
+                    stroke_color: DeviceColor::Rgb {
+                        r: 0.05,
+                        g: 0.2,
+                        b: 0.35,
+                    },
+                    line_cap: ferrugo_render::LineCap::Butt,
+                    line_join: ferrugo_render::LineJoin::Miter,
+                    ..GraphicsState::default()
+                },
+                fill_pattern: None,
+            }),
+        ]);
+
+        let (single, single_bands) = render_test_display_list_with_band_rows(&display_list, 0);
+        let (banded, banded_bands) = render_test_display_list_with_band_rows(&display_list, 11);
+
+        assert_eq!(single.bytes, banded.bytes);
+        assert_eq!(single_bands.bands, 1);
+        assert!(banded_bands.bands > 1);
+        assert_eq!(banded_bands.max_band_rows, 11);
+        assert!(banded_bands.max_band_pixels < banded_bands.full_page_pixels);
+        assert!(banded_bands.active_target_byte_reduction_per_mille() > 0);
+    }
+
+    #[test]
+    fn native_banded_raster_should_match_single_target_for_dashed_single_line_strokes() {
+        let display_list = DisplayList::from_items(vec![DisplayItem::Path(PathDisplayItem {
+            segments: vec![
+                PathSegment::MoveTo(Point { x: 8.0, y: 26.0 }),
+                PathSegment::LineTo(Point { x: 58.0, y: 26.0 }),
+            ],
+            paint: PaintMode::Stroke,
+            state: GraphicsState {
+                line_width: 1.25,
+                stroke_color: DeviceColor::Rgb {
+                    r: 0.78,
+                    g: 0.22,
+                    b: 0.08,
+                },
+                stroke_dash: ferrugo_render::StrokeDashPattern {
+                    segments: [8.0, 4.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                    len: 2,
+                    phase: 0.0,
+                },
+                line_cap: ferrugo_render::LineCap::Butt,
+                line_join: ferrugo_render::LineJoin::Miter,
+                ..GraphicsState::default()
+            },
+            fill_pattern: None,
+        })]);
+
+        let (single, single_bands) = render_test_display_list_with_band_rows(&display_list, 0);
+        let (banded, banded_bands) = render_test_display_list_with_band_rows(&display_list, 11);
+
+        assert_eq!(single.bytes, banded.bytes);
+        assert_eq!(single_bands.bands, 1);
+        assert!(banded_bands.bands > 1);
+        assert_eq!(banded_bands.max_band_rows, 11);
+        assert!(banded_bands.max_band_pixels < banded_bands.full_page_pixels);
+        assert!(banded_bands.active_target_byte_reduction_per_mille() > 0);
+    }
+
+    #[test]
     fn native_banded_raster_should_match_single_target_for_line_clip_paths() {
         let display_list = DisplayList::from_items(vec![
             DisplayItem::ClipPlaceholder {
@@ -7262,6 +7385,12 @@ mod tests {
             (
                 include_bytes!("../../../fixtures/generated/clipped-paths.pdf").as_slice(),
                 "multi-subpath clipped paths",
+                true,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/technical-hatch-clipping.pdf")
+                    .as_slice(),
+                "technical hatch clipping",
                 true,
             ),
             (
