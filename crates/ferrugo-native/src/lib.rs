@@ -2841,7 +2841,7 @@ fn display_list_supports_banded_replay(display_list: &DisplayList) -> bool {
         DisplayItem::Path(path) => path_supports_banded_replay(path),
         DisplayItem::Shading(_) => true,
         DisplayItem::ClipPlaceholder { segments, .. } => {
-            line_only_clip_placeholder_supports_banded_replay(segments)
+            closed_clip_placeholder_supports_banded_replay(segments)
         }
         DisplayItem::TransparencyGroup(group) => transparency_group_supports_banded_replay(group),
     })
@@ -2854,9 +2854,9 @@ fn transparency_group_supports_banded_replay(
         && display_list_supports_banded_replay(&group.items)
 }
 
-fn line_only_clip_placeholder_supports_banded_replay(segments: &[PathSegment]) -> bool {
+fn closed_clip_placeholder_supports_banded_replay(segments: &[PathSegment]) -> bool {
     let mut saw_subpath = false;
-    let mut line_count = 0;
+    let mut edge_count = 0;
     let mut subpath_open = false;
     for segment in segments {
         match segment {
@@ -2865,16 +2865,18 @@ fn line_only_clip_placeholder_supports_banded_replay(segments: &[PathSegment]) -
                     return false;
                 }
                 saw_subpath = true;
-                line_count = 0;
+                edge_count = 0;
                 subpath_open = true;
             }
-            PathSegment::LineTo(_) if subpath_open => line_count += 1,
+            PathSegment::LineTo(_) | PathSegment::CubicTo { .. } if subpath_open => {
+                edge_count += 1;
+            }
             PathSegment::LineTo(_) => return false,
-            PathSegment::Close if subpath_open && line_count >= 2 => {
+            PathSegment::CubicTo { .. } => return false,
+            PathSegment::Close if subpath_open && edge_count >= 2 => {
                 subpath_open = false;
             }
             PathSegment::Close => return false,
-            PathSegment::CubicTo { .. } => return false,
         }
     }
     saw_subpath && !subpath_open
@@ -2947,14 +2949,18 @@ fn simple_stroke_path_supports_banded_replay(path: &PathDisplayItem) -> bool {
             .filter(|segment| matches!(segment, PathSegment::MoveTo(_)))
             .count()
             == 1
-        && path
-            .segments
-            .iter()
-            .any(|segment| matches!(segment, PathSegment::LineTo(_)))
-        && path
-            .segments
-            .iter()
-            .all(|segment| matches!(segment, PathSegment::MoveTo(_) | PathSegment::LineTo(_)))
+        && path.segments.iter().any(|segment| {
+            matches!(
+                segment,
+                PathSegment::LineTo(_) | PathSegment::CubicTo { .. }
+            )
+        })
+        && path.segments.iter().all(|segment| {
+            matches!(
+                segment,
+                PathSegment::MoveTo(_) | PathSegment::LineTo(_) | PathSegment::CubicTo { .. }
+            )
+        })
 }
 
 fn joined_outline_stroke_path_supports_banded_replay(path: &PathDisplayItem) -> bool {
@@ -7373,6 +7379,43 @@ mod tests {
     }
 
     #[test]
+    fn native_banded_raster_should_match_single_target_for_cubic_round_stroke_paths() {
+        let display_list = DisplayList::from_items(vec![DisplayItem::Path(PathDisplayItem {
+            segments: vec![
+                PathSegment::MoveTo(Point { x: 8.0, y: 26.0 }),
+                PathSegment::CubicTo {
+                    c1: Point { x: 20.0, y: 4.0 },
+                    c2: Point { x: 42.0, y: 48.0 },
+                    to: Point { x: 58.0, y: 26.0 },
+                },
+            ],
+            paint: PaintMode::Stroke,
+            state: GraphicsState {
+                line_width: 2.0,
+                stroke_color: DeviceColor::Rgb {
+                    r: 0.72,
+                    g: 0.18,
+                    b: 0.36,
+                },
+                line_cap: ferrugo_render::LineCap::Round,
+                line_join: ferrugo_render::LineJoin::Round,
+                ..GraphicsState::default()
+            },
+            fill_pattern: None,
+        })]);
+
+        let (single, single_bands) = render_test_display_list_with_band_rows(&display_list, 0);
+        let (banded, banded_bands) = render_test_display_list_with_band_rows(&display_list, 11);
+
+        assert_eq!(single.bytes, banded.bytes);
+        assert_eq!(single_bands.bands, 1);
+        assert!(banded_bands.bands > 1);
+        assert_eq!(banded_bands.max_band_rows, 11);
+        assert!(banded_bands.max_band_pixels < banded_bands.full_page_pixels);
+        assert!(banded_bands.active_target_byte_reduction_per_mille() > 0);
+    }
+
+    #[test]
     fn native_banded_raster_should_match_single_target_for_joined_outline_stroke_paths() {
         let display_list = DisplayList::from_items(vec![DisplayItem::Path(PathDisplayItem {
             segments: vec![
@@ -7653,7 +7696,7 @@ mod tests {
     }
 
     #[test]
-    fn line_only_clip_placeholder_should_allow_multiple_closed_subpaths() {
+    fn closed_clip_placeholder_should_allow_multiple_closed_subpaths() {
         let segments = [
             PathSegment::MoveTo(Point { x: 8.0, y: 8.0 }),
             PathSegment::LineTo(Point { x: 60.0, y: 8.0 }),
@@ -7667,11 +7710,31 @@ mod tests {
             PathSegment::Close,
         ];
 
-        assert!(line_only_clip_placeholder_supports_banded_replay(&segments));
+        assert!(closed_clip_placeholder_supports_banded_replay(&segments));
     }
 
     #[test]
-    fn line_only_clip_placeholder_should_reject_open_subpaths() {
+    fn closed_clip_placeholder_should_allow_closed_cubic_subpaths() {
+        let segments = [
+            PathSegment::MoveTo(Point { x: 8.0, y: 26.0 }),
+            PathSegment::CubicTo {
+                c1: Point { x: 8.0, y: 10.0 },
+                c2: Point { x: 58.0, y: 10.0 },
+                to: Point { x: 58.0, y: 26.0 },
+            },
+            PathSegment::CubicTo {
+                c1: Point { x: 58.0, y: 42.0 },
+                c2: Point { x: 8.0, y: 42.0 },
+                to: Point { x: 8.0, y: 26.0 },
+            },
+            PathSegment::Close,
+        ];
+
+        assert!(closed_clip_placeholder_supports_banded_replay(&segments));
+    }
+
+    #[test]
+    fn closed_clip_placeholder_should_reject_open_subpaths() {
         let segments = [
             PathSegment::MoveTo(Point { x: 8.0, y: 8.0 }),
             PathSegment::LineTo(Point { x: 60.0, y: 8.0 }),
@@ -7681,9 +7744,7 @@ mod tests {
             PathSegment::Close,
         ];
 
-        assert!(!line_only_clip_placeholder_supports_banded_replay(
-            &segments
-        ));
+        assert!(!closed_clip_placeholder_supports_banded_replay(&segments));
     }
 
     #[test]
@@ -7717,6 +7778,11 @@ mod tests {
             (
                 include_bytes!("../../../fixtures/generated/vector-paths.pdf").as_slice(),
                 "vector",
+                true,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/vector-stress.pdf").as_slice(),
+                "vector stress",
                 true,
             ),
             (
