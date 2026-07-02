@@ -2758,14 +2758,22 @@ fn path_supports_banded_replay(path: &PathDisplayItem) -> bool {
         && path.state.fill_pattern.is_none()
         && path.state.blend_mode == BlendMode::Normal
         && match path.paint {
-            PaintMode::Fill { .. } => path.state.fill_alpha >= 1.0 && !path.state.fill_overprint,
-            PaintMode::Stroke => {
-                simple_stroke_path_supports_banded_replay(path)
-                    && path.state.stroke_alpha >= 1.0
-                    && !path.state.stroke_overprint
+            PaintMode::Fill { .. } => fill_path_supports_banded_replay(path),
+            PaintMode::Stroke => stroke_path_supports_banded_replay(path),
+            PaintMode::FillStroke { .. } => {
+                fill_path_supports_banded_replay(path) && stroke_path_supports_banded_replay(path)
             }
-            PaintMode::FillStroke { .. } => false,
         }
+}
+
+fn fill_path_supports_banded_replay(path: &PathDisplayItem) -> bool {
+    path.state.fill_alpha >= 1.0 && !path.state.fill_overprint
+}
+
+fn stroke_path_supports_banded_replay(path: &PathDisplayItem) -> bool {
+    simple_stroke_path_supports_banded_replay(path)
+        && path.state.stroke_alpha >= 1.0
+        && !path.state.stroke_overprint
 }
 
 fn simple_stroke_path_supports_banded_replay(path: &PathDisplayItem) -> bool {
@@ -6936,6 +6944,48 @@ mod tests {
                 stroke_color: DeviceColor::Rgb {
                     r: 0.8,
                     g: 0.2,
+                    b: 0.1,
+                },
+                line_cap: ferrugo_render::LineCap::Round,
+                line_join: ferrugo_render::LineJoin::Round,
+                ..GraphicsState::default()
+            },
+            fill_pattern: None,
+        })]);
+
+        let (single, single_bands) = render_test_display_list_with_band_rows(&display_list, 0);
+        let (banded, banded_bands) = render_test_display_list_with_band_rows(&display_list, 11);
+
+        assert_eq!(single.bytes, banded.bytes);
+        assert_eq!(single_bands.bands, 1);
+        assert!(banded_bands.bands > 1);
+        assert_eq!(banded_bands.max_band_rows, 11);
+        assert!(banded_bands.max_band_pixels < banded_bands.full_page_pixels);
+        assert!(banded_bands.active_target_byte_reduction_per_mille() > 0);
+    }
+
+    #[test]
+    fn native_banded_raster_should_match_single_target_for_fill_stroke_paths() {
+        let display_list = DisplayList::from_items(vec![DisplayItem::Path(PathDisplayItem {
+            segments: vec![
+                PathSegment::MoveTo(Point { x: 9.5, y: 8.75 }),
+                PathSegment::LineTo(Point { x: 55.25, y: 14.5 }),
+                PathSegment::LineTo(Point { x: 36.75, y: 42.25 }),
+                PathSegment::LineTo(Point { x: 12.0, y: 34.0 }),
+            ],
+            paint: PaintMode::FillStroke {
+                rule: FillRule::Nonzero,
+            },
+            state: GraphicsState {
+                line_width: 2.0,
+                fill_color: DeviceColor::Rgb {
+                    r: 0.15,
+                    g: 0.55,
+                    b: 0.2,
+                },
+                stroke_color: DeviceColor::Rgb {
+                    r: 0.85,
+                    g: 0.25,
                     b: 0.1,
                 },
                 line_cap: ferrugo_render::LineCap::Round,
