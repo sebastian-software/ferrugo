@@ -2814,7 +2814,7 @@ fn path_supports_banded_replay(path: &PathDisplayItem) -> bool {
 }
 
 fn fill_path_supports_banded_replay(path: &PathDisplayItem) -> bool {
-    path.state.fill_alpha >= 1.0 && !path.state.fill_overprint
+    !path.state.fill_overprint
 }
 
 fn fill_pattern_path_supports_banded_replay(path: &PathDisplayItem) -> bool {
@@ -2824,7 +2824,6 @@ fn fill_pattern_path_supports_banded_replay(path: &PathDisplayItem) -> bool {
 fn stroke_path_supports_banded_replay(path: &PathDisplayItem) -> bool {
     path.fill_pattern.is_none()
         && path.state.fill_pattern.is_none()
-        && path.state.stroke_alpha >= 1.0
         && !path.state.stroke_overprint
         && (simple_stroke_path_supports_banded_replay(path)
             || joined_outline_stroke_path_supports_banded_replay(path)
@@ -7422,6 +7421,25 @@ mod tests {
             (
                 include_bytes!("../../../fixtures/generated/transparency-group.pdf").as_slice(),
                 "transparency group",
+                true,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/transparency-alpha.pdf").as_slice(),
+                "transparency alpha",
+                true,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/transparency-isolated-alpha-group.pdf")
+                    .as_slice(),
+                "transparency isolated alpha group",
+                true,
+            ),
+            (
+                include_bytes!(
+                    "../../../fixtures/generated/office-vector-clipped-transparency-group.pdf"
+                )
+                .as_slice(),
+                "office clipped transparency group",
                 true,
             ),
             (
