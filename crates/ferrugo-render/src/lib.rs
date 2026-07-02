@@ -4115,6 +4115,105 @@ impl FontResources {
     pub const fn fallback_cache_entries(&self) -> usize {
         self.fallback_cache_entries
     }
+
+    /// Returns the number of font descriptors retained by this resource map.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.fonts.len()
+    }
+
+    /// Returns true when this resource map has no font descriptors.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.fonts.is_empty()
+    }
+
+    /// Returns approximate resident bytes retained by this resource map.
+    #[must_use]
+    pub fn resident_bytes(&self) -> usize {
+        std::mem::size_of::<Self>()
+            .saturating_add(
+                self.fonts
+                    .len()
+                    .saturating_mul(std::mem::size_of::<FontDescriptor>()),
+            )
+            .saturating_add(
+                self.fonts
+                    .iter()
+                    .map(font_descriptor_resident_bytes)
+                    .sum::<usize>(),
+            )
+    }
+}
+
+fn font_descriptor_resident_bytes(font: &FontDescriptor) -> usize {
+    font.resource_name
+        .len()
+        .saturating_add(font.base_font.as_ref().map_or(0, Vec::len))
+        .saturating_add(
+            font.program
+                .as_ref()
+                .map_or(0, |program| program.bytes.len()),
+        )
+        .saturating_add(font_encoding_resident_bytes(&font.encoding))
+        .saturating_add(
+            font.to_unicode
+                .as_ref()
+                .map_or(0, to_unicode_map_resident_bytes),
+        )
+        .saturating_add(
+            font.type3
+                .as_ref()
+                .map_or(0, |type3| type3_font_resident_bytes(type3.as_ref())),
+        )
+}
+
+fn font_encoding_resident_bytes(encoding: &FontEncoding) -> usize {
+    encoding
+        .differences
+        .iter()
+        .map(|difference| {
+            std::mem::size_of::<FontEncodingDifference>().saturating_add(difference.name.len())
+        })
+        .sum()
+}
+
+fn to_unicode_map_resident_bytes(map: &ToUnicodeMap) -> usize {
+    map.entries
+        .iter()
+        .map(|entry| {
+            std::mem::size_of::<ToUnicodeEntry>()
+                .saturating_add(entry.code.len())
+                .saturating_add(entry.text.len())
+        })
+        .sum::<usize>()
+        .saturating_add(
+            map.code_space_ranges
+                .iter()
+                .map(|range| {
+                    std::mem::size_of::<CodeSpaceRange>()
+                        .saturating_add(range.start.len())
+                        .saturating_add(range.end.len())
+                })
+                .sum::<usize>(),
+        )
+}
+
+fn type3_font_resident_bytes(type3: &Type3Font) -> usize {
+    std::mem::size_of::<Type3Font>()
+        .saturating_add(
+            type3
+                .widths
+                .len()
+                .saturating_mul(std::mem::size_of::<Type3GlyphWidth>()),
+        )
+        .saturating_add(
+            type3
+                .char_procs
+                .iter()
+                .map(|char_proc| char_proc.name.len().saturating_add(char_proc.content.len()))
+                .sum::<usize>(),
+        )
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

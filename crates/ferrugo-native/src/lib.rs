@@ -80,6 +80,8 @@ const MAX_METADATA_ATTACHMENT_ANNOTATIONS: usize = 4096;
 const MAX_METADATA_STRUCTURE_ITEMS: usize = 4096;
 const MAX_METADATA_XMP_BYTES: usize = 64 * 1024;
 const DEFAULT_SPOOL_BYTES_LIMIT: usize = 0;
+const DEFAULT_SESSION_FONT_RESOURCE_CACHE_ENTRIES: usize = 16;
+const LOW_MEMORY_SESSION_FONT_RESOURCE_CACHE_ENTRIES: usize = 4;
 const MIN_SESSION_IMAGE_RESOURCE_CACHE_BYTES: usize = 4 * 1024;
 const DEFAULT_SESSION_GLYPH_BITMAP_CACHE_ENTRIES: usize = 1_024;
 const DEFAULT_SESSION_GLYPH_BITMAP_CACHE_BYTES: usize = 1024 * 1024;
@@ -262,6 +264,7 @@ pub struct NativeDocumentSession<'a> {
     limits: NativeRenderLimits,
     stats: NativeDocumentSessionStats,
     image_resource_cache: RefCell<SessionImageResourceCache>,
+    font_resource_cache: RefCell<SessionFontResourceCache>,
     icc_transform_cache: RefCell<IccTransformCache>,
     glyph_bitmap_cache: RefCell<GlyphBitmapCache>,
     type3_template_cache: RefCell<Type3CharProcTemplateCache>,
@@ -302,6 +305,22 @@ pub struct NativeDocumentSessionStats {
     pub cached_image_resource_inserts: usize,
     /// Decoded image-resource maps evicted from this session cache.
     pub cached_image_resource_evictions: usize,
+    /// Decoded font-resource maps retained inside this session.
+    pub cached_font_resource_entries: usize,
+    /// Maximum decoded font-resource maps retained inside this session.
+    pub max_cached_font_resource_entries: usize,
+    /// Approximate resident decoded font-resource bytes retained in this session.
+    pub cached_font_resource_bytes: usize,
+    /// Maximum approximate resident font-resource bytes retained in this session.
+    pub max_cached_font_resource_bytes: usize,
+    /// Font-resource cache hits inside this session.
+    pub cached_font_resource_hits: usize,
+    /// Font-resource cache misses inside this session.
+    pub cached_font_resource_misses: usize,
+    /// Font-resource maps inserted into this session cache.
+    pub cached_font_resource_inserts: usize,
+    /// Font-resource maps evicted from this session cache.
+    pub cached_font_resource_evictions: usize,
     /// ICC transform entries retained inside this session.
     pub cached_icc_transform_entries: usize,
     /// Maximum ICC transform entries retained inside this session.
@@ -412,6 +431,96 @@ impl SessionImageResourceCache {
             self.evictions += 1;
         }
         self.entries.push(SessionImageResourceCacheEntry {
+            key,
+            resources: resources.clone(),
+            resident_bytes,
+        });
+        self.resident_bytes += resident_bytes;
+        self.inserts += 1;
+    }
+
+    fn stats(
+        &self,
+        max_entries: usize,
+        max_bytes: usize,
+    ) -> (usize, usize, usize, usize, usize, usize, usize, usize) {
+        (
+            self.entries.len(),
+            max_entries,
+            self.resident_bytes,
+            max_bytes,
+            self.hits,
+            self.misses,
+            self.inserts,
+            self.evictions,
+        )
+    }
+}
+
+#[derive(Debug, Default)]
+struct SessionFontResourceCache {
+    entries: Vec<SessionFontResourceCacheEntry>,
+    resident_bytes: usize,
+    hits: usize,
+    misses: usize,
+    inserts: usize,
+    evictions: usize,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct SessionFontResourceCacheEntry {
+    key: SessionFontResourceCacheKey,
+    resources: FontResources,
+    resident_bytes: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SessionFontResourceCacheKey {
+    page_index: u32,
+    native_profile: &'static str,
+}
+
+impl SessionFontResourceCache {
+    fn get(&mut self, key: SessionFontResourceCacheKey) -> Option<FontResources> {
+        let resources = self
+            .entries
+            .iter()
+            .find_map(|entry| (entry.key == key).then(|| entry.resources.clone()));
+        if resources.is_some() {
+            self.hits += 1;
+        } else {
+            self.misses += 1;
+        }
+        resources
+    }
+
+    fn insert(
+        &mut self,
+        key: SessionFontResourceCacheKey,
+        resources: &FontResources,
+        max_entries: usize,
+        max_bytes: usize,
+    ) {
+        if self.entries.iter().any(|entry| entry.key == key)
+            || resources.is_empty()
+            || max_entries == 0
+        {
+            return;
+        }
+        let resident_bytes = resources.resident_bytes();
+        if resident_bytes > max_bytes {
+            return;
+        }
+        while self.entries.len() >= max_entries
+            || self.resident_bytes.saturating_add(resident_bytes) > max_bytes
+        {
+            let Some(evicted) = (!self.entries.is_empty()).then(|| self.entries.remove(0)) else {
+                return;
+            };
+            self.resident_bytes = self.resident_bytes.saturating_sub(evicted.resident_bytes);
+            self.evictions += 1;
+        }
+        self.entries.push(SessionFontResourceCacheEntry {
             key,
             resources: resources.clone(),
             resident_bytes,
@@ -865,6 +974,12 @@ pub struct NativeRenderLimits {
     /// Maximum resident decoded image-resource bytes retained in one explicit
     /// document session.
     pub max_session_image_resource_bytes: usize,
+    /// Maximum decoded font-resource maps retained in one explicit document
+    /// session.
+    pub max_session_font_resource_entries: usize,
+    /// Maximum approximate resident decoded font-resource bytes retained in one
+    /// explicit document session.
+    pub max_session_font_resource_bytes: usize,
     /// Maximum fallback glyph bitmap entries retained in one explicit document
     /// session.
     pub max_session_glyph_bitmap_entries: usize,
@@ -917,6 +1032,8 @@ impl NativeRenderLimits {
             max_session_loaded_object_bytes: 32 * 1024 * 1024,
             max_session_image_resource_entries: 4,
             max_session_image_resource_bytes: 24 * 1024 * 1024,
+            max_session_font_resource_entries: LOW_MEMORY_SESSION_FONT_RESOURCE_CACHE_ENTRIES,
+            max_session_font_resource_bytes: 8 * 1024 * 1024,
             max_session_glyph_bitmap_entries: LOW_MEMORY_SESSION_GLYPH_BITMAP_CACHE_ENTRIES,
             max_session_glyph_bitmap_bytes: LOW_MEMORY_SESSION_GLYPH_BITMAP_CACHE_BYTES,
             max_session_type3_template_entries: LOW_MEMORY_SESSION_TYPE3_TEMPLATE_CACHE_ENTRIES,
@@ -950,6 +1067,8 @@ impl NativeRenderLimits {
             max_session_loaded_object_bytes: self.max_session_loaded_object_bytes,
             max_session_image_resource_entries: self.max_session_image_resource_entries,
             max_session_image_resource_bytes: self.max_session_image_resource_bytes,
+            max_session_font_resource_entries: self.max_session_font_resource_entries,
+            max_session_font_resource_bytes: self.max_session_font_resource_bytes,
             max_session_glyph_bitmap_entries: self.max_session_glyph_bitmap_entries,
             max_session_glyph_bitmap_bytes: self.max_session_glyph_bitmap_bytes,
             max_session_type3_template_entries: self.max_session_type3_template_entries,
@@ -1020,6 +1139,8 @@ impl Default for NativeRenderLimits {
             max_session_loaded_object_bytes: 256 * 1024 * 1024,
             max_session_image_resource_entries: 16,
             max_session_image_resource_bytes: display.max_total_image_bytes,
+            max_session_font_resource_entries: DEFAULT_SESSION_FONT_RESOURCE_CACHE_ENTRIES,
+            max_session_font_resource_bytes: display.max_total_font_program_bytes,
             max_session_glyph_bitmap_entries: DEFAULT_SESSION_GLYPH_BITMAP_CACHE_ENTRIES,
             max_session_glyph_bitmap_bytes: DEFAULT_SESSION_GLYPH_BITMAP_CACHE_BYTES,
             max_session_type3_template_entries: DEFAULT_SESSION_TYPE3_TEMPLATE_CACHE_ENTRIES,
@@ -1079,6 +1200,12 @@ pub struct NativeMemoryDiagnostics {
     /// Maximum resident decoded image-resource bytes retained in one explicit
     /// document session.
     pub max_session_image_resource_bytes: usize,
+    /// Maximum decoded font-resource maps retained in one explicit document
+    /// session.
+    pub max_session_font_resource_entries: usize,
+    /// Maximum approximate resident decoded font-resource bytes retained in one
+    /// explicit document session.
+    pub max_session_font_resource_bytes: usize,
     /// Maximum fallback glyph bitmap entries retained in one explicit document
     /// session.
     pub max_session_glyph_bitmap_entries: usize,
@@ -1160,6 +1287,14 @@ impl<'a> NativeDocumentSession<'a> {
             cached_image_resource_misses: 0,
             cached_image_resource_inserts: 0,
             cached_image_resource_evictions: 0,
+            cached_font_resource_entries: 0,
+            max_cached_font_resource_entries: limits.max_session_font_resource_entries,
+            cached_font_resource_bytes: 0,
+            max_cached_font_resource_bytes: limits.max_session_font_resource_bytes,
+            cached_font_resource_hits: 0,
+            cached_font_resource_misses: 0,
+            cached_font_resource_inserts: 0,
+            cached_font_resource_evictions: 0,
             cached_icc_transform_entries: 0,
             max_cached_icc_transform_entries: limits.max_icc_transform_cache_entries,
             cached_icc_transform_hits: 0,
@@ -1190,6 +1325,7 @@ impl<'a> NativeDocumentSession<'a> {
             limits,
             stats,
             image_resource_cache: RefCell::new(SessionImageResourceCache::default()),
+            font_resource_cache: RefCell::new(SessionFontResourceCache::default()),
             icc_transform_cache: RefCell::new(IccTransformCache::new(
                 limits.max_icc_transform_cache_entries,
             )),
@@ -1229,6 +1365,27 @@ impl<'a> NativeDocumentSession<'a> {
         stats.cached_image_resource_misses = cached_image_resource_misses;
         stats.cached_image_resource_inserts = cached_image_resource_inserts;
         stats.cached_image_resource_evictions = cached_image_resource_evictions;
+        let (
+            cached_font_resource_entries,
+            max_cached_font_resource_entries,
+            cached_font_resource_bytes,
+            max_cached_font_resource_bytes,
+            cached_font_resource_hits,
+            cached_font_resource_misses,
+            cached_font_resource_inserts,
+            cached_font_resource_evictions,
+        ) = self.font_resource_cache.borrow().stats(
+            self.limits.max_session_font_resource_entries,
+            self.limits.max_session_font_resource_bytes,
+        );
+        stats.cached_font_resource_entries = cached_font_resource_entries;
+        stats.max_cached_font_resource_entries = max_cached_font_resource_entries;
+        stats.cached_font_resource_bytes = cached_font_resource_bytes;
+        stats.max_cached_font_resource_bytes = max_cached_font_resource_bytes;
+        stats.cached_font_resource_hits = cached_font_resource_hits;
+        stats.cached_font_resource_misses = cached_font_resource_misses;
+        stats.cached_font_resource_inserts = cached_font_resource_inserts;
+        stats.cached_font_resource_evictions = cached_font_resource_evictions;
         let icc_cache = self.icc_transform_cache.borrow();
         let icc_metrics = icc_cache.metrics();
         stats.cached_icc_transform_entries = icc_cache.len();
@@ -1273,6 +1430,7 @@ impl<'a> NativeDocumentSession<'a> {
             options,
             self.limits,
             &self.image_resource_cache,
+            &self.font_resource_cache,
             &self.icc_transform_cache,
             &self.glyph_bitmap_cache,
             &self.type3_template_cache,
@@ -1298,6 +1456,7 @@ impl<'a> NativeDocumentSession<'a> {
             self.limits,
             timings,
             &self.image_resource_cache,
+            &self.font_resource_cache,
             &self.icc_transform_cache,
             &self.glyph_bitmap_cache,
             &self.type3_template_cache,
@@ -1849,6 +2008,7 @@ fn render_loaded_document(
         None,
         None,
         None,
+        None,
     )
 }
 
@@ -1862,6 +2022,7 @@ fn render_loaded_document_with_session_cache(
     options: &ThumbnailOptions,
     limits: NativeRenderLimits,
     image_resource_cache: &RefCell<SessionImageResourceCache>,
+    font_resource_cache: &RefCell<SessionFontResourceCache>,
     icc_transform_cache: &RefCell<IccTransformCache>,
     glyph_bitmap_cache: &RefCell<GlyphBitmapCache>,
     type3_template_cache: &RefCell<Type3CharProcTemplateCache>,
@@ -1873,6 +2034,7 @@ fn render_loaded_document_with_session_cache(
         limits,
         RenderTraceSinks::none(),
         Some(image_resource_cache),
+        Some(font_resource_cache),
         Some(icc_transform_cache),
         Some(glyph_bitmap_cache),
         Some(type3_template_cache),
@@ -1890,6 +2052,7 @@ fn render_loaded_document_with_timings_and_session_cache(
     limits: NativeRenderLimits,
     timings: &mut NativeRenderPhaseTimings,
     image_resource_cache: &RefCell<SessionImageResourceCache>,
+    font_resource_cache: &RefCell<SessionFontResourceCache>,
     icc_transform_cache: &RefCell<IccTransformCache>,
     glyph_bitmap_cache: &RefCell<GlyphBitmapCache>,
     type3_template_cache: &RefCell<Type3CharProcTemplateCache>,
@@ -1901,6 +2064,7 @@ fn render_loaded_document_with_timings_and_session_cache(
         limits,
         RenderTraceSinks::with_timings(timings),
         Some(image_resource_cache),
+        Some(font_resource_cache),
         Some(icc_transform_cache),
         Some(glyph_bitmap_cache),
         Some(type3_template_cache),
@@ -1924,6 +2088,7 @@ fn render_loaded_document_with_trace(
         None,
         None,
         None,
+        None,
     )
 }
 
@@ -1938,6 +2103,7 @@ fn render_loaded_document_inner(
     limits: NativeRenderLimits,
     mut trace_sinks: RenderTraceSinks<'_>,
     image_resource_cache: Option<&RefCell<SessionImageResourceCache>>,
+    font_resource_cache: Option<&RefCell<SessionFontResourceCache>>,
     icc_transform_cache: Option<&RefCell<IccTransformCache>>,
     glyph_bitmap_cache: Option<&RefCell<GlyphBitmapCache>>,
     type3_template_cache: Option<&RefCell<Type3CharProcTemplateCache>>,
@@ -2114,7 +2280,20 @@ fn render_loaded_document_inner(
     let font_resources = record_render_phase(
         &mut trace_sinks.timings,
         NativeRenderPhase::ResourceFonts,
-        || page_font_resources(document, page, display_options),
+        || {
+            cached_page_font_resources(
+                PageFontResourceRequest {
+                    document,
+                    page,
+                    options: display_options,
+                },
+                font_resource_cache.map(|cache| SessionFontResourceCacheAccess {
+                    page_index: options.page_index,
+                    limits,
+                    cache,
+                }),
+            )
+        },
     )?;
     let text_list = record_render_phase(
         &mut trace_sinks.timings,
@@ -3344,6 +3523,18 @@ struct SessionImageResourceCacheAccess<'a> {
     cache: &'a RefCell<SessionImageResourceCache>,
 }
 
+struct PageFontResourceRequest<'a, 'd> {
+    document: &'a ClassicDocument<'d>,
+    page: &'a ObjectPageMetadata,
+    options: DisplayListOptions,
+}
+
+struct SessionFontResourceCacheAccess<'a> {
+    page_index: u32,
+    limits: NativeRenderLimits,
+    cache: &'a RefCell<SessionFontResourceCache>,
+}
+
 fn cached_page_image_resources(
     request: PageImageResourceRequest<'_, '_>,
     cache_access: Option<SessionImageResourceCacheAccess<'_>>,
@@ -3379,6 +3570,30 @@ fn cached_page_image_resources(
         &resources,
         cache_access.limits.max_session_image_resource_entries,
         cache_access.limits.max_session_image_resource_bytes,
+    );
+    Ok(resources)
+}
+
+fn cached_page_font_resources(
+    request: PageFontResourceRequest<'_, '_>,
+    cache_access: Option<SessionFontResourceCacheAccess<'_>>,
+) -> Result<FontResources, ThumbnailError> {
+    let Some(cache_access) = cache_access else {
+        return page_font_resources(request.document, request.page, request.options);
+    };
+    let key = SessionFontResourceCacheKey {
+        page_index: cache_access.page_index,
+        native_profile: native_profile_name(cache_access.limits),
+    };
+    if let Some(resources) = cache_access.cache.borrow_mut().get(key) {
+        return Ok(resources);
+    }
+    let resources = page_font_resources(request.document, request.page, request.options)?;
+    cache_access.cache.borrow_mut().insert(
+        key,
+        &resources,
+        cache_access.limits.max_session_font_resource_entries,
+        cache_access.limits.max_session_font_resource_bytes,
     );
     Ok(resources)
 }
@@ -6086,6 +6301,37 @@ mod tests {
     }
 
     #[test]
+    fn native_document_session_should_reuse_font_resource_cache() {
+        let bytes =
+            include_bytes!("../../../fixtures/generated/subset-type3-repeated-charprocs.pdf");
+        let options = ThumbnailOptions {
+            max_edge: 160,
+            ..ThumbnailOptions::default()
+        };
+        let backend = NativeBackend::new();
+
+        let session = backend
+            .document_session(bytes, &[0])
+            .expect("document session should load");
+        let first = session
+            .render_page(&options)
+            .expect("first session render should work");
+        let second = session
+            .render_page(&options)
+            .expect("second session render should work");
+        let stats = session.stats();
+
+        assert_eq!(first.bytes, second.bytes);
+        assert!(stats.cached_font_resource_entries > 0);
+        assert!(stats.cached_font_resource_bytes > 0);
+        assert!(stats.cached_font_resource_bytes <= stats.max_cached_font_resource_bytes);
+        assert!(stats.cached_font_resource_hits > 0);
+        assert!(stats.cached_font_resource_misses > 0);
+        assert!(stats.cached_font_resource_inserts > 0);
+        assert_eq!(stats.cached_font_resource_evictions, 0);
+    }
+
+    #[test]
     fn native_document_session_should_reuse_glyph_bitmap_cache() {
         let bytes = include_bytes!("../../../fixtures/generated/text-page.pdf");
         let options = ThumbnailOptions {
@@ -6314,6 +6560,11 @@ mod tests {
             diagnostics.max_session_image_resource_bytes,
             128 * 1024 * 1024
         );
+        assert_eq!(diagnostics.max_session_font_resource_entries, 16);
+        assert_eq!(
+            diagnostics.max_session_font_resource_bytes,
+            64 * 1024 * 1024
+        );
         assert_eq!(diagnostics.max_session_glyph_bitmap_entries, 1_024);
         assert_eq!(diagnostics.max_session_glyph_bitmap_bytes, 1024 * 1024);
         assert_eq!(diagnostics.max_session_type3_template_entries, 512);
@@ -6345,6 +6596,13 @@ mod tests {
         );
         assert!(
             low_memory.max_session_image_resource_bytes < default.max_session_image_resource_bytes
+        );
+        assert!(
+            low_memory.max_session_font_resource_entries
+                < default.max_session_font_resource_entries
+        );
+        assert!(
+            low_memory.max_session_font_resource_bytes < default.max_session_font_resource_bytes
         );
         assert!(
             low_memory.max_session_glyph_bitmap_entries < default.max_session_glyph_bitmap_entries

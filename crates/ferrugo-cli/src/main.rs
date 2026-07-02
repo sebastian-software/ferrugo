@@ -7885,6 +7885,10 @@ fn native_memory_diagnostics_json(diagnostics: &NativeMemoryDiagnostics) -> Stri
             "\"max_flattened_segments\":{},",
             "\"max_pattern_tiles\":{},",
             "\"max_pattern_cell_cache_entries\":{},",
+            "\"max_session_image_resource_entries\":{},",
+            "\"max_session_image_resource_bytes\":{},",
+            "\"max_session_font_resource_entries\":{},",
+            "\"max_session_font_resource_bytes\":{},",
             "\"max_session_glyph_bitmap_entries\":{},",
             "\"max_session_glyph_bitmap_bytes\":{},",
             "\"max_session_type3_template_entries\":{},",
@@ -7907,6 +7911,10 @@ fn native_memory_diagnostics_json(diagnostics: &NativeMemoryDiagnostics) -> Stri
         diagnostics.max_flattened_segments,
         diagnostics.max_pattern_tiles,
         diagnostics.max_pattern_cell_cache_entries,
+        diagnostics.max_session_image_resource_entries,
+        diagnostics.max_session_image_resource_bytes,
+        diagnostics.max_session_font_resource_entries,
+        diagnostics.max_session_font_resource_bytes,
         diagnostics.max_session_glyph_bitmap_entries,
         diagnostics.max_session_glyph_bitmap_bytes,
         diagnostics.max_session_type3_template_entries,
@@ -10307,6 +10315,14 @@ fn native_document_session_stats_json(stats: Option<NativeDocumentSessionStats>)
             "\"cached_image_resource_misses\":{},",
             "\"cached_image_resource_inserts\":{},",
             "\"cached_image_resource_evictions\":{},",
+            "\"cached_font_resource_entries\":{},",
+            "\"max_cached_font_resource_entries\":{},",
+            "\"cached_font_resource_bytes\":{},",
+            "\"max_cached_font_resource_bytes\":{},",
+            "\"cached_font_resource_hits\":{},",
+            "\"cached_font_resource_misses\":{},",
+            "\"cached_font_resource_inserts\":{},",
+            "\"cached_font_resource_evictions\":{},",
             "\"cached_icc_transform_entries\":{},",
             "\"max_cached_icc_transform_entries\":{},",
             "\"cached_icc_transform_hits\":{},",
@@ -10348,6 +10364,14 @@ fn native_document_session_stats_json(stats: Option<NativeDocumentSessionStats>)
         stats.cached_image_resource_misses,
         stats.cached_image_resource_inserts,
         stats.cached_image_resource_evictions,
+        stats.cached_font_resource_entries,
+        stats.max_cached_font_resource_entries,
+        stats.cached_font_resource_bytes,
+        stats.max_cached_font_resource_bytes,
+        stats.cached_font_resource_hits,
+        stats.cached_font_resource_misses,
+        stats.cached_font_resource_inserts,
+        stats.cached_font_resource_evictions,
         stats.cached_icc_transform_entries,
         stats.max_cached_icc_transform_entries,
         stats.cached_icc_transform_hits,
@@ -12956,6 +12980,10 @@ status = "candidate"
         assert!(json.contains("\"cached_image_resource_misses\""));
         assert!(json.contains("\"cached_image_resource_inserts\""));
         assert!(json.contains("\"cached_image_resource_evictions\""));
+        assert!(json.contains("\"cached_font_resource_hits\""));
+        assert!(json.contains("\"cached_font_resource_misses\""));
+        assert!(json.contains("\"cached_font_resource_inserts\""));
+        assert!(json.contains("\"cached_font_resource_evictions\""));
         assert!(json.contains("\"cached_icc_transform_hits\""));
         assert!(json.contains("\"cached_icc_transform_misses\""));
         assert!(json.contains("\"cached_icc_transform_evictions\""));
@@ -13156,6 +13184,9 @@ status = "candidate"
         assert!(json.contains("\"max_page_pixels\":16777216"));
         assert!(json.contains("\"max_raster_band_rows\":0"));
         assert!(json.contains("\"max_total_image_bytes\":134217728"));
+        assert!(json.contains("\"max_session_image_resource_entries\":16"));
+        assert!(json.contains("\"max_session_font_resource_entries\":16"));
+        assert!(json.contains("\"max_session_font_resource_bytes\":67108864"));
         assert!(json.contains("\"max_session_type3_template_entries\":512"));
         assert!(json.contains("\"max_session_type3_template_bytes\":1048576"));
         assert!(json.contains("\"spooling_enabled\":false"));
