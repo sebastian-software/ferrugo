@@ -16,8 +16,8 @@ use ferrugo_native::{
     ImageResourceSummary, NativeBackend, NativeDocumentSessionStats, NativeMemoryDiagnostics,
     NativePageCacheKey, NativePageCachePolicy, NativeRenderPhaseTimings, NativeRenderTrace,
     OperatorCoverageEntry, OperatorCoverageOptions, OperatorSupportStatus, PathFlatteningSummary,
-    StrokeRasterRouteSummary, StrokeShapeSummary, Type3CharProcTemplateCacheSummary,
-    DEFAULT_CURVE_FLATTENING_TOLERANCE,
+    RasterBandSummary, StrokeRasterRouteSummary, StrokeShapeSummary,
+    Type3CharProcTemplateCacheSummary, DEFAULT_CURVE_FLATTENING_TOLERANCE,
 };
 #[cfg(feature = "pdfium")]
 use ferrugo_pdfium::PdfiumBackend;
@@ -7872,6 +7872,7 @@ fn native_memory_diagnostics_json(diagnostics: &NativeMemoryDiagnostics) -> Stri
         concat!(
             "{{",
             "\"max_page_pixels\":{},",
+            "\"max_raster_band_rows\":{},",
             "\"max_image_bytes\":{},",
             "\"max_total_image_bytes\":{},",
             "\"max_font_program_bytes\":{},",
@@ -7893,6 +7894,7 @@ fn native_memory_diagnostics_json(diagnostics: &NativeMemoryDiagnostics) -> Stri
             "}}"
         ),
         diagnostics.max_page_pixels,
+        diagnostics.max_raster_band_rows,
         diagnostics.max_image_bytes,
         diagnostics.max_total_image_bytes,
         diagnostics.max_font_program_bytes,
@@ -8538,6 +8540,8 @@ fn native_render_trace_json(config: &TraceNativeConfig) -> Result<String, CliErr
     let type3_template_summary_json = trace_type3_template_summary_json(
         render_trace.as_ref().map(|trace| &trace.type3_templates),
     );
+    let raster_band_summary_json =
+        trace_raster_band_summary_json(render_trace.as_ref().map(|trace| &trace.raster_bands));
     let render_json = trace_render_outcome_json(render_trace);
 
     Ok(format!(
@@ -8566,6 +8570,7 @@ fn native_render_trace_json(config: &TraceNativeConfig) -> Result<String, CliErr
             "  \"image_placement_summary\": {},\n",
             "  \"glyph_bitmap_summary\": {},\n",
             "  \"type3_template_summary\": {},\n",
+            "  \"raster_band_summary\": {},\n",
             "  \"operator_coverage\": {},\n",
             "  \"operator_summary\": {},\n",
             "  \"events\": [{}]\n",
@@ -8591,6 +8596,7 @@ fn native_render_trace_json(config: &TraceNativeConfig) -> Result<String, CliErr
         image_placement_summary_json,
         glyph_bitmap_summary_json,
         type3_template_summary_json,
+        raster_band_summary_json,
         coverage_json,
         operator_summary,
         events_json
@@ -9032,6 +9038,28 @@ fn trace_type3_template_summary_json(
             summary.misses,
             summary.inserts,
             summary.evictions
+        ),
+        Err(error) => format!(
+            "{{\"status\":\"error\",\"class\":{},\"bucket\":{}}}",
+            json_string(error.class().as_str()),
+            optional_json_string(error.unsupported_feature_bucket())
+        ),
+    }
+}
+
+fn trace_raster_band_summary_json(summary: Result<&RasterBandSummary, &ThumbnailError>) -> String {
+    match summary {
+        Ok(summary) => format!(
+            concat!(
+                "{{",
+                "\"status\":\"measured\",",
+                "\"full_page_pixels\":{},",
+                "\"bands\":{},",
+                "\"max_band_rows\":{},",
+                "\"max_band_pixels\":{}",
+                "}}"
+            ),
+            summary.full_page_pixels, summary.bands, summary.max_band_rows, summary.max_band_pixels
         ),
         Err(error) => format!(
             "{{\"status\":\"error\",\"class\":{},\"bucket\":{}}}",
@@ -12087,6 +12115,8 @@ mod tests {
         assert!(json.contains("\"downsample_candidate_placements\""));
         assert!(json.contains("\"glyph_bitmap_summary\""));
         assert!(json.contains("\"type3_template_summary\""));
+        assert!(json.contains("\"raster_band_summary\""));
+        assert!(json.contains("\"max_band_rows\""));
         assert!(json.contains("\"hits\""));
         assert!(json.contains("\"misses\""));
         assert!(json.contains("\"operator_summary\""));
@@ -13124,6 +13154,7 @@ status = "candidate"
         assert!(json.contains("\"has_oc_properties\":false"));
         assert!(json.contains("\"rust_native_memory\""));
         assert!(json.contains("\"max_page_pixels\":16777216"));
+        assert!(json.contains("\"max_raster_band_rows\":0"));
         assert!(json.contains("\"max_total_image_bytes\":134217728"));
         assert!(json.contains("\"max_session_type3_template_entries\":512"));
         assert!(json.contains("\"max_session_type3_template_bytes\":1048576"));

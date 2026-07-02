@@ -29,8 +29,9 @@ use ferrugo_render::{
     DisplayList, DisplayListOptions, ExtGraphicsStateResources, FontResources, FormResources,
     GlyphBitmapCache, GraphicsError, GraphicsErrorKind, IccTransformCache, ImageDecodeHints,
     ImageResources, PageGeometry, PageRotation, PageTransform, PageTransformOptions, PathBounds,
-    PathRasterOptions, Point, RasterDisplayPhase, RasterError, RasterErrorKind, ShadingResources,
-    TextDisplayItem, TextWritingMode, TilingPatternResources, Type3CharProcTemplateCache,
+    PathRasterOptions, Point, RasterDimensions, RasterDisplayPhase, RasterError, RasterErrorKind,
+    ShadingResources, TextDisplayItem, TextWritingMode, TilingPatternResources,
+    Type3CharProcTemplateCache,
 };
 pub use ferrugo_render::{
     FillRasterRouteSummary, GlyphBitmapCacheSummary, ImagePlacementSummary, ImageResourceSummary,
@@ -88,6 +89,8 @@ const DEFAULT_SESSION_TYPE3_TEMPLATE_CACHE_ENTRIES: usize = 512;
 const DEFAULT_SESSION_TYPE3_TEMPLATE_CACHE_BYTES: usize = 1024 * 1024;
 const LOW_MEMORY_SESSION_TYPE3_TEMPLATE_CACHE_ENTRIES: usize = 128;
 const LOW_MEMORY_SESSION_TYPE3_TEMPLATE_CACHE_BYTES: usize = 256 * 1024;
+const DEFAULT_RASTER_BAND_ROWS: usize = 0;
+const LOW_MEMORY_RASTER_BAND_ROWS: usize = 64;
 
 /// Rust-native thumbnail backend.
 ///
@@ -155,6 +158,21 @@ pub struct NativeRenderTrace {
     pub glyph_bitmaps: GlyphBitmapCacheSummary,
     /// Request-local Type 3 CharProc template cache summary for renderer profiling.
     pub type3_templates: Type3CharProcTemplateCacheSummary,
+    /// Request-local raster banding summary for renderer profiling.
+    pub raster_bands: RasterBandSummary,
+}
+
+/// Native renderer raster banding summary for one page render.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct RasterBandSummary {
+    /// Full output page pixels.
+    pub full_page_pixels: usize,
+    /// Number of raster bands replayed for this page.
+    pub bands: usize,
+    /// Maximum rows in one raster band.
+    pub max_band_rows: u32,
+    /// Maximum pixels in one raster band target.
+    pub max_band_pixels: usize,
 }
 
 struct RenderTraceSinks<'a> {
@@ -167,6 +185,7 @@ struct RenderTraceSinks<'a> {
     image_placements: Option<&'a mut ImagePlacementSummary>,
     glyph_bitmaps: Option<&'a mut GlyphBitmapCacheSummary>,
     type3_templates: Option<&'a mut Type3CharProcTemplateCacheSummary>,
+    raster_bands: Option<&'a mut RasterBandSummary>,
 }
 
 impl<'a> RenderTraceSinks<'a> {
@@ -181,6 +200,7 @@ impl<'a> RenderTraceSinks<'a> {
             image_placements: None,
             glyph_bitmaps: None,
             type3_templates: None,
+            raster_bands: None,
         }
     }
 
@@ -195,6 +215,7 @@ impl<'a> RenderTraceSinks<'a> {
             image_placements: None,
             glyph_bitmaps: None,
             type3_templates: None,
+            raster_bands: None,
         }
     }
 
@@ -212,6 +233,7 @@ impl<'a> RenderTraceSinks<'a> {
         image_placements: &'a mut ImagePlacementSummary,
         glyph_bitmaps: &'a mut GlyphBitmapCacheSummary,
         type3_templates: &'a mut Type3CharProcTemplateCacheSummary,
+        raster_bands: &'a mut RasterBandSummary,
     ) -> Self {
         Self {
             timings: Some(timings),
@@ -223,6 +245,7 @@ impl<'a> RenderTraceSinks<'a> {
             image_placements: Some(image_placements),
             glyph_bitmaps: Some(glyph_bitmaps),
             type3_templates: Some(type3_templates),
+            raster_bands: Some(raster_bands),
         }
     }
 }
@@ -638,6 +661,7 @@ impl NativeBackend {
         let mut image_placements = ImagePlacementSummary::default();
         let mut glyph_bitmaps = GlyphBitmapCacheSummary::default();
         let mut type3_templates = Type3CharProcTemplateCacheSummary::default();
+        let mut raster_bands = RasterBandSummary::default();
         let thumbnail = render_loaded_document_with_trace(
             &document,
             &page_tree,
@@ -653,6 +677,7 @@ impl NativeBackend {
                 &mut image_placements,
                 &mut glyph_bitmaps,
                 &mut type3_templates,
+                &mut raster_bands,
             ),
         )?;
         timings.total = total_started.elapsed();
@@ -667,6 +692,7 @@ impl NativeBackend {
             image_placements,
             glyph_bitmaps,
             type3_templates,
+            raster_bands,
         })
     }
 
@@ -794,6 +820,10 @@ impl FirstPagePreviewMemory {
 pub struct NativeRenderLimits {
     /// Maximum pixels accepted in one page raster buffer.
     pub max_page_pixels: usize,
+    /// Maximum rows rendered into one native raster band. Zero disables
+    /// banding; values at or above the page height keep the legacy single-target
+    /// path.
+    pub max_raster_band_rows: usize,
     /// Maximum decoded bytes accepted for one image XObject.
     pub max_image_bytes: usize,
     /// Maximum resident decoded image bytes accepted for one page resource map.
@@ -867,6 +897,7 @@ impl NativeRenderLimits {
     pub const fn low_memory() -> Self {
         Self {
             max_page_pixels: 384 * 384,
+            max_raster_band_rows: LOW_MEMORY_RASTER_BAND_ROWS,
             max_image_bytes: 12 * 1024 * 1024,
             max_total_image_bytes: 24 * 1024 * 1024,
             max_icc_profile_bytes: 256 * 1024,
@@ -899,6 +930,7 @@ impl NativeRenderLimits {
     const fn memory_diagnostics(self) -> NativeMemoryDiagnostics {
         NativeMemoryDiagnostics {
             max_page_pixels: self.max_page_pixels,
+            max_raster_band_rows: self.max_raster_band_rows,
             max_image_bytes: self.max_image_bytes,
             max_total_image_bytes: self.max_total_image_bytes,
             max_icc_profile_bytes: self.max_icc_profile_bytes,
@@ -968,6 +1000,7 @@ impl Default for NativeRenderLimits {
         let path = PathRasterOptions::default();
         Self {
             max_page_pixels: page.max_page_pixels,
+            max_raster_band_rows: DEFAULT_RASTER_BAND_ROWS,
             max_image_bytes: display.max_image_bytes,
             max_total_image_bytes: display.max_total_image_bytes,
             max_icc_profile_bytes: display.max_icc_profile_bytes,
@@ -1003,6 +1036,8 @@ impl Default for NativeRenderLimits {
 pub struct NativeMemoryDiagnostics {
     /// Maximum pixels accepted in one page raster buffer.
     pub max_page_pixels: usize,
+    /// Maximum rows rendered into one native raster band. Zero disables banding.
+    pub max_raster_band_rows: usize,
     /// Maximum decoded bytes accepted for one image XObject.
     pub max_image_bytes: usize,
     /// Maximum resident decoded image bytes accepted for one page resource map.
@@ -2093,9 +2128,6 @@ fn render_loaded_document_inner(
             .map_err(map_graphics_error)
         },
     )?;
-    let mut raster = transform
-        .create_device(options.background)
-        .map_err(map_raster_error)?;
     let paint_order = should_scan_content_order(&display_list, &image_list, &text_list)
         .then(|| {
             record_render_phase(
@@ -2105,88 +2137,33 @@ fn render_loaded_document_inner(
             )
         })
         .transpose()?;
-    if let Some(paint_order) = paint_order.filter(|paint_order| {
-        should_rasterize_in_content_order(
-            paint_order,
-            &display_list,
-            &form_list,
-            &image_list,
-            &text_list,
-        )
-    }) {
-        let ordered_list = ordered_display_list(
-            &paint_order,
-            &display_list,
-            &form_list,
-            &image_list,
-            &text_list,
-        );
-        rasterize_ordered_display_list_with_phase_timings(
-            &ordered_list,
-            &mut raster,
-            transform,
-            path_options,
-            &mut trace_sinks.timings,
-            &mut trace_sinks.fill_routes,
-            &mut trace_sinks.stroke_routes,
-            glyph_bitmap_cache,
-            type3_template_cache,
-        )?;
-    } else {
-        record_render_phase(
-            &mut trace_sinks.timings,
-            NativeRenderPhase::RasterPaths,
-            || {
-                rasterize_paths_with_optional_route_summaries(
-                    &display_list,
-                    &mut raster,
-                    transform,
-                    path_options,
-                    &mut trace_sinks.fill_routes,
-                    &mut trace_sinks.stroke_routes,
-                )
-            },
-        )?;
-        record_render_phase(
-            &mut trace_sinks.timings,
-            NativeRenderPhase::RasterPaths,
-            || {
-                rasterize_paths_with_optional_route_summaries(
-                    &form_list,
-                    &mut raster,
-                    transform,
-                    path_options,
-                    &mut trace_sinks.fill_routes,
-                    &mut trace_sinks.stroke_routes,
-                )
-            },
-        )?;
-        record_render_phase(
-            &mut trace_sinks.timings,
-            NativeRenderPhase::RasterImages,
-            || rasterize_images(&image_list, &mut raster, transform).map_err(map_raster_error),
-        )?;
-        record_render_phase(
-            &mut trace_sinks.timings,
-            NativeRenderPhase::RasterText,
-            || {
-                rasterize_text_with_cache(
-                    &text_list,
-                    &mut raster,
-                    transform,
-                    glyph_bitmap_cache,
-                    type3_template_cache,
-                )
-            },
-        )?;
-    }
+    let ordered_list = paint_order
+        .filter(|paint_order| {
+            should_rasterize_in_content_order(
+                paint_order,
+                &display_list,
+                &form_list,
+                &image_list,
+                &text_list,
+            )
+        })
+        .map(|paint_order| {
+            ordered_display_list(
+                &paint_order,
+                &display_list,
+                &form_list,
+                &image_list,
+                &text_list,
+            )
+        });
     let (annotation_forms, annotation_content, annotation_fallback_content) = record_render_phase(
         &mut trace_sinks.timings,
         NativeRenderPhase::StreamDecode,
         || page_annotation_appearance_resources(document, page, options.annotation_mode),
     )?;
+    let mut annotation_list = None;
     if !annotation_content.is_empty() {
-        let annotation_list = record_render_phase(
+        let list = record_render_phase(
             &mut trace_sinks.timings,
             NativeRenderPhase::DisplayListBuild,
             || {
@@ -2204,38 +2181,27 @@ fn render_loaded_document_inner(
         )?;
         record_path_flattening(
             &mut trace_sinks.path_flattening,
-            &annotation_list,
+            &list,
             transform,
             path_options,
         )?;
         record_stroke_shapes(
             &mut trace_sinks.stroke_shapes,
-            &annotation_list,
+            &list,
             transform,
             path_options,
         )?;
-        record_render_phase(
-            &mut trace_sinks.timings,
-            NativeRenderPhase::RasterPaths,
-            || {
-                rasterize_paths_with_optional_route_summaries(
-                    &annotation_list,
-                    &mut raster,
-                    transform,
-                    path_options,
-                    &mut trace_sinks.fill_routes,
-                    &mut trace_sinks.stroke_routes,
-                )
-            },
-        )?;
+        annotation_list = Some(list);
     }
+    let mut annotation_fallback_list = None;
+    let mut annotation_fallback_text_list = None;
     if !annotation_fallback_content.is_empty() {
         let annotation_ext_graphics_states = record_render_phase(
             &mut trace_sinks.timings,
             NativeRenderPhase::ResourceAnnotations,
             || annotation_fallback_ext_graphics_states().map_err(map_graphics_error),
         )?;
-        let annotation_list = record_render_phase(
+        let list = record_render_phase(
             &mut trace_sinks.timings,
             NativeRenderPhase::DisplayListBuild,
             || {
@@ -2252,23 +2218,164 @@ fn render_loaded_document_inner(
         )?;
         record_path_flattening(
             &mut trace_sinks.path_flattening,
-            &annotation_list,
+            &list,
             transform,
             path_options,
         )?;
         record_stroke_shapes(
             &mut trace_sinks.stroke_shapes,
-            &annotation_list,
+            &list,
             transform,
             path_options,
         )?;
+        annotation_fallback_list = Some(list);
+        match build_text_display_list(
+            tokenize_content(PdfBytes::new(&annotation_fallback_content)),
+            &font_resources,
+            display_options,
+        ) {
+            Ok(list) => annotation_fallback_text_list = Some(list),
+            Err(error) if is_ignorable_annotation_fallback_text_error(&error) => {}
+            Err(error) => return Err(map_graphics_error(error)),
+        }
+    }
+    let thumbnail = rasterize_native_page_work_to_thumbnail(
+        NativeRasterWork {
+            display_list: &display_list,
+            form_list: &form_list,
+            image_list: &image_list,
+            text_list: &text_list,
+            ordered_list: ordered_list.as_ref(),
+            annotation_list: annotation_list.as_ref(),
+            annotation_fallback_list: annotation_fallback_list.as_ref(),
+            annotation_fallback_text_list: annotation_fallback_text_list.as_ref(),
+        },
+        transform,
+        path_options,
+        options.background,
+        limits,
+        &mut trace_sinks,
+        glyph_bitmap_cache,
+        type3_template_cache,
+    )?;
+    if let Some(glyph_bitmaps) = trace_sinks.glyph_bitmaps.as_deref_mut() {
+        *glyph_bitmaps = glyph_bitmap_cache.borrow().summary();
+    }
+    if let Some(type3_templates) = trace_sinks.type3_templates.as_deref_mut() {
+        *type3_templates = type3_template_cache.borrow().summary();
+    }
+    Ok(thumbnail)
+}
+
+#[derive(Debug, Clone, Copy)]
+struct NativeRasterWork<'a> {
+    display_list: &'a DisplayList,
+    form_list: &'a DisplayList,
+    image_list: &'a DisplayList,
+    text_list: &'a DisplayList,
+    ordered_list: Option<&'a DisplayList>,
+    annotation_list: Option<&'a DisplayList>,
+    annotation_fallback_list: Option<&'a DisplayList>,
+    annotation_fallback_text_list: Option<&'a DisplayList>,
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "native page rasterization keeps work lists, trace sinks, and caches explicit"
+)]
+fn rasterize_native_page_work_to_thumbnail(
+    work: NativeRasterWork<'_>,
+    transform: PageTransform,
+    path_options: PathRasterOptions,
+    background: ferrugo_thumbnail::Rgba,
+    limits: NativeRenderLimits,
+    trace_sinks: &mut RenderTraceSinks<'_>,
+    glyph_bitmap_cache: &RefCell<GlyphBitmapCache>,
+    type3_template_cache: &RefCell<Type3CharProcTemplateCache>,
+) -> Result<Thumbnail, ThumbnailError> {
+    let band_rows = raster_band_rows(transform.dimensions, limits.max_raster_band_rows)
+        .filter(|_| native_raster_work_supports_banded_replay(work));
+    let band_summary = raster_band_summary(transform.dimensions, band_rows);
+    if let Some(raster_bands) = trace_sinks.raster_bands.as_deref_mut() {
+        *raster_bands = band_summary;
+    }
+    let Some(band_rows) = band_rows else {
+        let mut raster = transform
+            .create_device(background)
+            .map_err(map_raster_error)?;
+        rasterize_native_page_work_into(
+            work,
+            &mut raster,
+            transform,
+            path_options,
+            trace_sinks,
+            glyph_bitmap_cache,
+            type3_template_cache,
+        )?;
+        return record_render_phase(&mut trace_sinks.timings, NativeRenderPhase::Output, || {
+            let dimensions = raster.dimensions();
+            Thumbnail::rgba(dimensions.width, dimensions.height, raster.into_pixels())
+        });
+    };
+
+    let mut output = transform
+        .create_device(background)
+        .map_err(map_raster_error)?;
+    let mut band_y = 0;
+    while band_y < transform.dimensions.height {
+        let band_height = band_rows.min(transform.dimensions.height - band_y);
+        let band_transform =
+            raster_band_transform(transform, band_y, band_height).map_err(map_raster_error)?;
+        let mut band_raster = band_transform
+            .create_device(background)
+            .map_err(map_raster_error)?;
+        rasterize_native_page_work_into(
+            work,
+            &mut band_raster,
+            band_transform,
+            path_options,
+            trace_sinks,
+            glyph_bitmap_cache,
+            type3_template_cache,
+        )?;
+        copy_band_into_output(&mut output, band_y, band_raster).map_err(map_raster_error)?;
+        band_y += band_height;
+    }
+    record_render_phase(&mut trace_sinks.timings, NativeRenderPhase::Output, || {
+        let dimensions = output.dimensions();
+        Thumbnail::rgba(dimensions.width, dimensions.height, output.into_pixels())
+    })
+}
+
+fn rasterize_native_page_work_into(
+    work: NativeRasterWork<'_>,
+    raster: &mut ferrugo_render::RasterDevice,
+    transform: PageTransform,
+    path_options: PathRasterOptions,
+    trace_sinks: &mut RenderTraceSinks<'_>,
+    glyph_bitmap_cache: &RefCell<GlyphBitmapCache>,
+    type3_template_cache: &RefCell<Type3CharProcTemplateCache>,
+) -> Result<(), ThumbnailError> {
+    if let Some(ordered_list) = work.ordered_list {
+        rasterize_ordered_display_list_with_phase_timings(
+            ordered_list,
+            raster,
+            transform,
+            path_options,
+            &mut trace_sinks.timings,
+            &mut trace_sinks.fill_routes,
+            &mut trace_sinks.stroke_routes,
+            glyph_bitmap_cache,
+            type3_template_cache,
+        )?;
+    } else {
         record_render_phase(
             &mut trace_sinks.timings,
             NativeRenderPhase::RasterPaths,
             || {
                 rasterize_paths_with_optional_route_summaries(
-                    &annotation_list,
-                    &mut raster,
+                    work.display_list,
+                    raster,
                     transform,
                     path_options,
                     &mut trace_sinks.fill_routes,
@@ -2276,40 +2383,167 @@ fn render_loaded_document_inner(
                 )
             },
         )?;
-        match build_text_display_list(
-            tokenize_content(PdfBytes::new(&annotation_fallback_content)),
-            &font_resources,
-            display_options,
-        ) {
-            Ok(annotation_text_list) => {
-                record_render_phase(
-                    &mut trace_sinks.timings,
-                    NativeRenderPhase::RasterText,
-                    || {
-                        rasterize_text_with_cache(
-                            &annotation_text_list,
-                            &mut raster,
-                            transform,
-                            glyph_bitmap_cache,
-                            type3_template_cache,
-                        )
-                    },
-                )?;
-            }
-            Err(error) if is_ignorable_annotation_fallback_text_error(&error) => {}
-            Err(error) => return Err(map_graphics_error(error)),
-        }
+        record_render_phase(
+            &mut trace_sinks.timings,
+            NativeRenderPhase::RasterPaths,
+            || {
+                rasterize_paths_with_optional_route_summaries(
+                    work.form_list,
+                    raster,
+                    transform,
+                    path_options,
+                    &mut trace_sinks.fill_routes,
+                    &mut trace_sinks.stroke_routes,
+                )
+            },
+        )?;
+        record_render_phase(
+            &mut trace_sinks.timings,
+            NativeRenderPhase::RasterImages,
+            || rasterize_images(work.image_list, raster, transform).map_err(map_raster_error),
+        )?;
+        record_render_phase(
+            &mut trace_sinks.timings,
+            NativeRenderPhase::RasterText,
+            || {
+                rasterize_text_with_cache(
+                    work.text_list,
+                    raster,
+                    transform,
+                    glyph_bitmap_cache,
+                    type3_template_cache,
+                )
+            },
+        )?;
     }
-    if let Some(glyph_bitmaps) = trace_sinks.glyph_bitmaps.as_deref_mut() {
-        *glyph_bitmaps = glyph_bitmap_cache.borrow().summary();
+    if let Some(annotation_list) = work.annotation_list {
+        record_render_phase(
+            &mut trace_sinks.timings,
+            NativeRenderPhase::RasterPaths,
+            || {
+                rasterize_paths_with_optional_route_summaries(
+                    annotation_list,
+                    raster,
+                    transform,
+                    path_options,
+                    &mut trace_sinks.fill_routes,
+                    &mut trace_sinks.stroke_routes,
+                )
+            },
+        )?;
     }
-    if let Some(type3_templates) = trace_sinks.type3_templates.as_deref_mut() {
-        *type3_templates = type3_template_cache.borrow().summary();
+    if let Some(annotation_fallback_list) = work.annotation_fallback_list {
+        record_render_phase(
+            &mut trace_sinks.timings,
+            NativeRenderPhase::RasterPaths,
+            || {
+                rasterize_paths_with_optional_route_summaries(
+                    annotation_fallback_list,
+                    raster,
+                    transform,
+                    path_options,
+                    &mut trace_sinks.fill_routes,
+                    &mut trace_sinks.stroke_routes,
+                )
+            },
+        )?;
     }
-    record_render_phase(&mut trace_sinks.timings, NativeRenderPhase::Output, || {
-        let dimensions = raster.dimensions();
-        Thumbnail::rgba(dimensions.width, dimensions.height, raster.into_pixels())
+    if let Some(annotation_fallback_text_list) = work.annotation_fallback_text_list {
+        record_render_phase(
+            &mut trace_sinks.timings,
+            NativeRenderPhase::RasterText,
+            || {
+                rasterize_text_with_cache(
+                    annotation_fallback_text_list,
+                    raster,
+                    transform,
+                    glyph_bitmap_cache,
+                    type3_template_cache,
+                )
+            },
+        )?;
+    }
+    Ok(())
+}
+
+fn raster_band_rows(dimensions: RasterDimensions, max_rows: usize) -> Option<u32> {
+    if max_rows == 0 || max_rows >= dimensions.height as usize {
+        return None;
+    }
+    Some(max_rows.max(1) as u32)
+}
+
+fn native_raster_work_supports_banded_replay(work: NativeRasterWork<'_>) -> bool {
+    work.ordered_list
+        .map_or(true, display_list_supports_banded_replay)
+        && display_list_supports_banded_replay(work.display_list)
+        && display_list_supports_banded_replay(work.form_list)
+        && display_list_supports_banded_replay(work.image_list)
+        && display_list_supports_banded_replay(work.text_list)
+        && work
+            .annotation_list
+            .map_or(true, display_list_supports_banded_replay)
+        && work
+            .annotation_fallback_list
+            .map_or(true, display_list_supports_banded_replay)
+        && work
+            .annotation_fallback_text_list
+            .map_or(true, display_list_supports_banded_replay)
+}
+
+fn display_list_supports_banded_replay(display_list: &DisplayList) -> bool {
+    display_list
+        .items()
+        .iter()
+        .all(|item| matches!(item, DisplayItem::Image(_) | DisplayItem::Text(_)))
+}
+
+fn raster_band_summary(dimensions: RasterDimensions, band_rows: Option<u32>) -> RasterBandSummary {
+    let full_page_pixels = (dimensions.width as usize) * (dimensions.height as usize);
+    let max_band_rows = band_rows.unwrap_or(dimensions.height);
+    let bands = dimensions
+        .height
+        .saturating_add(max_band_rows - 1)
+        .saturating_div(max_band_rows) as usize;
+    RasterBandSummary {
+        full_page_pixels,
+        bands,
+        max_band_rows,
+        max_band_pixels: (dimensions.width as usize) * (max_band_rows as usize),
+    }
+}
+
+fn raster_band_transform(
+    transform: PageTransform,
+    band_y: u32,
+    band_height: u32,
+) -> ferrugo_render::RasterResult<PageTransform> {
+    let mut matrix = transform.matrix;
+    matrix.f -= f64::from(band_y);
+    Ok(PageTransform {
+        dimensions: RasterDimensions::new(transform.dimensions.width, band_height)?,
+        matrix,
+        ..transform
     })
+}
+
+fn copy_band_into_output(
+    output: &mut ferrugo_render::RasterDevice,
+    band_y: u32,
+    band: ferrugo_render::RasterDevice,
+) -> ferrugo_render::RasterResult<()> {
+    let band_dimensions = band.dimensions();
+    debug_assert_eq!(output.dimensions().width, band_dimensions.width);
+    let band_stride = band_dimensions.stride;
+    let band_pixels = band.into_pixels();
+    for row in 0..band_dimensions.height {
+        let source_start = row as usize * band_stride;
+        let source_end = source_start + band_stride;
+        output
+            .row_mut(band_y + row)?
+            .copy_from_slice(&band_pixels[source_start..source_end]);
+    }
+    Ok(())
 }
 
 fn rasterize_text_with_cache(
@@ -6056,6 +6290,7 @@ mod tests {
         let diagnostics = NativeBackend::new().memory_diagnostics();
 
         assert_eq!(diagnostics.max_page_pixels, 16 * 1024 * 1024);
+        assert_eq!(diagnostics.max_raster_band_rows, 0);
         assert_eq!(diagnostics.max_image_bytes, 32 * 1024 * 1024);
         assert_eq!(diagnostics.max_total_image_bytes, 128 * 1024 * 1024);
         assert_eq!(diagnostics.max_icc_profile_bytes, 1024 * 1024);
@@ -6093,6 +6328,7 @@ mod tests {
         let low_memory = NativeBackend::low_memory().memory_diagnostics();
 
         assert!(low_memory.max_page_pixels < default.max_page_pixels);
+        assert_eq!(default.max_raster_band_rows, 0);
         assert!(low_memory.max_image_bytes < default.max_image_bytes);
         assert!(low_memory.max_total_image_bytes < default.max_total_image_bytes);
         assert!(low_memory.max_font_program_bytes < default.max_font_program_bytes);
@@ -6122,8 +6358,87 @@ mod tests {
             low_memory.max_session_type3_template_bytes < default.max_session_type3_template_bytes
         );
         assert!(low_memory.max_page_pixels > 0);
+        assert!(low_memory.max_raster_band_rows > 0);
         assert!(low_memory.max_total_image_bytes >= low_memory.max_image_bytes);
         assert!(low_memory.max_total_font_program_bytes >= low_memory.max_font_program_bytes);
+    }
+
+    #[test]
+    fn native_banded_raster_should_match_single_target_output() {
+        let options = ThumbnailOptions {
+            page_index: 0,
+            max_edge: 160,
+            background: ferrugo_thumbnail::Rgba::WHITE,
+            output_format: ferrugo_thumbnail::OutputFormat::Rgba,
+            timeout: std::time::Duration::from_secs(5),
+            annotation_mode: AnnotationMode::Screen,
+            form_appearance_mode: FormAppearanceMode::DocumentState,
+        };
+
+        for &(bytes, label, should_band) in &[
+            (
+                include_bytes!("../../../fixtures/generated/text-page.pdf").as_slice(),
+                "text",
+                true,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/image-xobject.pdf").as_slice(),
+                "image",
+                true,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/vector-paths.pdf").as_slice(),
+                "vector",
+                false,
+            ),
+        ] {
+            let single = NativeBackend::new()
+                .render_with_trace(PdfSource::from_bytes(bytes), &options)
+                .unwrap_or_else(|error| {
+                    panic!("{label} single-target render should succeed: {error}")
+                });
+            let banded = NativeBackend::with_render_limits(NativeRenderLimits {
+                max_raster_band_rows: 17,
+                ..NativeRenderLimits::default()
+            })
+            .render_with_trace(PdfSource::from_bytes(bytes), &options)
+            .unwrap_or_else(|error| panic!("{label} banded render should succeed: {error}"));
+
+            assert_eq!(banded.thumbnail.width, single.thumbnail.width, "{label}");
+            assert_eq!(banded.thumbnail.height, single.thumbnail.height, "{label}");
+            assert_eq!(banded.thumbnail.stride, single.thumbnail.stride, "{label}");
+            if banded.thumbnail.bytes != single.thumbnail.bytes {
+                let first_diff = banded
+                    .thumbnail
+                    .bytes
+                    .chunks_exact(4)
+                    .zip(single.thumbnail.bytes.chunks_exact(4))
+                    .enumerate()
+                    .find(|(_, (banded, single))| banded != single)
+                    .expect("different buffers should have a first different pixel");
+                let x = first_diff.0 % banded.thumbnail.width as usize;
+                let y = first_diff.0 / banded.thumbnail.width as usize;
+                panic!(
+                    "{label} banded output differs at ({x},{y}): banded={:?}, single={:?}",
+                    first_diff.1 .0, first_diff.1 .1
+                );
+            }
+            assert_eq!(single.raster_bands.bands, 1, "{label}");
+            if should_band {
+                assert!(banded.raster_bands.bands > 1, "{label}");
+                assert_eq!(banded.raster_bands.max_band_rows, 17, "{label}");
+                assert!(
+                    banded.raster_bands.max_band_pixels < banded.raster_bands.full_page_pixels,
+                    "{label}"
+                );
+            } else {
+                assert_eq!(banded.raster_bands.bands, 1, "{label}");
+                assert_eq!(
+                    banded.raster_bands.max_band_pixels, banded.raster_bands.full_page_pixels,
+                    "{label}"
+                );
+            }
+        }
     }
 
     #[test]
