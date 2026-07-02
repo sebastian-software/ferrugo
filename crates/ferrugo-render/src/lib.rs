@@ -1616,6 +1616,10 @@ pub struct FillRasterRouteSummary {
     pub coverage_full_pixels: usize,
     /// Fully covered pixels written through the direct opaque row blitter.
     pub coverage_direct_row_pixels: usize,
+    /// Fully covered pixels written through the selected source-over row blitter.
+    pub coverage_source_over_row_pixels: usize,
+    /// Fully covered pixels written through selected non-normal blend row blitters.
+    pub coverage_blend_mode_row_pixels: usize,
     /// Edge pixels rechecked with the existing supersampled point-in-path route.
     pub coverage_sampled_edge_pixels: usize,
 }
@@ -1640,6 +1644,12 @@ impl FillRasterRouteSummary {
         self.coverage_direct_row_pixels = self
             .coverage_direct_row_pixels
             .saturating_add(stats.direct_row_pixels);
+        self.coverage_source_over_row_pixels = self
+            .coverage_source_over_row_pixels
+            .saturating_add(stats.source_over_row_pixels);
+        self.coverage_blend_mode_row_pixels = self
+            .coverage_blend_mode_row_pixels
+            .saturating_add(stats.blend_mode_row_pixels);
         self.coverage_sampled_edge_pixels = self
             .coverage_sampled_edge_pixels
             .saturating_add(stats.sampled_edge_pixels);
@@ -1823,6 +1833,8 @@ struct FillCoverageSpanStats {
     full_span_runs: usize,
     full_pixels: usize,
     direct_row_pixels: usize,
+    source_over_row_pixels: usize,
+    blend_mode_row_pixels: usize,
     sampled_edge_pixels: usize,
 }
 
@@ -11535,14 +11547,13 @@ fn fill_path_sampled(
     else {
         return Ok(());
     };
-    let blend = SampledPixelBlend::new(source, blend_mode, alpha, sample_count);
+    let blitter = CoverageDrawBlitter::new(source, blend_mode, alpha, sample_count);
     for y in bounds.min_y..bounds.max_y {
         for x in bounds.min_x..bounds.max_x {
-            blend_sampled_pixel(
+            blitter.write_sampled_pixel(
                 device,
                 x,
                 y,
-                blend,
                 sampled_fill_coverage_for_pixel(path, rule, x, y, context),
             )?;
         }
@@ -11583,8 +11594,7 @@ fn fill_path_with_coverage_spans(
 
     let samples = u32::from(context.options.supersample);
     let sample_count = samples * samples;
-    let blend = SampledPixelBlend::new(source, blend_mode, alpha, sample_count);
-    let full_span_blitter = CoverageFullSpanBlitter::new(source, blend_mode, alpha);
+    let blitter = CoverageDrawBlitter::new(source, blend_mode, alpha, sample_count);
     let mut stats = FillCoverageSpanStats::default();
     let mut intersections = Vec::new();
     let mut intervals = Vec::new();
@@ -11618,7 +11628,7 @@ fn fill_path_with_coverage_spans(
                         .iter()
                         .position(|mode| *mode != FILL_ROW_FULL)
                         .map_or(row_modes.len(), |relative| offset + relative);
-                    full_span_blitter.write(
+                    blitter.write_full_span(
                         device,
                         y,
                         x,
@@ -11633,7 +11643,7 @@ fn fill_path_with_coverage_spans(
                     if covered > 0 {
                         stats.sampled_edge_pixels += 1;
                     }
-                    blend_sampled_pixel(device, x, y, blend, covered)?;
+                    blitter.write_sampled_pixel(device, x, y, covered)?;
                 }
                 FILL_ROW_EMPTY => {}
                 _ => unreachable!("unknown fill row mode"),
@@ -11786,10 +11796,14 @@ fn fill_axis_aligned_rect_path(
                 fill_pixel_bounds_opaque(device, bounds, source)?;
                 return Ok(());
             }
+            let blitter = CoverageDrawBlitter::new(
+                source,
+                blend_mode,
+                alpha,
+                u32::from(context.options.supersample).pow(2),
+            );
             for y in bounds.min_y..bounds.max_y {
-                for x in bounds.min_x..bounds.max_x {
-                    blend_pixel(device, x, y, source, blend_mode, alpha)?;
-                }
+                blitter.write_untracked_full_span(device, y, bounds.min_x, bounds.max_x)?;
             }
             return Ok(());
         }
@@ -11804,6 +11818,12 @@ fn fill_axis_aligned_rect_path(
     }) else {
         return Ok(());
     };
+    let blitter = CoverageDrawBlitter::new(
+        source,
+        blend_mode,
+        alpha,
+        u32::from(context.options.supersample).pow(2),
+    );
     for y in bounds.min_y..bounds.max_y {
         for x in bounds.min_x..bounds.max_x {
             let point = Point {
@@ -11816,7 +11836,7 @@ fn fill_axis_aligned_rect_path(
                 && point.y < rect.max_y
                 && point_in_active_clips(point, context.clips)
             {
-                blend_pixel(device, x, y, source, blend_mode, alpha)?;
+                blitter.write_full_pixel(device, x, y)?;
             }
         }
     }
@@ -11828,31 +11848,45 @@ fn can_direct_write_opaque_normal(source: Rgba, blend_mode: BlendMode, alpha: f6
 }
 
 #[derive(Debug, Clone, Copy)]
-enum CoverageFullSpanBlitter {
-    OpaqueNormal {
-        source: Rgba,
-    },
-    Blend {
-        source: Rgba,
-        blend_mode: BlendMode,
-        alpha: f64,
-    },
+struct CoverageDrawBlitter {
+    source: Rgba,
+    alpha: f64,
+    coverage_scale: f64,
+    sample_count: u32,
+    kind: CoverageDrawBlitterKind,
 }
 
-impl CoverageFullSpanBlitter {
-    fn new(source: Rgba, blend_mode: BlendMode, alpha: f64) -> Self {
-        if can_direct_write_opaque_normal(source, blend_mode, alpha) {
-            Self::OpaqueNormal { source }
+#[derive(Debug, Clone, Copy)]
+enum CoverageDrawBlitterKind {
+    OpaqueNormal,
+    SourceOverNormal,
+    NormalAlpha,
+    Multiply,
+    Screen,
+}
+
+impl CoverageDrawBlitter {
+    fn new(source: Rgba, blend_mode: BlendMode, alpha: f64, sample_count: u32) -> Self {
+        let kind = if can_direct_write_opaque_normal(source, blend_mode, alpha) {
+            CoverageDrawBlitterKind::OpaqueNormal
         } else {
-            Self::Blend {
-                source,
-                blend_mode,
-                alpha,
+            match blend_mode {
+                BlendMode::Normal if source.a == 255 => CoverageDrawBlitterKind::SourceOverNormal,
+                BlendMode::Normal => CoverageDrawBlitterKind::NormalAlpha,
+                BlendMode::Multiply => CoverageDrawBlitterKind::Multiply,
+                BlendMode::Screen => CoverageDrawBlitterKind::Screen,
             }
+        };
+        Self {
+            source,
+            alpha,
+            coverage_scale: alpha / f64::from(sample_count),
+            sample_count,
+            kind,
         }
     }
 
-    fn write(
+    fn write_full_span(
         self,
         device: &mut RasterDevice,
         y: u32,
@@ -11863,45 +11897,85 @@ impl CoverageFullSpanBlitter {
         let pixels = (max_x - min_x) as usize;
         stats.full_span_runs += 1;
         stats.full_pixels = stats.full_pixels.saturating_add(pixels);
-        match self {
-            Self::OpaqueNormal { source } => {
-                fill_opaque_row_span(device, y, min_x, max_x, source)?;
+        self.write_untracked_full_span(device, y, min_x, max_x)?;
+        match self.kind {
+            CoverageDrawBlitterKind::OpaqueNormal => {
                 stats.direct_row_pixels = stats.direct_row_pixels.saturating_add(pixels);
             }
-            Self::Blend {
-                source,
-                blend_mode,
-                alpha,
-            } => {
-                for x in min_x..max_x {
-                    blend_pixel(device, x, y, source, blend_mode, alpha)?;
-                }
+            CoverageDrawBlitterKind::SourceOverNormal | CoverageDrawBlitterKind::NormalAlpha => {
+                stats.source_over_row_pixels = stats.source_over_row_pixels.saturating_add(pixels);
+            }
+            CoverageDrawBlitterKind::Multiply | CoverageDrawBlitterKind::Screen => {
+                stats.blend_mode_row_pixels = stats.blend_mode_row_pixels.saturating_add(pixels);
             }
         }
         Ok(())
     }
-}
 
-#[derive(Debug, Clone, Copy)]
-struct SampledPixelBlend {
-    source: Rgba,
-    blend_mode: BlendMode,
-    alpha: f64,
-    coverage_scale: f64,
-    sample_count: u32,
-}
+    fn write_untracked_full_span(
+        self,
+        device: &mut RasterDevice,
+        y: u32,
+        min_x: u32,
+        max_x: u32,
+    ) -> RasterResult<()> {
+        match self.kind {
+            CoverageDrawBlitterKind::OpaqueNormal => {
+                fill_opaque_row_span(device, y, min_x, max_x, self.source)
+            }
+            CoverageDrawBlitterKind::SourceOverNormal => {
+                blend_source_over_normal_row_span(device, y, min_x, max_x, self.source, self.alpha)
+            }
+            CoverageDrawBlitterKind::NormalAlpha => {
+                blend_normal_alpha_row_span(device, y, min_x, max_x, self.source, self.alpha)
+            }
+            CoverageDrawBlitterKind::Multiply => {
+                blend_multiply_row_span(device, y, min_x, max_x, self.source, self.alpha)
+            }
+            CoverageDrawBlitterKind::Screen => {
+                blend_screen_row_span(device, y, min_x, max_x, self.source, self.alpha)
+            }
+        }
+    }
 
-impl SampledPixelBlend {
-    fn new(source: Rgba, blend_mode: BlendMode, alpha: f64, sample_count: u32) -> Self {
-        Self {
-            source,
-            blend_mode,
-            alpha,
-            coverage_scale: alpha / f64::from(sample_count),
-            sample_count,
+    fn write_full_pixel(self, device: &mut RasterDevice, x: u32, y: u32) -> RasterResult<()> {
+        self.write_sampled_pixel(device, x, y, self.sample_count)
+    }
+
+    fn write_sampled_pixel(
+        self,
+        device: &mut RasterDevice,
+        x: u32,
+        y: u32,
+        covered: u32,
+    ) -> RasterResult<()> {
+        if covered == 0 {
+            return Ok(());
+        }
+        if covered == self.sample_count
+            && matches!(self.kind, CoverageDrawBlitterKind::OpaqueNormal)
+        {
+            return device.set_pixel(x, y, self.source);
+        }
+        let coverage = f64::from(covered) * self.coverage_scale;
+        match self.kind {
+            CoverageDrawBlitterKind::OpaqueNormal | CoverageDrawBlitterKind::SourceOverNormal => {
+                blend_source_over_normal_pixel(device, x, y, self.source, coverage)
+            }
+            CoverageDrawBlitterKind::NormalAlpha => {
+                blend_normal_alpha_pixel(device, x, y, self.source, coverage)
+            }
+            CoverageDrawBlitterKind::Multiply => {
+                blend_multiply_pixel(device, x, y, self.source, coverage)
+            }
+            CoverageDrawBlitterKind::Screen => {
+                blend_screen_pixel(device, x, y, self.source, coverage)
+            }
         }
     }
 }
+
+type SampledPixelBlend = CoverageDrawBlitter;
 
 fn blend_sampled_pixel(
     device: &mut RasterDevice,
@@ -11910,22 +11984,249 @@ fn blend_sampled_pixel(
     blend: SampledPixelBlend,
     covered: u32,
 ) -> RasterResult<()> {
-    if covered == 0 {
+    blend.write_sampled_pixel(device, x, y, covered)
+}
+
+fn blend_source_over_normal_pixel(
+    device: &mut RasterDevice,
+    x: u32,
+    y: u32,
+    source: Rgba,
+    coverage: f64,
+) -> RasterResult<()> {
+    let coverage = coverage.clamp(0.0, 1.0);
+    if coverage <= f64::EPSILON {
         return Ok(());
     }
-    if covered == blend.sample_count
-        && can_direct_write_opaque_normal(blend.source, blend.blend_mode, blend.alpha)
-    {
-        return device.set_pixel(x, y, blend.source);
+    let offset = device.pixel_offset(x, y)?;
+    let dest = Rgba {
+        r: device.pixels[offset],
+        g: device.pixels[offset + 1],
+        b: device.pixels[offset + 2],
+        a: device.pixels[offset + 3],
+    };
+    let blended = if dest.a == 255 {
+        source_over_opaque(source, dest, coverage)
+    } else {
+        source_over(source, dest, coverage)
+    };
+    write_pixel_at_offset(device, offset, blended);
+    Ok(())
+}
+
+fn blend_normal_alpha_pixel(
+    device: &mut RasterDevice,
+    x: u32,
+    y: u32,
+    source: Rgba,
+    coverage: f64,
+) -> RasterResult<()> {
+    let coverage = coverage.clamp(0.0, 1.0);
+    if coverage <= f64::EPSILON {
+        return Ok(());
     }
-    blend_pixel(
+    let offset = device.pixel_offset(x, y)?;
+    let dest = Rgba {
+        r: device.pixels[offset],
+        g: device.pixels[offset + 1],
+        b: device.pixels[offset + 2],
+        a: device.pixels[offset + 3],
+    };
+    write_pixel_at_offset(device, offset, source_over(source, dest, coverage));
+    Ok(())
+}
+
+fn blend_multiply_pixel(
+    device: &mut RasterDevice,
+    x: u32,
+    y: u32,
+    source: Rgba,
+    coverage: f64,
+) -> RasterResult<()> {
+    blend_mode_pixel(device, x, y, source, coverage, multiply_blend_pixel)
+}
+
+fn blend_screen_pixel(
+    device: &mut RasterDevice,
+    x: u32,
+    y: u32,
+    source: Rgba,
+    coverage: f64,
+) -> RasterResult<()> {
+    blend_mode_pixel(device, x, y, source, coverage, screen_blend_pixel)
+}
+
+fn blend_mode_pixel(
+    device: &mut RasterDevice,
+    x: u32,
+    y: u32,
+    source: Rgba,
+    coverage: f64,
+    blend: fn(Rgba, Rgba) -> Rgba,
+) -> RasterResult<()> {
+    let coverage = coverage.clamp(0.0, 1.0);
+    if coverage <= f64::EPSILON {
+        return Ok(());
+    }
+    let offset = device.pixel_offset(x, y)?;
+    let dest = Rgba {
+        r: device.pixels[offset],
+        g: device.pixels[offset + 1],
+        b: device.pixels[offset + 2],
+        a: device.pixels[offset + 3],
+    };
+    let blended = blend(source, dest);
+    write_pixel_at_offset(
         device,
-        x,
+        offset,
+        source_over(
+            Rgba {
+                a: source.a,
+                ..blended
+            },
+            dest,
+            coverage,
+        ),
+    );
+    Ok(())
+}
+
+fn blend_source_over_normal_row_span(
+    device: &mut RasterDevice,
+    y: u32,
+    min_x: u32,
+    max_x: u32,
+    source: Rgba,
+    coverage: f64,
+) -> RasterResult<()> {
+    let coverage = coverage.clamp(0.0, 1.0);
+    if coverage <= f64::EPSILON {
+        return Ok(());
+    }
+    let start = min_x as usize * PixelFormat::Rgba8.bytes_per_pixel();
+    let end = max_x as usize * PixelFormat::Rgba8.bytes_per_pixel();
+    for chunk in
+        device.row_mut(y)?[start..end].chunks_exact_mut(PixelFormat::Rgba8.bytes_per_pixel())
+    {
+        let dest = Rgba {
+            r: chunk[0],
+            g: chunk[1],
+            b: chunk[2],
+            a: chunk[3],
+        };
+        let blended = if dest.a == 255 {
+            source_over_opaque(source, dest, coverage)
+        } else {
+            source_over(source, dest, coverage)
+        };
+        chunk.copy_from_slice(&[blended.r, blended.g, blended.b, blended.a]);
+    }
+    Ok(())
+}
+
+fn blend_normal_alpha_row_span(
+    device: &mut RasterDevice,
+    y: u32,
+    min_x: u32,
+    max_x: u32,
+    source: Rgba,
+    coverage: f64,
+) -> RasterResult<()> {
+    let coverage = coverage.clamp(0.0, 1.0);
+    if coverage <= f64::EPSILON {
+        return Ok(());
+    }
+    let start = min_x as usize * PixelFormat::Rgba8.bytes_per_pixel();
+    let end = max_x as usize * PixelFormat::Rgba8.bytes_per_pixel();
+    for chunk in
+        device.row_mut(y)?[start..end].chunks_exact_mut(PixelFormat::Rgba8.bytes_per_pixel())
+    {
+        let dest = Rgba {
+            r: chunk[0],
+            g: chunk[1],
+            b: chunk[2],
+            a: chunk[3],
+        };
+        let blended = source_over(source, dest, coverage);
+        chunk.copy_from_slice(&[blended.r, blended.g, blended.b, blended.a]);
+    }
+    Ok(())
+}
+
+fn blend_multiply_row_span(
+    device: &mut RasterDevice,
+    y: u32,
+    min_x: u32,
+    max_x: u32,
+    source: Rgba,
+    coverage: f64,
+) -> RasterResult<()> {
+    blend_mode_row_span(
+        device,
         y,
-        blend.source,
-        blend.blend_mode,
-        f64::from(covered) * blend.coverage_scale,
+        min_x,
+        max_x,
+        source,
+        coverage,
+        multiply_blend_pixel,
     )
+}
+
+fn blend_screen_row_span(
+    device: &mut RasterDevice,
+    y: u32,
+    min_x: u32,
+    max_x: u32,
+    source: Rgba,
+    coverage: f64,
+) -> RasterResult<()> {
+    blend_mode_row_span(
+        device,
+        y,
+        min_x,
+        max_x,
+        source,
+        coverage,
+        screen_blend_pixel,
+    )
+}
+
+fn blend_mode_row_span(
+    device: &mut RasterDevice,
+    y: u32,
+    min_x: u32,
+    max_x: u32,
+    source: Rgba,
+    coverage: f64,
+    blend: fn(Rgba, Rgba) -> Rgba,
+) -> RasterResult<()> {
+    let coverage = coverage.clamp(0.0, 1.0);
+    if coverage <= f64::EPSILON {
+        return Ok(());
+    }
+    let start = min_x as usize * PixelFormat::Rgba8.bytes_per_pixel();
+    let end = max_x as usize * PixelFormat::Rgba8.bytes_per_pixel();
+    for chunk in
+        device.row_mut(y)?[start..end].chunks_exact_mut(PixelFormat::Rgba8.bytes_per_pixel())
+    {
+        let dest = Rgba {
+            r: chunk[0],
+            g: chunk[1],
+            b: chunk[2],
+            a: chunk[3],
+        };
+        let blended = blend(source, dest);
+        let out = source_over(
+            Rgba {
+                a: source.a,
+                ..blended
+            },
+            dest,
+            coverage,
+        );
+        chunk.copy_from_slice(&[out.r, out.g, out.b, out.a]);
+    }
+    Ok(())
 }
 
 fn fill_pixel_bounds_opaque(
@@ -15786,18 +16087,26 @@ fn source_over_opaque_channel(source: u8, dest: u8, coverage: f64, inverse: f64)
 fn blend_source_with_backdrop(source: Rgba, dest: Rgba, blend_mode: BlendMode) -> Rgba {
     match blend_mode {
         BlendMode::Normal => source,
-        BlendMode::Multiply => Rgba {
-            r: multiply_channel(source.r, dest.r),
-            g: multiply_channel(source.g, dest.g),
-            b: multiply_channel(source.b, dest.b),
-            a: source.a,
-        },
-        BlendMode::Screen => Rgba {
-            r: screen_channel(source.r, dest.r),
-            g: screen_channel(source.g, dest.g),
-            b: screen_channel(source.b, dest.b),
-            a: source.a,
-        },
+        BlendMode::Multiply => multiply_blend_pixel(source, dest),
+        BlendMode::Screen => screen_blend_pixel(source, dest),
+    }
+}
+
+fn multiply_blend_pixel(source: Rgba, dest: Rgba) -> Rgba {
+    Rgba {
+        r: multiply_channel(source.r, dest.r),
+        g: multiply_channel(source.g, dest.g),
+        b: multiply_channel(source.b, dest.b),
+        a: source.a,
+    }
+}
+
+fn screen_blend_pixel(source: Rgba, dest: Rgba) -> Rgba {
+    Rgba {
+        r: screen_channel(source.r, dest.r),
+        g: screen_channel(source.g, dest.g),
+        b: screen_channel(source.b, dest.b),
+        a: source.a,
     }
 }
 
@@ -21996,9 +22305,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn fill_path_coverage_spans_should_match_sampled_route_and_count_work() {
-        let path = FlattenedPath {
+    fn coverage_span_test_path() -> FlattenedPath {
+        FlattenedPath {
             subpaths: vec![vec![
                 Point { x: 2.0, y: 1.0 },
                 Point { x: 13.0, y: 1.0 },
@@ -22025,8 +22333,11 @@ mod tests {
             ],
             stats: FlattenedPathStats::default(),
             joins: Vec::new(),
-        };
-        let transform = PageTransform::new(
+        }
+    }
+
+    fn coverage_span_test_transform() -> PageTransform {
+        PageTransform::new(
             PageGeometry {
                 media_box: PathBounds {
                     min_x: 0.0,
@@ -22039,49 +22350,61 @@ mod tests {
             },
             16,
         )
-        .expect("valid transform");
-        let fill_routes = RefCell::new(FillRasterRouteSummary::default());
-        let mut coverage = RasterDevice::new(16, 12, Rgba::WHITE).expect("valid raster");
-        let mut sampled = RasterDevice::new(16, 12, Rgba::WHITE).expect("valid raster");
+        .expect("valid transform")
+    }
 
+    fn rasterize_coverage_span_test_fill(
+        fill_route: FillRasterRoute,
+        background: Rgba,
+        color: DeviceColor,
+        blend_mode: BlendMode,
+        alpha: f64,
+        fill_routes: Option<&RefCell<FillRasterRouteSummary>>,
+    ) -> RasterDevice {
+        let path = coverage_span_test_path();
+        let transform = coverage_span_test_transform();
+        let mut device = RasterDevice::new(16, 12, background).expect("valid raster");
         fill_path(
-            &mut coverage,
+            &mut device,
             &path,
             FillRule::Nonzero,
-            DeviceColor::BLACK,
-            BlendMode::Normal,
-            1.0,
+            color,
+            blend_mode,
+            alpha,
             PathRasterContext {
                 transform,
                 options: PathRasterOptions {
-                    fill_route: FillRasterRoute::CoverageSpans,
+                    fill_route,
                     ..PathRasterOptions::default()
                 },
                 clips: &[],
-                fill_routes: Some(&fill_routes),
+                fill_routes,
                 stroke_routes: None,
             },
         )
-        .expect("coverage fill should rasterize");
-        fill_path(
-            &mut sampled,
-            &path,
-            FillRule::Nonzero,
+        .expect("test fill should rasterize");
+        device
+    }
+
+    #[test]
+    fn fill_path_coverage_spans_should_match_sampled_route_and_count_work() {
+        let fill_routes = RefCell::new(FillRasterRouteSummary::default());
+        let coverage = rasterize_coverage_span_test_fill(
+            FillRasterRoute::CoverageSpans,
+            Rgba::WHITE,
             DeviceColor::BLACK,
             BlendMode::Normal,
             1.0,
-            PathRasterContext {
-                transform,
-                options: PathRasterOptions {
-                    fill_route: FillRasterRoute::Sampled,
-                    ..PathRasterOptions::default()
-                },
-                clips: &[],
-                fill_routes: None,
-                stroke_routes: None,
-            },
-        )
-        .expect("sampled fill should rasterize");
+            Some(&fill_routes),
+        );
+        let sampled = rasterize_coverage_span_test_fill(
+            FillRasterRoute::Sampled,
+            Rgba::WHITE,
+            DeviceColor::BLACK,
+            BlendMode::Normal,
+            1.0,
+            None,
+        );
 
         for y in 0..12 {
             for x in 0..16 {
@@ -22103,7 +22426,91 @@ mod tests {
             fill_routes.coverage_direct_row_pixels,
             fill_routes.coverage_full_pixels
         );
+        assert_eq!(fill_routes.coverage_source_over_row_pixels, 0);
+        assert_eq!(fill_routes.coverage_blend_mode_row_pixels, 0);
         assert!(fill_routes.coverage_sampled_edge_pixels > 0);
+    }
+
+    #[test]
+    fn fill_path_coverage_spans_should_use_source_over_row_blitter_for_translucent_normal() {
+        let fill_routes = RefCell::new(FillRasterRouteSummary::default());
+        let background = Rgba {
+            r: 20,
+            g: 80,
+            b: 160,
+            a: 255,
+        };
+        let coverage = rasterize_coverage_span_test_fill(
+            FillRasterRoute::CoverageSpans,
+            background,
+            DeviceColor::Rgb {
+                r: 0.8,
+                g: 0.1,
+                b: 0.0,
+            },
+            BlendMode::Normal,
+            0.5,
+            Some(&fill_routes),
+        );
+        let sampled = rasterize_coverage_span_test_fill(
+            FillRasterRoute::Sampled,
+            background,
+            DeviceColor::Rgb {
+                r: 0.8,
+                g: 0.1,
+                b: 0.0,
+            },
+            BlendMode::Normal,
+            0.5,
+            None,
+        );
+
+        assert_eq!(coverage.pixels(), sampled.pixels());
+        let fill_routes = fill_routes.into_inner();
+        assert!(fill_routes.coverage_source_over_row_pixels > 0);
+        assert_eq!(fill_routes.coverage_direct_row_pixels, 0);
+        assert_eq!(fill_routes.coverage_blend_mode_row_pixels, 0);
+    }
+
+    #[test]
+    fn fill_path_coverage_spans_should_use_blend_mode_row_blitter_for_multiply() {
+        let fill_routes = RefCell::new(FillRasterRouteSummary::default());
+        let background = Rgba {
+            r: 180,
+            g: 140,
+            b: 90,
+            a: 255,
+        };
+        let coverage = rasterize_coverage_span_test_fill(
+            FillRasterRoute::CoverageSpans,
+            background,
+            DeviceColor::Rgb {
+                r: 0.25,
+                g: 0.6,
+                b: 0.9,
+            },
+            BlendMode::Multiply,
+            1.0,
+            Some(&fill_routes),
+        );
+        let sampled = rasterize_coverage_span_test_fill(
+            FillRasterRoute::Sampled,
+            background,
+            DeviceColor::Rgb {
+                r: 0.25,
+                g: 0.6,
+                b: 0.9,
+            },
+            BlendMode::Multiply,
+            1.0,
+            None,
+        );
+
+        assert_eq!(coverage.pixels(), sampled.pixels());
+        let fill_routes = fill_routes.into_inner();
+        assert!(fill_routes.coverage_blend_mode_row_pixels > 0);
+        assert_eq!(fill_routes.coverage_direct_row_pixels, 0);
+        assert_eq!(fill_routes.coverage_source_over_row_pixels, 0);
     }
 
     #[test]
