@@ -14693,7 +14693,8 @@ fn stroke_path(
         && radius >= 1.0
         && samples > 1
         && !joins.is_empty()
-        && pixel_bounds_area(bounds) >= STROKE_JOINED_OUTLINE_MIN_PIXELS
+        && (context.options.scissor.is_some()
+            || pixel_bounds_area(bounds) >= STROKE_JOINED_OUTLINE_MIN_PIXELS)
         && joined_outline_subpath_candidate(&path.subpaths)
     {
         if let Some(outline) = joined_stroke_fill_outline(

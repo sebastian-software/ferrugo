@@ -30,8 +30,8 @@ use ferrugo_render::{
     GlyphBitmapCache, GraphicsError, GraphicsErrorKind, IccTransformCache, ImageDecodeHints,
     ImageResources, PageGeometry, PageRotation, PageTransform, PageTransformOptions, PaintMode,
     PathBounds, PathDisplayItem, PathRasterOptions, PathSegment, Point, RasterDimensions,
-    RasterDisplayPhase, RasterError, RasterErrorKind, ShadingResources, TextDisplayItem,
-    TextWritingMode, TilingPatternResources, Type3CharProcTemplateCache,
+    RasterDisplayPhase, RasterError, RasterErrorKind, RasterScissor, ShadingResources,
+    TextDisplayItem, TextWritingMode, TilingPatternResources, Type3CharProcTemplateCache,
 };
 pub use ferrugo_render::{
     FillRasterRouteSummary, GlyphBitmapCacheSummary, ImagePlacementSummary, ImageResourceSummary,
@@ -2578,6 +2578,15 @@ fn rasterize_native_page_work_to_thumbnail(
         let band_height = band_rows.min(transform.dimensions.height - band_y);
         let band_transform =
             raster_band_transform(transform, band_y, band_height).map_err(map_raster_error)?;
+        let band_path_options = PathRasterOptions {
+            scissor: Some(RasterScissor::new(
+                0,
+                0,
+                transform.dimensions.width,
+                band_height,
+            )),
+            ..path_options
+        };
         let mut band_raster = band_transform
             .create_device(background)
             .map_err(map_raster_error)?;
@@ -2585,7 +2594,7 @@ fn rasterize_native_page_work_to_thumbnail(
             work,
             &mut band_raster,
             band_transform,
-            path_options,
+            band_path_options,
             trace_sinks,
             glyph_bitmap_cache,
             type3_template_cache,
@@ -2771,9 +2780,10 @@ fn fill_path_supports_banded_replay(path: &PathDisplayItem) -> bool {
 }
 
 fn stroke_path_supports_banded_replay(path: &PathDisplayItem) -> bool {
-    simple_stroke_path_supports_banded_replay(path)
-        && path.state.stroke_alpha >= 1.0
+    path.state.stroke_alpha >= 1.0
         && !path.state.stroke_overprint
+        && (simple_stroke_path_supports_banded_replay(path)
+            || joined_outline_stroke_path_supports_banded_replay(path))
 }
 
 fn simple_stroke_path_supports_banded_replay(path: &PathDisplayItem) -> bool {
@@ -2789,6 +2799,31 @@ fn simple_stroke_path_supports_banded_replay(path: &PathDisplayItem) -> bool {
             .segments
             .iter()
             .any(|segment| matches!(segment, PathSegment::LineTo(_)))
+        && path
+            .segments
+            .iter()
+            .all(|segment| matches!(segment, PathSegment::MoveTo(_) | PathSegment::LineTo(_)))
+}
+
+fn joined_outline_stroke_path_supports_banded_replay(path: &PathDisplayItem) -> bool {
+    path.state.stroke_dash == ferrugo_render::StrokeDashPattern::solid()
+        && path.state.line_cap == ferrugo_render::LineCap::Butt
+        && matches!(
+            path.state.line_join,
+            ferrugo_render::LineJoin::Bevel | ferrugo_render::LineJoin::Miter
+        )
+        && path
+            .segments
+            .iter()
+            .filter(|segment| matches!(segment, PathSegment::MoveTo(_)))
+            .count()
+            == 1
+        && path
+            .segments
+            .iter()
+            .filter(|segment| matches!(segment, PathSegment::LineTo(_)))
+            .count()
+            >= 2
         && path
             .segments
             .iter()
@@ -6823,18 +6858,27 @@ mod tests {
         display_list: &DisplayList,
         max_raster_band_rows: usize,
     ) -> (Thumbnail, RasterBandSummary) {
+        render_test_display_list_with_size(display_list, max_raster_band_rows, 64, 48)
+    }
+
+    fn render_test_display_list_with_size(
+        display_list: &DisplayList,
+        max_raster_band_rows: usize,
+        width: u32,
+        height: u32,
+    ) -> (Thumbnail, RasterBandSummary) {
         let transform = PageTransform::new(
             PageGeometry {
                 media_box: PathBounds {
                     min_x: 0.0,
                     min_y: 0.0,
-                    max_x: 64.0,
-                    max_y: 48.0,
+                    max_x: f64::from(width),
+                    max_y: f64::from(height),
                 },
                 crop_box: None,
                 rotation: PageRotation::Deg0,
             },
-            64,
+            width,
         )
         .expect("valid test page transform");
         let empty = DisplayList::new();
@@ -7007,6 +7051,41 @@ mod tests {
     }
 
     #[test]
+    fn native_banded_raster_should_match_single_target_for_joined_outline_stroke_paths() {
+        let display_list = DisplayList::from_items(vec![DisplayItem::Path(PathDisplayItem {
+            segments: vec![
+                PathSegment::MoveTo(Point { x: 20.0, y: 20.0 }),
+                PathSegment::LineTo(Point { x: 80.0, y: 100.0 }),
+                PathSegment::LineTo(Point { x: 140.0, y: 20.0 }),
+            ],
+            paint: PaintMode::Stroke,
+            state: GraphicsState {
+                line_width: 4.0,
+                stroke_color: DeviceColor::Rgb {
+                    r: 0.3,
+                    g: 0.55,
+                    b: 0.9,
+                },
+                line_cap: ferrugo_render::LineCap::Butt,
+                line_join: ferrugo_render::LineJoin::Miter,
+                ..GraphicsState::default()
+            },
+            fill_pattern: None,
+        })]);
+
+        let (single, single_bands) = render_test_display_list_with_size(&display_list, 0, 160, 120);
+        let (banded, banded_bands) =
+            render_test_display_list_with_size(&display_list, 17, 160, 120);
+
+        assert_eq!(single.bytes, banded.bytes);
+        assert_eq!(single_bands.bands, 1);
+        assert!(banded_bands.bands > 1);
+        assert_eq!(banded_bands.max_band_rows, 17);
+        assert!(banded_bands.max_band_pixels < banded_bands.full_page_pixels);
+        assert!(banded_bands.active_target_byte_reduction_per_mille() > 0);
+    }
+
+    #[test]
     fn native_banded_raster_should_match_single_target_output() {
         let options = ThumbnailOptions {
             page_index: 0,
@@ -7032,7 +7111,7 @@ mod tests {
             (
                 include_bytes!("../../../fixtures/generated/vector-paths.pdf").as_slice(),
                 "vector",
-                false,
+                true,
             ),
         ] {
             let single = NativeBackend::new()
