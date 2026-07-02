@@ -179,6 +179,65 @@ pub struct RasterBandSummary {
     pub max_band_pixels: usize,
 }
 
+impl RasterBandSummary {
+    /// Full output page RGBA bytes.
+    #[must_use]
+    pub fn full_page_bytes(self) -> usize {
+        raster_pixels_to_bytes(self.full_page_pixels)
+    }
+
+    /// Maximum RGBA bytes in one raster band target.
+    #[must_use]
+    pub fn max_band_bytes(self) -> usize {
+        raster_pixels_to_bytes(self.max_band_pixels)
+    }
+
+    /// Peak pixels in the actively rendered raster target.
+    #[must_use]
+    pub const fn active_target_peak_pixels(self) -> usize {
+        self.max_band_pixels
+    }
+
+    /// Peak RGBA bytes in the actively rendered raster target.
+    #[must_use]
+    pub fn active_target_peak_bytes(self) -> usize {
+        self.max_band_bytes()
+    }
+
+    /// Pixels retained for the final thumbnail buffer.
+    #[must_use]
+    pub const fn output_buffer_pixels(self) -> usize {
+        self.full_page_pixels
+    }
+
+    /// RGBA bytes retained for the final thumbnail buffer.
+    #[must_use]
+    pub fn output_buffer_bytes(self) -> usize {
+        self.full_page_bytes()
+    }
+
+    /// Estimated peak RGBA bytes retained by raster/output buffers.
+    ///
+    /// This is not process RSS. It captures the explicit RGBA buffers owned by
+    /// the native raster path: a full target for single-target renders, or the
+    /// final output buffer plus one band target for banded renders.
+    #[must_use]
+    pub fn estimated_peak_raster_bytes(self) -> usize {
+        if self.bands > 1 {
+            self.output_buffer_bytes()
+                .saturating_add(self.active_target_peak_bytes())
+        } else {
+            self.active_target_peak_bytes()
+        }
+    }
+
+    /// Per-mille reduction of the active raster target versus a full-page target.
+    #[must_use]
+    pub fn active_target_byte_reduction_per_mille(self) -> usize {
+        reduction_per_mille(self.full_page_bytes(), self.active_target_peak_bytes())
+    }
+}
+
 struct RenderTraceSinks<'a> {
     timings: Option<&'a mut NativeRenderPhaseTimings>,
     path_flattening: Option<&'a mut PathFlatteningSummary>,
@@ -2716,6 +2775,18 @@ fn raster_band_summary(dimensions: RasterDimensions, band_rows: Option<u32>) -> 
         max_band_rows,
         max_band_pixels: (dimensions.width as usize) * (max_band_rows as usize),
     }
+}
+
+fn raster_pixels_to_bytes(pixels: usize) -> usize {
+    pixels.saturating_mul(ferrugo_render::facade_rgba_bytes_per_pixel())
+}
+
+fn reduction_per_mille(full: usize, peak: usize) -> usize {
+    if full == 0 || peak >= full {
+        return 0;
+    }
+    let saved = (full - peak) as u128;
+    ((saved * 1_000) / full as u128) as usize
 }
 
 fn raster_band_transform(
@@ -6807,6 +6878,22 @@ mod tests {
         assert!(banded_bands.bands > 1);
         assert_eq!(banded_bands.max_band_rows, 11);
         assert!(banded_bands.max_band_pixels < banded_bands.full_page_pixels);
+        assert_eq!(single_bands.full_page_bytes(), 64 * 48 * 4);
+        assert_eq!(
+            single_bands.active_target_peak_bytes(),
+            single_bands.full_page_bytes()
+        );
+        assert_eq!(single_bands.estimated_peak_raster_bytes(), 64 * 48 * 4);
+        assert_eq!(banded_bands.max_band_bytes(), 64 * 11 * 4);
+        assert_eq!(
+            banded_bands.output_buffer_bytes(),
+            banded_bands.full_page_bytes()
+        );
+        assert_eq!(
+            banded_bands.estimated_peak_raster_bytes(),
+            banded_bands.output_buffer_bytes() + banded_bands.active_target_peak_bytes()
+        );
+        assert!(banded_bands.active_target_byte_reduction_per_mille() > 0);
     }
 
     #[test]
@@ -6870,6 +6957,16 @@ mod tests {
                 );
             }
             assert_eq!(single.raster_bands.bands, 1, "{label}");
+            assert_eq!(
+                single.raster_bands.active_target_peak_bytes(),
+                single.raster_bands.full_page_bytes(),
+                "{label}"
+            );
+            assert_eq!(
+                single.raster_bands.estimated_peak_raster_bytes(),
+                single.raster_bands.full_page_bytes(),
+                "{label}"
+            );
             if should_band {
                 assert!(banded.raster_bands.bands > 1, "{label}");
                 assert_eq!(banded.raster_bands.max_band_rows, 17, "{label}");
@@ -6877,10 +6974,40 @@ mod tests {
                     banded.raster_bands.max_band_pixels < banded.raster_bands.full_page_pixels,
                     "{label}"
                 );
+                assert!(
+                    banded.raster_bands.active_target_peak_bytes()
+                        < banded.raster_bands.full_page_bytes(),
+                    "{label}"
+                );
+                assert!(
+                    banded.raster_bands.active_target_byte_reduction_per_mille() > 0,
+                    "{label}"
+                );
+                assert_eq!(
+                    banded.raster_bands.output_buffer_bytes(),
+                    banded.raster_bands.full_page_bytes(),
+                    "{label}"
+                );
+                assert_eq!(
+                    banded.raster_bands.estimated_peak_raster_bytes(),
+                    banded.raster_bands.output_buffer_bytes()
+                        + banded.raster_bands.active_target_peak_bytes(),
+                    "{label}"
+                );
             } else {
                 assert_eq!(banded.raster_bands.bands, 1, "{label}");
                 assert_eq!(
                     banded.raster_bands.max_band_pixels, banded.raster_bands.full_page_pixels,
+                    "{label}"
+                );
+                assert_eq!(
+                    banded.raster_bands.active_target_peak_bytes(),
+                    banded.raster_bands.full_page_bytes(),
+                    "{label}"
+                );
+                assert_eq!(
+                    banded.raster_bands.active_target_byte_reduction_per_mille(),
+                    0,
                     "{label}"
                 );
             }
