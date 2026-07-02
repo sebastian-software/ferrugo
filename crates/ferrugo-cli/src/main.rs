@@ -9062,12 +9062,31 @@ fn trace_raster_band_summary_json(summary: Result<&RasterBandSummary, &Thumbnail
                 "{{",
                 "\"status\":\"measured\",",
                 "\"full_page_pixels\":{},",
+                "\"full_page_bytes\":{},",
                 "\"bands\":{},",
                 "\"max_band_rows\":{},",
-                "\"max_band_pixels\":{}",
+                "\"max_band_pixels\":{},",
+                "\"max_band_bytes\":{},",
+                "\"active_target_peak_pixels\":{},",
+                "\"active_target_peak_bytes\":{},",
+                "\"output_buffer_pixels\":{},",
+                "\"output_buffer_bytes\":{},",
+                "\"estimated_peak_raster_bytes\":{},",
+                "\"active_target_byte_reduction_per_mille\":{}",
                 "}}"
             ),
-            summary.full_page_pixels, summary.bands, summary.max_band_rows, summary.max_band_pixels
+            summary.full_page_pixels,
+            summary.full_page_bytes(),
+            summary.bands,
+            summary.max_band_rows,
+            summary.max_band_pixels,
+            summary.max_band_bytes(),
+            summary.active_target_peak_pixels(),
+            summary.active_target_peak_bytes(),
+            summary.output_buffer_pixels(),
+            summary.output_buffer_bytes(),
+            summary.estimated_peak_raster_bytes(),
+            summary.active_target_byte_reduction_per_mille()
         ),
         Err(error) => format!(
             "{{\"status\":\"error\",\"class\":{},\"bucket\":{}}}",
@@ -12140,7 +12159,13 @@ mod tests {
         assert!(json.contains("\"glyph_bitmap_summary\""));
         assert!(json.contains("\"type3_template_summary\""));
         assert!(json.contains("\"raster_band_summary\""));
+        assert!(json.contains("\"full_page_bytes\""));
         assert!(json.contains("\"max_band_rows\""));
+        assert!(json.contains("\"max_band_bytes\""));
+        assert!(json.contains("\"active_target_peak_bytes\""));
+        assert!(json.contains("\"output_buffer_bytes\""));
+        assert!(json.contains("\"estimated_peak_raster_bytes\""));
+        assert!(json.contains("\"active_target_byte_reduction_per_mille\""));
         assert!(json.contains("\"hits\""));
         assert!(json.contains("\"misses\""));
         assert!(json.contains("\"operator_summary\""));
