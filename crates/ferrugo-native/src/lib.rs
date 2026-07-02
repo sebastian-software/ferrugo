@@ -239,12 +239,24 @@ pub struct NativeDocumentSessionStats {
     pub cached_image_resource_bytes: usize,
     /// Maximum resident decoded image bytes retained by the image-resource cache.
     pub max_cached_image_resource_bytes: usize,
+    /// Decoded image-resource cache hits inside this session.
+    pub cached_image_resource_hits: usize,
+    /// Decoded image-resource cache misses inside this session.
+    pub cached_image_resource_misses: usize,
+    /// Decoded image-resource maps inserted into this session cache.
+    pub cached_image_resource_inserts: usize,
+    /// Decoded image-resource maps evicted from this session cache.
+    pub cached_image_resource_evictions: usize,
 }
 
 #[derive(Debug, Default)]
 struct SessionImageResourceCache {
     entries: Vec<SessionImageResourceCacheEntry>,
     resident_bytes: usize,
+    hits: usize,
+    misses: usize,
+    inserts: usize,
+    evictions: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -262,10 +274,17 @@ struct SessionImageResourceCacheKey {
 }
 
 impl SessionImageResourceCache {
-    fn get(&self, key: SessionImageResourceCacheKey) -> Option<ImageResources> {
-        self.entries
+    fn get(&mut self, key: SessionImageResourceCacheKey) -> Option<ImageResources> {
+        let resources = self
+            .entries
             .iter()
-            .find_map(|entry| (entry.key == key).then(|| entry.resources.clone()))
+            .find_map(|entry| (entry.key == key).then(|| entry.resources.clone()));
+        if resources.is_some() {
+            self.hits += 1;
+        } else {
+            self.misses += 1;
+        }
+        resources
     }
 
     fn insert(
@@ -279,12 +298,17 @@ impl SessionImageResourceCache {
             return;
         }
         let resident_bytes = resources.resource_summary().resident_bytes;
-        if resident_bytes < MIN_SESSION_IMAGE_RESOURCE_CACHE_BYTES
-            || resident_bytes > max_bytes
-            || self.entries.len() >= max_entries
+        if resident_bytes < MIN_SESSION_IMAGE_RESOURCE_CACHE_BYTES || resident_bytes > max_bytes {
+            return;
+        }
+        while self.entries.len() >= max_entries
             || self.resident_bytes.saturating_add(resident_bytes) > max_bytes
         {
-            return;
+            let Some(evicted) = (!self.entries.is_empty()).then(|| self.entries.remove(0)) else {
+                return;
+            };
+            self.resident_bytes = self.resident_bytes.saturating_sub(evicted.resident_bytes);
+            self.evictions += 1;
         }
         self.entries.push(SessionImageResourceCacheEntry {
             key,
@@ -292,14 +316,23 @@ impl SessionImageResourceCache {
             resident_bytes,
         });
         self.resident_bytes += resident_bytes;
+        self.inserts += 1;
     }
 
-    fn stats(&self, max_entries: usize, max_bytes: usize) -> (usize, usize, usize, usize) {
+    fn stats(
+        &self,
+        max_entries: usize,
+        max_bytes: usize,
+    ) -> (usize, usize, usize, usize, usize, usize, usize, usize) {
         (
             self.entries.len(),
             max_entries,
             self.resident_bytes,
             max_bytes,
+            self.hits,
+            self.misses,
+            self.inserts,
+            self.evictions,
         )
     }
 }
@@ -968,6 +1001,10 @@ impl<'a> NativeDocumentSession<'a> {
             max_cached_image_resource_entries: limits.max_session_image_resource_entries,
             cached_image_resource_bytes: 0,
             max_cached_image_resource_bytes: limits.max_session_image_resource_bytes,
+            cached_image_resource_hits: 0,
+            cached_image_resource_misses: 0,
+            cached_image_resource_inserts: 0,
+            cached_image_resource_evictions: 0,
         };
         Ok(Self {
             document,
@@ -987,6 +1024,10 @@ impl<'a> NativeDocumentSession<'a> {
             max_cached_image_resource_entries,
             cached_image_resource_bytes,
             max_cached_image_resource_bytes,
+            cached_image_resource_hits,
+            cached_image_resource_misses,
+            cached_image_resource_inserts,
+            cached_image_resource_evictions,
         ) = self.image_resource_cache.borrow().stats(
             self.limits.max_session_image_resource_entries,
             self.limits.max_session_image_resource_bytes,
@@ -995,6 +1036,10 @@ impl<'a> NativeDocumentSession<'a> {
         stats.max_cached_image_resource_entries = max_cached_image_resource_entries;
         stats.cached_image_resource_bytes = cached_image_resource_bytes;
         stats.max_cached_image_resource_bytes = max_cached_image_resource_bytes;
+        stats.cached_image_resource_hits = cached_image_resource_hits;
+        stats.cached_image_resource_misses = cached_image_resource_misses;
+        stats.cached_image_resource_inserts = cached_image_resource_inserts;
+        stats.cached_image_resource_evictions = cached_image_resource_evictions;
         stats
     }
 
@@ -2789,7 +2834,7 @@ fn cached_page_image_resources(
         max_edge: cache_access.max_edge,
         native_profile: native_profile_name(cache_access.limits),
     };
-    if let Some(resources) = cache_access.cache.borrow().get(key) {
+    if let Some(resources) = cache_access.cache.borrow_mut().get(key) {
         return Ok(resources);
     }
     let resources = page_image_resources(
@@ -5410,6 +5455,43 @@ mod tests {
         assert_eq!(stats.cached_image_resource_entries, 1);
         assert!(stats.cached_image_resource_bytes > 0);
         assert!(stats.cached_image_resource_bytes <= stats.max_cached_image_resource_bytes);
+        assert_eq!(stats.cached_image_resource_hits, 1);
+        assert_eq!(stats.cached_image_resource_misses, 1);
+        assert_eq!(stats.cached_image_resource_inserts, 1);
+        assert_eq!(stats.cached_image_resource_evictions, 0);
+    }
+
+    #[test]
+    fn native_document_session_should_evict_oldest_image_resources() {
+        let bytes =
+            include_bytes!("../../../fixtures/generated/image-heavy-repeated-xobject-report.pdf");
+        let limits = NativeRenderLimits {
+            max_session_image_resource_entries: 1,
+            ..NativeRenderLimits::default()
+        };
+        let backend = NativeBackend::with_render_limits(limits);
+
+        let session = backend
+            .document_session(bytes, &[0])
+            .expect("document session should load");
+        session
+            .render_page(&ThumbnailOptions {
+                max_edge: 160,
+                ..ThumbnailOptions::default()
+            })
+            .expect("first page should render");
+        session
+            .render_page(&ThumbnailOptions {
+                max_edge: 120,
+                ..ThumbnailOptions::default()
+            })
+            .expect("same page with a different cache key should render");
+        let stats = session.stats();
+
+        assert_eq!(stats.cached_image_resource_entries, 1);
+        assert_eq!(stats.cached_image_resource_misses, 2);
+        assert_eq!(stats.cached_image_resource_inserts, 2);
+        assert_eq!(stats.cached_image_resource_evictions, 1);
     }
 
     #[test]
