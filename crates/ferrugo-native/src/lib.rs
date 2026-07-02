@@ -2916,7 +2916,7 @@ fn stroke_path_supports_banded_replay(path: &PathDisplayItem) -> bool {
             || joined_outline_stroke_path_supports_banded_replay(path)
             || independent_single_line_stroke_path_supports_banded_replay(path)
             || dashed_single_line_stroke_path_supports_banded_replay(path)
-            || small_dashed_single_line_group_supports_banded_replay(path))
+            || independent_dashed_single_line_groups_support_banded_replay(path))
 }
 
 fn solid_axis_aligned_single_line_stroke_path_supports_banded_replay(
@@ -3045,7 +3045,7 @@ fn dashed_single_line_stroke_path_supports_banded_replay(path: &PathDisplayItem)
             .all(|segment| matches!(segment, PathSegment::MoveTo(_) | PathSegment::LineTo(_)))
 }
 
-fn small_dashed_single_line_group_supports_banded_replay(path: &PathDisplayItem) -> bool {
+fn independent_dashed_single_line_groups_support_banded_replay(path: &PathDisplayItem) -> bool {
     if path.state.stroke_dash == ferrugo_render::StrokeDashPattern::solid()
         || path.state.line_cap != ferrugo_render::LineCap::Butt
         || !matches!(
@@ -3070,8 +3070,7 @@ fn small_dashed_single_line_group_supports_banded_replay(path: &PathDisplayItem)
             _ => return false,
         }
     }
-    // Larger dashed grids need separate parity work before they can replay by band.
-    subpaths > 0 && subpaths <= 2 && !open_subpath
+    subpaths > 0 && !open_subpath
 }
 
 fn raster_band_summary(dimensions: RasterDimensions, band_rows: Option<u32>) -> RasterBandSummary {
@@ -7967,7 +7966,7 @@ mod tests {
             (
                 include_bytes!("../../../fixtures/generated/map-raster-tile-routes.pdf").as_slice(),
                 "map raster tile routes",
-                false,
+                true,
             ),
             (
                 include_bytes!("../../../fixtures/generated/office-report-header-footer-link.pdf")
