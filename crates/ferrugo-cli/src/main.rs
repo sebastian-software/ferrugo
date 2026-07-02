@@ -8777,7 +8777,9 @@ fn trace_fill_raster_route_summary_json(
                 "\"coverage_span_calls\":{},",
                 "\"coverage_span_rows\":{},",
                 "\"coverage_span_intervals\":{},",
+                "\"coverage_full_span_runs\":{},",
                 "\"coverage_full_pixels\":{},",
+                "\"coverage_direct_row_pixels\":{},",
                 "\"coverage_sampled_edge_pixels\":{}",
                 "}}"
             ),
@@ -8786,7 +8788,9 @@ fn trace_fill_raster_route_summary_json(
             summary.coverage_span_calls,
             summary.coverage_span_rows,
             summary.coverage_span_intervals,
+            summary.coverage_full_span_runs,
             summary.coverage_full_pixels,
+            summary.coverage_direct_row_pixels,
             summary.coverage_sampled_edge_pixels
         ),
         Err(error) => format!(
@@ -8805,6 +8809,8 @@ fn trace_stroke_raster_route_summary_json(
             concat!(
                 "{{",
                 "\"status\":\"measured\",",
+                "\"outline_fill_calls\":{},",
+                "\"outline_axis_line_calls\":{},",
                 "\"span_covered_calls\":{},",
                 "\"span_cursor_calls\":{},",
                 "\"span_from_start_calls\":{},",
@@ -8841,6 +8847,8 @@ fn trace_stroke_raster_route_summary_json(
                 "\"max_row_bucket_active_join_refs_per_pixel\":{}",
                 "}}"
             ),
+            summary.outline_fill_calls,
+            summary.outline_axis_line_calls,
             summary.span_covered_calls,
             summary.span_cursor_calls,
             summary.span_from_start_calls,
@@ -10168,7 +10176,11 @@ fn native_document_session_stats_json(stats: Option<NativeDocumentSessionStats>)
             "\"cached_image_resource_entries\":{},",
             "\"max_cached_image_resource_entries\":{},",
             "\"cached_image_resource_bytes\":{},",
-            "\"max_cached_image_resource_bytes\":{}",
+            "\"max_cached_image_resource_bytes\":{},",
+            "\"cached_image_resource_hits\":{},",
+            "\"cached_image_resource_misses\":{},",
+            "\"cached_image_resource_inserts\":{},",
+            "\"cached_image_resource_evictions\":{}",
             "}}"
         ),
         native_page_cache_policy_json(stats.cache_policy),
@@ -10182,7 +10194,11 @@ fn native_document_session_stats_json(stats: Option<NativeDocumentSessionStats>)
         stats.cached_image_resource_entries,
         stats.max_cached_image_resource_entries,
         stats.cached_image_resource_bytes,
-        stats.max_cached_image_resource_bytes
+        stats.max_cached_image_resource_bytes,
+        stats.cached_image_resource_hits,
+        stats.cached_image_resource_misses,
+        stats.cached_image_resource_inserts,
+        stats.cached_image_resource_evictions
     )
 }
 
@@ -11883,6 +11899,8 @@ mod tests {
         assert!(json.contains("\"generic_stroke_fallback_items\""));
         assert!(json.contains("\"pixel_x_span_buckets\""));
         assert!(json.contains("\"stroke_raster_route_summary\""));
+        assert!(json.contains("\"outline_fill_calls\""));
+        assert!(json.contains("\"outline_axis_line_calls\""));
         assert!(json.contains("\"span_covered_calls\""));
         assert!(json.contains("\"span_cursor_calls\""));
         assert!(json.contains("\"span_from_start_calls\""));
@@ -11907,7 +11925,9 @@ mod tests {
         assert!(json.contains("\"max_row_bucket_active_join_refs_per_pixel\""));
         assert!(json.contains("\"fill_raster_route_summary\""));
         assert!(json.contains("\"coverage_span_calls\""));
+        assert!(json.contains("\"coverage_full_span_runs\""));
         assert!(json.contains("\"coverage_full_pixels\""));
+        assert!(json.contains("\"coverage_direct_row_pixels\""));
         assert!(json.contains("\"coverage_sampled_edge_pixels\""));
         assert!(json.contains("\"image_resource_summary\""));
         assert!(json.contains("\"encoded_bytes\""));
@@ -12749,6 +12769,10 @@ status = "candidate"
         assert!(json.contains("\"name\":\"document-session\""));
         assert!(json.contains("\"session\""));
         assert!(json.contains("\"loaded_objects\""));
+        assert!(json.contains("\"cached_image_resource_hits\""));
+        assert!(json.contains("\"cached_image_resource_misses\""));
+        assert!(json.contains("\"cached_image_resource_inserts\""));
+        assert!(json.contains("\"cached_image_resource_evictions\""));
         assert!(json.contains("\"cache_key\""));
         assert!(json.contains("\"phase_timings_ms\""));
         assert!(json.contains("\"phase_timings_ms\":{\"first_mean\""));

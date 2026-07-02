@@ -23,6 +23,13 @@ The trace records:
 - aggregate operator coverage;
 - bounded operator events derived from compact operator coverage.
 
+Fill-route summaries include coverage-span call counts, full-span run counts,
+direct row-write pixels, and sampled edge pixels. During route-summary rendering,
+stroke-route summaries may use a temporary stroke-outline fill route for simple
+axis-aligned strokes alongside the existing span and row-bucket predicate
+counters. These fields are profiling signals only; they are not public API
+commitments.
+
 The operator event stream is intentionally compact. It preserves operator names,
 status, and typed unsupported buckets where available. It does not preserve raw
 content stream order beyond the aggregate coverage expansion and is intended for

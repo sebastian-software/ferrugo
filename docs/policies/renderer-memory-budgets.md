@@ -36,6 +36,11 @@ memory accounting.
   so repeated image placements do not duplicate samples. A page-level decoded
   image budget rejects many individually valid images before they can become an
   unbounded resident set.
+- Explicit native document sessions may retain decoded page image-resource maps
+  across repeated renders. The cache is request/session-local, has entry and
+  resident-byte ceilings, records hit/miss/insert/eviction counters, and evicts
+  oldest entries first when adding a new page resource map would exceed the
+  session budget.
 - Glyph outlines use a bounded cache. When `max_cache_entries` is reached, the
   oldest entry is evicted before storing a new outline. A value of `0` disables
   outline caching without disabling outline extraction.

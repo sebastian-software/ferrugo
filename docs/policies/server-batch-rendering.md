@@ -29,6 +29,12 @@ by the maximum page raster size.
 If the pixel budget cannot schedule one job, the batch must fail with a typed
 budget error instead of silently overcommitting memory.
 
+Path rasterization may use an explicit pixel-space scissor as a building block
+for future banded page rendering. Scissored path rendering is memory-bound
+groundwork only: it must not imply thread-per-band scheduling, and it does not
+reduce full-page raster allocation until image/text/compositing bands are wired
+through the native backend with separate RSS evidence.
+
 High-page-count gates should fan out multiple pages per input with an explicit
 page limit rather than creating huge committed PDFs. When manifest metadata is
 available, the batch benchmark bounds page jobs by each fixture's declared page
