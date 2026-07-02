@@ -2760,8 +2760,14 @@ fn display_list_supports_banded_replay(display_list: &DisplayList) -> bool {
         DisplayItem::ClipPlaceholder { segments, .. } => {
             line_only_clip_placeholder_supports_banded_replay(segments)
         }
-        DisplayItem::TransparencyGroup(_) => false,
+        DisplayItem::TransparencyGroup(group) => transparency_group_supports_banded_replay(group),
     })
+}
+
+fn transparency_group_supports_banded_replay(
+    group: &ferrugo_render::TransparencyGroupDisplayItem,
+) -> bool {
+    !group.group.knockout && display_list_supports_banded_replay(&group.items)
 }
 
 fn line_only_clip_placeholder_supports_banded_replay(segments: &[PathSegment]) -> bool {
@@ -7233,6 +7239,17 @@ mod tests {
                     .as_slice(),
                 "uncolored tiling pattern",
                 true,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/transparency-group.pdf").as_slice(),
+                "transparency group",
+                true,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/transparency-knockout-group.pdf")
+                    .as_slice(),
+                "transparency knockout group",
+                false,
             ),
         ] {
             let single = NativeBackend::new()
