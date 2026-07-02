@@ -17791,30 +17791,17 @@ fn draw_type3_text_run(
     })?;
     let base = text.state.ctm.multiply(text.text_matrix);
     let mut pattern_cache = PatternCellCache::new(options.max_pattern_cell_cache_entries);
+    let mut char_proc_cache = Type3CharProcTemplateCache::default();
     for (glyph, origin) in text.glyphs.iter().zip(text.glyph_origins.iter()) {
         let Some(char_proc) = type3.char_proc_for_code(glyph.character_code, &text.font.encoding)
         else {
             continue;
         };
-        let mut glyph_state = text.state;
-        glyph_state.ctm = Matrix {
-            e: origin.x,
-            f: origin.y,
-            ..base
-        }
-        .multiply(Matrix::scale(text.font_size, text.font_size))
-        .multiply(type3.font_matrix);
-        let mut interpreter = DisplayListInterpreter::new(DisplayListOptions::default());
-        interpreter.current = glyph_state;
-        interpreter
-            .interpret(tokenize_content(PdfBytes::new(&char_proc.content)))
-            .map_err(raster_type3_error)?;
-        for item in interpreter.display_list.items() {
-            let DisplayItem::Path(path) = item else {
-                continue;
-            };
+        let paths = char_proc_cache.paths_for(text, type3, base, char_proc)?;
+        for path in paths {
+            let path = translate_type3_path_template(path, *origin);
             rasterize_path_item(
-                path,
+                &path,
                 device,
                 PathRasterContext {
                     transform: page_transform,
@@ -17828,6 +17815,145 @@ fn draw_type3_text_run(
         }
     }
     Ok(())
+}
+
+#[derive(Debug, Default)]
+struct Type3CharProcTemplateCache {
+    entries: Vec<Type3CharProcTemplate>,
+    #[cfg(test)]
+    hits: usize,
+    #[cfg(test)]
+    misses: usize,
+    #[cfg(test)]
+    inserts: usize,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct Type3CharProcTemplate {
+    name: Vec<u8>,
+    paths: Vec<PathDisplayItem>,
+}
+
+impl Type3CharProcTemplateCache {
+    fn paths_for(
+        &mut self,
+        text: &TextDisplayItem,
+        type3: &Type3Font,
+        base: Matrix,
+        char_proc: &Type3CharProc,
+    ) -> RasterResult<&[PathDisplayItem]> {
+        if let Some(index) = self
+            .entries
+            .iter()
+            .position(|entry| entry.name == char_proc.name)
+        {
+            #[cfg(test)]
+            {
+                self.hits = self.hits.saturating_add(1);
+            }
+            return Ok(&self.entries[index].paths);
+        }
+        #[cfg(test)]
+        {
+            self.misses = self.misses.saturating_add(1);
+        }
+        let paths = build_type3_char_proc_template(text, type3, base, char_proc)?;
+        let index = self.entries.len();
+        self.entries.push(Type3CharProcTemplate {
+            name: char_proc.name.clone(),
+            paths,
+        });
+        #[cfg(test)]
+        {
+            self.inserts = self.inserts.saturating_add(1);
+        }
+        Ok(&self.entries[index].paths)
+    }
+
+    #[cfg(test)]
+    fn hits(&self) -> usize {
+        self.hits
+    }
+
+    #[cfg(test)]
+    fn misses(&self) -> usize {
+        self.misses
+    }
+
+    #[cfg(test)]
+    fn inserts(&self) -> usize {
+        self.inserts
+    }
+}
+
+fn build_type3_char_proc_template(
+    text: &TextDisplayItem,
+    type3: &Type3Font,
+    base: Matrix,
+    char_proc: &Type3CharProc,
+) -> RasterResult<Vec<PathDisplayItem>> {
+    let mut glyph_state = text.state;
+    glyph_state.ctm = type3_char_proc_ctm(
+        base,
+        text.font_size,
+        type3.font_matrix,
+        Point { x: 0.0, y: 0.0 },
+    );
+    let mut interpreter = DisplayListInterpreter::new(DisplayListOptions::default());
+    interpreter.current = glyph_state;
+    interpreter
+        .interpret(tokenize_content(PdfBytes::new(&char_proc.content)))
+        .map_err(raster_type3_error)?;
+    Ok(interpreter
+        .display_list
+        .items()
+        .iter()
+        .filter_map(|item| match item {
+            DisplayItem::Path(path) => Some(path.clone()),
+            _ => None,
+        })
+        .collect())
+}
+
+fn type3_char_proc_ctm(base: Matrix, font_size: f64, font_matrix: Matrix, origin: Point) -> Matrix {
+    Matrix {
+        e: origin.x,
+        f: origin.y,
+        ..base
+    }
+    .multiply(Matrix::scale(font_size, font_size))
+    .multiply(font_matrix)
+}
+
+fn translate_type3_path_template(path: &PathDisplayItem, origin: Point) -> PathDisplayItem {
+    let mut translated = path.clone();
+    translate_path_segments(&mut translated.segments, origin);
+    translated.state.ctm.e += origin.x;
+    translated.state.ctm.f += origin.y;
+    translated
+}
+
+fn translate_path_segments(segments: &mut [PathSegment], origin: Point) {
+    for segment in segments {
+        match segment {
+            PathSegment::MoveTo(point) | PathSegment::LineTo(point) => {
+                *point = translate_point(*point, origin);
+            }
+            PathSegment::CubicTo { c1, c2, to } => {
+                *c1 = translate_point(*c1, origin);
+                *c2 = translate_point(*c2, origin);
+                *to = translate_point(*to, origin);
+            }
+            PathSegment::Close => {}
+        }
+    }
+}
+
+fn translate_point(point: Point, origin: Point) -> Point {
+    Point {
+        x: point.x + origin.x,
+        y: point.y + origin.y,
+    }
 }
 
 fn raster_type3_error(error: GraphicsError) -> RasterError {
@@ -26177,6 +26303,97 @@ mod tests {
         };
         assert_eq!(text.glyph_origins[0], Point { x: 0.0, y: 0.0 });
         assert_eq!(text.glyph_origins[1], Point { x: 7.0, y: 0.0 });
+    }
+
+    #[test]
+    fn type3_char_proc_template_cache_should_reuse_repeated_glyphs() {
+        let document = load_type3_text_pdf(
+            b"BT /F1 10 Tf (AAA) Tj ET",
+            b"0 0 700 700 re f",
+            b"<< /Type /Font /Subtype /Type3 /FontMatrix [0.001 0 0 0.001 0 0] /FirstChar 65 /LastChar 65 /Widths [700] /Encoding << /Differences [65 /A] >> /CharProcs << /A 6 0 R >> >>",
+        );
+        let resources =
+            font_resources_from_document(&document, &[("F1", 4)]).expect("valid Type3 font");
+        let content = content_stream_from_document(&document);
+        let list = build_text_display_list(
+            tokenize_content(PdfBytes::new(&content)),
+            &resources,
+            DisplayListOptions::default(),
+        )
+        .expect("Type3 text should decode");
+        let DisplayItem::Text(text) = &list.items()[0] else {
+            panic!("expected text display item");
+        };
+        let type3 = text.font.type3.as_ref().expect("Type3 metadata");
+        let base = text.state.ctm.multiply(text.text_matrix);
+        let mut cache = Type3CharProcTemplateCache::default();
+
+        for glyph in &text.glyphs {
+            let char_proc = type3
+                .char_proc_for_code(glyph.character_code, &text.font.encoding)
+                .expect("mapped Type3 CharProc");
+            let paths = cache
+                .paths_for(text, type3, base, char_proc)
+                .expect("template should build");
+
+            assert_eq!(paths.len(), 1);
+        }
+
+        assert_eq!(cache.misses(), 1);
+        assert_eq!(cache.hits(), 2);
+        assert_eq!(cache.inserts(), 1);
+    }
+
+    #[test]
+    fn type3_char_proc_template_translation_should_match_direct_interpretation() {
+        let document = load_type3_text_pdf(
+            b"BT /F1 10 Tf (AA) Tj ET",
+            b"0 0 700 700 re f",
+            b"<< /Type /Font /Subtype /Type3 /FontMatrix [0.001 0 0 0.001 0 0] /FirstChar 65 /LastChar 65 /Widths [700] /Encoding << /Differences [65 /A] >> /CharProcs << /A 6 0 R >> >>",
+        );
+        let resources =
+            font_resources_from_document(&document, &[("F1", 4)]).expect("valid Type3 font");
+        let content = content_stream_from_document(&document);
+        let list = build_text_display_list(
+            tokenize_content(PdfBytes::new(&content)),
+            &resources,
+            DisplayListOptions::default(),
+        )
+        .expect("Type3 text should decode");
+        let DisplayItem::Text(text) = &list.items()[0] else {
+            panic!("expected text display item");
+        };
+        let type3 = text.font.type3.as_ref().expect("Type3 metadata");
+        let base = text.state.ctm.multiply(text.text_matrix);
+        let glyph = &text.glyphs[1];
+        let origin = text.glyph_origins[1];
+        let char_proc = type3
+            .char_proc_for_code(glyph.character_code, &text.font.encoding)
+            .expect("mapped Type3 CharProc");
+        let mut cache = Type3CharProcTemplateCache::default();
+        let template_paths = cache
+            .paths_for(text, type3, base, char_proc)
+            .expect("template should build");
+        let translated = translate_type3_path_template(&template_paths[0], origin);
+
+        let mut direct_state = text.state;
+        direct_state.ctm = type3_char_proc_ctm(base, text.font_size, type3.font_matrix, origin);
+        let mut interpreter = DisplayListInterpreter::new(DisplayListOptions::default());
+        interpreter.current = direct_state;
+        interpreter
+            .interpret(tokenize_content(PdfBytes::new(&char_proc.content)))
+            .expect("direct CharProc interpretation should work");
+        let direct = interpreter
+            .display_list
+            .items()
+            .iter()
+            .find_map(|item| match item {
+                DisplayItem::Path(path) => Some(path),
+                _ => None,
+            })
+            .expect("direct interpretation should emit a path");
+
+        assert_eq!(&translated, direct);
     }
 
     #[test]
