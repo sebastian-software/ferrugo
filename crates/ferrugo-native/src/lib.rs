@@ -2908,9 +2908,33 @@ fn stroke_path_supports_banded_replay(path: &PathDisplayItem) -> bool {
     path.fill_pattern.is_none()
         && path.state.fill_pattern.is_none()
         && !path.state.stroke_overprint
-        && (simple_stroke_path_supports_banded_replay(path)
+        && (solid_axis_aligned_single_line_stroke_path_supports_banded_replay(path)
+            || simple_stroke_path_supports_banded_replay(path)
             || joined_outline_stroke_path_supports_banded_replay(path)
             || dashed_single_line_stroke_path_supports_banded_replay(path))
+}
+
+fn solid_axis_aligned_single_line_stroke_path_supports_banded_replay(
+    path: &PathDisplayItem,
+) -> bool {
+    if path.state.stroke_dash != ferrugo_render::StrokeDashPattern::solid() {
+        return false;
+    }
+
+    let mut start = None;
+    let mut end = None;
+    for segment in &path.segments {
+        match segment {
+            PathSegment::MoveTo(point) if start.is_none() => start = Some(*point),
+            PathSegment::LineTo(point) if start.is_some() && end.is_none() => end = Some(*point),
+            _ => return false,
+        }
+    }
+
+    match (start, end) {
+        (Some(start), Some(end)) => start.x == end.x || start.y == end.y,
+        _ => false,
+    }
 }
 
 fn simple_stroke_path_supports_banded_replay(path: &PathDisplayItem) -> bool {
@@ -7352,6 +7376,79 @@ mod tests {
     }
 
     #[test]
+    fn native_banded_raster_should_match_single_target_for_axis_aligned_single_line_caps() {
+        let display_list = DisplayList::from_items(vec![
+            DisplayItem::Path(PathDisplayItem {
+                segments: vec![
+                    PathSegment::MoveTo(Point { x: 8.0, y: 12.0 }),
+                    PathSegment::LineTo(Point { x: 58.0, y: 12.0 }),
+                ],
+                paint: PaintMode::Stroke,
+                state: GraphicsState {
+                    line_width: 4.0,
+                    stroke_color: DeviceColor::Rgb {
+                        r: 0.16,
+                        g: 0.3,
+                        b: 0.78,
+                    },
+                    line_cap: ferrugo_render::LineCap::Butt,
+                    line_join: ferrugo_render::LineJoin::Miter,
+                    ..GraphicsState::default()
+                },
+                fill_pattern: None,
+            }),
+            DisplayItem::Path(PathDisplayItem {
+                segments: vec![
+                    PathSegment::MoveTo(Point { x: 8.0, y: 24.0 }),
+                    PathSegment::LineTo(Point { x: 58.0, y: 24.0 }),
+                ],
+                paint: PaintMode::Stroke,
+                state: GraphicsState {
+                    line_width: 4.0,
+                    stroke_color: DeviceColor::Rgb {
+                        r: 0.78,
+                        g: 0.22,
+                        b: 0.08,
+                    },
+                    line_cap: ferrugo_render::LineCap::Round,
+                    line_join: ferrugo_render::LineJoin::Miter,
+                    ..GraphicsState::default()
+                },
+                fill_pattern: None,
+            }),
+            DisplayItem::Path(PathDisplayItem {
+                segments: vec![
+                    PathSegment::MoveTo(Point { x: 8.0, y: 36.0 }),
+                    PathSegment::LineTo(Point { x: 58.0, y: 36.0 }),
+                ],
+                paint: PaintMode::Stroke,
+                state: GraphicsState {
+                    line_width: 4.0,
+                    stroke_color: DeviceColor::Rgb {
+                        r: 0.05,
+                        g: 0.55,
+                        b: 0.35,
+                    },
+                    line_cap: ferrugo_render::LineCap::Square,
+                    line_join: ferrugo_render::LineJoin::Miter,
+                    ..GraphicsState::default()
+                },
+                fill_pattern: None,
+            }),
+        ]);
+
+        let (single, single_bands) = render_test_display_list_with_band_rows(&display_list, 0);
+        let (banded, banded_bands) = render_test_display_list_with_band_rows(&display_list, 11);
+
+        assert_eq!(single.bytes, banded.bytes);
+        assert_eq!(single_bands.bands, 1);
+        assert!(banded_bands.bands > 1);
+        assert_eq!(banded_bands.max_band_rows, 11);
+        assert!(banded_bands.max_band_pixels < banded_bands.full_page_pixels);
+        assert!(banded_bands.active_target_byte_reduction_per_mille() > 0);
+    }
+
+    #[test]
     fn native_banded_raster_should_match_single_target_for_single_line_butt_strokes() {
         let display_list = DisplayList::from_items(vec![
             DisplayItem::Path(PathDisplayItem {
@@ -7632,6 +7729,16 @@ mod tests {
                     .as_slice(),
                 "technical linework dimensions",
                 true,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/line-caps.pdf").as_slice(),
+                "line caps",
+                true,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/line-joins.pdf").as_slice(),
+                "line joins",
+                false,
             ),
             (
                 include_bytes!("../../../fixtures/generated/axial-gradient.pdf").as_slice(),
