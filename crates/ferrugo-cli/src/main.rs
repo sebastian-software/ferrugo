@@ -562,12 +562,20 @@ fn benchmark_native_command(args: &[OsString]) -> Result<(), CliError> {
     let native = config.native_profile.backend();
     let report = benchmark_backend(
         &native,
-        "rust-native",
+        BenchmarkBackendPolicy {
+            name: "rust-native",
+            unsupported_is_fallback: true,
+        },
         &fixtures,
         &options,
         manifest.as_ref(),
         &config,
-        true,
+        |native, path, options| {
+            native
+                .render_with_trace(PdfSource::from_path(path), options)
+                .ok()
+                .map(|trace| trace.fill_routes)
+        },
     );
     write_benchmark_report(config, report)
 }
@@ -687,12 +695,15 @@ fn benchmark_pdfium_command_enabled(args: &[OsString]) -> Result<(), CliError> {
     let pdfium = PdfiumBackend::from_env().map_err(|err| CliError::Backend(err.to_string()))?;
     let report = benchmark_backend(
         &pdfium,
-        "pdfium",
+        BenchmarkBackendPolicy {
+            name: "pdfium",
+            unsupported_is_fallback: false,
+        },
         &fixtures,
         &options,
         manifest.as_ref(),
         &config,
-        false,
+        |_, _, _| None,
     );
     write_benchmark_report(config, report)
 }
@@ -2376,6 +2387,18 @@ struct BenchmarkConfig {
     max_output_bytes: usize,
     fail_on_budget: bool,
     native_profile: NativeProfile,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct BenchmarkBackendPolicy {
+    name: &'static str,
+    unsupported_is_fallback: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct BenchmarkFixtureMetadata {
+    path_key: String,
+    family: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -4317,6 +4340,7 @@ enum BenchmarkOutcome {
         height: u32,
         output_bytes: usize,
         mean_ms: f64,
+        fill_routes: Option<FillRasterRouteSummary>,
     },
     FallbackRequired {
         reason: FallbackReason,
@@ -6301,15 +6325,19 @@ fn pdfium_missing_message() -> String {
     }
 }
 
-fn benchmark_backend<B: ThumbnailBackend>(
+fn benchmark_backend<B, F>(
     backend: &B,
-    backend_name: &'static str,
+    policy: BenchmarkBackendPolicy,
     paths: &[PathBuf],
     options: &ThumbnailOptions,
     manifest: Option<&CorpusManifest>,
     config: &BenchmarkConfig,
-    unsupported_is_fallback: bool,
-) -> BenchmarkReport {
+    fill_route_summary: F,
+) -> BenchmarkReport
+where
+    B: ThumbnailBackend,
+    F: Fn(&B, &Path, &ThumbnailOptions) -> Option<FillRasterRouteSummary>,
+{
     let mut families = BTreeMap::new();
     let mut fixtures = Vec::with_capacity(paths.len());
     let mut native_rendered = 0;
@@ -6328,9 +6356,9 @@ fn benchmark_backend<B: ThumbnailBackend>(
             path,
             options,
             config,
-            path_key,
-            family,
-            unsupported_is_fallback,
+            BenchmarkFixtureMetadata { path_key, family },
+            policy,
+            &fill_route_summary,
         );
         match record.outcome {
             BenchmarkOutcome::NativeRendered { .. } => native_rendered += 1,
@@ -6346,7 +6374,7 @@ fn benchmark_backend<B: ThumbnailBackend>(
     }
 
     BenchmarkReport {
-        backend: backend_name,
+        backend: policy.name,
         platform: PlatformMetadata::current(),
         total: paths.len(),
         native_rendered,
@@ -6361,15 +6389,20 @@ fn benchmark_backend<B: ThumbnailBackend>(
     }
 }
 
-fn benchmark_fixture<B: ThumbnailBackend>(
+fn benchmark_fixture<B, F>(
     backend: &B,
     path: &Path,
     options: &ThumbnailOptions,
     config: &BenchmarkConfig,
-    path_key: String,
-    family: String,
-    unsupported_is_fallback: bool,
-) -> BenchmarkRecord {
+    metadata: BenchmarkFixtureMetadata,
+    policy: BenchmarkBackendPolicy,
+    fill_route_summary: &F,
+) -> BenchmarkRecord
+where
+    B: ThumbnailBackend,
+    F: Fn(&B, &Path, &ThumbnailOptions) -> Option<FillRasterRouteSummary>,
+{
+    let BenchmarkFixtureMetadata { path_key, family } = metadata;
     let started = Instant::now();
     let mut last_success = None;
     for _ in 0..config.iterations {
@@ -6378,7 +6411,7 @@ fn benchmark_fixture<B: ThumbnailBackend>(
             Err(error) => {
                 let mean_ms = elapsed_mean_ms(started.elapsed(), config.iterations);
                 let (outcome, mut budget_violations) =
-                    benchmark_error_outcome(error, mean_ms, unsupported_is_fallback);
+                    benchmark_error_outcome(error, mean_ms, policy.unsupported_is_fallback);
                 if matches!(outcome, BenchmarkOutcome::FallbackRequired { .. }) {
                     budget_violations.push("native_fallback");
                 } else {
@@ -6414,6 +6447,7 @@ fn benchmark_fixture<B: ThumbnailBackend>(
             height: thumbnail.height,
             output_bytes,
             mean_ms,
+            fill_routes: fill_route_summary(backend, path, options),
         },
     }
 }
@@ -10956,9 +10990,23 @@ fn benchmark_outcome_json(outcome: &BenchmarkOutcome) -> String {
             height,
             output_bytes,
             mean_ms,
+            fill_routes,
         } => format!(
-            "{{\"status\":\"native_rendered\",\"width\":{},\"height\":{},\"output_bytes\":{},\"mean_ms\":{:.3}}}",
-            width, height, output_bytes, mean_ms
+            concat!(
+                "{{",
+                "\"status\":\"native_rendered\",",
+                "\"width\":{},",
+                "\"height\":{},",
+                "\"output_bytes\":{},",
+                "\"mean_ms\":{:.3},",
+                "\"fill_raster_route_summary\":{}",
+                "}}"
+            ),
+            width,
+            height,
+            output_bytes,
+            mean_ms,
+            optional_fill_raster_route_summary_json(fill_routes.as_ref())
         ),
         BenchmarkOutcome::FallbackRequired { reason, mean_ms } => format!(
             "{{\"status\":\"fallback_required\",\"reason\":{},\"mean_ms\":{:.3}}}",
@@ -10976,6 +11024,13 @@ fn benchmark_outcome_json(outcome: &BenchmarkOutcome) -> String {
             mean_ms
         ),
     }
+}
+
+fn optional_fill_raster_route_summary_json(summary: Option<&FillRasterRouteSummary>) -> String {
+    summary.map_or_else(
+        || "null".to_string(),
+        |summary| trace_fill_raster_route_summary_json(Ok(summary)),
+    )
 }
 
 fn manifest_entry_json(entry: Option<&CorpusManifestEntry>) -> String {
@@ -13162,12 +13217,15 @@ status = "candidate"
         let native = NativeBackend::new();
         let report = benchmark_backend(
             &native,
-            "rust-native",
+            BenchmarkBackendPolicy {
+                name: "rust-native",
+                unsupported_is_fallback: true,
+            },
             &paths,
             &options,
             Some(&manifest),
             &config,
-            true,
+            |_, _, _| None,
         );
         let json = benchmark_report_json(&report);
 
@@ -13187,6 +13245,71 @@ status = "candidate"
         assert!(json.contains("\"family\":\"presentation\""));
         assert!(json.contains("\"output_bytes\""));
         assert!(json.contains("\"native_fallback\""));
+    }
+
+    #[test]
+    fn benchmark_native_should_report_fill_route_summary() {
+        let fixture_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let paths =
+            vec![fixture_root.join("fixtures/generated/stamp-annotation-rotated-appearance.pdf")];
+        let options = ThumbnailOptions {
+            page_index: 0,
+            max_edge: 160,
+            background: Rgba::WHITE,
+            output_format: ferrugo_thumbnail::OutputFormat::Rgba,
+            timeout: Duration::from_secs(5),
+            annotation_mode: AnnotationMode::Screen,
+            form_appearance_mode: ferrugo_thumbnail::FormAppearanceMode::DocumentState,
+        };
+        let config = BenchmarkConfig {
+            input: fixture_root.join("fixtures/generated"),
+            manifest: None,
+            include_families: Vec::new(),
+            output: None,
+            page_index: 0,
+            max_edge: 160,
+            background: Rgba::WHITE,
+            timeout: Duration::from_secs(5),
+            iterations: 1,
+            max_ms: 60_000,
+            max_output_bytes: 1_048_576,
+            fail_on_budget: false,
+            native_profile: NativeProfile::Default,
+        };
+
+        let native = NativeBackend::new();
+        let report = benchmark_backend(
+            &native,
+            BenchmarkBackendPolicy {
+                name: "rust-native",
+                unsupported_is_fallback: true,
+            },
+            &paths,
+            &options,
+            None,
+            &config,
+            |native, path, options| {
+                native
+                    .render_with_trace(PdfSource::from_path(path), options)
+                    .ok()
+                    .map(|trace| trace.fill_routes)
+            },
+        );
+        let json = benchmark_report_json(&report);
+
+        let BenchmarkOutcome::NativeRendered {
+            fill_routes: Some(fill_routes),
+            ..
+        } = &report.fixtures[0].outcome
+        else {
+            panic!("fixture should render with fill route summary");
+        };
+        assert_eq!(report.native_rendered, 1);
+        assert!(fill_routes.coverage_span_calls > 0);
+        assert!(fill_routes.coverage_cell_accumulator_pixels > 0);
+        assert_eq!(fill_routes.coverage_sampled_edge_pixels, 0);
+        assert!(json.contains("\"fill_raster_route_summary\""));
+        assert!(json.contains("\"coverage_cell_accumulator_pixels\""));
     }
 
     #[test]
