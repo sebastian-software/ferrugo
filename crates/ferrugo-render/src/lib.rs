@@ -367,7 +367,7 @@ impl Default for PathRasterOptions {
     fn default() -> Self {
         Self {
             supersample: 2,
-            fill_route: FillRasterRoute::CoverageSpans,
+            fill_route: FillRasterRoute::ScanlineCells,
             scissor: None,
             max_flattened_segments: DEFAULT_FLATTENED_PATH_SEGMENT_LIMIT,
             max_transparency_group_pixels: DEFAULT_TRANSPARENCY_GROUP_PIXELS_LIMIT,
@@ -25094,6 +25094,42 @@ mod tests {
     }
 
     #[test]
+    fn fill_path_default_should_use_scanline_cells_for_supported_edge_runs() {
+        let fill_routes = RefCell::new(FillRasterRouteSummary::default());
+        let path = coverage_span_test_path();
+        let transform = coverage_span_test_transform();
+        let mut device = RasterDevice::new(16, 12, Rgba::WHITE).expect("valid raster");
+
+        fill_path(
+            &mut device,
+            &path,
+            FillRule::Nonzero,
+            DeviceColor::BLACK,
+            BlendMode::Normal,
+            1.0,
+            PathRasterContext {
+                transform,
+                options: PathRasterOptions::default(),
+                clips: &[],
+                fill_routes: Some(&fill_routes),
+                stroke_routes: None,
+            },
+        )
+        .expect("default fill should rasterize");
+
+        let fill_routes = fill_routes.into_inner();
+        assert_eq!(
+            PathRasterOptions::default().fill_route,
+            FillRasterRoute::ScanlineCells
+        );
+        assert_eq!(fill_routes.coverage_span_calls, 1);
+        assert_eq!(fill_routes.sampled_calls, 0);
+        assert!(fill_routes.coverage_cell_accumulator_pixels > 0);
+        assert!(fill_routes.coverage_analytic_edge_pixels > 0);
+        assert_eq!(fill_routes.coverage_sampled_edge_pixels, 0);
+    }
+
+    #[test]
     fn fill_path_coverage_spans_should_count_sampled_edges_for_complex_nonzero() {
         let path = FlattenedPath {
             subpaths: vec![
@@ -25406,7 +25442,7 @@ mod tests {
         assert_eq!(fill_routes.coverage_span_calls, 1);
         assert_eq!(fill_routes.sampled_calls, 0);
         assert_eq!(fill_routes.complex_clip_fallback_calls, 0);
-        assert_eq!(fill_routes.coverage_cell_accumulator_pixels, 0);
+        assert!(fill_routes.coverage_cell_accumulator_pixels > 0);
         assert!(fill_routes.coverage_edge_row_buffer_pixels > 0);
         assert!(fill_routes.coverage_clip_mask_pixels > 0);
     }
