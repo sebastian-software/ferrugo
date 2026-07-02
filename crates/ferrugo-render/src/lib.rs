@@ -19000,7 +19000,64 @@ struct Type3GlyphRenderCacheEntry {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Type3GlyphRenderSurface {
     dimensions: RasterDimensions,
+    bounds: Option<Type3GlyphRenderBounds>,
     pixels: Arc<[u8]>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Type3GlyphRenderBounds {
+    min_x: u32,
+    min_y: u32,
+    max_x: u32,
+    max_y: u32,
+}
+
+impl Type3GlyphRenderSurface {
+    fn from_raster(dimensions: RasterDimensions, pixels: Vec<u8>) -> Self {
+        let bytes_per_pixel = PixelFormat::Rgba8.bytes_per_pixel();
+        let mut bounds = Type3GlyphRenderBounds {
+            min_x: dimensions.width,
+            min_y: dimensions.height,
+            max_x: 0,
+            max_y: 0,
+        };
+        for y in 0..dimensions.height {
+            let row_start = y as usize * dimensions.stride;
+            for x in 0..dimensions.width {
+                let alpha_offset = row_start + x as usize * bytes_per_pixel + 3;
+                if pixels[alpha_offset] == 0 {
+                    continue;
+                }
+                bounds.min_x = bounds.min_x.min(x);
+                bounds.min_y = bounds.min_y.min(y);
+                bounds.max_x = bounds.max_x.max(x + 1);
+                bounds.max_y = bounds.max_y.max(y + 1);
+            }
+        }
+        if bounds.min_x >= bounds.max_x || bounds.min_y >= bounds.max_y {
+            return Self {
+                dimensions,
+                bounds: None,
+                pixels: Arc::from(Vec::<u8>::new().into_boxed_slice()),
+            };
+        }
+
+        let crop_width = (bounds.max_x - bounds.min_x) as usize;
+        let crop_height = (bounds.max_y - bounds.min_y) as usize;
+        let crop_stride = crop_width * bytes_per_pixel;
+        let mut cropped = Vec::with_capacity(crop_stride * crop_height);
+        let x_start = bounds.min_x as usize * bytes_per_pixel;
+        for y in bounds.min_y..bounds.max_y {
+            let row_start = y as usize * dimensions.stride + x_start;
+            let row_end = row_start + crop_stride;
+            cropped.extend_from_slice(&pixels[row_start..row_end]);
+        }
+        Self {
+            dimensions,
+            bounds: Some(bounds),
+            pixels: Arc::from(cropped.into_boxed_slice()),
+        }
+    }
 }
 
 impl Type3GlyphRenderCache {
@@ -19047,10 +19104,7 @@ impl Type3GlyphRenderCache {
             },
         )?;
         render(&mut scratch)?;
-        let surface = Type3GlyphRenderSurface {
-            dimensions,
-            pixels: Arc::from(scratch.into_pixels().into_boxed_slice()),
-        };
+        let surface = Type3GlyphRenderSurface::from_raster(dimensions, scratch.into_pixels());
         let resident_bytes = type3_glyph_render_resident_bytes(&key, &surface);
         if self.max_entries == 0 || resident_bytes > self.max_bytes {
             return Ok(surface);
@@ -19376,6 +19430,7 @@ fn type3_glyph_render_resident_bytes(
     surface: &Type3GlyphRenderSurface,
 ) -> usize {
     std::mem::size_of::<Type3GlyphRenderKey>()
+        .saturating_add(std::mem::size_of::<Option<Type3GlyphRenderBounds>>())
         .saturating_add(key.template.name.len())
         .saturating_add(key.template.content.len())
         .saturating_add(surface.pixels.len())
@@ -19406,12 +19461,19 @@ fn composite_type3_render_surface(
     if device.dimensions() != surface.dimensions {
         return Err(RasterError::new(RasterErrorKind::InvalidDimensions));
     }
+    let Some(bounds) = surface.bounds else {
+        return Ok(());
+    };
     let bytes_per_pixel = PixelFormat::Rgba8.bytes_per_pixel();
-    for y in 0..surface.dimensions.height {
-        let row_start = y as usize * surface.dimensions.stride;
-        let row_end = row_start + surface.dimensions.stride;
+    let crop_width = (bounds.max_x - bounds.min_x) as usize;
+    let crop_stride = crop_width * bytes_per_pixel;
+    let target_start = bounds.min_x as usize * bytes_per_pixel;
+    let target_end = bounds.max_x as usize * bytes_per_pixel;
+    for (source_y, target_y) in (bounds.min_y..bounds.max_y).enumerate() {
+        let row_start = source_y * crop_stride;
+        let row_end = row_start + crop_stride;
         let source_row = &surface.pixels[row_start..row_end];
-        let target_row = device.row_mut(y)?;
+        let target_row = &mut device.row_mut(target_y)?[target_start..target_end];
         for (source, target) in source_row
             .chunks_exact(bytes_per_pixel)
             .zip(target_row.chunks_exact_mut(bytes_per_pixel))
@@ -28683,6 +28745,10 @@ mod tests {
         let summary = render_cache.summary();
         assert_eq!(summary.entries, 1);
         assert!(summary.bytes > 0);
+        assert!(
+            summary.bytes < transform.dimensions.buffer_len().expect("target bytes"),
+            "cropped Type3 surface should retain less than a full target page"
+        );
         assert_eq!(summary.misses, 1);
         assert_eq!(summary.hits, 1);
         assert_eq!(summary.inserts, 1);
