@@ -7410,6 +7410,34 @@ mod tests {
                 true,
             ),
             (
+                include_bytes!("../../../fixtures/generated/browser-print-raster-vector-mix.pdf")
+                    .as_slice(),
+                "browser print raster vector mix",
+                true,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/mixed-text-image.pdf").as_slice(),
+                "mixed text image",
+                true,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/chart-combo-legend.pdf").as_slice(),
+                "chart combo legend",
+                true,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/office-report-header-footer-link.pdf")
+                    .as_slice(),
+                "office report header footer link",
+                true,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/office-vector-grouped-shapes.pdf")
+                    .as_slice(),
+                "office vector grouped shapes",
+                true,
+            ),
+            (
                 include_bytes!("../../../fixtures/generated/dashed-stroke.pdf").as_slice(),
                 "dashed stroke",
                 true,
@@ -7418,6 +7446,12 @@ mod tests {
                 include_bytes!("../../../fixtures/generated/technical-hatch-clipping.pdf")
                     .as_slice(),
                 "technical hatch clipping",
+                true,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/technical-linework-dimensions.pdf")
+                    .as_slice(),
+                "technical linework dimensions",
                 true,
             ),
             (
