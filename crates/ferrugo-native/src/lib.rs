@@ -27,10 +27,10 @@ use ferrugo_render::{
     rasterize_display_list_into_with_phase_timings_route_summaries_and_caches, rasterize_images,
     rasterize_paths_into, rasterize_text_with_caches, ColorSpaceResources, DisplayItem,
     DisplayList, DisplayListOptions, ExtGraphicsStateResources, FontResources, FormResources,
-    GlyphBitmapCache, GraphicsError, GraphicsErrorKind, ImageDecodeHints, ImageResources,
-    PageGeometry, PageRotation, PageTransform, PageTransformOptions, PathBounds, PathRasterOptions,
-    Point, RasterDisplayPhase, RasterError, RasterErrorKind, ShadingResources, TextDisplayItem,
-    TextWritingMode, TilingPatternResources, Type3CharProcTemplateCache,
+    GlyphBitmapCache, GraphicsError, GraphicsErrorKind, IccTransformCache, ImageDecodeHints,
+    ImageResources, PageGeometry, PageRotation, PageTransform, PageTransformOptions, PathBounds,
+    PathRasterOptions, Point, RasterDisplayPhase, RasterError, RasterErrorKind, ShadingResources,
+    TextDisplayItem, TextWritingMode, TilingPatternResources, Type3CharProcTemplateCache,
 };
 pub use ferrugo_render::{
     FillRasterRouteSummary, GlyphBitmapCacheSummary, ImagePlacementSummary, ImageResourceSummary,
@@ -239,6 +239,7 @@ pub struct NativeDocumentSession<'a> {
     limits: NativeRenderLimits,
     stats: NativeDocumentSessionStats,
     image_resource_cache: RefCell<SessionImageResourceCache>,
+    icc_transform_cache: RefCell<IccTransformCache>,
     glyph_bitmap_cache: RefCell<GlyphBitmapCache>,
     type3_template_cache: RefCell<Type3CharProcTemplateCache>,
 }
@@ -278,6 +279,20 @@ pub struct NativeDocumentSessionStats {
     pub cached_image_resource_inserts: usize,
     /// Decoded image-resource maps evicted from this session cache.
     pub cached_image_resource_evictions: usize,
+    /// ICC transform entries retained inside this session.
+    pub cached_icc_transform_entries: usize,
+    /// Maximum ICC transform entries retained inside this session.
+    pub max_cached_icc_transform_entries: usize,
+    /// ICC transform cache hits inside this session.
+    pub cached_icc_transform_hits: usize,
+    /// ICC transform cache misses inside this session.
+    pub cached_icc_transform_misses: usize,
+    /// ICC transform entries evicted from this session cache.
+    pub cached_icc_transform_evictions: usize,
+    /// Maximum ICC transform workspace bytes observed in this session.
+    pub cached_icc_transform_max_workspace_bytes: usize,
+    /// Maximum ICC transform workspace bytes allowed in this session.
+    pub max_cached_icc_transform_workspace_bytes: usize,
     /// Fallback glyph bitmap entries retained inside this session.
     pub cached_glyph_bitmap_entries: usize,
     /// Maximum fallback glyph bitmap entries retained inside this session.
@@ -1110,6 +1125,13 @@ impl<'a> NativeDocumentSession<'a> {
             cached_image_resource_misses: 0,
             cached_image_resource_inserts: 0,
             cached_image_resource_evictions: 0,
+            cached_icc_transform_entries: 0,
+            max_cached_icc_transform_entries: limits.max_icc_transform_cache_entries,
+            cached_icc_transform_hits: 0,
+            cached_icc_transform_misses: 0,
+            cached_icc_transform_evictions: 0,
+            cached_icc_transform_max_workspace_bytes: 0,
+            max_cached_icc_transform_workspace_bytes: limits.max_icc_transform_workspace_bytes,
             cached_glyph_bitmap_entries: 0,
             max_cached_glyph_bitmap_entries: limits.max_session_glyph_bitmap_entries,
             cached_glyph_bitmap_bytes: 0,
@@ -1133,6 +1155,9 @@ impl<'a> NativeDocumentSession<'a> {
             limits,
             stats,
             image_resource_cache: RefCell::new(SessionImageResourceCache::default()),
+            icc_transform_cache: RefCell::new(IccTransformCache::new(
+                limits.max_icc_transform_cache_entries,
+            )),
             glyph_bitmap_cache: RefCell::new(GlyphBitmapCache::with_budget(
                 limits.max_session_glyph_bitmap_entries,
                 limits.max_session_glyph_bitmap_bytes,
@@ -1169,6 +1194,16 @@ impl<'a> NativeDocumentSession<'a> {
         stats.cached_image_resource_misses = cached_image_resource_misses;
         stats.cached_image_resource_inserts = cached_image_resource_inserts;
         stats.cached_image_resource_evictions = cached_image_resource_evictions;
+        let icc_cache = self.icc_transform_cache.borrow();
+        let icc_metrics = icc_cache.metrics();
+        stats.cached_icc_transform_entries = icc_cache.len();
+        stats.max_cached_icc_transform_entries = self.limits.max_icc_transform_cache_entries;
+        stats.cached_icc_transform_hits = icc_metrics.cache_hits;
+        stats.cached_icc_transform_misses = icc_metrics.cache_misses;
+        stats.cached_icc_transform_evictions = icc_metrics.evictions;
+        stats.cached_icc_transform_max_workspace_bytes = icc_metrics.max_workspace_bytes;
+        stats.max_cached_icc_transform_workspace_bytes =
+            self.limits.max_icc_transform_workspace_bytes;
         let glyph_summary = self.glyph_bitmap_cache.borrow().summary();
         stats.cached_glyph_bitmap_entries = glyph_summary.entries;
         stats.max_cached_glyph_bitmap_entries = glyph_summary.max_entries;
@@ -1203,6 +1238,7 @@ impl<'a> NativeDocumentSession<'a> {
             options,
             self.limits,
             &self.image_resource_cache,
+            &self.icc_transform_cache,
             &self.glyph_bitmap_cache,
             &self.type3_template_cache,
         )
@@ -1227,6 +1263,7 @@ impl<'a> NativeDocumentSession<'a> {
             self.limits,
             timings,
             &self.image_resource_cache,
+            &self.icc_transform_cache,
             &self.glyph_bitmap_cache,
             &self.type3_template_cache,
         )?;
@@ -1776,15 +1813,21 @@ fn render_loaded_document(
         None,
         None,
         None,
+        None,
     )
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "session rendering keeps retained caches explicit"
+)]
 fn render_loaded_document_with_session_cache(
     document: &ClassicDocument<'_>,
     page_tree: &PageTree,
     options: &ThumbnailOptions,
     limits: NativeRenderLimits,
     image_resource_cache: &RefCell<SessionImageResourceCache>,
+    icc_transform_cache: &RefCell<IccTransformCache>,
     glyph_bitmap_cache: &RefCell<GlyphBitmapCache>,
     type3_template_cache: &RefCell<Type3CharProcTemplateCache>,
 ) -> Result<Thumbnail, ThumbnailError> {
@@ -1795,6 +1838,7 @@ fn render_loaded_document_with_session_cache(
         limits,
         RenderTraceSinks::none(),
         Some(image_resource_cache),
+        Some(icc_transform_cache),
         Some(glyph_bitmap_cache),
         Some(type3_template_cache),
     )
@@ -1811,6 +1855,7 @@ fn render_loaded_document_with_timings_and_session_cache(
     limits: NativeRenderLimits,
     timings: &mut NativeRenderPhaseTimings,
     image_resource_cache: &RefCell<SessionImageResourceCache>,
+    icc_transform_cache: &RefCell<IccTransformCache>,
     glyph_bitmap_cache: &RefCell<GlyphBitmapCache>,
     type3_template_cache: &RefCell<Type3CharProcTemplateCache>,
 ) -> Result<Thumbnail, ThumbnailError> {
@@ -1821,6 +1866,7 @@ fn render_loaded_document_with_timings_and_session_cache(
         limits,
         RenderTraceSinks::with_timings(timings),
         Some(image_resource_cache),
+        Some(icc_transform_cache),
         Some(glyph_bitmap_cache),
         Some(type3_template_cache),
     )
@@ -1842,6 +1888,7 @@ fn render_loaded_document_with_trace(
         None,
         None,
         None,
+        None,
     )
 }
 
@@ -1856,10 +1903,15 @@ fn render_loaded_document_inner(
     limits: NativeRenderLimits,
     mut trace_sinks: RenderTraceSinks<'_>,
     image_resource_cache: Option<&RefCell<SessionImageResourceCache>>,
+    icc_transform_cache: Option<&RefCell<IccTransformCache>>,
     glyph_bitmap_cache: Option<&RefCell<GlyphBitmapCache>>,
     type3_template_cache: Option<&RefCell<Type3CharProcTemplateCache>>,
 ) -> Result<Thumbnail, ThumbnailError> {
     enforce_xfa_render_policy(document)?;
+    let local_icc_transform_cache = RefCell::new(IccTransformCache::new(
+        limits.max_icc_transform_cache_entries,
+    ));
+    let icc_transform_cache = icc_transform_cache.unwrap_or(&local_icc_transform_cache);
     let local_glyph_bitmap_cache = RefCell::new(GlyphBitmapCache::with_budget(
         limits.max_session_glyph_bitmap_entries,
         limits.max_session_glyph_bitmap_bytes,
@@ -1996,6 +2048,7 @@ fn render_loaded_document_inner(
                     xobject_invocations: &xobject_invocations,
                     options: display_options,
                     image_decode_hints: &image_decode_hints,
+                    icc_transform_cache,
                 },
                 image_resource_cache.map(|cache| SessionImageResourceCacheAccess {
                     page_index: options.page_index,
@@ -3047,6 +3100,7 @@ struct PageImageResourceRequest<'a, 'd> {
     xobject_invocations: &'a [Vec<u8>],
     options: DisplayListOptions,
     image_decode_hints: &'a ImageDecodeHints,
+    icc_transform_cache: &'a RefCell<IccTransformCache>,
 }
 
 struct SessionImageResourceCacheAccess<'a> {
@@ -3067,6 +3121,7 @@ fn cached_page_image_resources(
             request.xobject_invocations,
             request.options,
             request.image_decode_hints,
+            request.icc_transform_cache,
         );
     };
     let key = SessionImageResourceCacheKey {
@@ -3083,6 +3138,7 @@ fn cached_page_image_resources(
         request.xobject_invocations,
         request.options,
         request.image_decode_hints,
+        request.icc_transform_cache,
     )?;
     cache_access.cache.borrow_mut().insert(
         key,
@@ -3107,6 +3163,7 @@ fn page_image_resources(
     xobject_invocations: &[Vec<u8>],
     options: DisplayListOptions,
     image_decode_hints: &ImageDecodeHints,
+    icc_transform_cache: &RefCell<IccTransformCache>,
 ) -> Result<ImageResources, ThumbnailError> {
     let object = document
         .objects
@@ -3139,10 +3196,12 @@ fn page_image_resources(
         return Ok(ImageResources::empty());
     };
     let xobjects = filter_invoked_resources(xobjects, xobject_invocations);
-    ImageResources::from_xobject_dictionary_with_decode_hints(
+    let mut icc_cache = icc_transform_cache.borrow_mut();
+    ImageResources::from_xobject_dictionary_with_icc_cache_and_decode_hints(
         xobjects.as_slice(),
         document,
         options,
+        &mut icc_cache,
         image_decode_hints,
     )
     .map_err(map_graphics_error)
@@ -5749,6 +5808,47 @@ mod tests {
         assert_eq!(stats.cached_image_resource_misses, 1);
         assert_eq!(stats.cached_image_resource_inserts, 1);
         assert_eq!(stats.cached_image_resource_evictions, 0);
+    }
+
+    #[test]
+    fn native_document_session_should_reuse_icc_transform_cache() {
+        let bytes = include_bytes!("../../../fixtures/generated/icc-rgb-image.pdf");
+        let options = ThumbnailOptions {
+            max_edge: 160,
+            ..ThumbnailOptions::default()
+        };
+        let limits = NativeRenderLimits {
+            max_session_image_resource_entries: 0,
+            ..NativeRenderLimits::default()
+        };
+        let backend = NativeBackend::with_render_limits(limits);
+
+        let session = backend
+            .document_session(bytes, &[0])
+            .expect("document session should load");
+        let first = session
+            .render_page(&options)
+            .expect("first session render should work");
+        let second = session
+            .render_page(&options)
+            .expect("second session render should work");
+        let stats = session.stats();
+
+        assert_eq!(first.bytes, second.bytes);
+        assert_eq!(stats.cached_image_resource_entries, 0);
+        assert_eq!(stats.cached_icc_transform_entries, 1);
+        assert_eq!(
+            stats.max_cached_icc_transform_entries,
+            limits.max_icc_transform_cache_entries
+        );
+        assert!(stats.cached_icc_transform_hits > 0);
+        assert!(stats.cached_icc_transform_misses > 0);
+        assert_eq!(stats.cached_icc_transform_evictions, 0);
+        assert!(stats.cached_icc_transform_max_workspace_bytes > 0);
+        assert!(
+            stats.cached_icc_transform_max_workspace_bytes
+                <= stats.max_cached_icc_transform_workspace_bytes
+        );
     }
 
     #[test]
