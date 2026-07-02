@@ -2110,6 +2110,29 @@ impl ImageResources {
         )
     }
 
+    /// Resolves image XObjects while applying decode hints and reusing a
+    /// caller-owned ICC transform cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`GraphicsError`] when an image resource is malformed,
+    /// references a missing object, uses an unsupported color space or filter,
+    /// or decodes beyond the configured image byte budget.
+    pub fn from_xobject_dictionary_with_icc_cache_and_decode_hints<'a, R>(
+        dictionary: &[(PdfName<'a>, PdfPrimitive<'a>)],
+        resolver: &'a R,
+        options: DisplayListOptions,
+        icc_cache: &mut IccTransformCache,
+        hints: &ImageDecodeHints,
+    ) -> GraphicsResult<Self>
+    where
+        R: ImageObjectResolver<'a> + ?Sized,
+    {
+        Self::from_xobject_dictionary_with_icc_cache_and_hints(
+            dictionary, resolver, options, icc_cache, hints,
+        )
+    }
+
     fn from_xobject_dictionary_with_icc_cache_and_hints<'a, R>(
         dictionary: &[(PdfName<'a>, PdfPrimitive<'a>)],
         resolver: &'a R,

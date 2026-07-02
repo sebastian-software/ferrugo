@@ -10279,6 +10279,13 @@ fn native_document_session_stats_json(stats: Option<NativeDocumentSessionStats>)
             "\"cached_image_resource_misses\":{},",
             "\"cached_image_resource_inserts\":{},",
             "\"cached_image_resource_evictions\":{},",
+            "\"cached_icc_transform_entries\":{},",
+            "\"max_cached_icc_transform_entries\":{},",
+            "\"cached_icc_transform_hits\":{},",
+            "\"cached_icc_transform_misses\":{},",
+            "\"cached_icc_transform_evictions\":{},",
+            "\"cached_icc_transform_max_workspace_bytes\":{},",
+            "\"max_cached_icc_transform_workspace_bytes\":{},",
             "\"cached_glyph_bitmap_entries\":{},",
             "\"max_cached_glyph_bitmap_entries\":{},",
             "\"cached_glyph_bitmap_bytes\":{},",
@@ -10313,6 +10320,13 @@ fn native_document_session_stats_json(stats: Option<NativeDocumentSessionStats>)
         stats.cached_image_resource_misses,
         stats.cached_image_resource_inserts,
         stats.cached_image_resource_evictions,
+        stats.cached_icc_transform_entries,
+        stats.max_cached_icc_transform_entries,
+        stats.cached_icc_transform_hits,
+        stats.cached_icc_transform_misses,
+        stats.cached_icc_transform_evictions,
+        stats.cached_icc_transform_max_workspace_bytes,
+        stats.max_cached_icc_transform_workspace_bytes,
         stats.cached_glyph_bitmap_entries,
         stats.max_cached_glyph_bitmap_entries,
         stats.cached_glyph_bitmap_bytes,
@@ -12912,6 +12926,10 @@ status = "candidate"
         assert!(json.contains("\"cached_image_resource_misses\""));
         assert!(json.contains("\"cached_image_resource_inserts\""));
         assert!(json.contains("\"cached_image_resource_evictions\""));
+        assert!(json.contains("\"cached_icc_transform_hits\""));
+        assert!(json.contains("\"cached_icc_transform_misses\""));
+        assert!(json.contains("\"cached_icc_transform_evictions\""));
+        assert!(json.contains("\"cached_icc_transform_max_workspace_bytes\""));
         assert!(json.contains("\"cached_type3_template_hits\""));
         assert!(json.contains("\"cached_type3_template_misses\""));
         assert!(json.contains("\"cached_type3_template_inserts\""));
