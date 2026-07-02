@@ -1601,6 +1601,36 @@ impl<'a> NativeDocumentSession<'a> {
         timings.total += started.elapsed();
         Ok(thumbnail)
     }
+
+    /// Renders one page through the session-retained document and records the
+    /// request-local fill raster route summary.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ThumbnailError`] when the requested page cannot be rendered.
+    pub fn render_page_fill_route_summary(
+        &self,
+        options: &ThumbnailOptions,
+    ) -> Result<FillRasterRouteSummary, ThumbnailError> {
+        reject_form_appearance_mutation(options)?;
+        let mut fill_routes = FillRasterRouteSummary::default();
+        let mut trace_sinks = RenderTraceSinks::none();
+        trace_sinks.fill_routes = Some(&mut fill_routes);
+        render_loaded_document_inner(
+            &self.document,
+            &self.page_tree,
+            options,
+            self.limits,
+            trace_sinks,
+            Some(&self.image_resource_cache),
+            Some(&self.font_resource_cache),
+            Some(&self.icc_transform_cache),
+            Some(&self.glyph_bitmap_cache),
+            Some(&self.type3_template_cache),
+            Some(&self.type3_render_cache),
+        )?;
+        Ok(fill_routes)
+    }
 }
 
 fn enforce_document_session_budget(

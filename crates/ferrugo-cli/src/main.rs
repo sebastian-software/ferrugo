@@ -4004,6 +4004,7 @@ enum RepeatBenchmarkOutcome {
         width: u32,
         height: u32,
         output_bytes: usize,
+        fill_routes: Option<FillRasterRouteSummary>,
         first_ms: f64,
         repeat_mean_ms: f64,
         repeat_min_ms: f64,
@@ -5519,6 +5520,8 @@ fn benchmark_repeat_fixture(
         first: phase_timings[0],
         repeat_mean: mean_phase_timings(&phase_timings[1..]),
     };
+    let session_stats = session.stats();
+    let fill_routes = session_fill_route_summary(&session, options);
     let mut budget_violations = Vec::new();
     if first_ms > config.max_first_ms as f64 {
         budget_violations.push("first_render_time");
@@ -5532,7 +5535,7 @@ fn benchmark_repeat_fixture(
         family,
         page_index: options.page_index,
         cache_key,
-        session_stats: Some(session.stats()),
+        session_stats: Some(session_stats),
         timings_ms,
         phase_timings: Some(repeat_phase_timings),
         budget_violations,
@@ -5540,6 +5543,7 @@ fn benchmark_repeat_fixture(
             width: last_success.width,
             height: last_success.height,
             output_bytes: last_success.bytes.len(),
+            fill_routes,
             first_ms,
             repeat_mean_ms,
             repeat_min_ms,
@@ -5547,6 +5551,13 @@ fn benchmark_repeat_fixture(
             repeat_to_first_ratio,
         },
     }
+}
+
+fn session_fill_route_summary(
+    session: &ferrugo_native::NativeDocumentSession<'_>,
+    options: &ThumbnailOptions,
+) -> Option<FillRasterRouteSummary> {
+    session.render_page_fill_route_summary(options).ok()
 }
 
 fn repeat_error_outcome(error: ThumbnailError) -> RepeatBenchmarkOutcome {
@@ -10564,6 +10575,7 @@ fn repeat_benchmark_outcome_json(outcome: &RepeatBenchmarkOutcome) -> String {
             width,
             height,
             output_bytes,
+            fill_routes,
             first_ms,
             repeat_mean_ms,
             repeat_min_ms,
@@ -10576,6 +10588,7 @@ fn repeat_benchmark_outcome_json(outcome: &RepeatBenchmarkOutcome) -> String {
                 "\"width\":{},",
                 "\"height\":{},",
                 "\"output_bytes\":{},",
+                "\"fill_raster_route_summary\":{},",
                 "\"first_ms\":{:.3},",
                 "\"repeat_mean_ms\":{:.3},",
                 "\"repeat_min_ms\":{:.3},",
@@ -10586,6 +10599,7 @@ fn repeat_benchmark_outcome_json(outcome: &RepeatBenchmarkOutcome) -> String {
             width,
             height,
             output_bytes,
+            optional_fill_raster_route_summary_json(fill_routes.as_ref()),
             first_ms,
             repeat_mean_ms,
             repeat_min_ms,
@@ -13100,11 +13114,11 @@ status = "candidate"
         let manifest = read_corpus_manifest(&manifest_path).expect("manifest should parse");
         let paths = vec![
             fixture_root.join("fixtures/generated/text-page.pdf"),
-            fixture_root.join("fixtures/generated/vector-paths.pdf"),
+            fixture_root.join("fixtures/generated/stamp-annotation-rotated-appearance.pdf"),
         ];
         let options = ThumbnailOptions {
             page_index: 0,
-            max_edge: 120,
+            max_edge: 160,
             background: Rgba::WHITE,
             output_format: ferrugo_thumbnail::OutputFormat::Rgba,
             timeout: Duration::from_secs(5),
@@ -13117,7 +13131,7 @@ status = "candidate"
             include_families: Vec::new(),
             output: None,
             page_index: 0,
-            max_edge: 120,
+            max_edge: 160,
             background: Rgba::WHITE,
             timeout: Duration::from_secs(5),
             repetitions: 3,
@@ -13177,6 +13191,17 @@ status = "candidate"
         assert!(json.contains("\"phase_timings_ms\":{\"first_mean\""));
         assert!(json.contains("\"resource_decode\""));
         assert!(json.contains("\"resource_images\""));
+        let RepeatBenchmarkOutcome::NativeRendered {
+            fill_routes: Some(fill_routes),
+            ..
+        } = &report.records[1].outcome
+        else {
+            panic!("stamp fixture should expose repeat fill route summary");
+        };
+        assert!(fill_routes.coverage_span_calls > 0);
+        assert!(fill_routes.coverage_cell_accumulator_pixels > 0);
+        assert_eq!(fill_routes.coverage_sampled_edge_pixels, 0);
+        assert!(json.contains("\"fill_raster_route_summary\""));
         assert!(json.contains("\"repeat_mean_ms\""));
     }
 
