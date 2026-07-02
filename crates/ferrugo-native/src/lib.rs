@@ -2850,7 +2850,8 @@ fn display_list_supports_banded_replay(display_list: &DisplayList) -> bool {
 fn transparency_group_supports_banded_replay(
     group: &ferrugo_render::TransparencyGroupDisplayItem,
 ) -> bool {
-    !group.group.knockout && display_list_supports_banded_replay(&group.items)
+    (!group.group.knockout || group.group.isolated)
+        && display_list_supports_banded_replay(&group.items)
 }
 
 fn line_only_clip_placeholder_supports_banded_replay(segments: &[PathSegment]) -> bool {
@@ -7627,6 +7628,31 @@ mod tests {
     }
 
     #[test]
+    fn transparency_group_band_guard_should_keep_knockout_boundary() {
+        let group = |isolated: bool, knockout: bool| ferrugo_render::TransparencyGroupDisplayItem {
+            items: DisplayList::default(),
+            bounds: PathBounds {
+                min_x: 0.0,
+                min_y: 0.0,
+                max_x: 16.0,
+                max_y: 16.0,
+            },
+            group: ferrugo_render::TransparencyGroup { isolated, knockout },
+            state: GraphicsState::default(),
+        };
+
+        assert!(transparency_group_supports_banded_replay(&group(
+            false, false
+        )));
+        assert!(transparency_group_supports_banded_replay(&group(
+            true, true
+        )));
+        assert!(!transparency_group_supports_banded_replay(&group(
+            false, true
+        )));
+    }
+
+    #[test]
     fn line_only_clip_placeholder_should_allow_multiple_closed_subpaths() {
         let segments = [
             PathSegment::MoveTo(Point { x: 8.0, y: 8.0 }),
@@ -7825,7 +7851,7 @@ mod tests {
                 include_bytes!("../../../fixtures/generated/transparency-knockout-group.pdf")
                     .as_slice(),
                 "transparency knockout group",
-                false,
+                true,
             ),
         ] {
             let single = NativeBackend::new()
