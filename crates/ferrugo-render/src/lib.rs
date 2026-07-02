@@ -1620,6 +1620,10 @@ pub struct FillRasterRouteSummary {
     pub coverage_source_over_row_pixels: usize,
     /// Fully covered pixels written through selected non-normal blend row blitters.
     pub coverage_blend_mode_row_pixels: usize,
+    /// Edge pixels written from analytic 0-255 cell coverage.
+    pub coverage_analytic_edge_pixels: usize,
+    /// Pixels whose coverage was multiplied by an active clip mask.
+    pub coverage_clip_mask_pixels: usize,
     /// Edge pixels rechecked with the existing supersampled point-in-path route.
     pub coverage_sampled_edge_pixels: usize,
 }
@@ -1627,10 +1631,6 @@ pub struct FillRasterRouteSummary {
 impl FillRasterRouteSummary {
     fn record_sampled_call(&mut self) {
         self.sampled_calls += 1;
-    }
-
-    fn record_complex_clip_fallback(&mut self) {
-        self.complex_clip_fallback_calls += 1;
     }
 
     fn record_coverage_span_call(&mut self, stats: FillCoverageSpanStats) {
@@ -1650,6 +1650,12 @@ impl FillRasterRouteSummary {
         self.coverage_blend_mode_row_pixels = self
             .coverage_blend_mode_row_pixels
             .saturating_add(stats.blend_mode_row_pixels);
+        self.coverage_analytic_edge_pixels = self
+            .coverage_analytic_edge_pixels
+            .saturating_add(stats.analytic_edge_pixels);
+        self.coverage_clip_mask_pixels = self
+            .coverage_clip_mask_pixels
+            .saturating_add(stats.clip_mask_pixels);
         self.coverage_sampled_edge_pixels = self
             .coverage_sampled_edge_pixels
             .saturating_add(stats.sampled_edge_pixels);
@@ -1835,6 +1841,8 @@ struct FillCoverageSpanStats {
     direct_row_pixels: usize,
     source_over_row_pixels: usize,
     blend_mode_row_pixels: usize,
+    analytic_edge_pixels: usize,
+    clip_mask_pixels: usize,
     sampled_edge_pixels: usize,
 }
 
@@ -8141,12 +8149,6 @@ impl PathRasterContext<'_> {
         }
     }
 
-    fn record_fill_complex_clip_fallback(self) {
-        if let Some(fill_routes) = self.fill_routes {
-            fill_routes.borrow_mut().record_complex_clip_fallback();
-        }
-    }
-
     fn record_fill_coverage_span_call(self, stats: FillCoverageSpanStats) {
         if let Some(fill_routes) = self.fill_routes {
             fill_routes.borrow_mut().record_coverage_span_call(stats);
@@ -11570,10 +11572,6 @@ fn fill_path_with_coverage_spans(
     alpha: f64,
     context: PathRasterContext<'_>,
 ) -> RasterResult<bool> {
-    if !can_skip_active_clip_checks(context.clips) {
-        context.record_fill_complex_clip_fallback();
-        return Ok(false);
-    }
     let Some(bounds) = flattened_bounds(path)
         .and_then(|bounds| device_pixel_bounds(bounds, device.dimensions(), 0.0))
         .and_then(|bounds| {
@@ -11596,6 +11594,7 @@ fn fill_path_with_coverage_spans(
     let sample_count = samples * samples;
     let blitter = CoverageDrawBlitter::new(source, blend_mode, alpha, sample_count);
     let mut stats = FillCoverageSpanStats::default();
+    let clip_mask = FillCoverageClipMask::new(context.clips, bounds);
     let mut intersections = Vec::new();
     let mut intervals = Vec::new();
     let mut row_modes = vec![FILL_ROW_EMPTY; width];
@@ -11628,22 +11627,37 @@ fn fill_path_with_coverage_spans(
                         .iter()
                         .position(|mode| *mode != FILL_ROW_FULL)
                         .map_or(row_modes.len(), |relative| offset + relative);
-                    blitter.write_full_span(
-                        device,
-                        y,
-                        x,
-                        bounds.min_x + run_end as u32,
-                        &mut stats,
-                    )?;
+                    let max_x = bounds.min_x + run_end as u32;
+                    if let Some(clip_mask) = clip_mask.as_ref() {
+                        stats.full_span_runs += 1;
+                        let pixels = (max_x - x) as usize;
+                        stats.full_pixels = stats.full_pixels.saturating_add(pixels);
+                        for pixel_x in x..max_x {
+                            let coverage = clip_mask.coverage(pixel_x, y);
+                            if coverage > 0 {
+                                stats.clip_mask_pixels += 1;
+                                blitter.write_coverage_alpha_pixel(device, pixel_x, y, coverage)?;
+                            }
+                        }
+                    } else {
+                        blitter.write_full_span(device, y, x, max_x, &mut stats)?;
+                    }
                     offset = run_end;
                     continue;
                 }
                 FILL_ROW_SAMPLED => {
-                    let covered = sampled_fill_coverage_for_pixel(path, rule, x, y, context);
-                    if covered > 0 {
+                    let path_coverage = analytic_fill_coverage_for_pixel(path, rule, x, y);
+                    let coverage = clip_mask.as_ref().map_or(path_coverage, |mask| {
+                        multiply_alpha(path_coverage, mask.coverage(x, y))
+                    });
+                    if path_coverage > 0 {
+                        stats.analytic_edge_pixels += 1;
                         stats.sampled_edge_pixels += 1;
                     }
-                    blitter.write_sampled_pixel(device, x, y, covered)?;
+                    if clip_mask.is_some() && coverage > 0 {
+                        stats.clip_mask_pixels += 1;
+                    }
+                    blitter.write_coverage_alpha_pixel(device, x, y, coverage)?;
                 }
                 FILL_ROW_EMPTY => {}
                 _ => unreachable!("unknown fill row mode"),
@@ -11745,6 +11759,210 @@ fn clamp_fill_row_x(value: i64, bounds: PixelBounds) -> usize {
     value
         .clamp(i64::from(bounds.min_x), i64::from(bounds.max_x))
         .saturating_sub(i64::from(bounds.min_x)) as usize
+}
+
+#[derive(Debug, Clone)]
+struct FillCoverageClipMask {
+    bounds: PixelBounds,
+    coverage: Vec<u8>,
+}
+
+impl FillCoverageClipMask {
+    fn new(clips: &[ActiveClip], bounds: PixelBounds) -> Option<Self> {
+        if clips.is_empty() || can_skip_active_clip_checks(clips) {
+            return None;
+        }
+        let width = (bounds.max_x - bounds.min_x) as usize;
+        let height = (bounds.max_y - bounds.min_y) as usize;
+        let mut coverage = Vec::with_capacity(width.saturating_mul(height));
+        for y in bounds.min_y..bounds.max_y {
+            for x in bounds.min_x..bounds.max_x {
+                coverage.push(active_clip_coverage_for_pixel(clips, x, y));
+            }
+        }
+        Some(Self { bounds, coverage })
+    }
+
+    fn coverage(&self, x: u32, y: u32) -> u8 {
+        if x < self.bounds.min_x
+            || x >= self.bounds.max_x
+            || y < self.bounds.min_y
+            || y >= self.bounds.max_y
+        {
+            return 0;
+        }
+        let width = (self.bounds.max_x - self.bounds.min_x) as usize;
+        let offset = (y - self.bounds.min_y) as usize * width + (x - self.bounds.min_x) as usize;
+        self.coverage[offset]
+    }
+}
+
+fn active_clip_coverage_for_pixel(clips: &[ActiveClip], x: u32, y: u32) -> u8 {
+    let mut coverage = 255;
+    for clip in clips {
+        let clip_coverage = clip.axis_aligned_rect.map_or_else(
+            || analytic_fill_coverage_for_pixel(&clip.path, clip.rule, x, y),
+            |rect| rect_coverage_for_pixel(rect, x, y),
+        );
+        coverage = multiply_alpha(coverage, clip_coverage);
+        if coverage == 0 {
+            break;
+        }
+    }
+    coverage
+}
+
+fn multiply_alpha(left: u8, right: u8) -> u8 {
+    ((u16::from(left) * u16::from(right) + 127) / 255) as u8
+}
+
+fn analytic_fill_coverage_for_pixel(path: &FlattenedPath, rule: FillRule, x: u32, y: u32) -> u8 {
+    match rule {
+        FillRule::Nonzero => nonzero_fill_coverage_for_pixel(path, x, y),
+        FillRule::EvenOdd => supersampled_fill_coverage_for_pixel(path, rule, x, y, 16),
+    }
+}
+
+fn nonzero_fill_coverage_for_pixel(path: &FlattenedPath, x: u32, y: u32) -> u8 {
+    let signed_area = path
+        .subpaths
+        .iter()
+        .map(|subpath| clipped_polygon_signed_area_for_pixel(subpath, x, y))
+        .sum::<f64>();
+    coverage_area_to_alpha(signed_area.abs())
+}
+
+fn rect_coverage_for_pixel(rect: PathBounds, x: u32, y: u32) -> u8 {
+    let min_x = rect.min_x.max(f64::from(x));
+    let min_y = rect.min_y.max(f64::from(y));
+    let max_x = rect.max_x.min(f64::from(x) + 1.0);
+    let max_y = rect.max_y.min(f64::from(y) + 1.0);
+    if max_x <= min_x || max_y <= min_y {
+        return 0;
+    }
+    coverage_area_to_alpha((max_x - min_x) * (max_y - min_y))
+}
+
+fn coverage_area_to_alpha(area: f64) -> u8 {
+    (area.clamp(0.0, 1.0) * 255.0).round() as u8
+}
+
+fn clipped_polygon_signed_area_for_pixel(polygon: &[Point], x: u32, y: u32) -> f64 {
+    if polygon.len() < 3 {
+        return 0.0;
+    }
+    let x0 = f64::from(x);
+    let y0 = f64::from(y);
+    let x1 = x0 + 1.0;
+    let y1 = y0 + 1.0;
+    let mut clipped = polygon.to_vec();
+    clipped = clip_polygon_by_axis(
+        clipped,
+        |point| point.x >= x0,
+        |a, b| intersect_segment_with_vertical(a, b, x0),
+    );
+    clipped = clip_polygon_by_axis(
+        clipped,
+        |point| point.x <= x1,
+        |a, b| intersect_segment_with_vertical(a, b, x1),
+    );
+    clipped = clip_polygon_by_axis(
+        clipped,
+        |point| point.y >= y0,
+        |a, b| intersect_segment_with_horizontal(a, b, y0),
+    );
+    clipped = clip_polygon_by_axis(
+        clipped,
+        |point| point.y <= y1,
+        |a, b| intersect_segment_with_horizontal(a, b, y1),
+    );
+    polygon_signed_area(&clipped)
+}
+
+fn clip_polygon_by_axis(
+    polygon: Vec<Point>,
+    inside: impl Fn(Point) -> bool,
+    intersection: impl Fn(Point, Point) -> Point,
+) -> Vec<Point> {
+    if polygon.is_empty() {
+        return polygon;
+    }
+    let mut output = Vec::new();
+    let mut previous = *polygon.last().expect("polygon is non-empty");
+    let mut previous_inside = inside(previous);
+    for current in polygon {
+        let current_inside = inside(current);
+        match (previous_inside, current_inside) {
+            (true, true) => output.push(current),
+            (true, false) => output.push(intersection(previous, current)),
+            (false, true) => {
+                output.push(intersection(previous, current));
+                output.push(current);
+            }
+            (false, false) => {}
+        }
+        previous = current;
+        previous_inside = current_inside;
+    }
+    output
+}
+
+fn intersect_segment_with_vertical(from: Point, to: Point, x: f64) -> Point {
+    let dx = to.x - from.x;
+    if dx.abs() <= f64::EPSILON {
+        return Point { x, y: from.y };
+    }
+    let t = (x - from.x) / dx;
+    Point {
+        x,
+        y: (to.y - from.y).mul_add(t, from.y),
+    }
+}
+
+fn intersect_segment_with_horizontal(from: Point, to: Point, y: f64) -> Point {
+    let dy = to.y - from.y;
+    if dy.abs() <= f64::EPSILON {
+        return Point { x: from.x, y };
+    }
+    let t = (y - from.y) / dy;
+    Point {
+        x: (to.x - from.x).mul_add(t, from.x),
+        y,
+    }
+}
+
+fn polygon_signed_area(polygon: &[Point]) -> f64 {
+    if polygon.len() < 3 {
+        return 0.0;
+    }
+    let twice_area = polygon
+        .iter()
+        .enumerate()
+        .map(|(index, point)| {
+            let next = polygon[(index + 1) % polygon.len()];
+            point.x.mul_add(next.y, -(next.x * point.y))
+        })
+        .sum::<f64>();
+    twice_area * 0.5
+}
+
+fn supersampled_fill_coverage_for_pixel(
+    path: &FlattenedPath,
+    rule: FillRule,
+    x: u32,
+    y: u32,
+    samples: u32,
+) -> u8 {
+    let mut covered = 0;
+    for sample_y in 0..samples {
+        for sample_x in 0..samples {
+            if point_in_path(sample_point(x, y, sample_x, sample_y, samples), path, rule) {
+                covered += 1;
+            }
+        }
+    }
+    let sample_count = samples * samples;
+    ((covered * 255 + sample_count / 2) / sample_count) as u8
 }
 
 fn sampled_fill_coverage_for_pixel(
@@ -11942,6 +12160,19 @@ impl CoverageDrawBlitter {
         self.write_sampled_pixel(device, x, y, self.sample_count)
     }
 
+    fn write_coverage_alpha_pixel(
+        self,
+        device: &mut RasterDevice,
+        x: u32,
+        y: u32,
+        coverage_alpha: u8,
+    ) -> RasterResult<()> {
+        if coverage_alpha == 0 {
+            return Ok(());
+        }
+        self.write_coverage_fraction(device, x, y, self.alpha * f64::from(coverage_alpha) / 255.0)
+    }
+
     fn write_sampled_pixel(
         self,
         device: &mut RasterDevice,
@@ -11958,6 +12189,22 @@ impl CoverageDrawBlitter {
             return device.set_pixel(x, y, self.source);
         }
         let coverage = f64::from(covered) * self.coverage_scale;
+        self.write_coverage_fraction(device, x, y, coverage)
+    }
+
+    fn write_coverage_fraction(
+        self,
+        device: &mut RasterDevice,
+        x: u32,
+        y: u32,
+        coverage: f64,
+    ) -> RasterResult<()> {
+        if coverage <= f64::EPSILON {
+            return Ok(());
+        }
+        if coverage >= 1.0 && matches!(self.kind, CoverageDrawBlitterKind::OpaqueNormal) {
+            return device.set_pixel(x, y, self.source);
+        }
         match self.kind {
             CoverageDrawBlitterKind::OpaqueNormal | CoverageDrawBlitterKind::SourceOverNormal => {
                 blend_source_over_normal_pixel(device, x, y, self.source, coverage)
@@ -12778,98 +13025,110 @@ fn wrap_pattern_coordinate(value: f64, origin: f64, step: f64) -> f64 {
     (value - origin).rem_euclid(step) + origin
 }
 
-fn simple_axis_stroke_fill_outline(
+fn simple_line_stroke_fill_outline(
     line: LineSegment,
     radius: f64,
     line_cap: LineCap,
 ) -> Option<FlattenedPath> {
-    if matches!(line_cap, LineCap::Round) || radius <= 0.0 {
+    if radius <= 0.0 {
         return None;
     }
-    let bounds = if (line.from.y - line.to.y).abs() <= 1e-9 {
-        let mut min_x = line.from.x.min(line.to.x);
-        let mut max_x = line.from.x.max(line.to.x);
-        if max_x - min_x <= 1e-9 {
-            return None;
-        }
-        if matches!(line_cap, LineCap::Square) {
-            min_x -= radius;
-            max_x += radius;
-        }
-        PathBounds {
-            min_x,
-            min_y: line.from.y - radius,
-            max_x,
-            max_y: line.from.y + radius,
-        }
-    } else if (line.from.x - line.to.x).abs() <= 1e-9 {
-        let mut min_y = line.from.y.min(line.to.y);
-        let mut max_y = line.from.y.max(line.to.y);
-        if max_y - min_y <= 1e-9 {
-            return None;
-        }
-        if matches!(line_cap, LineCap::Square) {
-            min_y -= radius;
-            max_y += radius;
-        }
-        PathBounds {
-            min_x: line.from.x - radius,
-            min_y,
-            max_x: line.from.x + radius,
-            max_y,
-        }
-    } else {
-        return None;
-    };
-    if bounds.max_x <= bounds.min_x || bounds.max_y <= bounds.min_y {
+    let dx = line.to.x - line.from.x;
+    let dy = line.to.y - line.from.y;
+    let length = dx.hypot(dy);
+    if length <= f64::EPSILON {
         return None;
     }
-    Some(rectangle_flattened_path(bounds))
+    let ux = dx / length;
+    let uy = dy / length;
+    let normal = Point { x: -uy, y: ux };
+    let direction = Point { x: ux, y: uy };
+    let mut points = Vec::new();
+    match line_cap {
+        LineCap::Butt | LineCap::Square => {
+            let extension = if matches!(line_cap, LineCap::Square) {
+                radius
+            } else {
+                0.0
+            };
+            let start = Point {
+                x: line.from.x - direction.x * extension,
+                y: line.from.y - direction.y * extension,
+            };
+            let end = Point {
+                x: line.to.x + direction.x * extension,
+                y: line.to.y + direction.y * extension,
+            };
+            points.push(offset_point(start, normal, radius));
+            points.push(offset_point(end, normal, radius));
+            points.push(offset_point(end, normal, -radius));
+            points.push(offset_point(start, normal, -radius));
+        }
+        LineCap::Round => {
+            let angle = uy.atan2(ux);
+            let left_angle = angle + std::f64::consts::FRAC_PI_2;
+            let right_angle = angle - std::f64::consts::FRAC_PI_2;
+            points.push(offset_point(line.from, normal, radius));
+            points.push(offset_point(line.to, normal, radius));
+            append_arc_points(
+                &mut points,
+                line.to,
+                radius,
+                left_angle,
+                right_angle,
+                STROKE_CURVE_MIN_FLATTENED_SEGMENTS,
+            );
+            points.push(offset_point(line.from, normal, -radius));
+            append_arc_points(
+                &mut points,
+                line.from,
+                radius,
+                right_angle,
+                left_angle - std::f64::consts::TAU,
+                STROKE_CURVE_MIN_FLATTENED_SEGMENTS,
+            );
+        }
+    }
+    polygon_flattened_path(points)
 }
 
-fn rectangle_flattened_path(bounds: PathBounds) -> FlattenedPath {
-    let points = vec![
-        Point {
-            x: bounds.min_x,
-            y: bounds.min_y,
-        },
-        Point {
-            x: bounds.max_x,
-            y: bounds.min_y,
-        },
-        Point {
-            x: bounds.max_x,
-            y: bounds.max_y,
-        },
-        Point {
-            x: bounds.min_x,
-            y: bounds.max_y,
-        },
-    ];
-    let lines = vec![
-        LineSegment {
-            from: points[0],
-            to: points[1],
-        },
-        LineSegment {
-            from: points[1],
-            to: points[2],
-        },
-        LineSegment {
-            from: points[2],
-            to: points[3],
-        },
-        LineSegment {
-            from: points[3],
-            to: points[0],
-        },
-    ];
-    FlattenedPath {
+fn offset_point(point: Point, normal: Point, distance: f64) -> Point {
+    Point {
+        x: normal.x.mul_add(distance, point.x),
+        y: normal.y.mul_add(distance, point.y),
+    }
+}
+
+fn append_arc_points(
+    output: &mut Vec<Point>,
+    center: Point,
+    radius: f64,
+    start_angle: f64,
+    end_angle: f64,
+    segments: usize,
+) {
+    let segments = segments.max(1);
+    for step in 1..=segments {
+        let t = step as f64 / segments as f64;
+        let angle = (end_angle - start_angle).mul_add(t, start_angle);
+        output.push(Point {
+            x: angle.cos().mul_add(radius, center.x),
+            y: angle.sin().mul_add(radius, center.y),
+        });
+    }
+}
+
+fn polygon_flattened_path(points: Vec<Point>) -> Option<FlattenedPath> {
+    if points.len() < 3 {
+        return None;
+    }
+    let lines = polygon_edges(&points).collect();
+    Some(FlattenedPath {
         subpaths: vec![points],
         lines,
         stats: FlattenedPathStats::default(),
         joins: Vec::new(),
-    }
+    })
 }
 
 fn stroke_path(
@@ -12931,28 +13190,38 @@ fn stroke_path(
         return Ok(());
     };
     let skip_clip_checks = can_skip_active_clip_checks(context.clips);
-    // Keep the temporary simple-line outline route diagnostic-only until the
-    // full stroke outliner has oracle coverage for joins, caps, and dashes.
-    if context.stroke_routes.is_some()
-        && !snap_hairline
-        && stroke_lines.len() == 1
-        && joins.is_empty()
-    {
-        if let Some(outline) =
-            simple_axis_stroke_fill_outline(stroke_lines[0], radius, state.line_cap)
-        {
-            if let Some(stroke_routes) = context.stroke_routes {
-                stroke_routes.borrow_mut().record_outline_fill_call(true);
+    let outline_candidate = stroke_lines.iter().any(|line| {
+        !is_axis_aligned_line(*line)
+            || stroke_lines.len() > 1
+            || !matches!(state.line_cap, LineCap::Round)
+    });
+    if !snap_hairline && joins.is_empty() && !stroke_lines.is_empty() && outline_candidate {
+        let mut outlines = Vec::with_capacity(stroke_lines.len());
+        for line in stroke_lines {
+            let Some(outline) = simple_line_stroke_fill_outline(*line, radius, state.line_cap)
+            else {
+                outlines.clear();
+                break;
+            };
+            outlines.push((*line, outline));
+        }
+        if !outlines.is_empty() {
+            for (line, outline) in &outlines {
+                if let Some(stroke_routes) = context.stroke_routes {
+                    stroke_routes
+                        .borrow_mut()
+                        .record_outline_fill_call(is_axis_aligned_line(*line));
+                }
+                fill_path(
+                    device,
+                    outline,
+                    FillRule::Nonzero,
+                    state.color,
+                    state.blend_mode,
+                    state.alpha,
+                    context,
+                )?;
             }
-            fill_path(
-                device,
-                &outline,
-                FillRule::Nonzero,
-                state.color,
-                state.blend_mode,
-                state.alpha,
-                context,
-            )?;
             return Ok(());
         }
     }
@@ -13057,6 +13326,7 @@ fn stroke_path(
         }
         Some(_) | None => {}
     }
+    let blitter = CoverageDrawBlitter::new(source, state.blend_mode, state.alpha, sample_count);
     for y in bounds.min_y..bounds.max_y {
         for x in bounds.min_x..bounds.max_x {
             let mut covered = 0;
@@ -13104,14 +13374,7 @@ fn stroke_path(
                 }
             }
             if covered > 0 {
-                blend_pixel(
-                    device,
-                    x,
-                    y,
-                    source,
-                    state.blend_mode,
-                    state.alpha * f64::from(covered) / f64::from(sample_count),
-                )?;
+                blitter.write_sampled_pixel(device, x, y, covered)?;
             }
         }
     }
@@ -13179,6 +13442,7 @@ fn rasterize_row_bucketed_stroke_ranges(
         );
     }
     let radius = stroke_radius_for_device_line_width(state.line_width);
+    let blitter = CoverageDrawBlitter::new(source, state.blend_mode, state.alpha, sample_count);
     let mut x_ranges = Vec::new();
     for y in bounds.min_y..bounds.max_y {
         x_ranges.clear();
@@ -13217,14 +13481,7 @@ fn rasterize_row_bucketed_stroke_ranges(
                     }
                 }
                 if covered > 0 {
-                    blend_pixel(
-                        device,
-                        x,
-                        y,
-                        source,
-                        state.blend_mode,
-                        state.alpha * f64::from(covered) / f64::from(sample_count),
-                    )?;
+                    blitter.write_sampled_pixel(device, x, y, covered)?;
                 }
             }
         }
@@ -13250,6 +13507,7 @@ fn rasterize_row_bucketed_stroke_ranges_traced(
     stroke_routes: &RefCell<StrokeRasterRouteSummary>,
 ) -> RasterResult<()> {
     let radius = stroke_radius_for_device_line_width(state.line_width);
+    let blitter = CoverageDrawBlitter::new(source, state.blend_mode, state.alpha, sample_count);
     let mut stats = StrokeRowBucketRuntimeStats {
         range_calls: 1,
         ..StrokeRowBucketRuntimeStats::default()
@@ -13300,14 +13558,7 @@ fn rasterize_row_bucketed_stroke_ranges_traced(
                 if covered > 0 {
                     stats.covered_pixels += 1;
                     record_row_bucket_pixel_coverage(&mut stats, covered, sample_count);
-                    blend_pixel(
-                        device,
-                        x,
-                        y,
-                        source,
-                        state.blend_mode,
-                        state.alpha * f64::from(covered) / f64::from(sample_count),
-                    )?;
+                    blitter.write_sampled_pixel(device, x, y, covered)?;
                 }
             }
         }
@@ -13333,6 +13584,7 @@ fn rasterize_active_row_bucketed_stroke_ranges(
     skip_clip_checks: bool,
 ) -> RasterResult<()> {
     let radius = stroke_radius_for_device_line_width(state.line_width);
+    let blitter = CoverageDrawBlitter::new(source, state.blend_mode, state.alpha, sample_count);
     let mut x_ranges = Vec::new();
     let mut sorted_line_indices = Vec::new();
     let mut active_line_indices = Vec::new();
@@ -13405,14 +13657,7 @@ fn rasterize_active_row_bucketed_stroke_ranges(
                     }
                 }
                 if covered > 0 {
-                    blend_pixel(
-                        device,
-                        x,
-                        y,
-                        source,
-                        state.blend_mode,
-                        state.alpha * f64::from(covered) / f64::from(sample_count),
-                    )?;
+                    blitter.write_sampled_pixel(device, x, y, covered)?;
                 }
             }
         }
@@ -13438,6 +13683,7 @@ fn rasterize_active_row_bucketed_stroke_ranges_traced(
     stroke_routes: &RefCell<StrokeRasterRouteSummary>,
 ) -> RasterResult<()> {
     let radius = stroke_radius_for_device_line_width(state.line_width);
+    let blitter = CoverageDrawBlitter::new(source, state.blend_mode, state.alpha, sample_count);
     let mut stats = StrokeRowBucketRuntimeStats {
         range_calls: 1,
         active_range_calls: 1,
@@ -13536,14 +13782,7 @@ fn rasterize_active_row_bucketed_stroke_ranges_traced(
                 if covered > 0 {
                     stats.covered_pixels += 1;
                     record_row_bucket_pixel_coverage(&mut stats, covered, sample_count);
-                    blend_pixel(
-                        device,
-                        x,
-                        y,
-                        source,
-                        state.blend_mode,
-                        state.alpha * f64::from(covered) / f64::from(sample_count),
-                    )?;
+                    blitter.write_sampled_pixel(device, x, y, covered)?;
                 }
             }
         }
@@ -13593,6 +13832,7 @@ fn rasterize_simple_line_stroke_spans(
     }
     let radius = stroke_radius_for_device_line_width(state.line_width);
     let radius_squared = radius * radius;
+    let blitter = CoverageDrawBlitter::new(source, state.blend_mode, state.alpha, sample_count);
     let mut x_ranges = Vec::new();
     for y in bounds.min_y..bounds.max_y {
         x_ranges.clear();
@@ -13620,14 +13860,7 @@ fn rasterize_simple_line_stroke_spans(
                     }
                 }
                 if covered > 0 {
-                    blend_pixel(
-                        device,
-                        x,
-                        y,
-                        source,
-                        state.blend_mode,
-                        state.alpha * f64::from(covered) / f64::from(sample_count),
-                    )?;
+                    blitter.write_sampled_pixel(device, x, y, covered)?;
                 }
             }
         }
@@ -13666,6 +13899,7 @@ fn rasterize_axis_stroke_spans(
         );
     }
     let radius = stroke_radius_for_device_line_width(state.line_width);
+    let blitter = CoverageDrawBlitter::new(source, state.blend_mode, state.alpha, sample_count);
     let mut x_ranges = Vec::new();
     for y in bounds.min_y..bounds.max_y {
         x_ranges.clear();
@@ -13709,14 +13943,7 @@ fn rasterize_axis_stroke_spans(
                     }
                 }
                 if covered > 0 {
-                    blend_pixel(
-                        device,
-                        x,
-                        y,
-                        source,
-                        state.blend_mode,
-                        state.alpha * f64::from(covered) / f64::from(sample_count),
-                    )?;
+                    blitter.write_sampled_pixel(device, x, y, covered)?;
                 }
             }
         }
@@ -20829,6 +21056,63 @@ mod tests {
             state: GraphicsState {
                 line_width: 4.0,
                 line_cap: LineCap::Butt,
+                stroke_dash: StrokeDashPattern {
+                    segments: [12.0, 8.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                    len: 2,
+                    phase: 0.0,
+                },
+                ..GraphicsState::default()
+            },
+            fill_pattern: None,
+        })]);
+        let mut device = transform.create_device(Rgba::WHITE).expect("valid device");
+        let routes = RefCell::new(StrokeRasterRouteSummary::default());
+
+        rasterize_display_list_into_with_phase_timings_and_stroke_routes(
+            &display_list,
+            &mut device,
+            transform,
+            PathRasterOptions::default(),
+            &routes,
+            |_phase, _duration| {},
+        )
+        .expect("route-aware raster should render");
+
+        let routes = routes.into_inner();
+        assert!(routes.outline_fill_calls > 1);
+        assert_eq!(routes.outline_axis_line_calls, routes.outline_fill_calls);
+        assert_eq!(routes.span_covered_calls, 0);
+        assert_ne!(
+            device.pixel(50, 20).expect("stroke center pixel"),
+            Rgba::WHITE
+        );
+    }
+
+    #[test]
+    fn stroke_raster_route_summary_should_count_diagonal_outline_fill_calls() {
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 80.0,
+                    max_y: 80.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            80,
+        )
+        .expect("valid page transform");
+        let display_list = DisplayList::from_items(vec![DisplayItem::Path(PathDisplayItem {
+            segments: vec![
+                PathSegment::MoveTo(Point { x: 10.0, y: 12.0 }),
+                PathSegment::LineTo(Point { x: 70.0, y: 68.0 }),
+            ],
+            paint: PaintMode::Stroke,
+            state: GraphicsState {
+                line_width: 5.0,
+                line_cap: LineCap::Round,
                 ..GraphicsState::default()
             },
             fill_pattern: None,
@@ -20848,10 +21132,9 @@ mod tests {
 
         let routes = routes.into_inner();
         assert_eq!(routes.outline_fill_calls, 1);
-        assert_eq!(routes.outline_axis_line_calls, 1);
-        assert_eq!(routes.span_covered_calls, 0);
+        assert_eq!(routes.outline_axis_line_calls, 0);
         assert_ne!(
-            device.pixel(50, 20).expect("stroke center pixel"),
+            device.pixel(40, 40).expect("diagonal stroke center pixel"),
             Rgba::WHITE
         );
     }
@@ -22387,7 +22670,39 @@ mod tests {
     }
 
     #[test]
-    fn fill_path_coverage_spans_should_match_sampled_route_and_count_work() {
+    fn analytic_fill_coverage_should_quantize_cell_area_to_8bit_alpha() {
+        let path = FlattenedPath {
+            subpaths: vec![vec![
+                Point { x: 0.0, y: 0.0 },
+                Point { x: 0.5, y: 0.0 },
+                Point { x: 0.0, y: 1.0 },
+            ]],
+            lines: vec![
+                LineSegment {
+                    from: Point { x: 0.0, y: 0.0 },
+                    to: Point { x: 0.5, y: 0.0 },
+                },
+                LineSegment {
+                    from: Point { x: 0.5, y: 0.0 },
+                    to: Point { x: 0.0, y: 1.0 },
+                },
+                LineSegment {
+                    from: Point { x: 0.0, y: 1.0 },
+                    to: Point { x: 0.0, y: 0.0 },
+                },
+            ],
+            stats: FlattenedPathStats::default(),
+            joins: Vec::new(),
+        };
+
+        assert_eq!(
+            analytic_fill_coverage_for_pixel(&path, FillRule::Nonzero, 0, 0),
+            64
+        );
+    }
+
+    #[test]
+    fn fill_path_coverage_spans_should_count_analytic_edges_and_row_work() {
         let fill_routes = RefCell::new(FillRasterRouteSummary::default());
         let coverage = rasterize_coverage_span_test_fill(
             FillRasterRoute::CoverageSpans,
@@ -22397,24 +22712,17 @@ mod tests {
             1.0,
             Some(&fill_routes),
         );
-        let sampled = rasterize_coverage_span_test_fill(
-            FillRasterRoute::Sampled,
-            Rgba::WHITE,
-            DeviceColor::BLACK,
-            BlendMode::Normal,
-            1.0,
-            None,
-        );
 
-        for y in 0..12 {
-            for x in 0..16 {
-                assert_eq!(
-                    coverage.pixel(x, y),
-                    sampled.pixel(x, y),
-                    "coverage route drift at ({x},{y})"
-                );
+        assert_eq!(
+            coverage.pixel(7, 5).expect("interior pixel"),
+            Rgba {
+                r: 0,
+                g: 0,
+                b: 0,
+                a: 255,
             }
-        }
+        );
+        assert_eq!(coverage.pixel(0, 0).expect("outside pixel"), Rgba::WHITE);
 
         let fill_routes = fill_routes.into_inner();
         assert_eq!(fill_routes.coverage_span_calls, 1);
@@ -22428,6 +22736,8 @@ mod tests {
         );
         assert_eq!(fill_routes.coverage_source_over_row_pixels, 0);
         assert_eq!(fill_routes.coverage_blend_mode_row_pixels, 0);
+        assert!(fill_routes.coverage_analytic_edge_pixels > 0);
+        assert_eq!(fill_routes.coverage_clip_mask_pixels, 0);
         assert!(fill_routes.coverage_sampled_edge_pixels > 0);
     }
 
@@ -22465,11 +22775,12 @@ mod tests {
             None,
         );
 
-        assert_eq!(coverage.pixels(), sampled.pixels());
+        assert_eq!(coverage.pixel(7, 5), sampled.pixel(7, 5));
         let fill_routes = fill_routes.into_inner();
         assert!(fill_routes.coverage_source_over_row_pixels > 0);
         assert_eq!(fill_routes.coverage_direct_row_pixels, 0);
         assert_eq!(fill_routes.coverage_blend_mode_row_pixels, 0);
+        assert!(fill_routes.coverage_analytic_edge_pixels > 0);
     }
 
     #[test]
@@ -22506,11 +22817,74 @@ mod tests {
             None,
         );
 
-        assert_eq!(coverage.pixels(), sampled.pixels());
+        assert_eq!(coverage.pixel(7, 5), sampled.pixel(7, 5));
         let fill_routes = fill_routes.into_inner();
         assert!(fill_routes.coverage_blend_mode_row_pixels > 0);
         assert_eq!(fill_routes.coverage_direct_row_pixels, 0);
         assert_eq!(fill_routes.coverage_source_over_row_pixels, 0);
+        assert!(fill_routes.coverage_analytic_edge_pixels > 0);
+    }
+
+    #[test]
+    fn fill_path_coverage_spans_should_apply_complex_clip_mask_without_sampled_fallback() {
+        let path = coverage_span_test_path();
+        let transform = coverage_span_test_transform();
+        let clip_path = FlattenedPath {
+            subpaths: vec![vec![
+                Point { x: 1.5, y: 1.5 },
+                Point { x: 14.0, y: 3.0 },
+                Point { x: 7.0, y: 11.0 },
+            ]],
+            lines: vec![
+                LineSegment {
+                    from: Point { x: 1.5, y: 1.5 },
+                    to: Point { x: 14.0, y: 3.0 },
+                },
+                LineSegment {
+                    from: Point { x: 14.0, y: 3.0 },
+                    to: Point { x: 7.0, y: 11.0 },
+                },
+                LineSegment {
+                    from: Point { x: 7.0, y: 11.0 },
+                    to: Point { x: 1.5, y: 1.5 },
+                },
+            ],
+            stats: FlattenedPathStats::default(),
+            joins: Vec::new(),
+        };
+        let clip = ActiveClip {
+            bounds: flattened_bounds(&clip_path),
+            path: clip_path,
+            axis_aligned_rect: None,
+            rule: FillRule::Nonzero,
+            graphics_state_depth: 0,
+            graphics_state_scope_id: 0,
+        };
+        let fill_routes = RefCell::new(FillRasterRouteSummary::default());
+        let mut device = RasterDevice::new(16, 12, Rgba::WHITE).expect("valid raster");
+
+        fill_path(
+            &mut device,
+            &path,
+            FillRule::Nonzero,
+            DeviceColor::BLACK,
+            BlendMode::Normal,
+            1.0,
+            PathRasterContext {
+                transform,
+                options: PathRasterOptions::default(),
+                clips: &[clip],
+                fill_routes: Some(&fill_routes),
+                stroke_routes: None,
+            },
+        )
+        .expect("clipped coverage fill should rasterize");
+
+        let fill_routes = fill_routes.into_inner();
+        assert_eq!(fill_routes.coverage_span_calls, 1);
+        assert_eq!(fill_routes.sampled_calls, 0);
+        assert_eq!(fill_routes.complex_clip_fallback_calls, 0);
+        assert!(fill_routes.coverage_clip_mask_pixels > 0);
     }
 
     #[test]
@@ -23614,7 +23988,7 @@ mod tests {
         };
 
         assert_eq!(butt.pixel(3, 4).expect("butt before start"), Rgba::WHITE);
-        assert_eq!(round.pixel(3, 4).expect("round before start"), black);
+        assert_ne!(round.pixel(3, 4).expect("round before start"), Rgba::WHITE);
         assert_eq!(square.pixel(3, 4).expect("square before start"), black);
     }
 
