@@ -25,13 +25,13 @@ use ferrugo_render::{
     rasterize_display_list_into_with_phase_timings_and_caches,
     rasterize_display_list_into_with_phase_timings_and_route_summaries,
     rasterize_display_list_into_with_phase_timings_route_summaries_and_caches, rasterize_images,
-    rasterize_paths_into, rasterize_text_with_caches, ColorSpaceResources, DisplayItem,
+    rasterize_paths_into, rasterize_text_with_caches, BlendMode, ColorSpaceResources, DisplayItem,
     DisplayList, DisplayListOptions, ExtGraphicsStateResources, FontResources, FormResources,
     GlyphBitmapCache, GraphicsError, GraphicsErrorKind, IccTransformCache, ImageDecodeHints,
-    ImageResources, PageGeometry, PageRotation, PageTransform, PageTransformOptions, PathBounds,
-    PathRasterOptions, Point, RasterDimensions, RasterDisplayPhase, RasterError, RasterErrorKind,
-    ShadingResources, TextDisplayItem, TextWritingMode, TilingPatternResources,
-    Type3CharProcTemplateCache,
+    ImageResources, PageGeometry, PageRotation, PageTransform, PageTransformOptions, PaintMode,
+    PathBounds, PathDisplayItem, PathRasterOptions, Point, RasterDimensions, RasterDisplayPhase,
+    RasterError, RasterErrorKind, ShadingResources, TextDisplayItem, TextWritingMode,
+    TilingPatternResources, Type3CharProcTemplateCache,
 };
 pub use ferrugo_render::{
     FillRasterRouteSummary, GlyphBitmapCacheSummary, ImagePlacementSummary, ImageResourceSummary,
@@ -48,6 +48,8 @@ use ferrugo_thumbnail::{
     Thumbnail, ThumbnailBackend, ThumbnailError, ThumbnailOptions,
 };
 
+#[cfg(test)]
+use ferrugo_render::{DeviceColor, FillRule, GraphicsState, PathSegment};
 #[cfg(test)]
 use ferrugo_thumbnail::FormAppearanceMode;
 
@@ -2683,10 +2685,22 @@ fn native_raster_work_supports_banded_replay(work: NativeRasterWork<'_>) -> bool
 }
 
 fn display_list_supports_banded_replay(display_list: &DisplayList) -> bool {
-    display_list
-        .items()
-        .iter()
-        .all(|item| matches!(item, DisplayItem::Image(_) | DisplayItem::Text(_)))
+    display_list.items().iter().all(|item| match item {
+        DisplayItem::Image(_) | DisplayItem::Text(_) => true,
+        DisplayItem::Path(path) => path_supports_banded_replay(path),
+        DisplayItem::ClipPlaceholder { .. }
+        | DisplayItem::TransparencyGroup(_)
+        | DisplayItem::Shading(_) => false,
+    })
+}
+
+fn path_supports_banded_replay(path: &PathDisplayItem) -> bool {
+    matches!(path.paint, PaintMode::Fill { .. })
+        && path.fill_pattern.is_none()
+        && path.state.fill_pattern.is_none()
+        && path.state.blend_mode == BlendMode::Normal
+        && path.state.fill_alpha >= 1.0
+        && !path.state.fill_overprint
 }
 
 fn raster_band_summary(dimensions: RasterDimensions, band_rows: Option<u32>) -> RasterBandSummary {
@@ -6699,6 +6713,100 @@ mod tests {
         assert!(low_memory.max_raster_band_rows > 0);
         assert!(low_memory.max_total_image_bytes >= low_memory.max_image_bytes);
         assert!(low_memory.max_total_font_program_bytes >= low_memory.max_font_program_bytes);
+    }
+
+    fn render_test_display_list_with_band_rows(
+        display_list: &DisplayList,
+        max_raster_band_rows: usize,
+    ) -> (Thumbnail, RasterBandSummary) {
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 64.0,
+                    max_y: 48.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            64,
+        )
+        .expect("valid test page transform");
+        let empty = DisplayList::new();
+        let glyph_bitmap_cache = RefCell::new(GlyphBitmapCache::default());
+        let type3_template_cache = RefCell::new(Type3CharProcTemplateCache::default());
+        let mut raster_bands = RasterBandSummary::default();
+        let mut trace_sinks = RenderTraceSinks {
+            timings: None,
+            path_flattening: None,
+            stroke_shapes: None,
+            fill_routes: None,
+            stroke_routes: None,
+            image_resources: None,
+            image_placements: None,
+            glyph_bitmaps: None,
+            type3_templates: None,
+            raster_bands: Some(&mut raster_bands),
+        };
+        let thumbnail = rasterize_native_page_work_to_thumbnail(
+            NativeRasterWork {
+                display_list,
+                form_list: &empty,
+                image_list: &empty,
+                text_list: &empty,
+                ordered_list: None,
+                annotation_list: None,
+                annotation_fallback_list: None,
+                annotation_fallback_text_list: None,
+            },
+            transform,
+            PathRasterOptions::default(),
+            ferrugo_thumbnail::Rgba::WHITE,
+            NativeRenderLimits {
+                max_raster_band_rows,
+                ..NativeRenderLimits::default()
+            },
+            &mut trace_sinks,
+            &glyph_bitmap_cache,
+            &type3_template_cache,
+        )
+        .expect("test display list should render");
+        (thumbnail, raster_bands)
+    }
+
+    #[test]
+    fn native_banded_raster_should_match_single_target_for_simple_fill_paths() {
+        let display_list = DisplayList::from_items(vec![DisplayItem::Path(PathDisplayItem {
+            segments: vec![
+                PathSegment::MoveTo(Point { x: 8.25, y: 8.25 }),
+                PathSegment::LineTo(Point { x: 58.5, y: 14.75 }),
+                PathSegment::LineTo(Point { x: 36.25, y: 43.5 }),
+                PathSegment::LineTo(Point { x: 12.5, y: 32.0 }),
+                PathSegment::Close,
+            ],
+            paint: PaintMode::Fill {
+                rule: FillRule::Nonzero,
+            },
+            state: GraphicsState {
+                fill_color: DeviceColor::Rgb {
+                    r: 0.1,
+                    g: 0.3,
+                    b: 0.8,
+                },
+                ..GraphicsState::default()
+            },
+            fill_pattern: None,
+        })]);
+
+        let (single, single_bands) = render_test_display_list_with_band_rows(&display_list, 0);
+        let (banded, banded_bands) = render_test_display_list_with_band_rows(&display_list, 11);
+
+        assert_eq!(single.bytes, banded.bytes);
+        assert_eq!(single_bands.bands, 1);
+        assert!(banded_bands.bands > 1);
+        assert_eq!(banded_bands.max_band_rows, 11);
+        assert!(banded_bands.max_band_pixels < banded_bands.full_page_pixels);
     }
 
     #[test]
