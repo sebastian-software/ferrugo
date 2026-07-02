@@ -574,7 +574,8 @@ fn benchmark_native_command(args: &[OsString]) -> Result<(), CliError> {
             native
                 .render_with_trace(PdfSource::from_path(path), options)
                 .ok()
-                .map(|trace| trace.fill_routes)
+                .map(NativeBenchmarkDiagnostics::from_trace)
+                .unwrap_or_default()
         },
     );
     write_benchmark_report(config, report)
@@ -703,7 +704,7 @@ fn benchmark_pdfium_command_enabled(args: &[OsString]) -> Result<(), CliError> {
         &options,
         manifest.as_ref(),
         &config,
-        |_, _, _| None,
+        |_, _, _| NativeBenchmarkDiagnostics::default(),
     );
     write_benchmark_report(config, report)
 }
@@ -4334,6 +4335,21 @@ struct BenchmarkRecord {
     outcome: BenchmarkOutcome,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct NativeBenchmarkDiagnostics {
+    fill_routes: Option<FillRasterRouteSummary>,
+    raster_bands: Option<RasterBandSummary>,
+}
+
+impl NativeBenchmarkDiagnostics {
+    fn from_trace(trace: NativeRenderTrace) -> Self {
+        Self {
+            fill_routes: Some(trace.fill_routes),
+            raster_bands: Some(trace.raster_bands),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 enum BenchmarkOutcome {
     NativeRendered {
@@ -4341,7 +4357,7 @@ enum BenchmarkOutcome {
         height: u32,
         output_bytes: usize,
         mean_ms: f64,
-        fill_routes: Option<FillRasterRouteSummary>,
+        diagnostics: NativeBenchmarkDiagnostics,
     },
     FallbackRequired {
         reason: FallbackReason,
@@ -6343,11 +6359,11 @@ fn benchmark_backend<B, F>(
     options: &ThumbnailOptions,
     manifest: Option<&CorpusManifest>,
     config: &BenchmarkConfig,
-    fill_route_summary: F,
+    native_diagnostics: F,
 ) -> BenchmarkReport
 where
     B: ThumbnailBackend,
-    F: Fn(&B, &Path, &ThumbnailOptions) -> Option<FillRasterRouteSummary>,
+    F: Fn(&B, &Path, &ThumbnailOptions) -> NativeBenchmarkDiagnostics,
 {
     let mut families = BTreeMap::new();
     let mut fixtures = Vec::with_capacity(paths.len());
@@ -6369,7 +6385,7 @@ where
             config,
             BenchmarkFixtureMetadata { path_key, family },
             policy,
-            &fill_route_summary,
+            &native_diagnostics,
         );
         match record.outcome {
             BenchmarkOutcome::NativeRendered { .. } => native_rendered += 1,
@@ -6407,11 +6423,11 @@ fn benchmark_fixture<B, F>(
     config: &BenchmarkConfig,
     metadata: BenchmarkFixtureMetadata,
     policy: BenchmarkBackendPolicy,
-    fill_route_summary: &F,
+    native_diagnostics: &F,
 ) -> BenchmarkRecord
 where
     B: ThumbnailBackend,
-    F: Fn(&B, &Path, &ThumbnailOptions) -> Option<FillRasterRouteSummary>,
+    F: Fn(&B, &Path, &ThumbnailOptions) -> NativeBenchmarkDiagnostics,
 {
     let BenchmarkFixtureMetadata { path_key, family } = metadata;
     let started = Instant::now();
@@ -6458,7 +6474,7 @@ where
             height: thumbnail.height,
             output_bytes,
             mean_ms,
-            fill_routes: fill_route_summary(backend, path, options),
+            diagnostics: native_diagnostics(backend, path, options),
         },
     }
 }
@@ -11004,7 +11020,7 @@ fn benchmark_outcome_json(outcome: &BenchmarkOutcome) -> String {
             height,
             output_bytes,
             mean_ms,
-            fill_routes,
+            diagnostics,
         } => format!(
             concat!(
                 "{{",
@@ -11013,14 +11029,16 @@ fn benchmark_outcome_json(outcome: &BenchmarkOutcome) -> String {
                 "\"height\":{},",
                 "\"output_bytes\":{},",
                 "\"mean_ms\":{:.3},",
-                "\"fill_raster_route_summary\":{}",
+                "\"fill_raster_route_summary\":{},",
+                "\"raster_band_summary\":{}",
                 "}}"
             ),
             width,
             height,
             output_bytes,
             mean_ms,
-            optional_fill_raster_route_summary_json(fill_routes.as_ref())
+            optional_fill_raster_route_summary_json(diagnostics.fill_routes.as_ref()),
+            optional_raster_band_summary_json(diagnostics.raster_bands.as_ref())
         ),
         BenchmarkOutcome::FallbackRequired { reason, mean_ms } => format!(
             "{{\"status\":\"fallback_required\",\"reason\":{},\"mean_ms\":{:.3}}}",
@@ -11044,6 +11062,13 @@ fn optional_fill_raster_route_summary_json(summary: Option<&FillRasterRouteSumma
     summary.map_or_else(
         || "null".to_string(),
         |summary| trace_fill_raster_route_summary_json(Ok(summary)),
+    )
+}
+
+fn optional_raster_band_summary_json(summary: Option<&RasterBandSummary>) -> String {
+    summary.map_or_else(
+        || "null".to_string(),
+        |summary| trace_raster_band_summary_json(Ok(summary)),
     )
 }
 
@@ -13250,7 +13275,7 @@ status = "candidate"
             &options,
             Some(&manifest),
             &config,
-            |_, _, _| None,
+            |_, _, _| NativeBenchmarkDiagnostics::default(),
         );
         let json = benchmark_report_json(&report);
 
@@ -13317,24 +13342,101 @@ status = "candidate"
                 native
                     .render_with_trace(PdfSource::from_path(path), options)
                     .ok()
-                    .map(|trace| trace.fill_routes)
+                    .map(NativeBenchmarkDiagnostics::from_trace)
+                    .unwrap_or_default()
             },
         );
         let json = benchmark_report_json(&report);
 
-        let BenchmarkOutcome::NativeRendered {
-            fill_routes: Some(fill_routes),
-            ..
-        } = &report.fixtures[0].outcome
+        let BenchmarkOutcome::NativeRendered { diagnostics, .. } = &report.fixtures[0].outcome
         else {
-            panic!("fixture should render with fill route summary");
+            panic!("fixture should render with native diagnostics");
         };
+        let fill_routes = diagnostics
+            .fill_routes
+            .as_ref()
+            .expect("fixture should render with fill route summary");
+        let raster_bands = diagnostics
+            .raster_bands
+            .as_ref()
+            .expect("fixture should render with raster band summary");
         assert_eq!(report.native_rendered, 1);
         assert!(fill_routes.coverage_span_calls > 0);
         assert!(fill_routes.coverage_cell_accumulator_pixels > 0);
         assert_eq!(fill_routes.coverage_sampled_edge_pixels, 0);
+        assert_eq!(raster_bands.bands, 1);
+        assert_eq!(raster_bands.max_band_pixels, raster_bands.full_page_pixels);
         assert!(json.contains("\"fill_raster_route_summary\""));
         assert!(json.contains("\"coverage_cell_accumulator_pixels\""));
+        assert!(json.contains("\"raster_band_summary\""));
+        assert!(json.contains("\"active_target_peak_bytes\""));
+    }
+
+    #[test]
+    fn benchmark_native_should_report_low_memory_raster_band_summary() {
+        let fixture_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let paths = vec![fixture_root.join("fixtures/generated/text-page.pdf")];
+        let options = ThumbnailOptions {
+            page_index: 0,
+            max_edge: 160,
+            background: Rgba::WHITE,
+            output_format: ferrugo_thumbnail::OutputFormat::Rgba,
+            timeout: Duration::from_secs(5),
+            annotation_mode: AnnotationMode::Screen,
+            form_appearance_mode: ferrugo_thumbnail::FormAppearanceMode::DocumentState,
+        };
+        let config = BenchmarkConfig {
+            input: fixture_root.join("fixtures/generated"),
+            manifest: None,
+            include_families: Vec::new(),
+            output: None,
+            page_index: 0,
+            max_edge: 160,
+            background: Rgba::WHITE,
+            timeout: Duration::from_secs(5),
+            iterations: 1,
+            max_ms: 60_000,
+            max_output_bytes: 1_048_576,
+            fail_on_budget: false,
+            native_profile: NativeProfile::LowMemory,
+        };
+
+        let native = NativeProfile::LowMemory.backend();
+        let report = benchmark_backend(
+            &native,
+            BenchmarkBackendPolicy {
+                name: "rust-native",
+                unsupported_is_fallback: true,
+            },
+            &paths,
+            &options,
+            None,
+            &config,
+            |native, path, options| {
+                native
+                    .render_with_trace(PdfSource::from_path(path), options)
+                    .ok()
+                    .map(NativeBenchmarkDiagnostics::from_trace)
+                    .unwrap_or_default()
+            },
+        );
+        let json = benchmark_report_json(&report);
+
+        let BenchmarkOutcome::NativeRendered { diagnostics, .. } = &report.fixtures[0].outcome
+        else {
+            panic!("fixture should render with native diagnostics");
+        };
+        let raster_bands = diagnostics
+            .raster_bands
+            .as_ref()
+            .expect("fixture should render with raster band summary");
+        assert_eq!(report.native_rendered, 1);
+        assert!(raster_bands.bands > 1);
+        assert_eq!(raster_bands.max_band_rows, 64);
+        assert!(raster_bands.max_band_pixels < raster_bands.full_page_pixels);
+        assert!(raster_bands.active_target_byte_reduction_per_mille() > 0);
+        assert!(json.contains("\"raster_band_summary\""));
+        assert!(json.contains("\"active_target_byte_reduction_per_mille\""));
     }
 
     #[test]
