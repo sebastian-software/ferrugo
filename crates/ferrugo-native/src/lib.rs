@@ -22,17 +22,20 @@ use ferrugo_render::{
     build_path_display_list_with_graphics_resources, build_text_display_list,
     collect_image_decode_hints, decode_tiling_pattern, display_list_image_placement_summary,
     display_list_path_flattening_summary, display_list_stroke_shape_summary,
-    rasterize_display_list_into_with_phase_timings,
-    rasterize_display_list_into_with_phase_timings_and_route_summaries, rasterize_images,
-    rasterize_paths_into, rasterize_text, ColorSpaceResources, DisplayItem, DisplayList,
-    DisplayListOptions, ExtGraphicsStateResources, FontResources, FormResources, GraphicsError,
-    GraphicsErrorKind, ImageDecodeHints, ImageResources, PageGeometry, PageRotation, PageTransform,
-    PageTransformOptions, PathBounds, PathRasterOptions, Point, RasterDisplayPhase, RasterError,
-    RasterErrorKind, ShadingResources, TextDisplayItem, TextWritingMode, TilingPatternResources,
+    rasterize_display_list_into_with_phase_timings_and_glyph_cache,
+    rasterize_display_list_into_with_phase_timings_and_route_summaries,
+    rasterize_display_list_into_with_phase_timings_route_summaries_and_glyph_cache,
+    rasterize_images, rasterize_paths_into, rasterize_text_with_glyph_cache, ColorSpaceResources,
+    DisplayItem, DisplayList, DisplayListOptions, ExtGraphicsStateResources, FontResources,
+    FormResources, GlyphBitmapCache, GraphicsError, GraphicsErrorKind, ImageDecodeHints,
+    ImageResources, PageGeometry, PageRotation, PageTransform, PageTransformOptions, PathBounds,
+    PathRasterOptions, Point, RasterDisplayPhase, RasterError, RasterErrorKind, ShadingResources,
+    TextDisplayItem, TextWritingMode, TilingPatternResources,
 };
 pub use ferrugo_render::{
-    FillRasterRouteSummary, ImagePlacementSummary, ImageResourceSummary, PathFlatteningSummary,
-    StrokeRasterRouteSummary, StrokeShapeSummary, DEFAULT_CURVE_FLATTENING_TOLERANCE,
+    FillRasterRouteSummary, GlyphBitmapCacheSummary, ImagePlacementSummary, ImageResourceSummary,
+    PathFlatteningSummary, StrokeRasterRouteSummary, StrokeShapeSummary,
+    DEFAULT_CURVE_FLATTENING_TOLERANCE,
 };
 use ferrugo_syntax::{PdfBytes, PdfName, PdfNumber, PdfPrimitive, PdfReference, PdfString};
 use ferrugo_thumbnail::{
@@ -77,6 +80,10 @@ const MAX_METADATA_STRUCTURE_ITEMS: usize = 4096;
 const MAX_METADATA_XMP_BYTES: usize = 64 * 1024;
 const DEFAULT_SPOOL_BYTES_LIMIT: usize = 0;
 const MIN_SESSION_IMAGE_RESOURCE_CACHE_BYTES: usize = 4 * 1024;
+const DEFAULT_SESSION_GLYPH_BITMAP_CACHE_ENTRIES: usize = 1_024;
+const DEFAULT_SESSION_GLYPH_BITMAP_CACHE_BYTES: usize = 1024 * 1024;
+const LOW_MEMORY_SESSION_GLYPH_BITMAP_CACHE_ENTRIES: usize = 256;
+const LOW_MEMORY_SESSION_GLYPH_BITMAP_CACHE_BYTES: usize = 256 * 1024;
 
 /// Rust-native thumbnail backend.
 ///
@@ -140,6 +147,8 @@ pub struct NativeRenderTrace {
     pub image_resources: ImageResourceSummary,
     /// Request-local image placement summary for renderer profiling.
     pub image_placements: ImagePlacementSummary,
+    /// Request-local fallback glyph bitmap cache summary for renderer profiling.
+    pub glyph_bitmaps: GlyphBitmapCacheSummary,
 }
 
 struct RenderTraceSinks<'a> {
@@ -150,6 +159,7 @@ struct RenderTraceSinks<'a> {
     stroke_routes: Option<&'a mut StrokeRasterRouteSummary>,
     image_resources: Option<&'a mut ImageResourceSummary>,
     image_placements: Option<&'a mut ImagePlacementSummary>,
+    glyph_bitmaps: Option<&'a mut GlyphBitmapCacheSummary>,
 }
 
 impl<'a> RenderTraceSinks<'a> {
@@ -162,6 +172,7 @@ impl<'a> RenderTraceSinks<'a> {
             stroke_routes: None,
             image_resources: None,
             image_placements: None,
+            glyph_bitmaps: None,
         }
     }
 
@@ -174,9 +185,14 @@ impl<'a> RenderTraceSinks<'a> {
             stroke_routes: None,
             image_resources: None,
             image_placements: None,
+            glyph_bitmaps: None,
         }
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "keeps independent trace summary sinks explicit for diagnostic rendering"
+    )]
     fn with_trace(
         timings: &'a mut NativeRenderPhaseTimings,
         path_flattening: &'a mut PathFlatteningSummary,
@@ -185,6 +201,7 @@ impl<'a> RenderTraceSinks<'a> {
         stroke_routes: &'a mut StrokeRasterRouteSummary,
         image_resources: &'a mut ImageResourceSummary,
         image_placements: &'a mut ImagePlacementSummary,
+        glyph_bitmaps: &'a mut GlyphBitmapCacheSummary,
     ) -> Self {
         Self {
             timings: Some(timings),
@@ -194,6 +211,7 @@ impl<'a> RenderTraceSinks<'a> {
             stroke_routes: Some(stroke_routes),
             image_resources: Some(image_resources),
             image_placements: Some(image_placements),
+            glyph_bitmaps: Some(glyph_bitmaps),
         }
     }
 }
@@ -210,6 +228,7 @@ pub struct NativeDocumentSession<'a> {
     limits: NativeRenderLimits,
     stats: NativeDocumentSessionStats,
     image_resource_cache: RefCell<SessionImageResourceCache>,
+    glyph_bitmap_cache: RefCell<GlyphBitmapCache>,
 }
 
 /// Bounded state retained by a [`NativeDocumentSession`].
@@ -247,6 +266,22 @@ pub struct NativeDocumentSessionStats {
     pub cached_image_resource_inserts: usize,
     /// Decoded image-resource maps evicted from this session cache.
     pub cached_image_resource_evictions: usize,
+    /// Fallback glyph bitmap entries retained inside this session.
+    pub cached_glyph_bitmap_entries: usize,
+    /// Maximum fallback glyph bitmap entries retained inside this session.
+    pub max_cached_glyph_bitmap_entries: usize,
+    /// Approximate resident fallback glyph bitmap bytes retained in this session.
+    pub cached_glyph_bitmap_bytes: usize,
+    /// Maximum approximate resident fallback glyph bitmap bytes retained in this session.
+    pub max_cached_glyph_bitmap_bytes: usize,
+    /// Fallback glyph bitmap cache hits inside this session.
+    pub cached_glyph_bitmap_hits: usize,
+    /// Fallback glyph bitmap cache misses inside this session.
+    pub cached_glyph_bitmap_misses: usize,
+    /// Fallback glyph bitmap entries inserted into this session cache.
+    pub cached_glyph_bitmap_inserts: usize,
+    /// Fallback glyph bitmap entries evicted from this session cache.
+    pub cached_glyph_bitmap_evictions: usize,
 }
 
 #[derive(Debug, Default)]
@@ -558,6 +593,7 @@ impl NativeBackend {
         let mut stroke_routes = StrokeRasterRouteSummary::default();
         let mut image_resources = ImageResourceSummary::default();
         let mut image_placements = ImagePlacementSummary::default();
+        let mut glyph_bitmaps = GlyphBitmapCacheSummary::default();
         let thumbnail = render_loaded_document_with_trace(
             &document,
             &page_tree,
@@ -571,6 +607,7 @@ impl NativeBackend {
                 &mut stroke_routes,
                 &mut image_resources,
                 &mut image_placements,
+                &mut glyph_bitmaps,
             ),
         )?;
         timings.total = total_started.elapsed();
@@ -583,6 +620,7 @@ impl NativeBackend {
             stroke_routes,
             image_resources,
             image_placements,
+            glyph_bitmaps,
         })
     }
 
@@ -751,6 +789,12 @@ pub struct NativeRenderLimits {
     /// Maximum resident decoded image-resource bytes retained in one explicit
     /// document session.
     pub max_session_image_resource_bytes: usize,
+    /// Maximum fallback glyph bitmap entries retained in one explicit document
+    /// session.
+    pub max_session_glyph_bitmap_entries: usize,
+    /// Maximum approximate resident fallback glyph bitmap bytes retained in one
+    /// explicit document session.
+    pub max_session_glyph_bitmap_bytes: usize,
     /// Whether temporary spooling is enabled for sensitive intermediates.
     pub spooling_enabled: bool,
     /// Maximum bytes allowed for temporary spooling.
@@ -790,6 +834,8 @@ impl NativeRenderLimits {
             max_session_loaded_object_bytes: 32 * 1024 * 1024,
             max_session_image_resource_entries: 4,
             max_session_image_resource_bytes: 24 * 1024 * 1024,
+            max_session_glyph_bitmap_entries: LOW_MEMORY_SESSION_GLYPH_BITMAP_CACHE_ENTRIES,
+            max_session_glyph_bitmap_bytes: LOW_MEMORY_SESSION_GLYPH_BITMAP_CACHE_BYTES,
             spooling_enabled: false,
             max_spool_bytes: DEFAULT_SPOOL_BYTES_LIMIT,
             downsample_image_decode: true,
@@ -818,6 +864,8 @@ impl NativeRenderLimits {
             max_session_loaded_object_bytes: self.max_session_loaded_object_bytes,
             max_session_image_resource_entries: self.max_session_image_resource_entries,
             max_session_image_resource_bytes: self.max_session_image_resource_bytes,
+            max_session_glyph_bitmap_entries: self.max_session_glyph_bitmap_entries,
+            max_session_glyph_bitmap_bytes: self.max_session_glyph_bitmap_bytes,
             spooling_enabled: self.spooling_enabled,
             max_spool_bytes: self.max_spool_bytes,
         }
@@ -883,6 +931,8 @@ impl Default for NativeRenderLimits {
             max_session_loaded_object_bytes: 256 * 1024 * 1024,
             max_session_image_resource_entries: 16,
             max_session_image_resource_bytes: display.max_total_image_bytes,
+            max_session_glyph_bitmap_entries: DEFAULT_SESSION_GLYPH_BITMAP_CACHE_ENTRIES,
+            max_session_glyph_bitmap_bytes: DEFAULT_SESSION_GLYPH_BITMAP_CACHE_BYTES,
             spooling_enabled: false,
             max_spool_bytes: DEFAULT_SPOOL_BYTES_LIMIT,
             downsample_image_decode: false,
@@ -936,6 +986,12 @@ pub struct NativeMemoryDiagnostics {
     /// Maximum resident decoded image-resource bytes retained in one explicit
     /// document session.
     pub max_session_image_resource_bytes: usize,
+    /// Maximum fallback glyph bitmap entries retained in one explicit document
+    /// session.
+    pub max_session_glyph_bitmap_entries: usize,
+    /// Maximum approximate resident fallback glyph bitmap bytes retained in one
+    /// explicit document session.
+    pub max_session_glyph_bitmap_bytes: usize,
     /// Whether temporary spooling is enabled for sensitive intermediates.
     pub spooling_enabled: bool,
     /// Maximum bytes allowed for temporary spooling.
@@ -1005,6 +1061,14 @@ impl<'a> NativeDocumentSession<'a> {
             cached_image_resource_misses: 0,
             cached_image_resource_inserts: 0,
             cached_image_resource_evictions: 0,
+            cached_glyph_bitmap_entries: 0,
+            max_cached_glyph_bitmap_entries: limits.max_session_glyph_bitmap_entries,
+            cached_glyph_bitmap_bytes: 0,
+            max_cached_glyph_bitmap_bytes: limits.max_session_glyph_bitmap_bytes,
+            cached_glyph_bitmap_hits: 0,
+            cached_glyph_bitmap_misses: 0,
+            cached_glyph_bitmap_inserts: 0,
+            cached_glyph_bitmap_evictions: 0,
         };
         Ok(Self {
             document,
@@ -1012,6 +1076,10 @@ impl<'a> NativeDocumentSession<'a> {
             limits,
             stats,
             image_resource_cache: RefCell::new(SessionImageResourceCache::default()),
+            glyph_bitmap_cache: RefCell::new(GlyphBitmapCache::with_budget(
+                limits.max_session_glyph_bitmap_entries,
+                limits.max_session_glyph_bitmap_bytes,
+            )),
         })
     }
 
@@ -1040,6 +1108,15 @@ impl<'a> NativeDocumentSession<'a> {
         stats.cached_image_resource_misses = cached_image_resource_misses;
         stats.cached_image_resource_inserts = cached_image_resource_inserts;
         stats.cached_image_resource_evictions = cached_image_resource_evictions;
+        let glyph_summary = self.glyph_bitmap_cache.borrow().summary();
+        stats.cached_glyph_bitmap_entries = glyph_summary.entries;
+        stats.max_cached_glyph_bitmap_entries = glyph_summary.max_entries;
+        stats.cached_glyph_bitmap_bytes = glyph_summary.bytes;
+        stats.max_cached_glyph_bitmap_bytes = glyph_summary.max_bytes;
+        stats.cached_glyph_bitmap_hits = glyph_summary.hits;
+        stats.cached_glyph_bitmap_misses = glyph_summary.misses;
+        stats.cached_glyph_bitmap_inserts = glyph_summary.inserts;
+        stats.cached_glyph_bitmap_evictions = glyph_summary.evictions;
         stats
     }
 
@@ -1056,6 +1133,7 @@ impl<'a> NativeDocumentSession<'a> {
             options,
             self.limits,
             &self.image_resource_cache,
+            &self.glyph_bitmap_cache,
         )
     }
 
@@ -1078,6 +1156,7 @@ impl<'a> NativeDocumentSession<'a> {
             self.limits,
             timings,
             &self.image_resource_cache,
+            &self.glyph_bitmap_cache,
         )?;
         timings.total += started.elapsed();
         Ok(thumbnail)
@@ -1623,6 +1702,7 @@ fn render_loaded_document(
         limits,
         RenderTraceSinks::none(),
         None,
+        None,
     )
 }
 
@@ -1632,6 +1712,7 @@ fn render_loaded_document_with_session_cache(
     options: &ThumbnailOptions,
     limits: NativeRenderLimits,
     image_resource_cache: &RefCell<SessionImageResourceCache>,
+    glyph_bitmap_cache: &RefCell<GlyphBitmapCache>,
 ) -> Result<Thumbnail, ThumbnailError> {
     render_loaded_document_inner(
         document,
@@ -1640,6 +1721,7 @@ fn render_loaded_document_with_session_cache(
         limits,
         RenderTraceSinks::none(),
         Some(image_resource_cache),
+        Some(glyph_bitmap_cache),
     )
 }
 
@@ -1650,6 +1732,7 @@ fn render_loaded_document_with_timings_and_session_cache(
     limits: NativeRenderLimits,
     timings: &mut NativeRenderPhaseTimings,
     image_resource_cache: &RefCell<SessionImageResourceCache>,
+    glyph_bitmap_cache: &RefCell<GlyphBitmapCache>,
 ) -> Result<Thumbnail, ThumbnailError> {
     render_loaded_document_inner(
         document,
@@ -1658,6 +1741,7 @@ fn render_loaded_document_with_timings_and_session_cache(
         limits,
         RenderTraceSinks::with_timings(timings),
         Some(image_resource_cache),
+        Some(glyph_bitmap_cache),
     )
 }
 
@@ -1668,7 +1752,15 @@ fn render_loaded_document_with_trace(
     limits: NativeRenderLimits,
     trace_sinks: RenderTraceSinks<'_>,
 ) -> Result<Thumbnail, ThumbnailError> {
-    render_loaded_document_inner(document, page_tree, options, limits, trace_sinks, None)
+    render_loaded_document_inner(
+        document,
+        page_tree,
+        options,
+        limits,
+        trace_sinks,
+        None,
+        None,
+    )
 }
 
 fn render_loaded_document_inner(
@@ -1678,8 +1770,14 @@ fn render_loaded_document_inner(
     limits: NativeRenderLimits,
     mut trace_sinks: RenderTraceSinks<'_>,
     image_resource_cache: Option<&RefCell<SessionImageResourceCache>>,
+    glyph_bitmap_cache: Option<&RefCell<GlyphBitmapCache>>,
 ) -> Result<Thumbnail, ThumbnailError> {
     enforce_xfa_render_policy(document)?;
+    let local_glyph_bitmap_cache = RefCell::new(GlyphBitmapCache::with_budget(
+        limits.max_session_glyph_bitmap_entries,
+        limits.max_session_glyph_bitmap_bytes,
+    ));
+    let glyph_bitmap_cache = glyph_bitmap_cache.unwrap_or(&local_glyph_bitmap_cache);
     let page = page_tree
         .pages()
         .get(options.page_index as usize)
@@ -1886,6 +1984,7 @@ fn render_loaded_document_inner(
             &mut trace_sinks.timings,
             &mut trace_sinks.fill_routes,
             &mut trace_sinks.stroke_routes,
+            glyph_bitmap_cache,
         )?;
     } else {
         record_render_phase(
@@ -1924,7 +2023,7 @@ fn render_loaded_document_inner(
         record_render_phase(
             &mut trace_sinks.timings,
             NativeRenderPhase::RasterText,
-            || rasterize_text(&text_list, &mut raster, transform).map_err(map_raster_error),
+            || rasterize_text_with_cache(&text_list, &mut raster, transform, glyph_bitmap_cache),
         )?;
     }
     let (annotation_forms, annotation_content, annotation_fallback_content) = record_render_phase(
@@ -2033,8 +2132,12 @@ fn render_loaded_document_inner(
                     &mut trace_sinks.timings,
                     NativeRenderPhase::RasterText,
                     || {
-                        rasterize_text(&annotation_text_list, &mut raster, transform)
-                            .map_err(map_raster_error)
+                        rasterize_text_with_cache(
+                            &annotation_text_list,
+                            &mut raster,
+                            transform,
+                            glyph_bitmap_cache,
+                        )
                     },
                 )?;
             }
@@ -2042,10 +2145,24 @@ fn render_loaded_document_inner(
             Err(error) => return Err(map_graphics_error(error)),
         }
     }
+    if let Some(glyph_bitmaps) = trace_sinks.glyph_bitmaps.as_deref_mut() {
+        *glyph_bitmaps = glyph_bitmap_cache.borrow().summary();
+    }
     record_render_phase(&mut trace_sinks.timings, NativeRenderPhase::Output, || {
         let dimensions = raster.dimensions();
         Thumbnail::rgba(dimensions.width, dimensions.height, raster.into_pixels())
     })
+}
+
+fn rasterize_text_with_cache(
+    display_list: &DisplayList,
+    raster: &mut ferrugo_render::RasterDevice,
+    transform: PageTransform,
+    glyph_bitmap_cache: &RefCell<GlyphBitmapCache>,
+) -> Result<(), ThumbnailError> {
+    let mut glyph_cache = glyph_bitmap_cache.borrow_mut();
+    rasterize_text_with_glyph_cache(display_list, raster, transform, &mut glyph_cache)
+        .map_err(map_raster_error)
 }
 
 fn record_render_phase<T>(
@@ -2160,6 +2277,10 @@ fn rasterize_paths_with_optional_route_summaries(
     Ok(())
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "ordered diagnostic rendering threads timing, route, and glyph-cache sinks explicitly"
+)]
 fn rasterize_ordered_display_list_with_phase_timings(
     display_list: &DisplayList,
     raster: &mut ferrugo_render::RasterDevice,
@@ -2168,6 +2289,7 @@ fn rasterize_ordered_display_list_with_phase_timings(
     timings: &mut Option<&mut NativeRenderPhaseTimings>,
     fill_routes: &mut Option<&mut FillRasterRouteSummary>,
     stroke_routes: &mut Option<&mut StrokeRasterRouteSummary>,
+    glyph_bitmap_cache: &RefCell<GlyphBitmapCache>,
 ) -> Result<(), ThumbnailError> {
     if fill_routes.is_some() || stroke_routes.is_some() {
         let fill_initial = fill_routes
@@ -2180,13 +2302,14 @@ fn rasterize_ordered_display_list_with_phase_timings(
             .unwrap_or_else(StrokeRasterRouteSummary::default);
         let fill_cell = RefCell::new(fill_initial);
         let stroke_cell = RefCell::new(stroke_initial);
-        rasterize_display_list_into_with_phase_timings_and_route_summaries(
+        rasterize_display_list_into_with_phase_timings_route_summaries_and_glyph_cache(
             display_list,
             raster,
             transform,
             path_options,
             &fill_cell,
             &stroke_cell,
+            glyph_bitmap_cache,
             |phase, duration| {
                 if let Some(timings) = timings.as_deref_mut() {
                     timings.record(native_render_phase_from_raster_phase(phase), duration);
@@ -2205,11 +2328,12 @@ fn rasterize_ordered_display_list_with_phase_timings(
         return Ok(());
     }
 
-    rasterize_display_list_into_with_phase_timings(
+    rasterize_display_list_into_with_phase_timings_and_glyph_cache(
         display_list,
         raster,
         transform,
         path_options,
+        glyph_bitmap_cache,
         |phase, duration| {
             if let Some(timings) = timings.as_deref_mut() {
                 timings.record(native_render_phase_from_raster_phase(phase), duration);
@@ -5326,6 +5450,30 @@ mod tests {
     }
 
     #[test]
+    fn render_with_trace_should_report_glyph_bitmap_cache_summary() {
+        let bytes = include_bytes!("../../../fixtures/generated/text-page.pdf");
+        let options = ThumbnailOptions {
+            page_index: 0,
+            max_edge: 160,
+            background: ferrugo_thumbnail::Rgba::WHITE,
+            output_format: ferrugo_thumbnail::OutputFormat::Rgba,
+            timeout: std::time::Duration::from_secs(5),
+            annotation_mode: AnnotationMode::Screen,
+            form_appearance_mode: FormAppearanceMode::DocumentState,
+        };
+
+        let trace = NativeBackend::new()
+            .render_with_trace(PdfSource::from_bytes(bytes), &options)
+            .expect("text fixture should render with glyph cache trace");
+
+        assert!(trace.glyph_bitmaps.entries > 0);
+        assert!(trace.glyph_bitmaps.bytes > 0);
+        assert!(trace.glyph_bitmaps.bytes <= trace.glyph_bitmaps.max_bytes);
+        assert!(trace.glyph_bitmaps.misses > 0);
+        assert!(trace.glyph_bitmaps.inserts > 0);
+    }
+
+    #[test]
     fn render_with_trace_should_attribute_ordered_images_to_image_phase() {
         let bytes = include_bytes!("../../../fixtures/generated/mobile-mixed-compression-scan.pdf");
         let options = ThumbnailOptions {
@@ -5459,6 +5607,36 @@ mod tests {
         assert_eq!(stats.cached_image_resource_misses, 1);
         assert_eq!(stats.cached_image_resource_inserts, 1);
         assert_eq!(stats.cached_image_resource_evictions, 0);
+    }
+
+    #[test]
+    fn native_document_session_should_reuse_glyph_bitmap_cache() {
+        let bytes = include_bytes!("../../../fixtures/generated/text-page.pdf");
+        let options = ThumbnailOptions {
+            max_edge: 160,
+            ..ThumbnailOptions::default()
+        };
+        let backend = NativeBackend::new();
+
+        let session = backend
+            .document_session(bytes, &[0])
+            .expect("document session should load");
+        let first = session
+            .render_page(&options)
+            .expect("first session render should work");
+        let second = session
+            .render_page(&options)
+            .expect("second session render should work");
+        let stats = session.stats();
+
+        assert_eq!(first.bytes, second.bytes);
+        assert!(stats.cached_glyph_bitmap_entries > 0);
+        assert!(stats.cached_glyph_bitmap_bytes > 0);
+        assert!(stats.cached_glyph_bitmap_bytes <= stats.max_cached_glyph_bitmap_bytes);
+        assert!(stats.cached_glyph_bitmap_hits > 0);
+        assert!(stats.cached_glyph_bitmap_misses > 0);
+        assert!(stats.cached_glyph_bitmap_inserts > 0);
+        assert_eq!(stats.cached_glyph_bitmap_evictions, 0);
     }
 
     #[test]
@@ -5628,6 +5806,8 @@ mod tests {
             diagnostics.max_session_image_resource_bytes,
             128 * 1024 * 1024
         );
+        assert_eq!(diagnostics.max_session_glyph_bitmap_entries, 1_024);
+        assert_eq!(diagnostics.max_session_glyph_bitmap_bytes, 1024 * 1024);
         assert!(!diagnostics.spooling_enabled);
         assert_eq!(diagnostics.max_spool_bytes, 0);
     }
@@ -5655,6 +5835,10 @@ mod tests {
         assert!(
             low_memory.max_session_image_resource_bytes < default.max_session_image_resource_bytes
         );
+        assert!(
+            low_memory.max_session_glyph_bitmap_entries < default.max_session_glyph_bitmap_entries
+        );
+        assert!(low_memory.max_session_glyph_bitmap_bytes < default.max_session_glyph_bitmap_bytes);
         assert!(low_memory.max_page_pixels > 0);
         assert!(low_memory.max_total_image_bytes >= low_memory.max_image_bytes);
         assert!(low_memory.max_total_font_program_bytes >= low_memory.max_font_program_bytes);

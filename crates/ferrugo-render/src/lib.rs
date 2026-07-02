@@ -62,6 +62,9 @@ pub const DEFAULT_CHARSTRING_SUBROUTINE_DEPTH_LIMIT: usize = 10;
 /// Default maximum cached fallback glyph bitmaps per rasterization pass.
 pub const DEFAULT_GLYPH_BITMAP_CACHE_LIMIT: usize = 256;
 
+/// Default maximum resident fallback glyph bitmap bytes per rasterization pass.
+pub const DEFAULT_GLYPH_BITMAP_CACHE_BYTES_LIMIT: usize = 256 * 1024;
+
 const STANDARD_BASE_FONT_CELL_SCALE: f64 = 0.75;
 
 /// Default maximum cached deterministic font fallback resolutions.
@@ -3204,37 +3207,100 @@ impl FontFallback {
 pub struct GlyphBitmapCache {
     entries: Vec<CachedGlyphBitmap>,
     max_entries: usize,
+    max_bytes: usize,
+    resident_bytes: usize,
+    hits: usize,
+    misses: usize,
+    inserts: usize,
+    evictions: usize,
+}
+
+/// Observable fallback glyph bitmap cache state.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct GlyphBitmapCacheSummary {
+    /// Cached fallback glyph bitmap entries retained by the cache.
+    pub entries: usize,
+    /// Maximum fallback glyph bitmap entries retained by the cache.
+    pub max_entries: usize,
+    /// Approximate resident bytes retained by cached fallback glyph bitmaps.
+    pub bytes: usize,
+    /// Maximum approximate resident fallback glyph bitmap bytes retained.
+    pub max_bytes: usize,
+    /// Fallback glyph bitmap cache hits.
+    pub hits: usize,
+    /// Fallback glyph bitmap cache misses.
+    pub misses: usize,
+    /// Fallback glyph bitmap entries inserted.
+    pub inserts: usize,
+    /// Fallback glyph bitmap entries evicted.
+    pub evictions: usize,
 }
 
 impl GlyphBitmapCache {
     /// Creates a fallback glyph bitmap cache with a bounded entry count.
     #[must_use]
     pub fn new(max_entries: usize) -> Self {
+        Self::with_budget(max_entries, DEFAULT_GLYPH_BITMAP_CACHE_BYTES_LIMIT)
+    }
+
+    /// Creates a fallback glyph bitmap cache with entry and byte budgets.
+    #[must_use]
+    pub fn with_budget(max_entries: usize, max_bytes: usize) -> Self {
         Self {
             entries: Vec::new(),
-            max_entries,
+            max_entries: max_entries.max(1),
+            max_bytes: max_bytes.max(1),
+            resident_bytes: 0,
+            hits: 0,
+            misses: 0,
+            inserts: 0,
+            evictions: 0,
         }
     }
 
     fn bitmap_for(&mut self, fallback: FontFallback, character: char, cell: f64) -> &GlyphBitmap {
         let key = GlyphBitmapKey::new(fallback, character, cell);
         if let Some(index) = self.entries.iter().position(|entry| entry.key == key) {
+            self.hits = self.hits.saturating_add(1);
             return &self.entries[index].bitmap;
         }
+        self.misses = self.misses.saturating_add(1);
         let bitmap = GlyphBitmap::from_ascii(character, cell, key.paint_policy);
-        if self.max_entries == 0 {
-            self.entries.clear();
-            self.entries.push(CachedGlyphBitmap { key, bitmap });
-            return &self.entries[0].bitmap;
-        }
+        let resident_bytes = bitmap.resident_bytes();
         if self.entries.capacity() == 0 {
             self.entries.reserve(self.max_entries);
         }
-        if self.entries.len() >= self.max_entries {
-            self.entries.remove(0);
+        while self.entries.len() >= self.max_entries
+            || (self.resident_bytes.saturating_add(resident_bytes) > self.max_bytes
+                && !self.entries.is_empty())
+        {
+            let evicted = self.entries.remove(0);
+            self.resident_bytes = self.resident_bytes.saturating_sub(evicted.resident_bytes);
+            self.evictions = self.evictions.saturating_add(1);
         }
-        self.entries.push(CachedGlyphBitmap { key, bitmap });
+        self.entries.push(CachedGlyphBitmap {
+            key,
+            bitmap,
+            resident_bytes,
+        });
+        self.resident_bytes = self.resident_bytes.saturating_add(resident_bytes);
+        self.inserts = self.inserts.saturating_add(1);
         &self.entries.last().expect("entry was just inserted").bitmap
+    }
+
+    /// Returns observable fallback glyph bitmap cache state.
+    #[must_use]
+    pub fn summary(&self) -> GlyphBitmapCacheSummary {
+        GlyphBitmapCacheSummary {
+            entries: self.entries.len(),
+            max_entries: self.max_entries,
+            bytes: self.resident_bytes,
+            max_bytes: self.max_bytes,
+            hits: self.hits,
+            misses: self.misses,
+            inserts: self.inserts,
+            evictions: self.evictions,
+        }
     }
 
     /// Returns the number of cached fallback glyph bitmaps.
@@ -3379,13 +3445,14 @@ fn standard_serif_glyph_width(character: char) -> Option<f64> {
 struct CachedGlyphBitmap {
     key: GlyphBitmapKey,
     bitmap: GlyphBitmap,
+    resident_bytes: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct GlyphBitmapKey {
     face: FontFallbackFace,
     character: char,
-    cell_microunits: i64,
+    cell_eighths: i64,
     paint_policy: GlyphBitmapPaintPolicy,
 }
 
@@ -3394,7 +3461,7 @@ impl GlyphBitmapKey {
         Self {
             face: fallback.face,
             character,
-            cell_microunits: quantize_glyph_cell(cell),
+            cell_eighths: quantize_glyph_cell(cell),
             paint_policy: GlyphBitmapPaintPolicy::from_fallback_source(fallback.source),
         }
     }
@@ -3440,6 +3507,12 @@ impl GlyphBitmap {
         }
         Self { rects }
     }
+
+    fn resident_bytes(&self) -> usize {
+        self.rects
+            .len()
+            .saturating_mul(std::mem::size_of::<GlyphBitmapRect>())
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -3482,7 +3555,18 @@ impl GlyphBitmapRect {
 }
 
 fn quantize_glyph_cell(cell: f64) -> i64 {
-    (cell * 1_000_000.0).round() as i64
+    let cell = if cell.is_finite() {
+        cell.max(f64::EPSILON)
+    } else {
+        f64::EPSILON
+    };
+    if cell < 24.0 {
+        (cell * 8.0).round() as i64
+    } else if cell < 48.0 {
+        ((cell * 4.0).round() as i64) * 2
+    } else {
+        (cell.round() as i64) * 8
+    }
 }
 
 fn fallback_face_for_base_font(base_font: Option<&[u8]>) -> FontFallbackFace {
@@ -5691,6 +5775,7 @@ pub fn rasterize_paths_into(
     let mut active_clips = Vec::new();
     let mut pattern_cache = PatternCellCache::new(options.max_pattern_cell_cache_entries);
     let mut transparency_scratch = TransparencyGroupScratch::default();
+    let glyph_cache = RefCell::new(GlyphBitmapCache::default());
     for item in display_list.items() {
         match item {
             DisplayItem::Path(path) => {
@@ -5744,6 +5829,7 @@ pub fn rasterize_paths_into(
                     options,
                     &active_clips,
                     &mut transparency_scratch,
+                    &glyph_cache,
                 )?;
             }
             DisplayItem::Text(_) | DisplayItem::Image(_) => {}
@@ -6200,12 +6286,14 @@ pub fn rasterize_display_list_into(
     options: PathRasterOptions,
 ) -> RasterResult<()> {
     let mut transparency_scratch = TransparencyGroupScratch::default();
+    let glyph_cache = RefCell::new(GlyphBitmapCache::default());
     rasterize_display_list_into_with_scratch(
         display_list,
         device,
         transform,
         options,
         &mut transparency_scratch,
+        &glyph_cache,
         None,
         None,
         None::<&mut fn(RasterDisplayPhase, Duration)>,
@@ -6226,6 +6314,33 @@ pub fn rasterize_display_list_into_with_phase_timings(
     device: &mut RasterDevice,
     transform: PageTransform,
     options: PathRasterOptions,
+    on_phase: impl FnMut(RasterDisplayPhase, Duration),
+) -> RasterResult<()> {
+    let glyph_cache = RefCell::new(GlyphBitmapCache::default());
+    rasterize_display_list_into_with_phase_timings_and_glyph_cache(
+        display_list,
+        device,
+        transform,
+        options,
+        &glyph_cache,
+        on_phase,
+    )
+}
+
+/// Rasterizes all supported display-list items with a caller-owned glyph cache.
+///
+/// This preserves content-stream paint order and keeps fallback glyph bitmap
+/// cache state observable to callers that retain request/session state.
+///
+/// # Errors
+///
+/// Returns [`RasterError`] when path, image, or text rasterization fails.
+pub fn rasterize_display_list_into_with_phase_timings_and_glyph_cache(
+    display_list: &DisplayList,
+    device: &mut RasterDevice,
+    transform: PageTransform,
+    options: PathRasterOptions,
+    glyph_cache: &RefCell<GlyphBitmapCache>,
     mut on_phase: impl FnMut(RasterDisplayPhase, Duration),
 ) -> RasterResult<()> {
     let mut transparency_scratch = TransparencyGroupScratch::default();
@@ -6235,6 +6350,7 @@ pub fn rasterize_display_list_into_with_phase_timings(
         transform,
         options,
         &mut transparency_scratch,
+        glyph_cache,
         None,
         None,
         Some(&mut on_phase),
@@ -6259,12 +6375,14 @@ pub fn rasterize_display_list_into_with_phase_timings_and_stroke_routes(
     mut on_phase: impl FnMut(RasterDisplayPhase, Duration),
 ) -> RasterResult<()> {
     let mut transparency_scratch = TransparencyGroupScratch::default();
+    let glyph_cache = RefCell::new(GlyphBitmapCache::default());
     rasterize_display_list_into_with_scratch(
         display_list,
         device,
         transform,
         options,
         &mut transparency_scratch,
+        &glyph_cache,
         None,
         Some(stroke_routes),
         Some(&mut on_phase),
@@ -6287,6 +6405,39 @@ pub fn rasterize_display_list_into_with_phase_timings_and_route_summaries(
     options: PathRasterOptions,
     fill_routes: &RefCell<FillRasterRouteSummary>,
     stroke_routes: &RefCell<StrokeRasterRouteSummary>,
+    on_phase: impl FnMut(RasterDisplayPhase, Duration),
+) -> RasterResult<()> {
+    let glyph_cache = RefCell::new(GlyphBitmapCache::default());
+    rasterize_display_list_into_with_phase_timings_route_summaries_and_glyph_cache(
+        display_list,
+        device,
+        transform,
+        options,
+        fill_routes,
+        stroke_routes,
+        &glyph_cache,
+        on_phase,
+    )
+}
+
+/// Rasterizes all supported display-list items and records route counts using a
+/// caller-owned glyph cache.
+///
+/// # Errors
+///
+/// Returns [`RasterError`] when path, image, or text rasterization fails.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "diagnostic rendering needs explicit route, cache, and timing sinks"
+)]
+pub fn rasterize_display_list_into_with_phase_timings_route_summaries_and_glyph_cache(
+    display_list: &DisplayList,
+    device: &mut RasterDevice,
+    transform: PageTransform,
+    options: PathRasterOptions,
+    fill_routes: &RefCell<FillRasterRouteSummary>,
+    stroke_routes: &RefCell<StrokeRasterRouteSummary>,
+    glyph_cache: &RefCell<GlyphBitmapCache>,
     mut on_phase: impl FnMut(RasterDisplayPhase, Duration),
 ) -> RasterResult<()> {
     let mut transparency_scratch = TransparencyGroupScratch::default();
@@ -6296,6 +6447,7 @@ pub fn rasterize_display_list_into_with_phase_timings_and_route_summaries(
         transform,
         options,
         &mut transparency_scratch,
+        glyph_cache,
         Some(fill_routes),
         Some(stroke_routes),
         Some(&mut on_phase),
@@ -6312,6 +6464,7 @@ fn rasterize_display_list_into_with_scratch(
     transform: PageTransform,
     options: PathRasterOptions,
     transparency_scratch: &mut TransparencyGroupScratch,
+    glyph_cache: &RefCell<GlyphBitmapCache>,
     fill_routes: Option<&RefCell<FillRasterRouteSummary>>,
     stroke_routes: Option<&RefCell<StrokeRasterRouteSummary>>,
     mut on_phase: Option<&mut impl FnMut(RasterDisplayPhase, Duration)>,
@@ -6320,7 +6473,6 @@ fn rasterize_display_list_into_with_scratch(
         return Err(RasterError::new(RasterErrorKind::InvalidSupersampling));
     }
     let mut active_clips = Vec::new();
-    let mut glyph_cache = GlyphBitmapCache::default();
     let mut pattern_cache = PatternCellCache::new(options.max_pattern_cell_cache_entries);
     for item in display_list.items() {
         match item {
@@ -6385,6 +6537,7 @@ fn rasterize_display_list_into_with_scratch(
                         options,
                         &active_clips,
                         transparency_scratch,
+                        glyph_cache,
                     )
                 })?;
             }
@@ -6395,6 +6548,7 @@ fn rasterize_display_list_into_with_scratch(
             }
             DisplayItem::Text(text) => {
                 record_raster_display_phase(&mut on_phase, RasterDisplayPhase::Text, || {
+                    let mut glyph_cache = glyph_cache.borrow_mut();
                     draw_text_run(device, text, transform, options, &mut glyph_cache)
                 })?;
             }
@@ -6928,6 +7082,7 @@ fn rasterize_transparency_group(
     options: PathRasterOptions,
     clips: &[ActiveClip],
     scratch: &mut TransparencyGroupScratch,
+    glyph_cache: &RefCell<GlyphBitmapCache>,
 ) -> RasterResult<()> {
     let Some(bounds) = transparency_group_device_bounds(group.bounds, transform) else {
         return Ok(());
@@ -6963,7 +7118,18 @@ fn rasterize_transparency_group(
             a: 0,
         },
     )?;
-    rasterize_display_list_into(&group.items, group_device, group_transform, options)?;
+    let mut nested_transparency_scratch = TransparencyGroupScratch::default();
+    rasterize_display_list_into_with_scratch(
+        &group.items,
+        group_device,
+        group_transform,
+        options,
+        &mut nested_transparency_scratch,
+        glyph_cache,
+        None,
+        None,
+        None::<&mut fn(RasterDisplayPhase, Duration)>,
+    )?;
     for y in 0..bounds.height {
         for x in 0..bounds.width {
             let source = group_device.pixel(x, y)?;
@@ -7089,6 +7255,20 @@ pub fn rasterize_text(
     transform: PageTransform,
 ) -> RasterResult<()> {
     let mut glyph_cache = GlyphBitmapCache::default();
+    rasterize_text_with_glyph_cache(display_list, device, transform, &mut glyph_cache)
+}
+
+/// Rasterizes text display-list items using a caller-owned fallback glyph cache.
+///
+/// # Errors
+///
+/// Returns [`RasterError`] when device access fails.
+pub fn rasterize_text_with_glyph_cache(
+    display_list: &DisplayList,
+    device: &mut RasterDevice,
+    transform: PageTransform,
+    glyph_cache: &mut GlyphBitmapCache,
+) -> RasterResult<()> {
     for item in display_list.items() {
         let DisplayItem::Text(text) = item else {
             continue;
@@ -7098,7 +7278,7 @@ pub fn rasterize_text(
             text,
             transform,
             PathRasterOptions::default(),
-            &mut glyph_cache,
+            glyph_cache,
         )?;
     }
     Ok(())
@@ -25618,6 +25798,28 @@ mod tests {
     }
 
     #[test]
+    fn glyph_bitmap_cache_should_record_counters_and_bytes() {
+        let mut cache = GlyphBitmapCache::with_budget(8, 16 * 1024);
+        let fallback = FontFallback {
+            face: FontFallbackFace::Sans,
+            source: FontFallbackSource::MissingEmbeddedProgram,
+        };
+        cache.bitmap_for(fallback, 'A', 2.0);
+        cache.bitmap_for(fallback, 'A', 2.0);
+        cache.bitmap_for(fallback, 'B', 2.0);
+
+        let summary = cache.summary();
+        assert_eq!(summary.entries, 2);
+        assert_eq!(summary.max_entries, 8);
+        assert!(summary.bytes > 0);
+        assert!(summary.bytes <= summary.max_bytes);
+        assert_eq!(summary.hits, 1);
+        assert_eq!(summary.misses, 2);
+        assert_eq!(summary.inserts, 2);
+        assert_eq!(summary.evictions, 0);
+    }
+
+    #[test]
     fn glyph_bitmap_cache_should_include_size_in_key() {
         let mut cache = GlyphBitmapCache::new(8);
         let fallback = FontFallback {
@@ -25632,6 +25834,27 @@ mod tests {
     }
 
     #[test]
+    fn glyph_bitmap_cache_should_reuse_quantized_size_tiers() {
+        let mut cache = GlyphBitmapCache::new(8);
+        let fallback = FontFallback {
+            face: FontFallbackFace::Sans,
+            source: FontFallbackSource::MissingEmbeddedProgram,
+        };
+
+        cache.bitmap_for(fallback, 'A', 10.01);
+        cache.bitmap_for(fallback, 'A', 10.06);
+        cache.bitmap_for(fallback, 'A', 30.02);
+        cache.bitmap_for(fallback, 'A', 30.11);
+        cache.bitmap_for(fallback, 'A', 60.1);
+        cache.bitmap_for(fallback, 'A', 60.4);
+
+        let summary = cache.summary();
+        assert_eq!(summary.entries, 3);
+        assert_eq!(summary.hits, 3);
+        assert_eq!(summary.misses, 3);
+    }
+
+    #[test]
     fn glyph_bitmap_cache_should_evict_oldest_entry_at_limit() {
         let mut cache = GlyphBitmapCache::new(1);
         let fallback = FontFallback {
@@ -25643,6 +25866,25 @@ mod tests {
 
         assert_eq!(cache.len(), 1);
         assert_eq!(cache.entries[0].key.character, 'B');
+    }
+
+    #[test]
+    fn glyph_bitmap_cache_should_evict_oldest_entry_at_byte_limit() {
+        let fallback = FontFallback {
+            face: FontFallbackFace::Sans,
+            source: FontFallbackSource::MissingEmbeddedProgram,
+        };
+        let resident_bytes =
+            GlyphBitmap::from_ascii('A', 1.0, GlyphBitmapPaintPolicy::MaskOnly).resident_bytes();
+        let mut cache = GlyphBitmapCache::with_budget(8, resident_bytes);
+
+        cache.bitmap_for(fallback, 'A', 1.0);
+        cache.bitmap_for(fallback, 'A', 2.0);
+
+        let summary = cache.summary();
+        assert_eq!(summary.entries, 1);
+        assert!(summary.bytes <= summary.max_bytes);
+        assert_eq!(summary.evictions, 1);
     }
 
     #[test]
@@ -27920,6 +28162,7 @@ mod tests {
         .expect("group transform");
         let mut device = transform.create_device(Rgba::WHITE).expect("raster device");
         let mut scratch = TransparencyGroupScratch::default();
+        let glyph_cache = RefCell::new(GlyphBitmapCache::default());
 
         rasterize_display_list_into_with_scratch(
             &list,
@@ -27927,6 +28170,7 @@ mod tests {
             transform,
             PathRasterOptions::default(),
             &mut scratch,
+            &glyph_cache,
             None,
             None,
             None::<&mut fn(RasterDisplayPhase, Duration)>,
