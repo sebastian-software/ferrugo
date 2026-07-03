@@ -19618,10 +19618,11 @@ fn type3_glyph_render_resident_bytes(
         .saturating_add(surface.pixels.len())
 }
 
-fn type3_paths_support_render_cache(paths: &[PathDisplayItem], options: PathRasterOptions) -> bool {
-    options.scissor.is_none()
-        && !paths.is_empty()
-        && paths.iter().all(type3_path_supports_render_cache)
+fn type3_paths_support_render_cache(
+    paths: &[PathDisplayItem],
+    _options: PathRasterOptions,
+) -> bool {
+    !paths.is_empty() && paths.iter().all(type3_path_supports_render_cache)
 }
 
 fn type3_path_supports_render_cache(path: &PathDisplayItem) -> bool {
@@ -29249,6 +29250,78 @@ mod tests {
             Some(&mut render_cache),
         )
         .expect("cached Type3 render should succeed");
+
+        assert_eq!(cached.pixels(), direct.pixels());
+        let summary = render_cache.summary();
+        assert_eq!(summary.entries, 1);
+        assert_eq!(summary.misses, 1);
+        assert_eq!(summary.hits, 1);
+        assert_eq!(summary.inserts, 1);
+        assert_eq!(summary.evictions, 0);
+    }
+
+    #[test]
+    fn type3_glyph_render_cache_should_reuse_scissored_surfaces_with_byte_parity() {
+        let document = load_type3_text_pdf(
+            b"BT /F1 20 Tf 10 10 Td (A) Tj ET BT /F1 20 Tf 20 10 Td (A) Tj ET",
+            b"0 0 500 700 re f",
+            b"<< /Type /Font /Subtype /Type3 /FontMatrix [0.001 0 0 0.001 0 0] /FirstChar 65 /LastChar 65 /Widths [500] /Encoding << /Differences [65 /A] >> /CharProcs << /A 6 0 R >> >>",
+        );
+        let resources =
+            font_resources_from_document(&document, &[("F1", 4)]).expect("valid Type3 font");
+        let content = content_stream_from_document(&document);
+        let list = build_text_display_list(
+            tokenize_content(PdfBytes::new(&content)),
+            &resources,
+            DisplayListOptions::default(),
+        )
+        .expect("Type3 text should decode");
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 40.0,
+                    max_y: 40.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            40,
+        )
+        .expect("page transform");
+        let options = PathRasterOptions {
+            scissor: Some(RasterScissor::new(0, 12, 40, 32)),
+            ..PathRasterOptions::default()
+        };
+        let mut direct = transform.create_device(Rgba::WHITE).expect("direct device");
+        let mut cached = transform.create_device(Rgba::WHITE).expect("cached device");
+        let mut direct_template_cache = Type3CharProcTemplateCache::default();
+        let mut cached_template_cache = Type3CharProcTemplateCache::default();
+        let mut render_cache = Type3GlyphRenderCache::default();
+
+        for item in list.items() {
+            if let DisplayItem::Text(text) = item {
+                draw_type3_text_run(
+                    &mut direct,
+                    text,
+                    transform,
+                    options,
+                    &mut direct_template_cache,
+                    None,
+                )
+                .expect("direct scissored Type3 render should succeed");
+                draw_type3_text_run(
+                    &mut cached,
+                    text,
+                    transform,
+                    options,
+                    &mut cached_template_cache,
+                    Some(&mut render_cache),
+                )
+                .expect("cached scissored Type3 render should succeed");
+            }
+        }
 
         assert_eq!(cached.pixels(), direct.pixels());
         let summary = render_cache.summary();
