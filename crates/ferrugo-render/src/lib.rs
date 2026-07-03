@@ -14459,22 +14459,7 @@ fn closed_axis_aligned_rect_stroke_outline(
     lines: &[LineSegment],
     radius: f64,
 ) -> Option<FlattenedPath> {
-    if lines.len() != 4 || !lines.iter().copied().all(is_axis_aligned_line) {
-        return None;
-    }
-    for index in 0..lines.len() {
-        let current = lines[index];
-        let next = lines[(index + 1) % lines.len()];
-        if point_distance_squared(current.to, next.from) > f64::EPSILON {
-            return None;
-        }
-    }
-    let mut bounds = None;
-    for line in lines {
-        bounds = Some(include_point(bounds, line.from));
-        bounds = Some(include_point(bounds, line.to));
-    }
-    let bounds = bounds?;
+    let bounds = closed_axis_aligned_rect_stroke_bounds(lines)?;
     if bounds.max_x - bounds.min_x <= f64::EPSILON || bounds.max_y - bounds.min_y <= f64::EPSILON {
         return None;
     }
@@ -14535,6 +14520,87 @@ fn closed_axis_aligned_rect_stroke_outline(
         joins: Vec::new(),
         stats: FlattenedPathStats::default(),
     })
+}
+
+fn closed_axis_aligned_rect_stroke_bounds(lines: &[LineSegment]) -> Option<PathBounds> {
+    if lines.len() != 4 || !lines.iter().copied().all(is_axis_aligned_line) {
+        return None;
+    }
+    for index in 0..lines.len() {
+        let current = lines[index];
+        let next = lines[(index + 1) % lines.len()];
+        if point_distance_squared(current.to, next.from) > f64::EPSILON {
+            return None;
+        }
+    }
+    let mut bounds = None;
+    for line in lines {
+        bounds = Some(include_point(bounds, line.from));
+        bounds = Some(include_point(bounds, line.to));
+    }
+    bounds
+}
+
+fn fill_closed_axis_aligned_rect_stroke_outline(
+    device: &mut RasterDevice,
+    lines: &[LineSegment],
+    radius: f64,
+    state: StrokeRasterState,
+    context: PathRasterContext<'_>,
+) -> RasterResult<bool> {
+    let Some(bounds) = closed_axis_aligned_rect_stroke_bounds(lines) else {
+        return Ok(false);
+    };
+    if bounds.max_x - bounds.min_x <= f64::EPSILON || bounds.max_y - bounds.min_y <= f64::EPSILON {
+        return Ok(false);
+    }
+
+    let source = device_color_to_rgba(state.color);
+    let dimensions = device.dimensions();
+    let outer = PathBounds {
+        min_x: bounds.min_x - radius,
+        min_y: bounds.min_y - radius,
+        max_x: bounds.max_x + radius,
+        max_y: bounds.max_y + radius,
+    };
+    let inner = (bounds.max_x - bounds.min_x > radius * 2.0
+        && bounds.max_y - bounds.min_y > radius * 2.0)
+        .then_some(PathBounds {
+            min_x: bounds.min_x + radius,
+            min_y: bounds.min_y + radius,
+            max_x: bounds.max_x - radius,
+            max_y: bounds.max_y - radius,
+        });
+    let Some(pixel_bounds) = device_pixel_bounds(outer, dimensions, 0.0).and_then(|bounds| {
+        intersect_active_clip_pixel_bounds(
+            bounds,
+            context.clips,
+            dimensions,
+            context.options.scissor,
+        )
+    }) else {
+        return Ok(true);
+    };
+    let mut clip_mask = FillCoverageClipMask::new(context.clips, pixel_bounds);
+    let blitter = CoverageDrawBlitter::new(
+        source,
+        state.blend_mode,
+        state.alpha,
+        u32::from(context.options.supersample).pow(2),
+    );
+    for y in pixel_bounds.min_y..pixel_bounds.max_y {
+        for x in pixel_bounds.min_x..pixel_bounds.max_x {
+            let mut coverage = rect_coverage_for_pixel(outer, x, y);
+            if let Some(inner) = inner {
+                coverage = coverage.saturating_sub(rect_coverage_for_pixel(inner, x, y));
+            }
+            if let Some(clip_mask) = clip_mask.as_mut() {
+                coverage = multiply_alpha(coverage, clip_mask.coverage(x, y));
+            }
+            blitter.write_coverage_alpha_pixel(device, x, y, coverage)?;
+        }
+    }
+    Ok(true)
 }
 
 fn append_outline_component(
@@ -14721,8 +14787,25 @@ fn stroke_path(
             return Ok(());
         }
     }
-    let prepared_joins = prepare_stroke_joins(joins, radius, state.line_join, state.miter_limit);
     let has_joins = !joins.is_empty();
+    if state.dash_pattern.is_solid()
+        && has_joins
+        && matches!(state.line_cap, LineCap::Butt)
+        && matches!(state.line_join, LineJoin::Miter)
+        && fill_closed_axis_aligned_rect_stroke_outline(
+            device,
+            stroke_lines,
+            radius,
+            state,
+            context,
+        )?
+    {
+        if let Some(stroke_routes) = context.stroke_routes {
+            stroke_routes.borrow_mut().record_joined_outline_fill_call();
+        }
+        return Ok(());
+    }
+    let prepared_joins = prepare_stroke_joins(joins, radius, state.line_join, state.miter_limit);
     if state.dash_pattern.is_solid() && has_joins {
         if let Some(outline) = joined_stroke_fill_outline(
             stroke_lines,
