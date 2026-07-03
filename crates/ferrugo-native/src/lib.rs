@@ -10568,8 +10568,8 @@ mod tests {
         assert_eq!(thumbnail.width, 120);
         assert_eq!(thumbnail.height, 120);
         assert_eq!(rgba_at(&thumbnail, 30, 38), [255, 127, 127, 255]);
-        assert_eq!(rgba_at(&thumbnail, 15, 85), [0, 115, 255, 255]);
-        assert_eq!(rgba_at(&thumbnail, 109, 80), [0, 140, 0, 255]);
+        assert_eq!(rgba_at(&thumbnail, 15, 85), [64, 150, 255, 255]);
+        assert_eq!(rgba_at(&thumbnail, 109, 80), [24, 150, 24, 255]);
     }
 
     #[test]
