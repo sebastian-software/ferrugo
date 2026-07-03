@@ -1705,6 +1705,14 @@ pub struct StrokeRasterRouteSummary {
     pub outline_axis_line_calls: usize,
     /// Number of joined stroke calls converted to one fill outline.
     pub outline_joined_calls: usize,
+    /// Number of axis-span stroke raster calls that still use stroke geometry.
+    pub axis_span_calls: usize,
+    /// Number of axis-span calls that included joined stroke geometry.
+    pub axis_span_join_calls: usize,
+    /// Total coverage spans seen by axis-span stroke raster calls.
+    pub axis_span_coverage_spans: usize,
+    /// Total raster spans seen by axis-span stroke raster calls.
+    pub axis_span_raster_spans: usize,
     /// Number of span-covered stroke raster calls.
     pub span_covered_calls: usize,
     /// Number of span-covered calls that used row cursors.
@@ -1787,6 +1795,16 @@ impl StrokeRasterRouteSummary {
     fn record_joined_outline_fill_call(&mut self) {
         self.outline_fill_calls += 1;
         self.outline_joined_calls += 1;
+    }
+
+    fn record_axis_span_call(&mut self, raster_spans: usize, coverage_spans: usize, joins: bool) {
+        self.axis_span_calls += 1;
+        if joins {
+            self.axis_span_join_calls += 1;
+        }
+        self.axis_span_raster_spans = self.axis_span_raster_spans.saturating_add(raster_spans);
+        self.axis_span_coverage_spans =
+            self.axis_span_coverage_spans.saturating_add(coverage_spans);
     }
 
     fn record_span_covered_call(&mut self, raster_spans: usize, coverage_spans: usize) {
@@ -14651,7 +14669,6 @@ fn stroke_path(
     };
     let sample_count = samples * samples;
     let dimensions = device.dimensions();
-    let route_pixel_area = stroke_unclipped_pixel_area(stroke_lines, joins, radius);
     let Some(bounds) = stroke_pixel_bounds_with_padding(
         stroke_lines,
         joins,
@@ -14705,6 +14722,7 @@ fn stroke_path(
         }
     }
     let prepared_joins = prepare_stroke_joins(joins, radius, state.line_join, state.miter_limit);
+    let has_joins = !joins.is_empty();
     let axis_spans = axis_stroke_raster_spans(
         stroke_lines,
         joins,
@@ -14714,7 +14732,6 @@ fn stroke_path(
         samples,
         state.line_cap,
     );
-    let has_joins = !joins.is_empty();
     if let Some(spans) = axis_spans {
         let join_buckets = has_joins
             .then(|| {
@@ -14745,10 +14762,10 @@ fn stroke_path(
         )?;
         return Ok(());
     }
+    let route_pixel_area = stroke_unclipped_pixel_area(stroke_lines, joins, radius);
     if !snap_hairline
         && state.dash_pattern.is_solid()
         && matches!(state.line_cap, LineCap::Butt)
-        && !matches!(state.line_join, LineJoin::Round)
         && radius >= 1.0
         && samples > 1
         && !joins.is_empty()
@@ -15419,6 +15436,13 @@ fn rasterize_axis_stroke_spans(
             SampledPixelBlend::new(source, state.blend_mode, state.alpha, sample_count),
             samples,
             context.stroke_routes,
+        );
+    }
+    if let Some(stroke_routes) = context.stroke_routes {
+        stroke_routes.borrow_mut().record_axis_span_call(
+            spans.raster.spans.len(),
+            spans.coverage.spans.len(),
+            has_joins,
         );
     }
     let radius = stroke_radius_for_device_line_width(state.line_width);
@@ -23557,13 +23581,13 @@ mod tests {
                 media_box: PathBounds {
                     min_x: 0.0,
                     min_y: 0.0,
-                    max_x: 160.0,
-                    max_y: 160.0,
+                    max_x: 220.0,
+                    max_y: 220.0,
                 },
                 crop_box: None,
                 rotation: PageRotation::Deg0,
             },
-            160,
+            220,
         )
         .expect("valid page transform");
         let mut segments = Vec::new();
@@ -23749,7 +23773,7 @@ mod tests {
 
     #[test]
     fn stroke_raster_route_summary_should_count_joined_outline_fill_calls() {
-        for line_join in [LineJoin::Miter, LineJoin::Bevel] {
+        for line_join in [LineJoin::Miter, LineJoin::Bevel, LineJoin::Round] {
             let transform = PageTransform::new(
                 PageGeometry {
                     media_box: PathBounds {
@@ -23808,32 +23832,37 @@ mod tests {
     }
 
     #[test]
-    fn stroke_raster_route_summary_should_skip_joined_outline_for_round_joins() {
+    fn stroke_raster_route_summary_should_count_axis_span_join_calls() {
         let transform = PageTransform::new(
             PageGeometry {
                 media_box: PathBounds {
                     min_x: 0.0,
                     min_y: 0.0,
-                    max_x: 160.0,
-                    max_y: 160.0,
+                    max_x: 220.0,
+                    max_y: 220.0,
                 },
                 crop_box: None,
                 rotation: PageRotation::Deg0,
             },
-            160,
+            220,
         )
         .expect("valid page transform");
         let display_list = DisplayList::from_items(vec![DisplayItem::Path(PathDisplayItem {
             segments: vec![
-                PathSegment::MoveTo(Point { x: 16.0, y: 20.0 }),
-                PathSegment::LineTo(Point { x: 92.0, y: 50.0 }),
-                PathSegment::LineTo(Point { x: 128.0, y: 132.0 }),
+                PathSegment::MoveTo(Point { x: 32.0, y: 180.0 }),
+                PathSegment::LineTo(Point { x: 180.0, y: 180.0 }),
+                PathSegment::LineTo(Point { x: 180.0, y: 32.0 }),
             ],
             paint: PaintMode::Stroke,
             state: GraphicsState {
-                line_width: 8.0,
+                line_width: 16.0,
                 line_cap: LineCap::Butt,
                 line_join: LineJoin::Round,
+                stroke_color: DeviceColor::Rgb {
+                    r: 0.2,
+                    g: 0.6,
+                    b: 0.9,
+                },
                 ..GraphicsState::default()
             },
             fill_pattern: None,
@@ -23854,6 +23883,14 @@ mod tests {
         let routes = routes.into_inner();
         assert_eq!(routes.outline_joined_calls, 0);
         assert_eq!(routes.outline_fill_calls, 0);
+        assert_eq!(routes.axis_span_calls, 1);
+        assert_eq!(routes.axis_span_join_calls, 1);
+        assert!(routes.axis_span_coverage_spans > 0);
+        assert_eq!(
+            routes.axis_span_coverage_spans,
+            routes.axis_span_raster_spans
+        );
+        assert_eq!(routes.span_covered_calls, 0);
     }
 
     #[test]

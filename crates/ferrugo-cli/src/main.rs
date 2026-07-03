@@ -8992,6 +8992,10 @@ fn trace_stroke_raster_route_summary_json(
                 "\"outline_fill_calls\":{},",
                 "\"outline_axis_line_calls\":{},",
                 "\"outline_joined_calls\":{},",
+                "\"axis_span_calls\":{},",
+                "\"axis_span_join_calls\":{},",
+                "\"axis_span_coverage_spans\":{},",
+                "\"axis_span_raster_spans\":{},",
                 "\"span_covered_calls\":{},",
                 "\"span_cursor_calls\":{},",
                 "\"span_from_start_calls\":{},",
@@ -9031,6 +9035,10 @@ fn trace_stroke_raster_route_summary_json(
             summary.outline_fill_calls,
             summary.outline_axis_line_calls,
             summary.outline_joined_calls,
+            summary.axis_span_calls,
+            summary.axis_span_join_calls,
+            summary.axis_span_coverage_spans,
+            summary.axis_span_raster_spans,
             summary.span_covered_calls,
             summary.span_cursor_calls,
             summary.span_from_start_calls,
@@ -12328,6 +12336,10 @@ mod tests {
         assert!(json.contains("\"outline_fill_calls\""));
         assert!(json.contains("\"outline_axis_line_calls\""));
         assert!(json.contains("\"outline_joined_calls\""));
+        assert!(json.contains("\"axis_span_calls\""));
+        assert!(json.contains("\"axis_span_join_calls\""));
+        assert!(json.contains("\"axis_span_coverage_spans\""));
+        assert!(json.contains("\"axis_span_raster_spans\""));
         assert!(json.contains("\"span_covered_calls\""));
         assert!(json.contains("\"span_cursor_calls\""));
         assert!(json.contains("\"span_from_start_calls\""));
