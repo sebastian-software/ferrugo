@@ -8004,6 +8004,7 @@ fn native_memory_diagnostics_json(diagnostics: &NativeMemoryDiagnostics) -> Stri
             "{{",
             "\"max_page_pixels\":{},",
             "\"max_raster_band_rows\":{},",
+            "\"min_raster_band_pixels\":{},",
             "\"max_raster_band_workers\":{},",
             "\"max_image_bytes\":{},",
             "\"max_total_image_bytes\":{},",
@@ -8033,6 +8034,7 @@ fn native_memory_diagnostics_json(diagnostics: &NativeMemoryDiagnostics) -> Stri
         ),
         diagnostics.max_page_pixels,
         diagnostics.max_raster_band_rows,
+        diagnostics.min_raster_band_pixels,
         diagnostics.max_raster_band_workers,
         diagnostics.max_image_bytes,
         diagnostics.max_total_image_bytes,
@@ -13772,7 +13774,8 @@ status = "candidate"
         assert!(json.contains("\"has_oc_properties\":false"));
         assert!(json.contains("\"rust_native_memory\""));
         assert!(json.contains("\"max_page_pixels\":16777216"));
-        assert!(json.contains("\"max_raster_band_rows\":0"));
+        assert!(json.contains("\"max_raster_band_rows\":64"));
+        assert!(json.contains("\"min_raster_band_pixels\":160000"));
         assert!(json.contains("\"max_total_image_bytes\":134217728"));
         assert!(json.contains("\"max_session_image_resource_entries\":16"));
         assert!(json.contains("\"max_session_font_resource_entries\":16"));

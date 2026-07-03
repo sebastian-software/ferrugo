@@ -99,7 +99,8 @@ const DEFAULT_SESSION_TYPE3_RENDER_CACHE_ENTRIES: usize = 128;
 const DEFAULT_SESSION_TYPE3_RENDER_CACHE_BYTES: usize = 1024 * 1024;
 const LOW_MEMORY_SESSION_TYPE3_RENDER_CACHE_ENTRIES: usize = 32;
 const LOW_MEMORY_SESSION_TYPE3_RENDER_CACHE_BYTES: usize = 256 * 1024;
-const DEFAULT_RASTER_BAND_ROWS: usize = 0;
+const DEFAULT_RASTER_BAND_ROWS: usize = 64;
+const DEFAULT_RASTER_BAND_MIN_PIXELS: usize = 160_000;
 const LOW_MEMORY_RASTER_BAND_ROWS: usize = 64;
 const DEFAULT_RASTER_BAND_WORKERS: usize = 1;
 const LOW_MEMORY_PARALLEL_RASTER_BAND_WORKERS: usize = 2;
@@ -1103,6 +1104,8 @@ pub struct NativeRenderLimits {
     /// banding; values at or above the page height keep the legacy single-target
     /// path.
     pub max_raster_band_rows: usize,
+    /// Minimum full-page raster pixels required before banding is considered.
+    pub min_raster_band_pixels: usize,
     /// Maximum native raster bands scheduled concurrently. Values below two keep
     /// the serial band replay path.
     pub max_raster_band_workers: usize,
@@ -1192,6 +1195,7 @@ impl NativeRenderLimits {
         Self {
             max_page_pixels: 384 * 384,
             max_raster_band_rows: LOW_MEMORY_RASTER_BAND_ROWS,
+            min_raster_band_pixels: 0,
             max_raster_band_workers: DEFAULT_RASTER_BAND_WORKERS,
             max_image_bytes: 12 * 1024 * 1024,
             max_total_image_bytes: 24 * 1024 * 1024,
@@ -1246,6 +1250,7 @@ impl NativeRenderLimits {
         NativeMemoryDiagnostics {
             max_page_pixels: self.max_page_pixels,
             max_raster_band_rows: self.max_raster_band_rows,
+            min_raster_band_pixels: self.min_raster_band_pixels,
             max_raster_band_workers: self.max_raster_band_workers,
             max_image_bytes: self.max_image_bytes,
             max_total_image_bytes: self.max_total_image_bytes,
@@ -1321,6 +1326,7 @@ impl Default for NativeRenderLimits {
         Self {
             max_page_pixels: page.max_page_pixels,
             max_raster_band_rows: DEFAULT_RASTER_BAND_ROWS,
+            min_raster_band_pixels: DEFAULT_RASTER_BAND_MIN_PIXELS,
             max_raster_band_workers: DEFAULT_RASTER_BAND_WORKERS,
             max_image_bytes: display.max_image_bytes,
             max_total_image_bytes: display.max_total_image_bytes,
@@ -1363,6 +1369,8 @@ pub struct NativeMemoryDiagnostics {
     pub max_page_pixels: usize,
     /// Maximum rows rendered into one native raster band. Zero disables banding.
     pub max_raster_band_rows: usize,
+    /// Minimum full-page raster pixels required before banding is considered.
+    pub min_raster_band_pixels: usize,
     /// Maximum native raster bands scheduled concurrently.
     pub max_raster_band_workers: usize,
     /// Maximum decoded bytes accepted for one image XObject.
@@ -2746,8 +2754,12 @@ fn rasterize_native_page_work_to_thumbnail(
     type3_template_cache: &RefCell<Type3CharProcTemplateCache>,
     type3_render_cache: Option<&RefCell<Type3GlyphRenderCache>>,
 ) -> Result<Thumbnail, ThumbnailError> {
-    let band_rows = raster_band_rows(transform.dimensions, limits.max_raster_band_rows)
-        .filter(|_| native_raster_work_supports_banded_replay(work));
+    let band_rows = raster_band_rows(
+        transform.dimensions,
+        limits.max_raster_band_rows,
+        limits.min_raster_band_pixels,
+    )
+    .filter(|_| native_raster_work_supports_banded_replay(work));
     let parallel_band_replay = trace_sinks.supports_parallel_band_replay()
         && type3_render_cache.is_none()
         && limits.max_raster_band_workers > DEFAULT_RASTER_BAND_WORKERS;
@@ -3067,8 +3079,16 @@ fn rasterize_native_page_work_into(
     Ok(())
 }
 
-fn raster_band_rows(dimensions: RasterDimensions, max_rows: usize) -> Option<u32> {
+fn raster_band_rows(
+    dimensions: RasterDimensions,
+    max_rows: usize,
+    min_pixels: usize,
+) -> Option<u32> {
     if max_rows == 0 || max_rows >= dimensions.height as usize {
+        return None;
+    }
+    let full_page_pixels = (dimensions.width as usize) * (dimensions.height as usize);
+    if full_page_pixels < min_pixels {
         return None;
     }
     Some(max_rows.max(1) as u32)
@@ -7052,6 +7072,48 @@ mod tests {
     }
 
     #[test]
+    fn default_profile_should_band_only_above_pixel_threshold() {
+        let scanner = include_bytes!("../../../fixtures/generated/scanner-large-image-budget.pdf");
+        let scanner_options = ThumbnailOptions {
+            page_index: 0,
+            max_edge: 440,
+            background: ferrugo_thumbnail::Rgba::WHITE,
+            output_format: ferrugo_thumbnail::OutputFormat::Rgba,
+            timeout: std::time::Duration::from_secs(5),
+            annotation_mode: AnnotationMode::Screen,
+            form_appearance_mode: FormAppearanceMode::DocumentState,
+        };
+        let scanner_bands = NativeBackend::new()
+            .render_raster_band_summary(PdfSource::from_bytes(scanner), &scanner_options)
+            .expect("scanner fixture should render with default band summary");
+
+        assert_eq!(scanner_bands.full_page_pixels, 140_800);
+        assert_eq!(scanner_bands.bands, 1);
+        assert_eq!(scanner_bands.active_target_byte_reduction_per_mille(), 0);
+
+        let high_dpi = include_bytes!("../../../fixtures/generated/high-dpi-preview-fidelity.pdf");
+        let high_dpi_options = ThumbnailOptions {
+            page_index: 0,
+            max_edge: 1024,
+            background: ferrugo_thumbnail::Rgba::WHITE,
+            output_format: ferrugo_thumbnail::OutputFormat::Rgba,
+            timeout: std::time::Duration::from_secs(5),
+            annotation_mode: AnnotationMode::Screen,
+            form_appearance_mode: FormAppearanceMode::DocumentState,
+        };
+        let high_dpi_bands = NativeBackend::new()
+            .render_raster_band_summary(PdfSource::from_bytes(high_dpi), &high_dpi_options)
+            .expect("high-DPI fixture should render with default band summary");
+
+        assert_eq!(high_dpi_bands.full_page_pixels, 172_800);
+        assert_eq!(high_dpi_bands.bands, 6);
+        assert_eq!(high_dpi_bands.workers, 1);
+        assert_eq!(high_dpi_bands.max_band_rows, 64);
+        assert_eq!(high_dpi_bands.active_target_peak_bytes(), 122_880);
+        assert_eq!(high_dpi_bands.active_target_byte_reduction_per_mille(), 822);
+    }
+
+    #[test]
     fn low_memory_parallel_render_should_match_serial_large_scanner_image() {
         let bytes = include_bytes!("../../../fixtures/generated/scanner-large-image-budget.pdf");
         let options = ThumbnailOptions {
@@ -7667,7 +7729,8 @@ mod tests {
         let diagnostics = NativeBackend::new().memory_diagnostics();
 
         assert_eq!(diagnostics.max_page_pixels, 16 * 1024 * 1024);
-        assert_eq!(diagnostics.max_raster_band_rows, 0);
+        assert_eq!(diagnostics.max_raster_band_rows, 64);
+        assert_eq!(diagnostics.min_raster_band_pixels, 160_000);
         assert_eq!(diagnostics.max_raster_band_workers, 1);
         assert_eq!(diagnostics.max_image_bytes, 32 * 1024 * 1024);
         assert_eq!(diagnostics.max_total_image_bytes, 128 * 1024 * 1024);
@@ -7714,7 +7777,9 @@ mod tests {
         let low_memory_parallel = NativeBackend::low_memory_parallel().memory_diagnostics();
 
         assert!(low_memory.max_page_pixels < default.max_page_pixels);
-        assert_eq!(default.max_raster_band_rows, 0);
+        assert_eq!(default.max_raster_band_rows, 64);
+        assert_eq!(default.min_raster_band_pixels, 160_000);
+        assert_eq!(low_memory.min_raster_band_pixels, 0);
         assert_eq!(default.max_raster_band_workers, 1);
         assert_eq!(low_memory.max_raster_band_workers, 1);
         assert_eq!(
@@ -7902,6 +7967,7 @@ mod tests {
             ferrugo_thumbnail::Rgba::WHITE,
             NativeRenderLimits {
                 max_raster_band_rows,
+                min_raster_band_pixels: 0,
                 ..NativeRenderLimits::default()
             },
             &mut trace_sinks,
@@ -7953,7 +8019,10 @@ mod tests {
             &display_list,
             64,
             48,
-            NativeRenderLimits::default(),
+            NativeRenderLimits {
+                max_raster_band_rows: 0,
+                ..NativeRenderLimits::default()
+            },
         );
         let (parallel, parallel_bands) = render_test_display_list_with_size_and_limits(
             &display_list,
@@ -7961,6 +8030,7 @@ mod tests {
             48,
             NativeRenderLimits {
                 max_raster_band_rows: 11,
+                min_raster_band_pixels: 0,
                 max_raster_band_workers: 2,
                 ..NativeRenderLimits::default()
             },
@@ -8796,13 +8866,15 @@ mod tests {
                 true,
             ),
         ] {
-            let single = NativeBackend::new()
-                .render_with_trace(PdfSource::from_bytes(bytes), &options)
-                .unwrap_or_else(|error| {
-                    panic!("{label} single-target render should succeed: {error}")
-                });
+            let single = NativeBackend::with_render_limits(NativeRenderLimits {
+                max_raster_band_rows: 0,
+                ..NativeRenderLimits::default()
+            })
+            .render_with_trace(PdfSource::from_bytes(bytes), &options)
+            .unwrap_or_else(|error| panic!("{label} single-target render should succeed: {error}"));
             let banded = NativeBackend::with_render_limits(NativeRenderLimits {
                 max_raster_band_rows: 17,
+                min_raster_band_pixels: 0,
                 ..NativeRenderLimits::default()
             })
             .render_with_trace(PdfSource::from_bytes(bytes), &options)
