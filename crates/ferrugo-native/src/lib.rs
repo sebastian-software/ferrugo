@@ -27,13 +27,14 @@ use ferrugo_render::{
     rasterize_display_list_into_with_phase_timings_route_summaries_and_caches,
     rasterize_display_list_into_with_phase_timings_route_summaries_and_type3_render_cache,
     rasterize_images, rasterize_paths_into, rasterize_text_with_caches_and_type3_render_cache,
-    BlendMode, ColorSpaceResources, DisplayItem, DisplayList, DisplayListOptions,
+    BlendMode, ColorSpaceResources, DeviceColor, DisplayItem, DisplayList, DisplayListOptions,
     ExtGraphicsStateResources, FontResources, FormResources, GlyphBitmapCache, GraphicsError,
-    GraphicsErrorKind, IccTransformCache, ImageDecodeHints, ImageResources, PageGeometry,
-    PageRotation, PageTransform, PageTransformOptions, PaintMode, PathBounds, PathDisplayItem,
-    PathRasterOptions, PathSegment, Point, RasterDimensions, RasterDisplayPhase, RasterError,
-    RasterErrorKind, RasterScissor, ShadingResources, TextDisplayItem, TextWritingMode,
-    TilingPatternResources, Type3CharProcTemplateCache, Type3GlyphRenderCache,
+    GraphicsErrorKind, IccTransformCache, ImageColorSpace, ImageDecodeHints, ImageDisplayItem,
+    ImageKind, ImageResources, PageGeometry, PageRotation, PageTransform, PageTransformOptions,
+    PaintMode, PathBounds, PathDisplayItem, PathRasterOptions, PathSegment, Point,
+    RasterDimensions, RasterDisplayPhase, RasterError, RasterErrorKind, RasterScissor,
+    ShadingResources, TextDisplayItem, TextRenderingMode, TextWritingMode, TilingPatternResources,
+    Type3CharProcTemplateCache, Type3GlyphRenderCache,
 };
 pub use ferrugo_render::{
     FillRasterRouteSummary, GlyphBitmapCacheSummary, ImagePlacementSummary, ImageResourceSummary,
@@ -51,7 +52,7 @@ use ferrugo_thumbnail::{
 };
 
 #[cfg(test)]
-use ferrugo_render::{DeviceColor, FillRule, GraphicsState};
+use ferrugo_render::{FillRule, GraphicsState};
 #[cfg(test)]
 use ferrugo_thumbnail::FormAppearanceMode;
 
@@ -167,12 +168,45 @@ pub struct NativeRenderTrace {
     pub image_resources: ImageResourceSummary,
     /// Request-local image placement summary for renderer profiling.
     pub image_placements: ImagePlacementSummary,
+    /// Request-local scanned-page fast-path summary for renderer profiling.
+    pub scanned_page_fast_path: ScannedPageFastPathSummary,
     /// Request-local fallback glyph bitmap cache summary for renderer profiling.
     pub glyph_bitmaps: GlyphBitmapCacheSummary,
     /// Request-local Type 3 CharProc template cache summary for renderer profiling.
     pub type3_templates: Type3CharProcTemplateCacheSummary,
     /// Request-local raster banding summary for renderer profiling.
     pub raster_bands: RasterBandSummary,
+}
+
+/// Native renderer counters for the scanned-page direct-image route.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ScannedPageFastPathSummary {
+    /// Pages inspected by the scanned-page classifier.
+    pub classifier_calls: usize,
+    /// Pages that matched the conservative scanned-page shape.
+    pub candidate_pages: usize,
+    /// Pages rendered through the direct-image route.
+    pub direct_image_calls: usize,
+    /// Candidate pages rejected because annotations would need compositing.
+    pub fallback_annotations: usize,
+    /// Candidate pages rejected because content order must be replayed generically.
+    pub fallback_ordered_content: usize,
+    /// Candidate pages rejected because forms or transparency groups are present.
+    pub fallback_forms_or_transparency: usize,
+    /// Candidate pages rejected because non-background path content is present.
+    pub fallback_path_content: usize,
+    /// Candidate pages rejected because visible or clipping text is present.
+    pub fallback_visible_text: usize,
+    /// Candidate pages rejected because image count is not exactly one.
+    pub fallback_image_count: usize,
+    /// Candidate pages rejected because the image has masks or non-opaque samples.
+    pub fallback_mask_or_non_opaque: usize,
+    /// Candidate pages rejected because the image transform is rotated or skewed.
+    pub fallback_transformed_image: usize,
+    /// Candidate pages rejected because the image does not cover the raster page.
+    pub fallback_not_full_page: usize,
+    /// Candidate pages rejected because the direct route could not allocate or sample safely.
+    pub fallback_direct_error: usize,
 }
 
 /// Native renderer raster banding summary for one page render.
@@ -259,6 +293,7 @@ struct RenderTraceSinks<'a> {
     stroke_routes: Option<&'a mut StrokeRasterRouteSummary>,
     image_resources: Option<&'a mut ImageResourceSummary>,
     image_placements: Option<&'a mut ImagePlacementSummary>,
+    scanned_page_fast_path: Option<&'a mut ScannedPageFastPathSummary>,
     glyph_bitmaps: Option<&'a mut GlyphBitmapCacheSummary>,
     type3_templates: Option<&'a mut Type3CharProcTemplateCacheSummary>,
     raster_bands: Option<&'a mut RasterBandSummary>,
@@ -274,6 +309,7 @@ impl<'a> RenderTraceSinks<'a> {
             stroke_routes: None,
             image_resources: None,
             image_placements: None,
+            scanned_page_fast_path: None,
             glyph_bitmaps: None,
             type3_templates: None,
             raster_bands: None,
@@ -289,6 +325,7 @@ impl<'a> RenderTraceSinks<'a> {
             stroke_routes: None,
             image_resources: None,
             image_placements: None,
+            scanned_page_fast_path: None,
             glyph_bitmaps: None,
             type3_templates: None,
             raster_bands: None,
@@ -307,6 +344,7 @@ impl<'a> RenderTraceSinks<'a> {
         stroke_routes: &'a mut StrokeRasterRouteSummary,
         image_resources: &'a mut ImageResourceSummary,
         image_placements: &'a mut ImagePlacementSummary,
+        scanned_page_fast_path: &'a mut ScannedPageFastPathSummary,
         glyph_bitmaps: &'a mut GlyphBitmapCacheSummary,
         type3_templates: &'a mut Type3CharProcTemplateCacheSummary,
         raster_bands: &'a mut RasterBandSummary,
@@ -319,6 +357,7 @@ impl<'a> RenderTraceSinks<'a> {
             stroke_routes: Some(stroke_routes),
             image_resources: Some(image_resources),
             image_placements: Some(image_placements),
+            scanned_page_fast_path: Some(scanned_page_fast_path),
             glyph_bitmaps: Some(glyph_bitmaps),
             type3_templates: Some(type3_templates),
             raster_bands: Some(raster_bands),
@@ -333,6 +372,7 @@ impl<'a> RenderTraceSinks<'a> {
             && self.stroke_routes.is_none()
             && self.image_resources.is_none()
             && self.image_placements.is_none()
+            && self.scanned_page_fast_path.is_none()
             && self.glyph_bitmaps.is_none()
             && self.type3_templates.is_none()
     }
@@ -899,6 +939,7 @@ impl NativeBackend {
         let mut stroke_routes = StrokeRasterRouteSummary::default();
         let mut image_resources = ImageResourceSummary::default();
         let mut image_placements = ImagePlacementSummary::default();
+        let mut scanned_page_fast_path = ScannedPageFastPathSummary::default();
         let mut glyph_bitmaps = GlyphBitmapCacheSummary::default();
         let mut type3_templates = Type3CharProcTemplateCacheSummary::default();
         let mut raster_bands = RasterBandSummary::default();
@@ -915,6 +956,7 @@ impl NativeBackend {
                 &mut stroke_routes,
                 &mut image_resources,
                 &mut image_placements,
+                &mut scanned_page_fast_path,
                 &mut glyph_bitmaps,
                 &mut type3_templates,
                 &mut raster_bands,
@@ -930,6 +972,7 @@ impl NativeBackend {
             stroke_routes,
             image_resources,
             image_placements,
+            scanned_page_fast_path,
             glyph_bitmaps,
             type3_templates,
             raster_bands,
@@ -962,6 +1005,7 @@ impl NativeBackend {
             stroke_routes: None,
             image_resources: None,
             image_placements: None,
+            scanned_page_fast_path: None,
             glyph_bitmaps: None,
             type3_templates: None,
             raster_bands: Some(&mut raster_bands),
@@ -2739,6 +2783,421 @@ struct NativeRasterWork<'a> {
     annotation_fallback_text_list: Option<&'a DisplayList>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ScannedPageFastPathFallback {
+    Annotations,
+    OrderedContent,
+    FormsOrTransparency,
+    PathContent,
+    VisibleText,
+    ImageCount,
+    MaskOrNonOpaque,
+    TransformedImage,
+    NotFullPage,
+    DirectError,
+}
+
+impl ScannedPageFastPathSummary {
+    fn record_candidate(&mut self) {
+        self.classifier_calls = self.classifier_calls.saturating_add(1);
+        self.candidate_pages = self.candidate_pages.saturating_add(1);
+    }
+
+    fn record_direct_call(&mut self) {
+        self.direct_image_calls = self.direct_image_calls.saturating_add(1);
+    }
+
+    fn record_fallback(&mut self, reason: ScannedPageFastPathFallback) {
+        self.classifier_calls = self.classifier_calls.saturating_add(1);
+        match reason {
+            ScannedPageFastPathFallback::Annotations => {
+                self.fallback_annotations = self.fallback_annotations.saturating_add(1);
+            }
+            ScannedPageFastPathFallback::OrderedContent => {
+                self.fallback_ordered_content = self.fallback_ordered_content.saturating_add(1);
+            }
+            ScannedPageFastPathFallback::FormsOrTransparency => {
+                self.fallback_forms_or_transparency =
+                    self.fallback_forms_or_transparency.saturating_add(1);
+            }
+            ScannedPageFastPathFallback::PathContent => {
+                self.fallback_path_content = self.fallback_path_content.saturating_add(1);
+            }
+            ScannedPageFastPathFallback::VisibleText => {
+                self.fallback_visible_text = self.fallback_visible_text.saturating_add(1);
+            }
+            ScannedPageFastPathFallback::ImageCount => {
+                self.fallback_image_count = self.fallback_image_count.saturating_add(1);
+            }
+            ScannedPageFastPathFallback::MaskOrNonOpaque => {
+                self.fallback_mask_or_non_opaque =
+                    self.fallback_mask_or_non_opaque.saturating_add(1);
+            }
+            ScannedPageFastPathFallback::TransformedImage => {
+                self.fallback_transformed_image = self.fallback_transformed_image.saturating_add(1);
+            }
+            ScannedPageFastPathFallback::NotFullPage => {
+                self.fallback_not_full_page = self.fallback_not_full_page.saturating_add(1);
+            }
+            ScannedPageFastPathFallback::DirectError => {
+                self.fallback_direct_error = self.fallback_direct_error.saturating_add(1);
+            }
+        }
+    }
+}
+
+fn scanned_page_fast_path_candidate<'a>(
+    work: NativeRasterWork<'a>,
+    transform: PageTransform,
+) -> Result<&'a ImageDisplayItem, ScannedPageFastPathFallback> {
+    if work.annotation_list.is_some()
+        || work.annotation_fallback_list.is_some()
+        || work.annotation_fallback_text_list.is_some()
+    {
+        return Err(ScannedPageFastPathFallback::Annotations);
+    }
+    if let Some(ordered_list) = work.ordered_list {
+        return scanned_page_ordered_fast_path_candidate(ordered_list, transform);
+    }
+    if !work.form_list.is_empty() {
+        return Err(ScannedPageFastPathFallback::FormsOrTransparency);
+    }
+    ensure_scanned_page_path_list(work.display_list, transform)?;
+    ensure_scanned_page_text_list(work.text_list)?;
+    let image = single_scanned_page_image(work.image_list)?;
+    ensure_scanned_page_image_supported(image, transform)?;
+    Ok(image)
+}
+
+fn scanned_page_ordered_fast_path_candidate(
+    display_list: &DisplayList,
+    transform: PageTransform,
+) -> Result<&ImageDisplayItem, ScannedPageFastPathFallback> {
+    let mut image = None;
+    for item in display_list.items() {
+        match item {
+            DisplayItem::Path(path) => {
+                if !is_full_page_white_fill(path, transform) {
+                    return Err(ScannedPageFastPathFallback::PathContent);
+                }
+                if image.is_some() {
+                    return Err(ScannedPageFastPathFallback::OrderedContent);
+                }
+            }
+            DisplayItem::Text(text) if text.rendering_mode == TextRenderingMode::Invisible => {}
+            DisplayItem::Text(_) => return Err(ScannedPageFastPathFallback::VisibleText),
+            DisplayItem::Image(candidate) => {
+                if image.replace(candidate).is_some() {
+                    return Err(ScannedPageFastPathFallback::ImageCount);
+                }
+            }
+            DisplayItem::TransparencyGroup(_) | DisplayItem::Shading(_) => {
+                return Err(ScannedPageFastPathFallback::FormsOrTransparency);
+            }
+            DisplayItem::ClipPlaceholder { .. } => {
+                return Err(ScannedPageFastPathFallback::PathContent);
+            }
+        }
+    }
+    let Some(image) = image else {
+        return Err(ScannedPageFastPathFallback::ImageCount);
+    };
+    ensure_scanned_page_image_supported(image, transform)?;
+    Ok(image)
+}
+
+fn ensure_scanned_page_path_list(
+    display_list: &DisplayList,
+    transform: PageTransform,
+) -> Result<(), ScannedPageFastPathFallback> {
+    for item in display_list.items() {
+        let DisplayItem::Path(path) = item else {
+            return Err(match item {
+                DisplayItem::TransparencyGroup(_) | DisplayItem::Shading(_) => {
+                    ScannedPageFastPathFallback::FormsOrTransparency
+                }
+                DisplayItem::ClipPlaceholder { .. }
+                | DisplayItem::Text(_)
+                | DisplayItem::Image(_)
+                | DisplayItem::Path(_) => ScannedPageFastPathFallback::PathContent,
+            });
+        };
+        if !is_full_page_white_fill(path, transform) {
+            return Err(ScannedPageFastPathFallback::PathContent);
+        }
+    }
+    Ok(())
+}
+
+fn ensure_scanned_page_text_list(
+    display_list: &DisplayList,
+) -> Result<(), ScannedPageFastPathFallback> {
+    if display_list.items().iter().all(|item| {
+        matches!(
+            item,
+            DisplayItem::Text(text) if text.rendering_mode == TextRenderingMode::Invisible
+        )
+    }) {
+        return Ok(());
+    }
+    Err(ScannedPageFastPathFallback::VisibleText)
+}
+
+fn single_scanned_page_image(
+    display_list: &DisplayList,
+) -> Result<&ImageDisplayItem, ScannedPageFastPathFallback> {
+    let mut images = display_list.items().iter().filter_map(|item| match item {
+        DisplayItem::Image(image) => Some(image),
+        DisplayItem::TransparencyGroup(_) | DisplayItem::Shading(_) => None,
+        DisplayItem::Path(_) | DisplayItem::ClipPlaceholder { .. } | DisplayItem::Text(_) => None,
+    });
+    let Some(image) = images.next() else {
+        return Err(ScannedPageFastPathFallback::ImageCount);
+    };
+    if images.next().is_some() || display_list.items().len() != 1 {
+        return Err(ScannedPageFastPathFallback::ImageCount);
+    }
+    Ok(image)
+}
+
+fn ensure_scanned_page_image_supported(
+    image: &ImageDisplayItem,
+    transform: PageTransform,
+) -> Result<(), ScannedPageFastPathFallback> {
+    if !matches!(image.image.kind, ImageKind::Color)
+        || image.image.soft_mask.is_some()
+        || image.image.indexed_lookup.is_some()
+        || image.image.bits_per_component != 8
+        || !matches!(
+            image.image.color_space,
+            ImageColorSpace::DeviceGray | ImageColorSpace::DeviceRgb
+        )
+    {
+        return Err(ScannedPageFastPathFallback::MaskOrNonOpaque);
+    }
+    let image_to_device = transform.matrix.multiply(image.transform);
+    if !matrix_is_axis_aligned(image_to_device) {
+        return Err(ScannedPageFastPathFallback::TransformedImage);
+    }
+    if !image_covers_device_page(image_to_device, transform.dimensions) {
+        return Err(ScannedPageFastPathFallback::NotFullPage);
+    }
+    Ok(())
+}
+
+fn is_full_page_white_fill(path: &PathDisplayItem, transform: PageTransform) -> bool {
+    matches!(path.paint, PaintMode::Fill { .. })
+        && path.fill_pattern.is_none()
+        && matches!(path.state.blend_mode, BlendMode::Normal)
+        && path.state.fill_alpha >= 1.0
+        && device_color_is_white(path.state.fill_color)
+        && path
+            .bounds()
+            .is_some_and(|bounds| bounds_cover(bounds, transform.source_box, 0.01))
+}
+
+fn device_color_is_white(color: DeviceColor) -> bool {
+    const EPSILON: f64 = 0.000_001;
+    match color {
+        DeviceColor::Gray(gray) => (gray.0 - 1.0).abs() <= EPSILON,
+        DeviceColor::Rgb { r, g, b } | DeviceColor::Spot { r, g, b, .. } => {
+            (r - 1.0).abs() <= EPSILON && (g - 1.0).abs() <= EPSILON && (b - 1.0).abs() <= EPSILON
+        }
+    }
+}
+
+fn image_covers_device_page(
+    image_to_device: ferrugo_render::Matrix,
+    dimensions: RasterDimensions,
+) -> bool {
+    let bounds = transformed_unit_bounds(image_to_device);
+    let page = PathBounds {
+        min_x: 0.0,
+        min_y: 0.0,
+        max_x: f64::from(dimensions.width),
+        max_y: f64::from(dimensions.height),
+    };
+    bounds_cover(bounds, page, 0.01)
+}
+
+fn bounds_cover(bounds: PathBounds, target: PathBounds, tolerance: f64) -> bool {
+    bounds.min_x <= target.min_x + tolerance
+        && bounds.min_y <= target.min_y + tolerance
+        && bounds.max_x + tolerance >= target.max_x
+        && bounds.max_y + tolerance >= target.max_y
+}
+
+fn transformed_unit_bounds(transform: ferrugo_render::Matrix) -> PathBounds {
+    let p0 = transform.transform_point(0.0, 0.0);
+    let p1 = transform.transform_point(1.0, 0.0);
+    let p2 = transform.transform_point(1.0, 1.0);
+    let p3 = transform.transform_point(0.0, 1.0);
+    PathBounds {
+        min_x: p0.x.min(p1.x).min(p2.x).min(p3.x),
+        min_y: p0.y.min(p1.y).min(p2.y).min(p3.y),
+        max_x: p0.x.max(p1.x).max(p2.x).max(p3.x),
+        max_y: p0.y.max(p1.y).max(p2.y).max(p3.y),
+    }
+}
+
+fn matrix_is_axis_aligned(matrix: ferrugo_render::Matrix) -> bool {
+    matrix.b.abs() <= f64::EPSILON && matrix.c.abs() <= f64::EPSILON
+}
+
+fn direct_scanned_page_thumbnail(
+    image: &ImageDisplayItem,
+    transform: PageTransform,
+) -> Result<Thumbnail, ThumbnailError> {
+    let image_to_device = transform.matrix.multiply(image.transform);
+    let inverse = image_to_device
+        .inverse()
+        .ok_or_else(|| ThumbnailError::internal("direct image transform is singular"))?;
+    let dimensions = transform.dimensions;
+    let mut pixels =
+        vec![
+            0;
+            dimensions
+                .stride
+                .checked_mul(dimensions.height as usize)
+                .ok_or_else(|| ThumbnailError::internal("direct image buffer overflow"))?
+        ];
+    let sample_x_by_column: Vec<u32> = (0..dimensions.width)
+        .map(|x| {
+            let sample_x = inverse
+                .a
+                .mul_add(f64::from(x) + 0.5, inverse.e)
+                .clamp(0.0, 1.0);
+            direct_image_sample_x(image.image.width, sample_x)
+        })
+        .collect();
+    match image.image.color_space {
+        ImageColorSpace::DeviceGray => write_direct_gray_image_rows(
+            image,
+            inverse,
+            dimensions,
+            &sample_x_by_column,
+            &mut pixels,
+        ),
+        ImageColorSpace::DeviceRgb => write_direct_rgb_image_rows(
+            image,
+            inverse,
+            dimensions,
+            &sample_x_by_column,
+            &mut pixels,
+        ),
+        ImageColorSpace::DeviceCmyk
+        | ImageColorSpace::IndexedGray
+        | ImageColorSpace::IndexedRgb => {
+            return Err(ThumbnailError::internal(
+                "direct image color space was not classified",
+            ));
+        }
+    }
+    Thumbnail::rgba(dimensions.width, dimensions.height, pixels)
+}
+
+fn write_direct_gray_image_rows(
+    image: &ImageDisplayItem,
+    inverse: ferrugo_render::Matrix,
+    dimensions: RasterDimensions,
+    sample_x_by_column: &[u32],
+    pixels: &mut [u8],
+) {
+    let mut previous_row: Option<(u32, usize)> = None;
+    for y in 0..dimensions.height {
+        let row_start = y as usize * dimensions.stride;
+        let sample_y = direct_image_sample_y(
+            image.image.height,
+            inverse
+                .d
+                .mul_add(f64::from(y) + 0.5, inverse.f)
+                .clamp(0.0, 1.0),
+        );
+        if let Some((previous_sample_y, previous_row_start)) = previous_row {
+            if previous_sample_y == sample_y {
+                pixels.copy_within(
+                    previous_row_start..previous_row_start + dimensions.stride,
+                    row_start,
+                );
+                continue;
+            }
+        }
+        let mut previous_pixel: Option<(u32, usize)> = None;
+        for x in 0..dimensions.width {
+            let sample_x = sample_x_by_column[x as usize];
+            let offset = row_start + x as usize * 4;
+            if let Some((previous_sample_x, previous_offset)) = previous_pixel {
+                if previous_sample_x == sample_x {
+                    pixels.copy_within(previous_offset..previous_offset + 4, offset);
+                    continue;
+                }
+            }
+            let index = sample_y as usize * image.image.width as usize + sample_x as usize;
+            let channel = image.image.samples[index];
+            pixels[offset..offset + 4].copy_from_slice(&[channel, channel, channel, 255]);
+            previous_pixel = Some((sample_x, offset));
+        }
+        previous_row = Some((sample_y, row_start));
+    }
+}
+
+fn write_direct_rgb_image_rows(
+    image: &ImageDisplayItem,
+    inverse: ferrugo_render::Matrix,
+    dimensions: RasterDimensions,
+    sample_x_by_column: &[u32],
+    pixels: &mut [u8],
+) {
+    let mut previous_row: Option<(u32, usize)> = None;
+    for y in 0..dimensions.height {
+        let row_start = y as usize * dimensions.stride;
+        let sample_y = direct_image_sample_y(
+            image.image.height,
+            inverse
+                .d
+                .mul_add(f64::from(y) + 0.5, inverse.f)
+                .clamp(0.0, 1.0),
+        );
+        if let Some((previous_sample_y, previous_row_start)) = previous_row {
+            if previous_sample_y == sample_y {
+                pixels.copy_within(
+                    previous_row_start..previous_row_start + dimensions.stride,
+                    row_start,
+                );
+                continue;
+            }
+        }
+        let mut previous_pixel: Option<(u32, usize)> = None;
+        for x in 0..dimensions.width {
+            let sample_x = sample_x_by_column[x as usize];
+            let offset = row_start + x as usize * 4;
+            if let Some((previous_sample_x, previous_offset)) = previous_pixel {
+                if previous_sample_x == sample_x {
+                    pixels.copy_within(previous_offset..previous_offset + 4, offset);
+                    continue;
+                }
+            }
+            let index = (sample_y as usize * image.image.width as usize + sample_x as usize) * 3;
+            pixels[offset..offset + 4].copy_from_slice(&[
+                image.image.samples[index],
+                image.image.samples[index + 1],
+                image.image.samples[index + 2],
+                255,
+            ]);
+            previous_pixel = Some((sample_x, offset));
+        }
+        previous_row = Some((sample_y, row_start));
+    }
+}
+
+fn direct_image_sample_x(width: u32, x: f64) -> u32 {
+    ((x * f64::from(width)).floor() as u32).min(width - 1)
+}
+
+fn direct_image_sample_y(height: u32, y: f64) -> u32 {
+    (((1.0 - y) * f64::from(height)).floor() as u32).min(height - 1)
+}
+
 #[expect(
     clippy::too_many_arguments,
     reason = "native page rasterization keeps work lists, trace sinks, and caches explicit"
@@ -2773,6 +3232,33 @@ fn rasterize_native_page_work_to_thumbnail(
     let band_summary = raster_band_summary(transform.dimensions, band_rows, band_workers);
     if let Some(raster_bands) = trace_sinks.raster_bands.as_deref_mut() {
         *raster_bands = band_summary;
+    }
+    match scanned_page_fast_path_candidate(work, transform) {
+        Ok(image) => {
+            if let Some(summary) = trace_sinks.scanned_page_fast_path.as_deref_mut() {
+                summary.record_candidate();
+            }
+            match record_render_phase(&mut trace_sinks.timings, NativeRenderPhase::Output, || {
+                direct_scanned_page_thumbnail(image, transform)
+            }) {
+                Ok(thumbnail) => {
+                    if let Some(summary) = trace_sinks.scanned_page_fast_path.as_deref_mut() {
+                        summary.record_direct_call();
+                    }
+                    return Ok(thumbnail);
+                }
+                Err(_) => {
+                    if let Some(summary) = trace_sinks.scanned_page_fast_path.as_deref_mut() {
+                        summary.record_fallback(ScannedPageFastPathFallback::DirectError);
+                    }
+                }
+            }
+        }
+        Err(reason) => {
+            if let Some(summary) = trace_sinks.scanned_page_fast_path.as_deref_mut() {
+                summary.record_fallback(reason);
+            }
+        }
     }
     let Some(band_rows) = band_rows else {
         let mut raster = transform
@@ -6896,9 +7382,226 @@ pub fn render_role() -> &'static str {
 mod tests {
     use super::*;
 
+    fn scanned_fast_path_test_transform() -> PageTransform {
+        PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 4.0,
+                    max_y: 4.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            4,
+        )
+        .expect("test page transform should build")
+    }
+
+    fn scanned_fast_path_test_image() -> ImageDisplayItem {
+        ImageDisplayItem {
+            image: ferrugo_render::ImageXObject {
+                resource_name: b"Im1".to_vec(),
+                width: 4,
+                height: 4,
+                bits_per_component: 8,
+                color_space: ImageColorSpace::DeviceRgb,
+                samples: std::sync::Arc::new(vec![
+                    255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 0, 255, 0, 255, 0, 255, 255, 64, 64,
+                    64, 128, 128, 128, 192, 192, 192, 32, 32, 32, 220, 20, 20, 20, 220, 20, 20, 20,
+                    220, 200, 200, 20, 20, 200, 200, 200, 20, 200,
+                ]),
+                kind: ImageKind::Color,
+                indexed_lookup: None,
+                soft_mask: None,
+            },
+            transform: ferrugo_render::Matrix::new(4.0, 0.0, 0.0, 4.0, 0.0, 0.0),
+            bounds: PathBounds {
+                min_x: 0.0,
+                min_y: 0.0,
+                max_x: 4.0,
+                max_y: 4.0,
+            },
+            state: GraphicsState::default(),
+        }
+    }
+
+    fn scanned_fast_path_text_item(rendering_mode: TextRenderingMode) -> TextDisplayItem {
+        TextDisplayItem {
+            text: "ocr".to_string(),
+            glyphs: Vec::new(),
+            glyph_origins: Vec::new(),
+            font: ferrugo_render::FontDescriptor::new("F1", Some("Helvetica")),
+            font_size: 12.0,
+            origin: Point { x: 0.0, y: 0.0 },
+            text_matrix: ferrugo_render::Matrix::IDENTITY,
+            rendering_mode,
+            state: GraphicsState::default(),
+        }
+    }
+
+    fn scanned_fast_path_white_background_path() -> PathDisplayItem {
+        PathDisplayItem {
+            segments: vec![
+                PathSegment::MoveTo(Point { x: 0.0, y: 0.0 }),
+                PathSegment::LineTo(Point { x: 4.0, y: 0.0 }),
+                PathSegment::LineTo(Point { x: 4.0, y: 4.0 }),
+                PathSegment::LineTo(Point { x: 0.0, y: 4.0 }),
+                PathSegment::Close,
+            ],
+            paint: PaintMode::Fill {
+                rule: FillRule::Nonzero,
+            },
+            state: GraphicsState {
+                fill_color: DeviceColor::Gray(ferrugo_render::DeviceGray(1.0)),
+                ..GraphicsState::default()
+            },
+            fill_pattern: None,
+        }
+    }
+
     #[test]
     fn crate_role_should_be_stable() {
         assert_eq!(crate_role(), "native-backend");
+    }
+
+    #[test]
+    fn scanned_page_fast_path_should_classify_single_full_page_opaque_image() {
+        let transform = scanned_fast_path_test_transform();
+        let empty = DisplayList::new();
+        let image_list =
+            DisplayList::from_items(vec![DisplayItem::Image(scanned_fast_path_test_image())]);
+        let work = NativeRasterWork {
+            display_list: &empty,
+            form_list: &empty,
+            image_list: &image_list,
+            text_list: &empty,
+            ordered_list: None,
+            annotation_list: None,
+            annotation_fallback_list: None,
+            annotation_fallback_text_list: None,
+        };
+
+        assert!(scanned_page_fast_path_candidate(work, transform).is_ok());
+    }
+
+    #[test]
+    fn scanned_page_fast_path_should_reject_visible_text_near_miss() {
+        let transform = scanned_fast_path_test_transform();
+        let empty = DisplayList::new();
+        let image_list =
+            DisplayList::from_items(vec![DisplayItem::Image(scanned_fast_path_test_image())]);
+        let text_list = DisplayList::from_items(vec![DisplayItem::Text(
+            scanned_fast_path_text_item(TextRenderingMode::Fill),
+        )]);
+        let work = NativeRasterWork {
+            display_list: &empty,
+            form_list: &empty,
+            image_list: &image_list,
+            text_list: &text_list,
+            ordered_list: None,
+            annotation_list: None,
+            annotation_fallback_list: None,
+            annotation_fallback_text_list: None,
+        };
+
+        assert_eq!(
+            scanned_page_fast_path_candidate(work, transform),
+            Err(ScannedPageFastPathFallback::VisibleText)
+        );
+    }
+
+    #[test]
+    fn scanned_page_fast_path_should_reject_soft_mask_near_miss() {
+        let transform = scanned_fast_path_test_transform();
+        let empty = DisplayList::new();
+        let mut image = scanned_fast_path_test_image();
+        image.image.soft_mask = Some(std::sync::Arc::new(vec![255; 16]));
+        let image_list = DisplayList::from_items(vec![DisplayItem::Image(image)]);
+        let work = NativeRasterWork {
+            display_list: &empty,
+            form_list: &empty,
+            image_list: &image_list,
+            text_list: &empty,
+            ordered_list: None,
+            annotation_list: None,
+            annotation_fallback_list: None,
+            annotation_fallback_text_list: None,
+        };
+
+        assert_eq!(
+            scanned_page_fast_path_candidate(work, transform),
+            Err(ScannedPageFastPathFallback::MaskOrNonOpaque)
+        );
+    }
+
+    #[test]
+    fn scanned_page_fast_path_should_classify_ordered_white_background_before_image() {
+        let transform = scanned_fast_path_test_transform();
+        let ordered = DisplayList::from_items(vec![
+            DisplayItem::Path(scanned_fast_path_white_background_path()),
+            DisplayItem::Image(scanned_fast_path_test_image()),
+            DisplayItem::Text(scanned_fast_path_text_item(TextRenderingMode::Invisible)),
+        ]);
+        let image = scanned_page_ordered_fast_path_candidate(&ordered, transform)
+            .expect("white background, image, invisible text should classify");
+
+        assert_eq!(image.image.width, 4);
+    }
+
+    #[test]
+    fn scanned_page_fast_path_should_reject_ordered_background_after_image() {
+        let transform = scanned_fast_path_test_transform();
+        let ordered = DisplayList::from_items(vec![
+            DisplayItem::Image(scanned_fast_path_test_image()),
+            DisplayItem::Path(scanned_fast_path_white_background_path()),
+        ]);
+
+        assert_eq!(
+            scanned_page_ordered_fast_path_candidate(&ordered, transform),
+            Err(ScannedPageFastPathFallback::OrderedContent)
+        );
+    }
+
+    #[test]
+    fn direct_scanned_page_thumbnail_should_match_generic_image_raster() {
+        let transform = scanned_fast_path_test_transform();
+        let empty = DisplayList::new();
+        let image = scanned_fast_path_test_image();
+        let direct = direct_scanned_page_thumbnail(&image, transform)
+            .expect("direct image route should render");
+        let image_list = DisplayList::from_items(vec![DisplayItem::Image(image)]);
+        let work = NativeRasterWork {
+            display_list: &empty,
+            form_list: &empty,
+            image_list: &image_list,
+            text_list: &empty,
+            ordered_list: None,
+            annotation_list: None,
+            annotation_fallback_list: None,
+            annotation_fallback_text_list: None,
+        };
+        let mut raster = transform
+            .create_device(ferrugo_thumbnail::Rgba::WHITE)
+            .expect("test raster should allocate");
+        let glyph_cache = RefCell::new(GlyphBitmapCache::default());
+        let type3_template_cache = RefCell::new(Type3CharProcTemplateCache::default());
+        let mut trace_sinks = RenderTraceSinks::none();
+        rasterize_native_page_work_into(
+            work,
+            &mut raster,
+            transform,
+            PathRasterOptions::default(),
+            &mut trace_sinks,
+            &glyph_cache,
+            &type3_template_cache,
+            None,
+        )
+        .expect("generic image route should render");
+        let generic = Thumbnail::rgba(4, 4, raster.into_pixels()).expect("thumbnail should build");
+
+        assert_eq!(direct.bytes, generic.bytes);
     }
 
     #[test]
@@ -7038,6 +7741,31 @@ mod tests {
         assert_eq!(trace.image_resources.max_height, 160);
         assert_eq!(trace.image_placements.source_pixels, 18_560);
         assert_eq!(trace.image_placements.device_pixels, 18_560);
+    }
+
+    #[test]
+    fn render_with_trace_should_report_scanned_page_direct_image_call() {
+        let bytes = include_bytes!("../../../fixtures/generated/scanned-page.pdf");
+        let options = ThumbnailOptions {
+            page_index: 0,
+            max_edge: 200,
+            background: ferrugo_thumbnail::Rgba::WHITE,
+            output_format: ferrugo_thumbnail::OutputFormat::Rgba,
+            timeout: std::time::Duration::from_secs(5),
+            annotation_mode: AnnotationMode::Screen,
+            form_appearance_mode: FormAppearanceMode::DocumentState,
+        };
+
+        let trace = NativeBackend::new()
+            .render_with_trace(PdfSource::from_bytes(bytes), &options)
+            .expect("scanned fixture should render with direct-image trace");
+
+        assert_eq!(trace.thumbnail.width, 160);
+        assert_eq!(trace.thumbnail.height, 200);
+        assert_eq!(trace.scanned_page_fast_path.classifier_calls, 1);
+        assert_eq!(trace.scanned_page_fast_path.candidate_pages, 1);
+        assert_eq!(trace.scanned_page_fast_path.direct_image_calls, 1);
+        assert_eq!(trace.scanned_page_fast_path.fallback_visible_text, 0);
     }
 
     #[test]
@@ -7886,6 +8614,7 @@ mod tests {
             stroke_routes: None,
             image_resources: None,
             image_placements: None,
+            scanned_page_fast_path: None,
             glyph_bitmaps: None,
             type3_templates: None,
             raster_bands: Some(&mut raster_bands),
@@ -7947,6 +8676,7 @@ mod tests {
             stroke_routes: None,
             image_resources: None,
             image_placements: None,
+            scanned_page_fast_path: None,
             glyph_bitmaps: None,
             type3_templates: None,
             raster_bands: Some(&mut raster_bands),

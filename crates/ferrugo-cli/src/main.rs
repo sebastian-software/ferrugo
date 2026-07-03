@@ -16,8 +16,8 @@ use ferrugo_native::{
     ImageResourceSummary, NativeBackend, NativeDocumentSessionStats, NativeMemoryDiagnostics,
     NativePageCacheKey, NativePageCachePolicy, NativeRenderLimits, NativeRenderPhaseTimings,
     NativeRenderTrace, OperatorCoverageEntry, OperatorCoverageOptions, OperatorSupportStatus,
-    PathFlatteningSummary, RasterBandSummary, StrokeRasterRouteSummary, StrokeShapeSummary,
-    Type3CharProcTemplateCacheSummary, DEFAULT_CURVE_FLATTENING_TOLERANCE,
+    PathFlatteningSummary, RasterBandSummary, ScannedPageFastPathSummary, StrokeRasterRouteSummary,
+    StrokeShapeSummary, Type3CharProcTemplateCacheSummary, DEFAULT_CURVE_FLATTENING_TOLERANCE,
 };
 #[cfg(feature = "pdfium")]
 use ferrugo_pdfium::PdfiumBackend;
@@ -4374,6 +4374,7 @@ struct BenchmarkRecord {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct NativeBenchmarkDiagnostics {
     fill_routes: Option<FillRasterRouteSummary>,
+    scanned_page_fast_path: Option<ScannedPageFastPathSummary>,
     raster_bands: Option<RasterBandSummary>,
 }
 
@@ -4381,6 +4382,7 @@ impl NativeBenchmarkDiagnostics {
     fn from_trace(trace: NativeRenderTrace) -> Self {
         Self {
             fill_routes: Some(trace.fill_routes),
+            scanned_page_fast_path: Some(trace.scanned_page_fast_path),
             raster_bands: Some(trace.raster_bands),
         }
     }
@@ -4393,7 +4395,7 @@ enum BenchmarkOutcome {
         height: u32,
         output_bytes: usize,
         mean_ms: f64,
-        diagnostics: NativeBenchmarkDiagnostics,
+        diagnostics: Box<NativeBenchmarkDiagnostics>,
     },
     FallbackRequired {
         reason: FallbackReason,
@@ -6536,7 +6538,7 @@ where
             height: thumbnail.height,
             output_bytes,
             mean_ms,
-            diagnostics: native_diagnostics(backend, path, options),
+            diagnostics: Box::new(native_diagnostics(backend, path, options)),
         },
     }
 }
@@ -8699,6 +8701,11 @@ fn native_render_trace_json(config: &TraceNativeConfig) -> Result<String, CliErr
     let image_placement_summary_json = trace_image_placement_summary_json(
         render_trace.as_ref().map(|trace| &trace.image_placements),
     );
+    let scanned_page_fast_path_summary_json = trace_scanned_page_fast_path_summary_json(
+        render_trace
+            .as_ref()
+            .map(|trace| &trace.scanned_page_fast_path),
+    );
     let glyph_bitmap_summary_json =
         trace_glyph_bitmap_summary_json(render_trace.as_ref().map(|trace| &trace.glyph_bitmaps));
     let type3_template_summary_json = trace_type3_template_summary_json(
@@ -8735,6 +8742,7 @@ fn native_render_trace_json(config: &TraceNativeConfig) -> Result<String, CliErr
             "  \"stroke_raster_route_summary\": {},\n",
             "  \"image_resource_summary\": {},\n",
             "  \"image_placement_summary\": {},\n",
+            "  \"scanned_page_fast_path_summary\": {},\n",
             "  \"glyph_bitmap_summary\": {},\n",
             "  \"type3_template_summary\": {},\n",
             "  \"raster_band_summary\": {},\n",
@@ -8762,6 +8770,7 @@ fn native_render_trace_json(config: &TraceNativeConfig) -> Result<String, CliErr
         stroke_raster_route_summary_json,
         image_resource_summary_json,
         image_placement_summary_json,
+        scanned_page_fast_path_summary_json,
         glyph_bitmap_summary_json,
         type3_template_summary_json,
         raster_band_summary_json,
@@ -9321,6 +9330,51 @@ fn trace_image_placement_summary_json(
             summary.axis_aligned_placements,
             summary.transformed_placements,
             summary.max_source_to_device_ratio_x100
+        ),
+        Err(error) => format!(
+            "{{\"status\":\"error\",\"class\":{},\"bucket\":{}}}",
+            json_string(error.class().as_str()),
+            optional_json_string(error.unsupported_feature_bucket())
+        ),
+    }
+}
+
+fn trace_scanned_page_fast_path_summary_json(
+    summary: Result<&ScannedPageFastPathSummary, &ThumbnailError>,
+) -> String {
+    match summary {
+        Ok(summary) => format!(
+            concat!(
+                "{{",
+                "\"status\":\"measured\",",
+                "\"classifier_calls\":{},",
+                "\"candidate_pages\":{},",
+                "\"direct_image_calls\":{},",
+                "\"fallback_annotations\":{},",
+                "\"fallback_ordered_content\":{},",
+                "\"fallback_forms_or_transparency\":{},",
+                "\"fallback_path_content\":{},",
+                "\"fallback_visible_text\":{},",
+                "\"fallback_image_count\":{},",
+                "\"fallback_mask_or_non_opaque\":{},",
+                "\"fallback_transformed_image\":{},",
+                "\"fallback_not_full_page\":{},",
+                "\"fallback_direct_error\":{}",
+                "}}"
+            ),
+            summary.classifier_calls,
+            summary.candidate_pages,
+            summary.direct_image_calls,
+            summary.fallback_annotations,
+            summary.fallback_ordered_content,
+            summary.fallback_forms_or_transparency,
+            summary.fallback_path_content,
+            summary.fallback_visible_text,
+            summary.fallback_image_count,
+            summary.fallback_mask_or_non_opaque,
+            summary.fallback_transformed_image,
+            summary.fallback_not_full_page,
+            summary.fallback_direct_error
         ),
         Err(error) => format!(
             "{{\"status\":\"error\",\"class\":{},\"bucket\":{}}}",
@@ -11108,6 +11162,7 @@ fn benchmark_outcome_json(outcome: &BenchmarkOutcome) -> String {
                 "\"output_bytes\":{},",
                 "\"mean_ms\":{:.3},",
                 "\"fill_raster_route_summary\":{},",
+                "\"scanned_page_fast_path_summary\":{},",
                 "\"raster_band_summary\":{}",
                 "}}"
             ),
@@ -11116,6 +11171,9 @@ fn benchmark_outcome_json(outcome: &BenchmarkOutcome) -> String {
             output_bytes,
             mean_ms,
             optional_fill_raster_route_summary_json(diagnostics.fill_routes.as_ref()),
+            optional_scanned_page_fast_path_summary_json(
+                diagnostics.scanned_page_fast_path.as_ref()
+            ),
             optional_raster_band_summary_json(diagnostics.raster_bands.as_ref())
         ),
         BenchmarkOutcome::FallbackRequired { reason, mean_ms } => format!(
@@ -11147,6 +11205,15 @@ fn optional_raster_band_summary_json(summary: Option<&RasterBandSummary>) -> Str
     summary.map_or_else(
         || "null".to_string(),
         |summary| trace_raster_band_summary_json(Ok(summary)),
+    )
+}
+
+fn optional_scanned_page_fast_path_summary_json(
+    summary: Option<&ScannedPageFastPathSummary>,
+) -> String {
+    summary.map_or_else(
+        || "null".to_string(),
+        |summary| trace_scanned_page_fast_path_summary_json(Ok(summary)),
     )
 }
 
@@ -12409,6 +12476,9 @@ mod tests {
         assert!(json.contains("\"source_pixels\""));
         assert!(json.contains("\"device_pixels\""));
         assert!(json.contains("\"downsample_candidate_placements\""));
+        assert!(json.contains("\"scanned_page_fast_path_summary\""));
+        assert!(json.contains("\"direct_image_calls\""));
+        assert!(json.contains("\"fallback_visible_text\""));
         assert!(json.contains("\"glyph_bitmap_summary\""));
         assert!(json.contains("\"type3_template_summary\""));
         assert!(json.contains("\"raster_band_summary\""));
@@ -13582,6 +13652,8 @@ status = "candidate"
         assert_eq!(raster_bands.max_band_pixels, raster_bands.full_page_pixels);
         assert!(json.contains("\"fill_raster_route_summary\""));
         assert!(json.contains("\"coverage_cell_accumulator_pixels\""));
+        assert!(json.contains("\"scanned_page_fast_path_summary\""));
+        assert!(json.contains("\"direct_image_calls\""));
         assert!(json.contains("\"raster_band_summary\""));
         assert!(json.contains("\"active_target_peak_bytes\""));
     }
