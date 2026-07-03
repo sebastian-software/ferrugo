@@ -138,7 +138,6 @@ const STROKE_AXIS_SPAN_MIN_LINES: usize = 4;
 const STROKE_JOIN_BUCKET_MIN_JOINS: usize = 8;
 const STROKE_SIMPLE_LINE_SPAN_MIN_PIXELS: u32 = 1024;
 const STROKE_AXIS_SIMPLE_LINE_SPAN_MIN_PIXELS: u32 = 128;
-const STROKE_JOINED_OUTLINE_MIN_PIXELS: u32 = 8192;
 const STROKE_ROW_RANGE_MIN_BUCKET_LINES: usize = STROKE_ROW_BUCKET_MIN_LINES;
 const STROKE_ROW_ACTIVE_MIN_BUCKET_LINES: usize = 48;
 const STROKE_SPAN_CURSOR_MIN_SPANS: usize = 512;
@@ -6304,10 +6303,19 @@ fn stroke_shape_summary_for_path(
         && lines.iter().copied().all(|line| {
             simple_line_stroke_fill_outline(line, radius, path.state.line_cap).is_some()
         });
+    let joined_outline_routed = !snap_hairline
+        && path.state.stroke_dash.is_solid()
+        && matches!(path.state.line_cap, LineCap::Butt)
+        && radius >= 1.0
+        && samples > 1
+        && !joins.is_empty()
+        && joined_outline_subpath_candidate(&flattened.subpaths);
     let axis_span_routed = !outline_routed
+        && !joined_outline_routed
         && all_axis_aligned
         && (lines.len() >= STROKE_AXIS_SPAN_MIN_LINES || !joins.is_empty());
-    let row_bucket_candidate = !outline_routed && lines.len() >= STROKE_ROW_BUCKET_MIN_LINES;
+    let row_bucket_candidate =
+        !outline_routed && !joined_outline_routed && lines.len() >= STROKE_ROW_BUCKET_MIN_LINES;
     let stroke_bounds = stroke_pixel_bounds_with_padding(
         lines,
         joins,
@@ -6342,8 +6350,11 @@ fn stroke_shape_summary_for_path(
         simple_line_pixel_area > 0 && simple_line_pixel_area >= simple_line_min_pixels;
     let simple_line_span_below_threshold =
         simple_line_pixel_area > 0 && simple_line_pixel_area < simple_line_min_pixels;
-    let generic_stroke_fallback =
-        !outline_routed && !axis_span_routed && !simple_line_span_routed && !row_bucket_candidate;
+    let generic_stroke_fallback = !outline_routed
+        && !joined_outline_routed
+        && !axis_span_routed
+        && !simple_line_span_routed
+        && !row_bucket_candidate;
     let mut summary = StrokeShapeSummary {
         stroked_items: 1,
         dashed_items: usize::from(dashed),
@@ -14292,28 +14303,6 @@ fn scissor_pixel_bounds(
     })
 }
 
-fn stroke_unclipped_pixel_area(lines: &[LineSegment], joins: &[StrokeJoin], radius: f64) -> u32 {
-    let mut bounds = None;
-    for line in lines {
-        bounds = Some(include_point(bounds, line.from));
-        bounds = Some(include_point(bounds, line.to));
-    }
-    for join in joins {
-        bounds = Some(include_point(bounds, join.point));
-    }
-    let Some(bounds) = bounds else {
-        return 0;
-    };
-    let padding = radius.ceil() + 1.0;
-    let width = ((bounds.max_x + padding).ceil() - (bounds.min_x - padding).floor())
-        .max(0.0)
-        .min(f64::from(u32::MAX)) as u32;
-    let height = ((bounds.max_y + padding).ceil() - (bounds.min_y - padding).floor())
-        .max(0.0)
-        .min(f64::from(u32::MAX)) as u32;
-    width.saturating_mul(height)
-}
-
 #[cfg(test)]
 fn stroke_pixel_bounds(
     lines: &[LineSegment],
@@ -14585,15 +14574,6 @@ fn normalize_polygon_for_nonzero_fill(points: &mut Vec<Point>) -> Option<()> {
     Some(())
 }
 
-fn device_color_is_low_chroma(color: DeviceColor) -> bool {
-    match color {
-        DeviceColor::Gray(_) => true,
-        DeviceColor::Rgb { r, g, b } | DeviceColor::Spot { r, g, b, .. } => {
-            r.max(g).max(b) - r.min(g).min(b) <= 0.1
-        }
-    }
-}
-
 fn offset_point(point: Point, normal: Point, distance: f64) -> Point {
     Point {
         x: normal.x.mul_add(distance, point.x),
@@ -14728,6 +14708,48 @@ fn stroke_path(
     }
     let prepared_joins = prepare_stroke_joins(joins, radius, state.line_join, state.miter_limit);
     let has_joins = !joins.is_empty();
+    if !snap_hairline
+        && state.dash_pattern.is_solid()
+        && matches!(state.line_cap, LineCap::Butt)
+        && radius >= 1.0
+        && samples > 1
+        && has_joins
+        && joined_outline_subpath_candidate(&path.subpaths)
+    {
+        if let Some(outline) = joined_stroke_fill_outline(
+            stroke_lines,
+            joins,
+            &prepared_joins,
+            radius,
+            state.line_cap,
+            state.line_join,
+        ) {
+            if let Some(stroke_routes) = context.stroke_routes {
+                stroke_routes.borrow_mut().record_joined_outline_fill_call();
+            }
+            let outline_context = if state.alpha < 1.0 {
+                PathRasterContext {
+                    options: PathRasterOptions {
+                        fill_route: FillRasterRoute::Sampled,
+                        ..context.options
+                    },
+                    ..context
+                }
+            } else {
+                context
+            };
+            fill_path(
+                device,
+                &outline,
+                FillRule::Nonzero,
+                state.color,
+                state.blend_mode,
+                state.alpha,
+                outline_context,
+            )?;
+            return Ok(());
+        }
+    }
     let axis_spans = axis_stroke_raster_spans(
         stroke_lines,
         joins,
@@ -14766,50 +14788,6 @@ fn stroke_path(
             skip_clip_checks,
         )?;
         return Ok(());
-    }
-    let route_pixel_area = stroke_unclipped_pixel_area(stroke_lines, joins, radius);
-    if !snap_hairline
-        && state.dash_pattern.is_solid()
-        && matches!(state.line_cap, LineCap::Butt)
-        && radius >= 1.0
-        && samples > 1
-        && !joins.is_empty()
-        && route_pixel_area >= STROKE_JOINED_OUTLINE_MIN_PIXELS
-        && joined_outline_subpath_candidate(&path.subpaths)
-    {
-        if let Some(outline) = joined_stroke_fill_outline(
-            stroke_lines,
-            joins,
-            &prepared_joins,
-            radius,
-            state.line_cap,
-            state.line_join,
-        ) {
-            if let Some(stroke_routes) = context.stroke_routes {
-                stroke_routes.borrow_mut().record_joined_outline_fill_call();
-            }
-            let outline_context = if state.alpha < 1.0 || device_color_is_low_chroma(state.color) {
-                PathRasterContext {
-                    options: PathRasterOptions {
-                        fill_route: FillRasterRoute::Sampled,
-                        ..context.options
-                    },
-                    ..context
-                }
-            } else {
-                context
-            };
-            fill_path(
-                device,
-                &outline,
-                FillRule::Nonzero,
-                state.color,
-                state.blend_mode,
-                state.alpha,
-                outline_context,
-            )?;
-            return Ok(());
-        }
     }
     if stroke_lines.len() == 1 && joins.is_empty() {
         if let Some(spans) = simple_line_stroke_raster_spans(
@@ -23601,7 +23579,7 @@ mod tests {
             paint: PaintMode::Stroke,
             state: GraphicsState {
                 line_width: 16.0,
-                line_cap: LineCap::Butt,
+                line_cap: LineCap::Square,
                 line_join: LineJoin::Round,
                 ..GraphicsState::default()
             },
@@ -23857,7 +23835,7 @@ mod tests {
             paint: PaintMode::Stroke,
             state: GraphicsState {
                 line_width: 16.0,
-                line_cap: LineCap::Butt,
+                line_cap: LineCap::Square,
                 line_join: LineJoin::Round,
                 stroke_color: DeviceColor::Rgb {
                     r: 0.2,
