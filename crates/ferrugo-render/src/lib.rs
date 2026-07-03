@@ -6303,10 +6303,16 @@ fn stroke_shape_summary_for_path(
         && lines.iter().copied().all(|line| {
             simple_line_stroke_fill_outline(line, radius, path.state.line_cap).is_some()
         });
+    let thin_closed_rect_outline_candidate =
+        radius <= 0.5 && closed_axis_aligned_rect_stroke_outline(lines, radius).is_some();
+    let joined_outline_cap_candidate = (matches!(path.state.line_cap, LineCap::Butt)
+        && (radius >= 1.0 || thin_closed_rect_outline_candidate))
+        || (matches!(path.state.line_cap, LineCap::Round)
+            && matches!(path.state.line_join, LineJoin::Round)
+            && lines.len() >= STROKE_ROW_BUCKET_MIN_LINES);
     let joined_outline_routed = !snap_hairline
         && path.state.stroke_dash.is_solid()
-        && matches!(path.state.line_cap, LineCap::Butt)
-        && radius >= 1.0
+        && joined_outline_cap_candidate
         && samples > 1
         && !joins.is_empty()
         && joined_outline_subpath_candidate(&flattened.subpaths);
@@ -14471,6 +14477,16 @@ fn joined_stroke_fill_outline(
     if radius <= 0.0 || lines.is_empty() || joins.is_empty() {
         return None;
     }
+    if matches!(line_cap, LineCap::Butt) && matches!(line_join, LineJoin::Miter) {
+        if let Some(outline) = closed_axis_aligned_rect_stroke_outline(lines, radius) {
+            return Some(outline);
+        }
+    }
+    if matches!(line_cap, LineCap::Round) && matches!(line_join, LineJoin::Round) {
+        if let Some(outline) = round_polyline_stroke_outline(lines, radius) {
+            return Some(outline);
+        }
+    }
     let mut subpaths = Vec::with_capacity(lines.len().saturating_add(joins.len() * 2));
     let mut outline_lines = Vec::new();
     for line in lines {
@@ -14516,18 +14532,155 @@ fn joined_stroke_fill_outline(
     })
 }
 
+fn round_polyline_stroke_outline(lines: &[LineSegment], radius: f64) -> Option<FlattenedPath> {
+    if lines.is_empty() {
+        return None;
+    }
+    for pair in lines.windows(2) {
+        if point_distance_squared(pair[0].to, pair[1].from) > f64::EPSILON {
+            return None;
+        }
+    }
+
+    let mut normals = Vec::with_capacity(lines.len());
+    for line in lines {
+        let dx = line.to.x - line.from.x;
+        let dy = line.to.y - line.from.y;
+        let length = dx.hypot(dy);
+        if length <= f64::EPSILON {
+            return None;
+        }
+        normals.push(Point {
+            x: -dy / length,
+            y: dx / length,
+        });
+    }
+
+    let mut points = Vec::with_capacity(lines.len().saturating_mul(4) + 32);
+    let start = lines[0].from;
+    points.push(offset_point(start, normals[0], radius));
+    for index in 1..lines.len() {
+        let join = lines[index].from;
+        points.push(offset_point(join, normals[index - 1], radius));
+        points.push(offset_point(join, normals[index], radius));
+    }
+    let end = lines[lines.len() - 1].to;
+    let end_normal = normals[normals.len() - 1];
+    points.push(offset_point(end, end_normal, radius));
+    append_arc_points(
+        &mut points,
+        end,
+        radius,
+        end_normal.y.atan2(end_normal.x),
+        (-end_normal.y).atan2(-end_normal.x),
+        STROKE_CURVE_MIN_FLATTENED_SEGMENTS,
+    );
+    for index in (1..lines.len()).rev() {
+        let join = lines[index].from;
+        points.push(offset_point(join, normals[index], -radius));
+        points.push(offset_point(join, normals[index - 1], -radius));
+    }
+    let start_normal = normals[0];
+    points.push(offset_point(start, start_normal, -radius));
+    append_arc_points(
+        &mut points,
+        start,
+        radius,
+        (-start_normal.y).atan2(-start_normal.x),
+        start_normal.y.atan2(start_normal.x) - std::f64::consts::TAU,
+        STROKE_CURVE_MIN_FLATTENED_SEGMENTS,
+    );
+
+    polygon_flattened_path(points)
+}
+
+fn closed_axis_aligned_rect_stroke_outline(
+    lines: &[LineSegment],
+    radius: f64,
+) -> Option<FlattenedPath> {
+    if lines.len() != 4 || !lines.iter().copied().all(is_axis_aligned_line) {
+        return None;
+    }
+    for index in 0..lines.len() {
+        let current = lines[index];
+        let next = lines[(index + 1) % lines.len()];
+        if point_distance_squared(current.to, next.from) > f64::EPSILON {
+            return None;
+        }
+    }
+    let mut bounds = None;
+    for line in lines {
+        bounds = Some(include_point(bounds, line.from));
+        bounds = Some(include_point(bounds, line.to));
+    }
+    let bounds = bounds?;
+    if bounds.max_x - bounds.min_x <= f64::EPSILON || bounds.max_y - bounds.min_y <= f64::EPSILON {
+        return None;
+    }
+
+    let mut outer = vec![
+        Point {
+            x: bounds.min_x - radius,
+            y: bounds.min_y - radius,
+        },
+        Point {
+            x: bounds.max_x + radius,
+            y: bounds.min_y - radius,
+        },
+        Point {
+            x: bounds.max_x + radius,
+            y: bounds.max_y + radius,
+        },
+        Point {
+            x: bounds.min_x - radius,
+            y: bounds.max_y + radius,
+        },
+    ];
+    normalize_polygon_for_nonzero_fill(&mut outer)?;
+
+    let mut subpaths = vec![outer];
+    if bounds.max_x - bounds.min_x > radius * 2.0 && bounds.max_y - bounds.min_y > radius * 2.0 {
+        let mut inner = vec![
+            Point {
+                x: bounds.min_x + radius,
+                y: bounds.min_y + radius,
+            },
+            Point {
+                x: bounds.max_x - radius,
+                y: bounds.min_y + radius,
+            },
+            Point {
+                x: bounds.max_x - radius,
+                y: bounds.max_y - radius,
+            },
+            Point {
+                x: bounds.min_x + radius,
+                y: bounds.max_y - radius,
+            },
+        ];
+        normalize_polygon_for_nonzero_fill(&mut inner)?;
+        inner.reverse();
+        subpaths.push(inner);
+    }
+
+    let mut outline_lines = Vec::new();
+    for subpath in &subpaths {
+        outline_lines.extend(polygon_edges(subpath));
+    }
+
+    Some(FlattenedPath {
+        subpaths,
+        lines: outline_lines,
+        joins: Vec::new(),
+        stats: FlattenedPathStats::default(),
+    })
+}
+
 fn joined_outline_subpath_candidate(subpaths: &[Vec<Point>]) -> bool {
     let [points] = subpaths else {
         return false;
     };
-    points.len() >= 3 && !subpath_is_closed(points)
-}
-
-fn subpath_is_closed(points: &[Point]) -> bool {
-    points
-        .first()
-        .zip(points.last())
-        .is_some_and(|(first, last)| point_distance_squared(*first, *last) <= f64::EPSILON)
+    points.len() >= 3
 }
 
 fn append_outline_component(
@@ -14708,10 +14861,16 @@ fn stroke_path(
     }
     let prepared_joins = prepare_stroke_joins(joins, radius, state.line_join, state.miter_limit);
     let has_joins = !joins.is_empty();
+    let thin_closed_rect_outline_candidate =
+        radius <= 0.5 && closed_axis_aligned_rect_stroke_outline(stroke_lines, radius).is_some();
+    let joined_outline_cap_candidate = (matches!(state.line_cap, LineCap::Butt)
+        && (radius >= 1.0 || thin_closed_rect_outline_candidate))
+        || (matches!(state.line_cap, LineCap::Round)
+            && matches!(state.line_join, LineJoin::Round)
+            && stroke_lines.len() >= STROKE_ROW_BUCKET_MIN_LINES);
     if !snap_hairline
         && state.dash_pattern.is_solid()
-        && matches!(state.line_cap, LineCap::Butt)
-        && radius >= 1.0
+        && joined_outline_cap_candidate
         && samples > 1
         && has_joins
         && joined_outline_subpath_candidate(&path.subpaths)
