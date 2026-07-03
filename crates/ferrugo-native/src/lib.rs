@@ -8553,6 +8553,27 @@ mod tests {
                 true,
             ),
             (
+                include_bytes!("../../../fixtures/generated/subset-type3-repeated-charprocs.pdf")
+                    .as_slice(),
+                "subset Type3 repeated CharProcs",
+                true,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/type3-vector-text.pdf").as_slice(),
+                "Type3 vector text",
+                true,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/type3-symbol-font.pdf").as_slice(),
+                "Type3 symbol font",
+                true,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/type3-barcode-font.pdf").as_slice(),
+                "Type3 barcode font",
+                true,
+            ),
+            (
                 include_bytes!("../../../fixtures/generated/transparency-group.pdf").as_slice(),
                 "transparency group",
                 true,
