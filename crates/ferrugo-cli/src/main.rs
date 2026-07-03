@@ -14,9 +14,9 @@ use std::time::{Duration, Instant};
 use ferrugo_native::{
     scan_operator_coverage, FillRasterRouteSummary, GlyphBitmapCacheSummary, ImagePlacementSummary,
     ImageResourceSummary, NativeBackend, NativeDocumentSessionStats, NativeMemoryDiagnostics,
-    NativePageCacheKey, NativePageCachePolicy, NativeRenderPhaseTimings, NativeRenderTrace,
-    OperatorCoverageEntry, OperatorCoverageOptions, OperatorSupportStatus, PathFlatteningSummary,
-    RasterBandSummary, StrokeRasterRouteSummary, StrokeShapeSummary,
+    NativePageCacheKey, NativePageCachePolicy, NativeRenderLimits, NativeRenderPhaseTimings,
+    NativeRenderTrace, OperatorCoverageEntry, OperatorCoverageOptions, OperatorSupportStatus,
+    PathFlatteningSummary, RasterBandSummary, StrokeRasterRouteSummary, StrokeShapeSummary,
     Type3CharProcTemplateCacheSummary, DEFAULT_CURVE_FLATTENING_TOLERANCE,
 };
 #[cfg(feature = "pdfium")]
@@ -2167,6 +2167,7 @@ impl ReplayOperatorsConfig {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum NativeProfile {
     Default,
+    DefaultParallel { workers: usize },
     LowMemory,
     LowMemoryParallel { workers: usize },
 }
@@ -2175,6 +2176,12 @@ impl NativeProfile {
     fn backend(self) -> NativeBackend {
         match self {
             Self::Default => NativeBackend::new(),
+            Self::DefaultParallel { workers } => {
+                NativeBackend::with_render_limits(NativeRenderLimits {
+                    max_raster_band_workers: workers,
+                    ..NativeRenderLimits::default_profile()
+                })
+            }
             Self::LowMemory => NativeBackend::low_memory(),
             Self::LowMemoryParallel { workers } => {
                 NativeBackend::low_memory_parallel_with_workers(workers)
@@ -2185,6 +2192,10 @@ impl NativeProfile {
     const fn as_str(self) -> &'static str {
         match self {
             Self::Default => "default",
+            Self::DefaultParallel { workers: 2 } => "default-parallel",
+            Self::DefaultParallel { workers: 4 } => "default-parallel-4",
+            Self::DefaultParallel { workers: 8 } => "default-parallel-8",
+            Self::DefaultParallel { .. } => "default-parallel-custom",
             Self::LowMemory => "low-memory",
             Self::LowMemoryParallel { workers: 2 } => "low-memory-parallel",
             Self::LowMemoryParallel { workers: 4 } => "low-memory-parallel-4",
@@ -2197,6 +2208,11 @@ impl NativeProfile {
 fn parse_native_profile(value: &str) -> Result<NativeProfile, CliError> {
     match value {
         "default" => Ok(NativeProfile::Default),
+        "default-parallel" | "default-parallel-2" => {
+            Ok(NativeProfile::DefaultParallel { workers: 2 })
+        }
+        "default-parallel-4" => Ok(NativeProfile::DefaultParallel { workers: 4 }),
+        "default-parallel-8" => Ok(NativeProfile::DefaultParallel { workers: 8 }),
         "low-memory" => Ok(NativeProfile::LowMemory),
         "low-memory-parallel" | "low-memory-parallel-2" => {
             Ok(NativeProfile::LowMemoryParallel { workers: 2 })
@@ -2204,7 +2220,7 @@ fn parse_native_profile(value: &str) -> Result<NativeProfile, CliError> {
         "low-memory-parallel-4" => Ok(NativeProfile::LowMemoryParallel { workers: 4 }),
         "low-memory-parallel-8" => Ok(NativeProfile::LowMemoryParallel { workers: 8 }),
         _ => Err(CliError::Usage(format!(
-            "unknown --native-profile `{value}`; expected `default`, `low-memory`, `low-memory-parallel`, `low-memory-parallel-4`, or `low-memory-parallel-8`"
+            "unknown --native-profile `{value}`; expected `default`, `default-parallel`, `default-parallel-4`, `default-parallel-8`, `low-memory`, `low-memory-parallel`, `low-memory-parallel-4`, or `low-memory-parallel-8`"
         ))),
     }
 }
@@ -12949,6 +12965,62 @@ status = "candidate"
 
     #[test]
     fn benchmark_config_should_accept_low_memory_parallel_native_profile() {
+        let config = BenchmarkConfig::parse(&[
+            OsString::from("fixtures/generated"),
+            OsString::from("--native-profile"),
+            OsString::from("default-parallel"),
+        ])
+        .expect("valid benchmark config");
+
+        assert_eq!(
+            config.native_profile,
+            NativeProfile::DefaultParallel { workers: 2 }
+        );
+        let diagnostics = config.native_profile.backend().memory_diagnostics();
+        assert_eq!(diagnostics.max_raster_band_workers, 2);
+        assert_eq!(diagnostics.max_raster_band_rows, 64);
+        assert_eq!(diagnostics.min_raster_band_pixels, 160_000);
+
+        let config = BenchmarkConfig::parse(&[
+            OsString::from("fixtures/generated"),
+            OsString::from("--native-profile"),
+            OsString::from("default-parallel-4"),
+        ])
+        .expect("valid benchmark config");
+
+        assert_eq!(
+            config.native_profile,
+            NativeProfile::DefaultParallel { workers: 4 }
+        );
+        assert_eq!(
+            config
+                .native_profile
+                .backend()
+                .memory_diagnostics()
+                .max_raster_band_workers,
+            4
+        );
+
+        let config = BenchmarkConfig::parse(&[
+            OsString::from("fixtures/generated"),
+            OsString::from("--native-profile"),
+            OsString::from("default-parallel-8"),
+        ])
+        .expect("valid benchmark config");
+
+        assert_eq!(
+            config.native_profile,
+            NativeProfile::DefaultParallel { workers: 8 }
+        );
+        assert_eq!(
+            config
+                .native_profile
+                .backend()
+                .memory_diagnostics()
+                .max_raster_band_workers,
+            8
+        );
+
         let config = BenchmarkConfig::parse(&[
             OsString::from("fixtures/generated"),
             OsString::from("--native-profile"),
