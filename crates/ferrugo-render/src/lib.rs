@@ -6298,42 +6298,52 @@ fn stroke_shape_summary_for_path(
     let all_axis_aligned = !lines.is_empty() && lines.iter().copied().all(is_axis_aligned_line);
     let joinless_axis_aligned = all_axis_aligned && joins.is_empty();
     let span_raster_candidate = snap_hairline && joinless_axis_aligned;
-    let axis_span_routed =
-        all_axis_aligned && (lines.len() >= STROKE_AXIS_SPAN_MIN_LINES || !joins.is_empty());
-    let row_bucket_candidate = lines.len() >= STROKE_ROW_BUCKET_MIN_LINES;
+    let outline_routed = !snap_hairline
+        && joins.is_empty()
+        && !lines.is_empty()
+        && lines.iter().copied().all(|line| {
+            simple_line_stroke_fill_outline(line, radius, path.state.line_cap).is_some()
+        });
+    let axis_span_routed = !outline_routed
+        && all_axis_aligned
+        && (lines.len() >= STROKE_AXIS_SPAN_MIN_LINES || !joins.is_empty());
+    let row_bucket_candidate = !outline_routed && lines.len() >= STROKE_ROW_BUCKET_MIN_LINES;
     let stroke_bounds = stroke_pixel_bounds_with_padding(
         lines,
         joins,
         stroke_bounds_padding(radius, joins, path.state.line_join, path.state.miter_limit),
         transform.dimensions,
     );
-    let simple_line_pixel_area = if !axis_span_routed && lines.len() == 1 && joins.is_empty() {
-        line_pixel_bounds(lines[0], radius, transform.dimensions)
-            .and_then(|bounds| {
-                stroke_bounds.and_then(|stroke| intersect_pixel_bounds(bounds, stroke))
-            })
-            .map(|bounds| {
-                (bounds.max_x - bounds.min_x).saturating_mul(bounds.max_y - bounds.min_y) as usize
-            })
-            .unwrap_or_default()
-    } else {
-        0
-    };
-    let simple_line_min_pixels = if !axis_span_routed && lines.len() == 1 && joins.is_empty() {
-        if all_axis_aligned {
-            STROKE_AXIS_SIMPLE_LINE_SPAN_MIN_PIXELS
+    let simple_line_pixel_area =
+        if !outline_routed && !axis_span_routed && lines.len() == 1 && joins.is_empty() {
+            line_pixel_bounds(lines[0], radius, transform.dimensions)
+                .and_then(|bounds| {
+                    stroke_bounds.and_then(|stroke| intersect_pixel_bounds(bounds, stroke))
+                })
+                .map(|bounds| {
+                    (bounds.max_x - bounds.min_x).saturating_mul(bounds.max_y - bounds.min_y)
+                        as usize
+                })
+                .unwrap_or_default()
         } else {
-            STROKE_SIMPLE_LINE_SPAN_MIN_PIXELS
-        }
-    } else {
-        0
-    } as usize;
+            0
+        };
+    let simple_line_min_pixels =
+        if !outline_routed && !axis_span_routed && lines.len() == 1 && joins.is_empty() {
+            if all_axis_aligned {
+                STROKE_AXIS_SIMPLE_LINE_SPAN_MIN_PIXELS
+            } else {
+                STROKE_SIMPLE_LINE_SPAN_MIN_PIXELS
+            }
+        } else {
+            0
+        } as usize;
     let simple_line_span_routed =
         simple_line_pixel_area > 0 && simple_line_pixel_area >= simple_line_min_pixels;
     let simple_line_span_below_threshold =
         simple_line_pixel_area > 0 && simple_line_pixel_area < simple_line_min_pixels;
     let generic_stroke_fallback =
-        !axis_span_routed && !simple_line_span_routed && !row_bucket_candidate;
+        !outline_routed && !axis_span_routed && !simple_line_span_routed && !row_bucket_candidate;
     let mut summary = StrokeShapeSummary {
         stroked_items: 1,
         dashed_items: usize::from(dashed),
@@ -14686,12 +14696,7 @@ fn stroke_path(
         return Ok(());
     };
     let skip_clip_checks = can_skip_active_clip_checks(context.clips);
-    let outline_candidate = stroke_lines.iter().any(|line| {
-        !is_axis_aligned_line(*line)
-            || stroke_lines.len() > 1
-            || !matches!(state.line_cap, LineCap::Round)
-    });
-    if !snap_hairline && joins.is_empty() && !stroke_lines.is_empty() && outline_candidate {
+    if !snap_hairline && joins.is_empty() && !stroke_lines.is_empty() {
         let mut outlines = Vec::with_capacity(stroke_lines.len());
         for line in stroke_lines {
             let Some(outline) = simple_line_stroke_fill_outline(*line, radius, state.line_cap)
@@ -23464,7 +23469,7 @@ mod tests {
     }
 
     #[test]
-    fn stroke_shape_summary_should_count_dashed_axis_aligned_lines() {
+    fn stroke_shape_summary_should_leave_dashed_outline_lines_out_of_span_routes() {
         let transform = PageTransform::new(
             PageGeometry {
                 media_box: PathBounds {
@@ -23512,17 +23517,9 @@ mod tests {
         assert_eq!(summary.axis_aligned_items, 1);
         assert_eq!(summary.joinless_axis_aligned_items, 1);
         assert_eq!(summary.span_raster_candidate_items, 0);
-        assert_eq!(summary.axis_span_routed_items, 1);
-        assert!(summary.axis_span_coverage_spans > 0);
-        assert_eq!(
-            summary.max_axis_span_coverage_spans_per_item,
-            summary.axis_span_coverage_spans
-        );
-        assert!(summary.axis_span_raster_spans > 0);
-        assert_eq!(
-            summary.max_axis_span_raster_spans_per_item,
-            summary.axis_span_raster_spans
-        );
+        assert_eq!(summary.axis_span_routed_items, 0);
+        assert_eq!(summary.axis_span_coverage_spans, 0);
+        assert_eq!(summary.axis_span_raster_spans, 0);
         assert_eq!(summary.simple_line_span_routed_items, 0);
         assert_eq!(summary.generic_stroke_fallback_items, 0);
         assert_eq!(summary.row_bucket_sample_refs, 0);
@@ -23534,7 +23531,7 @@ mod tests {
     }
 
     #[test]
-    fn stroke_shape_summary_should_count_short_simple_line_fallbacks() {
+    fn stroke_shape_summary_should_leave_short_outline_lines_out_of_fallbacks() {
         let transform = PageTransform::new(
             PageGeometry {
                 media_box: PathBounds {
@@ -23569,13 +23566,13 @@ mod tests {
         assert_eq!(summary.stroked_items, 1);
         assert_eq!(summary.axis_span_routed_items, 0);
         assert_eq!(summary.simple_line_span_routed_items, 0);
-        assert_eq!(summary.simple_line_span_below_threshold_items, 1);
-        assert_eq!(summary.simple_line_span_below_threshold_pixels, 56);
-        assert_eq!(summary.generic_stroke_fallback_items, 1);
+        assert_eq!(summary.simple_line_span_below_threshold_items, 0);
+        assert_eq!(summary.simple_line_span_below_threshold_pixels, 0);
+        assert_eq!(summary.generic_stroke_fallback_items, 0);
     }
 
     #[test]
-    fn stroke_shape_summary_should_count_axis_span_cursor_candidates() {
+    fn stroke_shape_summary_should_count_axis_span_join_candidates() {
         let transform = PageTransform::new(
             PageGeometry {
                 media_box: PathBounds {
@@ -23591,15 +23588,23 @@ mod tests {
         )
         .expect("valid page transform");
         let mut segments = Vec::new();
-        for index in 0..32 {
-            let x = 10.0 + f64::from(index) * 4.0;
-            segments.push(PathSegment::MoveTo(Point { x, y: 20.0 }));
-            segments.push(PathSegment::LineTo(Point { x, y: 140.0 }));
+        let mut cursor = Point { x: 10.0, y: 20.0 };
+        segments.push(PathSegment::MoveTo(cursor));
+        for _ in 0..16 {
+            cursor.y = if cursor.y < 100.0 { 200.0 } else { 20.0 };
+            segments.push(PathSegment::LineTo(cursor));
+            cursor.x += 4.0;
+            segments.push(PathSegment::LineTo(cursor));
         }
         let display_list = DisplayList::from_items(vec![DisplayItem::Path(PathDisplayItem {
             segments,
             paint: PaintMode::Stroke,
-            state: GraphicsState::default(),
+            state: GraphicsState {
+                line_width: 16.0,
+                line_cap: LineCap::Butt,
+                line_join: LineJoin::Round,
+                ..GraphicsState::default()
+            },
             fill_pattern: None,
         })]);
 
@@ -23611,8 +23616,7 @@ mod tests {
         .expect("stroke shape summary should build");
 
         assert_eq!(summary.axis_span_routed_items, 1);
-        assert_eq!(summary.axis_span_cursor_candidate_items, 1);
-        assert!(summary.axis_span_coverage_spans >= STROKE_SPAN_CURSOR_MIN_SPANS);
+        assert!(summary.axis_span_coverage_spans > 0);
         assert_eq!(
             summary.max_axis_span_coverage_spans_per_item,
             summary.axis_span_coverage_spans
@@ -23621,7 +23625,7 @@ mod tests {
     }
 
     #[test]
-    fn stroke_shape_summary_should_count_simple_line_span_cursor_candidates() {
+    fn stroke_shape_summary_should_leave_simple_outline_lines_out_of_span_routes() {
         let transform = PageTransform::new(
             PageGeometry {
                 media_box: PathBounds {
@@ -23654,13 +23658,10 @@ mod tests {
         .expect("stroke shape summary should build");
 
         assert_eq!(summary.axis_span_routed_items, 0);
-        assert_eq!(summary.simple_line_span_routed_items, 1);
-        assert_eq!(summary.simple_line_span_cursor_candidate_items, 1);
-        assert!(summary.simple_line_span_coverage_spans >= STROKE_SPAN_CURSOR_MIN_SPANS);
-        assert_eq!(
-            summary.max_simple_line_span_coverage_spans_per_item,
-            summary.simple_line_span_coverage_spans
-        );
+        assert_eq!(summary.simple_line_span_routed_items, 0);
+        assert_eq!(summary.simple_line_span_cursor_candidate_items, 0);
+        assert_eq!(summary.simple_line_span_coverage_spans, 0);
+        assert_eq!(summary.max_simple_line_span_coverage_spans_per_item, 0);
     }
 
     #[test]
@@ -23894,7 +23895,7 @@ mod tests {
     }
 
     #[test]
-    fn stroke_raster_route_summary_should_count_span_cursor_calls() {
+    fn stroke_raster_route_summary_should_count_round_line_outline_fill_calls() {
         let transform = PageTransform::new(
             PageGeometry {
                 media_box: PathBounds {
@@ -23935,18 +23936,11 @@ mod tests {
         .expect("route-aware raster should render");
 
         let routes = routes.into_inner();
-        assert_eq!(routes.span_covered_calls, 1);
-        assert_eq!(routes.span_cursor_calls, 1);
+        assert_eq!(routes.outline_fill_calls, 1);
+        assert_eq!(routes.outline_axis_line_calls, 1);
+        assert_eq!(routes.span_covered_calls, 0);
+        assert_eq!(routes.span_cursor_calls, 0);
         assert_eq!(routes.span_from_start_calls, 0);
-        assert!(routes.max_span_coverage_spans_per_call >= STROKE_SPAN_CURSOR_MIN_SPANS);
-        assert!(routes.span_rows > 0);
-        assert!(routes.span_x_ranges > 0);
-        assert!(routes.span_pixels > 0);
-        assert!(routes.span_sample_points >= routes.span_pixels);
-        assert_eq!(
-            routes.span_covered_pixels,
-            routes.span_full_coverage_pixels + routes.span_partial_coverage_pixels
-        );
     }
 
     #[test]
@@ -24230,22 +24224,21 @@ mod tests {
         )
         .expect("valid page transform");
         let mut segments = Vec::new();
-        for y in 10..41 {
-            segments.push(PathSegment::MoveTo(Point {
-                x: 10.0,
-                y: f64::from(y),
-            }));
+        let start = Point { x: 20.0, y: 10.0 };
+        segments.push(PathSegment::MoveTo(start));
+        for index in 0..STROKE_ROW_BUCKET_MIN_LINES {
             segments.push(PathSegment::LineTo(Point {
-                x: 20.0,
-                y: f64::from(y),
+                x: 20.0 + f64::from((index % 8) as u32) * 4.0,
+                y: 12.0 + f64::from(index as u32) * 2.0,
             }));
         }
-        segments.push(PathSegment::MoveTo(Point { x: 80.0, y: 41.0 }));
-        segments.push(PathSegment::LineTo(Point { x: 90.0, y: 41.0 }));
         let display_list = DisplayList::from_items(vec![DisplayItem::Path(PathDisplayItem {
             segments,
             paint: PaintMode::Stroke,
-            state: GraphicsState::default(),
+            state: GraphicsState {
+                line_cap: LineCap::Round,
+                ..GraphicsState::default()
+            },
             fill_pattern: None,
         })]);
 
@@ -24259,11 +24252,11 @@ mod tests {
         assert_eq!(summary.stroked_items, 1);
         assert_eq!(summary.row_bucket_candidate_items, 1);
         assert_eq!(summary.flattened_lines, STROKE_ROW_BUCKET_MIN_LINES);
-        assert_eq!(summary.axis_aligned_items, 1);
-        assert_eq!(summary.joinless_axis_aligned_items, 1);
+        assert_eq!(summary.axis_aligned_items, 0);
+        assert_eq!(summary.joinless_axis_aligned_items, 0);
         assert!(summary.row_bucket_sample_refs > 0);
         assert!(summary.row_bucket_sample_x_hits > 0);
-        assert!(summary.row_bucket_sample_x_misses > summary.row_bucket_sample_x_hits);
+        assert!(summary.row_bucket_sample_x_misses > 0);
         assert!(summary.row_bucket_merged_sample_points > 0);
         assert!(
             summary.row_bucket_merged_sample_points <= summary.row_bucket_sample_x_hits,
