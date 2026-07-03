@@ -6283,7 +6283,12 @@ fn stroke_shape_summary_for_path(
     let axis_span_routed =
         all_axis_aligned && (lines.len() >= STROKE_AXIS_SPAN_MIN_LINES || !joins.is_empty());
     let row_bucket_candidate = lines.len() >= STROKE_ROW_BUCKET_MIN_LINES;
-    let stroke_bounds = stroke_pixel_bounds(lines, joins, radius, transform.dimensions);
+    let stroke_bounds = stroke_pixel_bounds_with_padding(
+        lines,
+        joins,
+        stroke_bounds_padding(radius, joins, path.state.line_join, path.state.miter_limit),
+        transform.dimensions,
+    );
     let simple_line_pixel_area = if !axis_span_routed && lines.len() == 1 && joins.is_empty() {
         line_pixel_bounds(lines[0], radius, transform.dimensions)
             .and_then(|bounds| {
@@ -12188,11 +12193,14 @@ fn fill_path_with_coverage_spans(
         );
         stats.intervals = stats.intervals.saturating_add(intervals.len());
         if intervals.is_empty() {
-            continue;
-        }
-        for interval in &intervals {
-            mark_fill_interval_row_modes(&mut row_modes, bounds, *interval);
-            mark_fill_interval_edge_row_modes(&mut row_modes, bounds, *interval, path, y);
+            if !mark_path_edge_row_modes(&mut row_modes, bounds, path, y) {
+                continue;
+            }
+        } else {
+            for interval in &intervals {
+                mark_fill_interval_row_modes(&mut row_modes, bounds, *interval);
+                mark_fill_interval_edge_row_modes(&mut row_modes, bounds, *interval, path, y);
+            }
         }
         let mut offset = 0;
         while offset < row_modes.len() {
@@ -12412,6 +12420,29 @@ fn mark_fill_interval_edge_row_modes(
     }
 }
 
+fn mark_path_edge_row_modes(
+    row_modes: &mut [u8],
+    bounds: PixelBounds,
+    path: &FlattenedPath,
+    y: u32,
+) -> bool {
+    let mut marked = false;
+    for subpath in &path.subpaths {
+        for edge in polygon_edges(subpath) {
+            let Some((edge_min_x, edge_max_x)) = row_touches_path_edge(edge, y) else {
+                continue;
+            };
+            let sample_start = clamp_fill_row_x(edge_min_x.floor() as i64 - 1, bounds);
+            let sample_end = clamp_fill_row_x(edge_max_x.ceil() as i64 + 2, bounds);
+            for mode in row_modes.iter_mut().take(sample_end).skip(sample_start) {
+                *mode = FILL_ROW_SAMPLED;
+                marked = true;
+            }
+        }
+    }
+    marked
+}
+
 fn clamp_fill_row_x(value: i64, bounds: PixelBounds) -> usize {
     value
         .clamp(i64::from(bounds.min_x), i64::from(bounds.max_x))
@@ -12421,6 +12452,7 @@ fn clamp_fill_row_x(value: i64, bounds: PixelBounds) -> usize {
 #[derive(Debug, Clone)]
 struct FillCoverageClipMask<'a> {
     clips: &'a [ActiveClip],
+    clip_coverages: Vec<Option<FillEdgeCoverage>>,
     bounds: PixelBounds,
     width: usize,
     rows: Vec<Option<FillCoverageClipMaskRow>>,
@@ -12448,10 +12480,19 @@ impl<'a> FillCoverageClipMask<'a> {
         }
         let width = (bounds.max_x - bounds.min_x) as usize;
         let height = (bounds.max_y - bounds.min_y) as usize;
+        let clip_coverages = clips
+            .iter()
+            .map(|clip| {
+                clip.axis_aligned_rect
+                    .is_none()
+                    .then(|| FillEdgeCoverage::for_path(&clip.path, clip.rule))
+            })
+            .collect();
         let mut rows = Vec::with_capacity(height);
         rows.resize_with(height, || None);
         Some(Self {
             clips,
+            clip_coverages,
             bounds,
             width,
             rows,
@@ -12468,13 +12509,20 @@ impl<'a> FillCoverageClipMask<'a> {
         }
         let row_index = (y - self.bounds.min_y) as usize;
         let x_offset = (x - self.bounds.min_x) as usize;
-        let clips = self.clips;
-        let row =
-            self.rows[row_index].get_or_insert_with(|| FillCoverageClipMaskRow::new(self.width));
-        if !row.computed[x_offset] {
-            row.coverage[x_offset] = active_clip_coverage_for_pixel(clips, x, y);
+        let should_compute = {
+            let row = self.rows[row_index]
+                .get_or_insert_with(|| FillCoverageClipMaskRow::new(self.width));
+            !row.computed[x_offset]
+        };
+        if should_compute {
+            let coverage = self.active_clip_coverage_for_pixel(x, y);
+            let row = self.rows[row_index]
+                .get_or_insert_with(|| FillCoverageClipMaskRow::new(self.width));
+            row.coverage[x_offset] = coverage;
             row.computed[x_offset] = true;
         }
+        let row =
+            self.rows[row_index].get_or_insert_with(|| FillCoverageClipMaskRow::new(self.width));
         row.coverage[x_offset]
     }
 
@@ -12486,96 +12534,77 @@ impl<'a> FillCoverageClipMask<'a> {
         let row_index = (y - self.bounds.min_y) as usize;
         let start = (min_x - self.bounds.min_x) as usize;
         let end = (max_x - self.bounds.min_x) as usize;
-        let clips = self.clips;
         let base_x = self.bounds.min_x;
-        let row =
-            self.rows[row_index].get_or_insert_with(|| FillCoverageClipMaskRow::new(self.width));
         for x_offset in start..end {
-            if !row.computed[x_offset] {
-                row.coverage[x_offset] =
-                    active_clip_coverage_for_pixel(clips, base_x + x_offset as u32, y);
+            let should_compute = {
+                let row = self.rows[row_index]
+                    .get_or_insert_with(|| FillCoverageClipMaskRow::new(self.width));
+                !row.computed[x_offset]
+            };
+            if should_compute {
+                let coverage = self.active_clip_coverage_for_pixel(base_x + x_offset as u32, y);
+                let row = self.rows[row_index]
+                    .get_or_insert_with(|| FillCoverageClipMaskRow::new(self.width));
+                row.coverage[x_offset] = coverage;
                 row.computed[x_offset] = true;
             }
         }
+        let row =
+            self.rows[row_index].get_or_insert_with(|| FillCoverageClipMaskRow::new(self.width));
         &row.coverage[start..end]
     }
-}
 
-fn active_clip_coverage_for_pixel(clips: &[ActiveClip], x: u32, y: u32) -> u8 {
-    let mut coverage = 255;
-    for clip in clips {
-        let clip_coverage = clip.axis_aligned_rect.map_or_else(
-            || analytic_fill_coverage_for_pixel(&clip.path, clip.rule, x, y),
-            |rect| rect_coverage_for_pixel(rect, x, y),
-        );
-        coverage = multiply_alpha(coverage, clip_coverage);
-        if coverage == 0 {
-            break;
+    fn active_clip_coverage_for_pixel(&mut self, x: u32, y: u32) -> u8 {
+        let mut coverage = 255;
+        for (index, clip) in self.clips.iter().enumerate() {
+            let clip_coverage = match clip.axis_aligned_rect {
+                Some(rect) => rect_coverage_for_pixel(rect, x, y),
+                None => self.clip_coverages[index]
+                    .as_mut()
+                    .expect("non-rectangular clip should have edge coverage")
+                    .coverage_for_pixel(&clip.path, x, y),
+            };
+            coverage = multiply_alpha(coverage, clip_coverage);
+            if coverage == 0 {
+                break;
+            }
         }
+        coverage
     }
-    coverage
 }
 
 fn multiply_alpha(left: u8, right: u8) -> u8 {
     ((u16::from(left) * u16::from(right) + 127) / 255) as u8
 }
 
+#[cfg(test)]
 fn analytic_fill_coverage_for_pixel(path: &FlattenedPath, rule: FillRule, x: u32, y: u32) -> u8 {
     FillEdgeCoverage::for_path(path, rule).coverage_for_pixel(path, x, y)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FillEdgeCoverageMode {
-    NonzeroNonCrossingSimpleSubpaths,
-    NonzeroSupersampled,
-    EvenOddNonCrossingSimpleSubpaths,
-    EvenOddSupersampled,
+    NonzeroScanlineCells,
+    EvenOddScanlineCells,
 }
 
 #[derive(Debug, Clone)]
 struct FillEdgeCoverage {
     mode: FillEdgeCoverageMode,
-    subpath_coefficients: Vec<i8>,
-    scratch_a: Vec<Point>,
-    scratch_b: Vec<Point>,
     cell_accumulator: FillScanlineCellAccumulator,
+    pixel_coverage: Vec<u8>,
 }
 
 impl FillEdgeCoverage {
-    fn for_path(path: &FlattenedPath, rule: FillRule) -> Self {
+    fn for_path(_path: &FlattenedPath, rule: FillRule) -> Self {
         let mode = match rule {
-            FillRule::Nonzero if path_has_non_crossing_simple_subpaths(path) => {
-                FillEdgeCoverageMode::NonzeroNonCrossingSimpleSubpaths
-            }
-            FillRule::Nonzero => FillEdgeCoverageMode::NonzeroSupersampled,
-            FillRule::EvenOdd if path_has_non_crossing_simple_subpaths(path) => {
-                FillEdgeCoverageMode::EvenOddNonCrossingSimpleSubpaths
-            }
-            FillRule::EvenOdd => FillEdgeCoverageMode::EvenOddSupersampled,
+            FillRule::Nonzero => FillEdgeCoverageMode::NonzeroScanlineCells,
+            FillRule::EvenOdd => FillEdgeCoverageMode::EvenOddScanlineCells,
         };
-        let subpath_coefficients = match mode {
-            FillEdgeCoverageMode::NonzeroNonCrossingSimpleSubpaths => {
-                nonzero_subpath_coefficients(path)
-            }
-            FillEdgeCoverageMode::EvenOddNonCrossingSimpleSubpaths => {
-                even_odd_subpath_coefficients(path)
-            }
-            FillEdgeCoverageMode::NonzeroSupersampled
-            | FillEdgeCoverageMode::EvenOddSupersampled => Vec::new(),
-        };
-        let scratch_capacity = path
-            .subpaths
-            .iter()
-            .map(Vec::len)
-            .max()
-            .unwrap_or_default()
-            .saturating_add(4);
         Self {
             mode,
-            subpath_coefficients,
-            scratch_a: Vec::with_capacity(scratch_capacity),
-            scratch_b: Vec::with_capacity(scratch_capacity),
             cell_accumulator: FillScanlineCellAccumulator::new(),
+            pixel_coverage: Vec::with_capacity(1),
         }
     }
 
@@ -12585,25 +12614,10 @@ impl FillEdgeCoverage {
     }
 
     fn coverage_for_pixel(&mut self, path: &FlattenedPath, x: u32, y: u32) -> u8 {
-        match self.mode {
-            FillEdgeCoverageMode::NonzeroNonCrossingSimpleSubpaths
-            | FillEdgeCoverageMode::EvenOddNonCrossingSimpleSubpaths => {
-                non_crossing_fill_coverage_for_pixel(
-                    path,
-                    &self.subpath_coefficients,
-                    x,
-                    y,
-                    &mut self.scratch_a,
-                    &mut self.scratch_b,
-                )
-            }
-            FillEdgeCoverageMode::NonzeroSupersampled => {
-                supersampled_fill_coverage_for_pixel(path, FillRule::Nonzero, x, y, 16)
-            }
-            FillEdgeCoverageMode::EvenOddSupersampled => {
-                supersampled_fill_coverage_for_pixel(path, FillRule::EvenOdd, x, y, 16)
-            }
-        }
+        let rule = self.rule();
+        self.cell_accumulator
+            .fill_run(path, rule, y, x, 0..1, &mut self.pixel_coverage);
+        self.pixel_coverage.first().copied().unwrap_or_default()
     }
 
     fn fill_scanline_cell_run(
@@ -12615,35 +12629,21 @@ impl FillEdgeCoverage {
         coverage: &mut Vec<u8>,
         stats: &mut FillCoverageSpanStats,
     ) -> bool {
-        match self.mode {
-            FillEdgeCoverageMode::NonzeroNonCrossingSimpleSubpaths
-            | FillEdgeCoverageMode::EvenOddNonCrossingSimpleSubpaths => {
-                self.cell_accumulator.fill_run(
-                    path,
-                    &self.subpath_coefficients,
-                    y,
-                    base_x,
-                    run,
-                    coverage,
-                );
-                stats.record_cell_accumulator_coverage(coverage);
-                true
-            }
-            FillEdgeCoverageMode::NonzeroSupersampled
-            | FillEdgeCoverageMode::EvenOddSupersampled => false,
-        }
+        let rule = self.rule();
+        self.cell_accumulator
+            .fill_run(path, rule, y, base_x, run, coverage);
+        stats.record_cell_accumulator_coverage(coverage);
+        true
     }
 
     fn record_edge_pixel(&self, stats: &mut FillCoverageSpanStats) {
+        stats.analytic_edge_pixels = stats.analytic_edge_pixels.saturating_add(1);
+    }
+
+    fn rule(&self) -> FillRule {
         match self.mode {
-            FillEdgeCoverageMode::NonzeroNonCrossingSimpleSubpaths
-            | FillEdgeCoverageMode::EvenOddNonCrossingSimpleSubpaths => {
-                stats.analytic_edge_pixels = stats.analytic_edge_pixels.saturating_add(1);
-            }
-            FillEdgeCoverageMode::NonzeroSupersampled
-            | FillEdgeCoverageMode::EvenOddSupersampled => {
-                stats.sampled_edge_pixels = stats.sampled_edge_pixels.saturating_add(1);
-            }
+            FillEdgeCoverageMode::NonzeroScanlineCells => FillRule::Nonzero,
+            FillEdgeCoverageMode::EvenOddScanlineCells => FillRule::EvenOdd,
         }
     }
 }
@@ -12671,7 +12671,7 @@ impl FillScanlineCellAccumulator {
     fn fill_run(
         &mut self,
         path: &FlattenedPath,
-        subpath_coefficients: &[i8],
+        rule: FillRule,
         y: u32,
         base_x: u32,
         run: Range<usize>,
@@ -12685,20 +12685,7 @@ impl FillScanlineCellAccumulator {
 
         let row_min_y = f64::from(y);
         let row_max_y = row_min_y + 1.0;
-        for (index, subpath) in path.subpaths.iter().enumerate() {
-            let coefficient = subpath_coefficients.get(index).copied().unwrap_or_default();
-            if coefficient == 0 {
-                continue;
-            }
-            self.accumulate_subpath_run_area(
-                subpath,
-                f64::from(coefficient),
-                row_min_y,
-                row_max_y,
-                base_x,
-                run.clone(),
-            );
-        }
+        self.accumulate_path_run_area(path, rule, row_min_y, row_max_y, base_x, run);
 
         coverage.extend(
             self.areas
@@ -12707,10 +12694,10 @@ impl FillScanlineCellAccumulator {
         );
     }
 
-    fn accumulate_subpath_run_area(
+    fn accumulate_path_run_area(
         &mut self,
-        subpath: &[Point],
-        coefficient: f64,
+        path: &FlattenedPath,
+        rule: FillRule,
         row_min_y: f64,
         row_max_y: f64,
         base_x: u32,
@@ -12720,11 +12707,13 @@ impl FillScanlineCellAccumulator {
         self.y_breaks.push(row_min_y);
         self.y_breaks.push(row_max_y);
         self.y_breaks.extend(
-            subpath
+            path.subpaths
                 .iter()
+                .flatten()
                 .map(|point| point.y)
                 .filter(|point_y| *point_y > row_min_y + 1e-9 && *point_y < row_max_y - 1e-9),
         );
+        self.append_row_edge_intersection_y_breaks(path, row_min_y, row_max_y);
         self.y_breaks.sort_by(f64::total_cmp);
         self.y_breaks
             .dedup_by(|left, right| (*left - *right).abs() <= 1e-9);
@@ -12737,22 +12726,42 @@ impl FillScanlineCellAccumulator {
                 index += 1;
                 continue;
             }
-            self.accumulate_subpath_slab_area(
-                subpath,
-                coefficient,
-                slab_min_y,
-                slab_max_y,
-                base_x,
-                run.clone(),
-            );
+            self.accumulate_path_slab_area(path, rule, slab_min_y, slab_max_y, base_x, run.clone());
             index += 1;
         }
     }
 
-    fn accumulate_subpath_slab_area(
+    fn append_row_edge_intersection_y_breaks(
         &mut self,
-        subpath: &[Point],
-        coefficient: f64,
+        path: &FlattenedPath,
+        row_min_y: f64,
+        row_max_y: f64,
+    ) {
+        let edges = path
+            .subpaths
+            .iter()
+            .flat_map(|subpath| polygon_edges(subpath))
+            .filter(|edge| {
+                edge.from.y.min(edge.to.y) < row_max_y - 1e-9
+                    && edge.from.y.max(edge.to.y) > row_min_y + 1e-9
+            })
+            .collect::<Vec<_>>();
+        for (left_index, left) in edges.iter().copied().enumerate() {
+            for right in edges.iter().copied().skip(left_index + 1) {
+                let Some(point) = segment_intersection_point(left, right) else {
+                    continue;
+                };
+                if point.y > row_min_y + 1e-9 && point.y < row_max_y - 1e-9 {
+                    self.y_breaks.push(point.y);
+                }
+            }
+        }
+    }
+
+    fn accumulate_path_slab_area(
+        &mut self,
+        path: &FlattenedPath,
+        rule: FillRule,
         slab_min_y: f64,
         slab_max_y: f64,
         base_x: u32,
@@ -12761,11 +12770,14 @@ impl FillScanlineCellAccumulator {
         let scan_y = (slab_min_y + slab_max_y) * 0.5;
         self.intersections.clear();
         self.intersections.extend(
-            polygon_edges(subpath)
+            path.subpaths
+                .iter()
+                .flat_map(|subpath| polygon_edges(subpath))
                 .filter(|edge| edge_crosses_scanline(*edge, scan_y))
                 .map(|edge| FillScanlineIntersection {
                     x: edge_x_at_y(edge, scan_y),
                     edge,
+                    winding_delta: if edge.to.y > edge.from.y { 1 } else { -1 },
                 }),
         );
         if self.intersections.len() < 2 {
@@ -12774,10 +12786,21 @@ impl FillScanlineCellAccumulator {
         self.intersections
             .sort_by(|left, right| left.x.total_cmp(&right.x));
 
-        let mut index = 0;
-        while index + 1 < self.intersections.len() {
+        let mut winding = 0;
+        let mut parity = false;
+        for index in 0..self.intersections.len() - 1 {
             let left = self.intersections[index];
+            winding += left.winding_delta;
+            parity = !parity;
+
             let right = self.intersections[index + 1];
+            let filled = match rule {
+                FillRule::Nonzero => winding != 0,
+                FillRule::EvenOdd => parity,
+            };
+            if !filled || right.x - left.x <= f64::EPSILON {
+                continue;
+            }
             let polygon = [
                 Point {
                     x: edge_x_at_y(left.edge, slab_min_y),
@@ -12796,8 +12819,7 @@ impl FillScanlineCellAccumulator {
                     y: slab_max_y,
                 },
             ];
-            self.accumulate_interval_polygon_area(&polygon, coefficient, base_x, run.clone());
-            index += 2;
+            self.accumulate_interval_polygon_area(&polygon, 1.0, base_x, run.clone());
         }
     }
 
@@ -12862,6 +12884,31 @@ impl FillScanlineCellAccumulator {
 struct FillScanlineIntersection {
     x: f64,
     edge: LineSegment,
+    winding_delta: i32,
+}
+
+fn segment_intersection_point(left: LineSegment, right: LineSegment) -> Option<Point> {
+    let left_dx = left.to.x - left.from.x;
+    let left_dy = left.to.y - left.from.y;
+    let right_dx = right.to.x - right.from.x;
+    let right_dy = right.to.y - right.from.y;
+    let denominator = left_dx.mul_add(right_dy, -(left_dy * right_dx));
+    if denominator.abs() <= 1e-12 {
+        return None;
+    }
+
+    let delta_x = right.from.x - left.from.x;
+    let delta_y = right.from.y - left.from.y;
+    let left_t = delta_x.mul_add(right_dy, -(delta_y * right_dx)) / denominator;
+    let right_t = delta_x.mul_add(left_dy, -(delta_y * left_dx)) / denominator;
+    if !(1e-9..=1.0 - 1e-9).contains(&left_t) || !(1e-9..=1.0 - 1e-9).contains(&right_t) {
+        return None;
+    }
+
+    Some(Point {
+        x: left_dx.mul_add(left_t, left.from.x),
+        y: left_dy.mul_add(left_t, left.from.y),
+    })
 }
 
 fn edge_x_at_y(edge: LineSegment, y: f64) -> f64 {
@@ -12964,156 +13011,6 @@ impl FillEdgeCoverageRowBuffer {
     }
 }
 
-fn nonzero_subpath_coefficients(path: &FlattenedPath) -> Vec<i8> {
-    let orientations = path
-        .subpaths
-        .iter()
-        .map(|subpath| {
-            if polygon_signed_area(subpath) >= 0.0 {
-                1
-            } else {
-                -1
-            }
-        })
-        .collect::<Vec<_>>();
-    (0..path.subpaths.len())
-        .map(|index| {
-            let parent_winding = containing_subpath_indices(path, index)
-                .map(|other_index| orientations[other_index])
-                .sum::<i32>();
-            let current_winding = parent_winding + orientations[index];
-            i8::from(current_winding != 0) - i8::from(parent_winding != 0)
-        })
-        .collect()
-}
-
-fn even_odd_subpath_coefficients(path: &FlattenedPath) -> Vec<i8> {
-    (0..path.subpaths.len())
-        .map(|index| {
-            if containing_subpath_indices(path, index).count() % 2 == 0 {
-                1
-            } else {
-                -1
-            }
-        })
-        .collect()
-}
-
-fn containing_subpath_indices(
-    path: &FlattenedPath,
-    subpath_index: usize,
-) -> impl Iterator<Item = usize> + '_ {
-    let point = path.subpaths[subpath_index].first().copied();
-    path.subpaths
-        .iter()
-        .enumerate()
-        .filter(move |(other_index, other)| {
-            *other_index != subpath_index
-                && point.is_some_and(|point| point_in_polygon_even_odd(point, other))
-        })
-        .map(|(index, _)| index)
-}
-
-fn path_has_non_crossing_simple_subpaths(path: &FlattenedPath) -> bool {
-    if path.subpaths.is_empty()
-        || !path.subpaths.iter().all(|subpath| {
-            simple_polygon_points(subpath) && polygon_signed_area(subpath).abs() > f64::EPSILON
-        })
-    {
-        return false;
-    }
-    for (left_index, left) in path.subpaths.iter().enumerate() {
-        for right in path.subpaths.iter().skip(left_index + 1) {
-            if simple_polygon_boundaries_intersect(left, right) {
-                return false;
-            }
-        }
-    }
-    true
-}
-
-fn simple_polygon_points(points: &[Point]) -> bool {
-    if points.len() < 3 {
-        return false;
-    }
-    let edges = polygon_edges(points).collect::<Vec<_>>();
-    for (left_index, left) in edges.iter().copied().enumerate() {
-        for (right_index, right) in edges.iter().copied().enumerate().skip(left_index + 1) {
-            if polygon_edges_are_adjacent(left_index, right_index, edges.len()) {
-                continue;
-            }
-            if line_segments_intersect(left, right) {
-                return false;
-            }
-        }
-    }
-    true
-}
-
-fn simple_polygon_boundaries_intersect(left: &[Point], right: &[Point]) -> bool {
-    for left_edge in polygon_edges(left) {
-        for right_edge in polygon_edges(right) {
-            if line_segments_intersect(left_edge, right_edge) {
-                return true;
-            }
-        }
-    }
-    false
-}
-
-fn polygon_edges_are_adjacent(left: usize, right: usize, edge_count: usize) -> bool {
-    left + 1 == right || (left == 0 && right + 1 == edge_count)
-}
-
-fn line_segments_intersect(left: LineSegment, right: LineSegment) -> bool {
-    let d1 = orient(left.from, left.to, right.from);
-    let d2 = orient(left.from, left.to, right.to);
-    let d3 = orient(right.from, right.to, left.from);
-    let d4 = orient(right.from, right.to, left.to);
-    if d1.abs() <= f64::EPSILON && point_on_segment(right.from, left) {
-        return true;
-    }
-    if d2.abs() <= f64::EPSILON && point_on_segment(right.to, left) {
-        return true;
-    }
-    if d3.abs() <= f64::EPSILON && point_on_segment(left.from, right) {
-        return true;
-    }
-    if d4.abs() <= f64::EPSILON && point_on_segment(left.to, right) {
-        return true;
-    }
-    (d1 > 0.0) != (d2 > 0.0) && (d3 > 0.0) != (d4 > 0.0)
-}
-
-fn orient(a: Point, b: Point, c: Point) -> f64 {
-    (b.x - a.x).mul_add(c.y - a.y, -((b.y - a.y) * (c.x - a.x)))
-}
-
-fn point_on_segment(point: Point, segment: LineSegment) -> bool {
-    point.x >= segment.from.x.min(segment.to.x) - f64::EPSILON
-        && point.x <= segment.from.x.max(segment.to.x) + f64::EPSILON
-        && point.y >= segment.from.y.min(segment.to.y) - f64::EPSILON
-        && point.y <= segment.from.y.max(segment.to.y) + f64::EPSILON
-}
-
-fn non_crossing_fill_coverage_for_pixel(
-    path: &FlattenedPath,
-    subpath_coefficients: &[i8],
-    x: u32,
-    y: u32,
-    scratch_a: &mut Vec<Point>,
-    scratch_b: &mut Vec<Point>,
-) -> u8 {
-    let mut area = 0.0;
-    for (index, subpath) in path.subpaths.iter().enumerate() {
-        let subpath_area =
-            clipped_polygon_signed_area_for_pixel(subpath, x, y, scratch_a, scratch_b).abs();
-        area +=
-            f64::from(subpath_coefficients.get(index).copied().unwrap_or_default()) * subpath_area;
-    }
-    coverage_area_to_alpha(area)
-}
-
 fn rect_coverage_for_pixel(rect: PathBounds, x: u32, y: u32) -> u8 {
     let min_x = rect.min_x.max(f64::from(x));
     let min_y = rect.min_y.max(f64::from(y));
@@ -13127,54 +13024,6 @@ fn rect_coverage_for_pixel(rect: PathBounds, x: u32, y: u32) -> u8 {
 
 fn coverage_area_to_alpha(area: f64) -> u8 {
     (area.clamp(0.0, 1.0) * 255.0).round() as u8
-}
-
-fn clipped_polygon_signed_area_for_pixel(
-    polygon: &[Point],
-    x: u32,
-    y: u32,
-    scratch_a: &mut Vec<Point>,
-    scratch_b: &mut Vec<Point>,
-) -> f64 {
-    if polygon.len() < 3 {
-        return 0.0;
-    }
-    let x0 = f64::from(x);
-    let y0 = f64::from(y);
-    let x1 = x0 + 1.0;
-    let y1 = y0 + 1.0;
-
-    scratch_a.clear();
-    scratch_a.extend_from_slice(polygon);
-    clip_polygon_by_axis(
-        scratch_a,
-        scratch_b,
-        |point| point.x >= x0,
-        |a, b| intersect_segment_with_vertical(a, b, x0),
-    );
-    std::mem::swap(scratch_a, scratch_b);
-    clip_polygon_by_axis(
-        scratch_a,
-        scratch_b,
-        |point| point.x <= x1,
-        |a, b| intersect_segment_with_vertical(a, b, x1),
-    );
-    std::mem::swap(scratch_a, scratch_b);
-    clip_polygon_by_axis(
-        scratch_a,
-        scratch_b,
-        |point| point.y >= y0,
-        |a, b| intersect_segment_with_horizontal(a, b, y0),
-    );
-    std::mem::swap(scratch_a, scratch_b);
-    clip_polygon_by_axis(
-        scratch_a,
-        scratch_b,
-        |point| point.y <= y1,
-        |a, b| intersect_segment_with_horizontal(a, b, y1),
-    );
-    std::mem::swap(scratch_a, scratch_b);
-    polygon_signed_area(scratch_a)
 }
 
 fn clip_polygon_by_axis(
@@ -13217,18 +13066,6 @@ fn intersect_segment_with_vertical(from: Point, to: Point, x: f64) -> Point {
     }
 }
 
-fn intersect_segment_with_horizontal(from: Point, to: Point, y: f64) -> Point {
-    let dy = to.y - from.y;
-    if dy.abs() <= f64::EPSILON {
-        return Point { x: from.x, y };
-    }
-    let t = (y - from.y) / dy;
-    Point {
-        x: (to.x - from.x).mul_add(t, from.x),
-        y,
-    }
-}
-
 fn polygon_signed_area(polygon: &[Point]) -> f64 {
     if polygon.len() < 3 {
         return 0.0;
@@ -13242,25 +13079,6 @@ fn polygon_signed_area(polygon: &[Point]) -> f64 {
         })
         .sum::<f64>();
     twice_area * 0.5
-}
-
-fn supersampled_fill_coverage_for_pixel(
-    path: &FlattenedPath,
-    rule: FillRule,
-    x: u32,
-    y: u32,
-    samples: u32,
-) -> u8 {
-    let mut covered = 0;
-    for sample_y in 0..samples {
-        for sample_x in 0..samples {
-            if point_in_path(sample_point(x, y, sample_x, sample_y, samples), path, rule) {
-                covered += 1;
-            }
-        }
-    }
-    let sample_count = samples * samples;
-    ((covered * 255 + sample_count / 2) / sample_count) as u8
 }
 
 fn sampled_fill_coverage_for_pixel(
@@ -14468,10 +14286,20 @@ fn stroke_unclipped_pixel_area(lines: &[LineSegment], joins: &[StrokeJoin], radi
     width.saturating_mul(height)
 }
 
+#[cfg(test)]
 fn stroke_pixel_bounds(
     lines: &[LineSegment],
     joins: &[StrokeJoin],
     radius: f64,
+    dimensions: RasterDimensions,
+) -> Option<PixelBounds> {
+    stroke_pixel_bounds_with_padding(lines, joins, radius.ceil() + 1.0, dimensions)
+}
+
+fn stroke_pixel_bounds_with_padding(
+    lines: &[LineSegment],
+    joins: &[StrokeJoin],
+    padding: f64,
     dimensions: RasterDimensions,
 ) -> Option<PixelBounds> {
     let mut bounds = None;
@@ -14482,7 +14310,20 @@ fn stroke_pixel_bounds(
     for join in joins {
         bounds = Some(include_point(bounds, join.point));
     }
-    bounds.and_then(|bounds| device_pixel_bounds(bounds, dimensions, radius.ceil() + 1.0))
+    bounds.and_then(|bounds| device_pixel_bounds(bounds, dimensions, padding))
+}
+
+fn stroke_bounds_padding(
+    radius: f64,
+    joins: &[StrokeJoin],
+    line_join: LineJoin,
+    miter_limit: f64,
+) -> f64 {
+    let base = radius.ceil() + 1.0;
+    if joins.is_empty() || !matches!(line_join, LineJoin::Miter) {
+        return base;
+    }
+    base.max((radius * miter_limit.max(1.0)).ceil() + 1.0)
 }
 
 fn build_pattern_samples(
@@ -14811,16 +14652,20 @@ fn stroke_path(
     let sample_count = samples * samples;
     let dimensions = device.dimensions();
     let route_pixel_area = stroke_unclipped_pixel_area(stroke_lines, joins, radius);
-    let Some(bounds) =
-        stroke_pixel_bounds(stroke_lines, joins, radius, dimensions).and_then(|bounds| {
-            intersect_active_clip_pixel_bounds(
-                bounds,
-                context.clips,
-                dimensions,
-                context.options.scissor,
-            )
-        })
-    else {
+    let Some(bounds) = stroke_pixel_bounds_with_padding(
+        stroke_lines,
+        joins,
+        stroke_bounds_padding(radius, joins, state.line_join, state.miter_limit),
+        dimensions,
+    )
+    .and_then(|bounds| {
+        intersect_active_clip_pixel_bounds(
+            bounds,
+            context.clips,
+            dimensions,
+            context.options.scissor,
+        )
+    }) else {
         return Ok(());
     };
     let skip_clip_checks = can_skip_active_clip_checks(context.clips);
@@ -22862,6 +22707,46 @@ mod tests {
     }
 
     #[test]
+    fn miter_stroke_bounds_should_include_join_extension_in_clipped_band() {
+        let dimensions = RasterDimensions::new(160, 17).expect("valid band dimensions");
+        let lines = [
+            LineSegment {
+                from: Point { x: 20.0, y: 100.0 },
+                to: Point { x: 80.0, y: 20.0 },
+            },
+            LineSegment {
+                from: Point { x: 80.0, y: 20.0 },
+                to: Point { x: 140.0, y: 100.0 },
+            },
+        ];
+        let joins = [StrokeJoin {
+            previous: lines[0],
+            next: lines[1],
+            point: lines[0].to,
+        }];
+        let radius = 2.0;
+
+        assert_eq!(
+            stroke_pixel_bounds(&lines, &joins, radius, dimensions),
+            None
+        );
+        assert_eq!(
+            stroke_pixel_bounds_with_padding(
+                &lines,
+                &joins,
+                stroke_bounds_padding(radius, &joins, LineJoin::Miter, 10.0),
+                dimensions,
+            ),
+            Some(PixelBounds {
+                min_x: 0,
+                min_y: 0,
+                max_x: 160,
+                max_y: 17,
+            })
+        );
+    }
+
+    #[test]
     fn stroke_row_buckets_should_limit_lines_by_pixel_row() {
         let dimensions = RasterDimensions::new(20, 12).expect("valid dimensions");
         let lines = [
@@ -25632,7 +25517,7 @@ mod tests {
 
         assert_eq!(
             FillEdgeCoverage::for_path(&path, FillRule::Nonzero).mode(),
-            FillEdgeCoverageMode::NonzeroNonCrossingSimpleSubpaths
+            FillEdgeCoverageMode::NonzeroScanlineCells
         );
         assert_eq!(
             analytic_fill_coverage_for_pixel(&path, FillRule::Nonzero, 0, 0),
@@ -25662,7 +25547,7 @@ mod tests {
 
         assert_eq!(
             FillEdgeCoverage::for_path(&path, FillRule::Nonzero).mode(),
-            FillEdgeCoverageMode::NonzeroNonCrossingSimpleSubpaths
+            FillEdgeCoverageMode::NonzeroScanlineCells
         );
         assert_eq!(
             analytic_fill_coverage_for_pixel(&path, FillRule::Nonzero, 0, 0),
@@ -25694,7 +25579,7 @@ mod tests {
 
         assert_eq!(
             FillEdgeCoverage::for_path(&path, FillRule::Nonzero).mode(),
-            FillEdgeCoverageMode::NonzeroNonCrossingSimpleSubpaths
+            FillEdgeCoverageMode::NonzeroScanlineCells
         );
         assert_eq!(
             analytic_fill_coverage_for_pixel(&path, FillRule::Nonzero, 0, 0),
@@ -25726,7 +25611,7 @@ mod tests {
 
         assert_eq!(
             FillEdgeCoverage::for_path(&path, FillRule::Nonzero).mode(),
-            FillEdgeCoverageMode::NonzeroNonCrossingSimpleSubpaths
+            FillEdgeCoverageMode::NonzeroScanlineCells
         );
         assert_eq!(
             analytic_fill_coverage_for_pixel(&path, FillRule::Nonzero, 0, 0),
@@ -25749,7 +25634,7 @@ mod tests {
 
         assert_eq!(
             FillEdgeCoverage::for_path(&path, FillRule::EvenOdd).mode(),
-            FillEdgeCoverageMode::EvenOddNonCrossingSimpleSubpaths
+            FillEdgeCoverageMode::EvenOddScanlineCells
         );
         assert_eq!(
             analytic_fill_coverage_for_pixel(&path, FillRule::EvenOdd, 0, 0),
@@ -25779,7 +25664,7 @@ mod tests {
 
         assert_eq!(
             FillEdgeCoverage::for_path(&path, FillRule::EvenOdd).mode(),
-            FillEdgeCoverageMode::EvenOddNonCrossingSimpleSubpaths
+            FillEdgeCoverageMode::EvenOddScanlineCells
         );
         assert_eq!(
             analytic_fill_coverage_for_pixel(&path, FillRule::EvenOdd, 0, 0),
@@ -25815,7 +25700,7 @@ mod tests {
 
         assert_eq!(
             FillEdgeCoverage::for_path(&path, FillRule::EvenOdd).mode(),
-            FillEdgeCoverageMode::EvenOddNonCrossingSimpleSubpaths
+            FillEdgeCoverageMode::EvenOddScanlineCells
         );
         assert_eq!(
             analytic_fill_coverage_for_pixel(&path, FillRule::EvenOdd, 0, 0),
@@ -25845,7 +25730,7 @@ mod tests {
 
         assert_eq!(
             FillEdgeCoverage::for_path(&path, FillRule::EvenOdd).mode(),
-            FillEdgeCoverageMode::EvenOddNonCrossingSimpleSubpaths
+            FillEdgeCoverageMode::EvenOddScanlineCells
         );
         assert_eq!(
             analytic_fill_coverage_for_pixel(&path, FillRule::EvenOdd, 0, 0),
@@ -25854,7 +25739,7 @@ mod tests {
     }
 
     #[test]
-    fn even_odd_complex_subpaths_should_keep_supersampled_edge_coverage() {
+    fn complex_subpaths_should_use_exact_scanline_cell_coverage() {
         let overlapping_subpaths = FlattenedPath {
             subpaths: vec![
                 vec![
@@ -25888,12 +25773,90 @@ mod tests {
 
         assert_eq!(
             FillEdgeCoverage::for_path(&overlapping_subpaths, FillRule::EvenOdd).mode(),
-            FillEdgeCoverageMode::EvenOddSupersampled
+            FillEdgeCoverageMode::EvenOddScanlineCells
+        );
+        assert_eq!(
+            analytic_fill_coverage_for_pixel(&overlapping_subpaths, FillRule::Nonzero, 0, 0),
+            255
+        );
+        assert_eq!(
+            analytic_fill_coverage_for_pixel(&overlapping_subpaths, FillRule::EvenOdd, 0, 0),
+            191
+        );
+        assert_eq!(
+            FillEdgeCoverage::for_path(&self_intersecting, FillRule::Nonzero).mode(),
+            FillEdgeCoverageMode::NonzeroScanlineCells
+        );
+        assert_eq!(
+            analytic_fill_coverage_for_pixel(&self_intersecting, FillRule::Nonzero, 0, 0),
+            128
         );
         assert_eq!(
             FillEdgeCoverage::for_path(&self_intersecting, FillRule::EvenOdd).mode(),
-            FillEdgeCoverageMode::EvenOddSupersampled
+            FillEdgeCoverageMode::EvenOddScanlineCells
         );
+        assert_eq!(
+            analytic_fill_coverage_for_pixel(&self_intersecting, FillRule::EvenOdd, 0, 0),
+            128
+        );
+    }
+
+    #[test]
+    fn fill_path_scanline_cells_should_render_self_intersection_at_row_center() {
+        let subpath = vec![
+            Point { x: 0.1, y: 0.0 },
+            Point { x: 0.9, y: 1.0 },
+            Point { x: 0.1, y: 1.0 },
+            Point { x: 0.9, y: 0.0 },
+        ];
+        let path = FlattenedPath {
+            lines: polygon_edges(&subpath).collect(),
+            subpaths: vec![subpath],
+            stats: FlattenedPathStats::default(),
+            joins: Vec::new(),
+        };
+        let fill_routes = RefCell::new(FillRasterRouteSummary::default());
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 2.0,
+                    max_y: 2.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            2,
+        )
+        .expect("valid transform");
+        let mut device = RasterDevice::new(2, 2, Rgba::WHITE).expect("valid raster");
+
+        fill_path(
+            &mut device,
+            &path,
+            FillRule::Nonzero,
+            DeviceColor::BLACK,
+            BlendMode::Normal,
+            1.0,
+            PathRasterContext {
+                transform,
+                options: PathRasterOptions::default(),
+                clips: &[],
+                fill_routes: Some(&fill_routes),
+                stroke_routes: None,
+            },
+        )
+        .expect("self-intersecting fill should rasterize");
+
+        assert_ne!(
+            device.pixel(0, 0).expect("bow-tie crossing pixel"),
+            Rgba::WHITE
+        );
+        let fill_routes = fill_routes.into_inner();
+        assert_eq!(fill_routes.sampled_calls, 0);
+        assert!(fill_routes.coverage_cell_accumulator_pixels > 0);
+        assert_eq!(fill_routes.coverage_sampled_edge_pixels, 0);
     }
 
     #[test]
@@ -26173,7 +26136,7 @@ mod tests {
     }
 
     #[test]
-    fn fill_path_coverage_spans_should_count_sampled_edges_for_complex_nonzero() {
+    fn fill_path_coverage_spans_should_count_cell_edges_for_complex_nonzero() {
         let path = FlattenedPath {
             subpaths: vec![
                 vec![
@@ -26249,14 +26212,14 @@ mod tests {
         let fill_routes = fill_routes.into_inner();
         assert_eq!(fill_routes.coverage_span_calls, 1);
         assert_eq!(fill_routes.sampled_calls, 0);
-        assert_eq!(fill_routes.coverage_analytic_edge_pixels, 0);
-        assert_eq!(fill_routes.coverage_cell_accumulator_pixels, 0);
-        assert!(fill_routes.coverage_sampled_edge_pixels > 0);
+        assert!(fill_routes.coverage_analytic_edge_pixels > 0);
+        assert!(fill_routes.coverage_cell_accumulator_pixels > 0);
+        assert_eq!(fill_routes.coverage_sampled_edge_pixels, 0);
         assert_eq!(fill_routes.coverage_edge_row_buffer_pixels, 0);
     }
 
     #[test]
-    fn fill_path_coverage_spans_should_count_sampled_edges_for_complex_even_odd() {
+    fn fill_path_coverage_spans_should_count_cell_edges_for_complex_even_odd() {
         let path = FlattenedPath {
             subpaths: vec![
                 vec![
@@ -26332,9 +26295,9 @@ mod tests {
         let fill_routes = fill_routes.into_inner();
         assert_eq!(fill_routes.coverage_span_calls, 1);
         assert_eq!(fill_routes.sampled_calls, 0);
-        assert_eq!(fill_routes.coverage_analytic_edge_pixels, 0);
-        assert_eq!(fill_routes.coverage_cell_accumulator_pixels, 0);
-        assert!(fill_routes.coverage_sampled_edge_pixels > 0);
+        assert!(fill_routes.coverage_analytic_edge_pixels > 0);
+        assert!(fill_routes.coverage_cell_accumulator_pixels > 0);
+        assert_eq!(fill_routes.coverage_sampled_edge_pixels, 0);
         assert_eq!(fill_routes.coverage_edge_row_buffer_pixels, 0);
     }
 
