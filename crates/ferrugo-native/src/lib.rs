@@ -807,6 +807,15 @@ impl NativeBackend {
         Self::with_render_limits(NativeRenderLimits::low_memory_parallel())
     }
 
+    /// Creates a Rust-native backend using constrained low-memory budgets plus
+    /// an explicit maximum number of thread-per-band raster replay workers.
+    #[must_use]
+    pub const fn low_memory_parallel_with_workers(max_workers: usize) -> Self {
+        Self::with_render_limits(NativeRenderLimits::low_memory_parallel_with_workers(
+            max_workers,
+        ))
+    }
+
     /// Creates a Rust-native backend using explicit render budgets.
     #[must_use]
     pub const fn with_render_limits(limits: NativeRenderLimits) -> Self {
@@ -1220,8 +1229,15 @@ impl NativeRenderLimits {
     /// Returns constrained low-memory budgets with bounded parallel band replay.
     #[must_use]
     pub const fn low_memory_parallel() -> Self {
+        Self::low_memory_parallel_with_workers(LOW_MEMORY_PARALLEL_RASTER_BAND_WORKERS)
+    }
+
+    /// Returns constrained low-memory budgets with an explicit maximum number
+    /// of thread-per-band raster replay workers.
+    #[must_use]
+    pub const fn low_memory_parallel_with_workers(max_workers: usize) -> Self {
         Self {
-            max_raster_band_workers: LOW_MEMORY_PARALLEL_RASTER_BAND_WORKERS,
+            max_raster_band_workers: max_workers,
             ..Self::low_memory()
         }
     }
@@ -7130,6 +7146,114 @@ mod tests {
                 "{label}"
             );
         }
+    }
+
+    #[test]
+    fn low_memory_parallel_render_should_match_serial_extended_fixture_set() {
+        for &(label, bytes, max_edge) in &[
+            (
+                "text page",
+                include_bytes!("../../../fixtures/generated/text-page.pdf").as_slice(),
+                160,
+            ),
+            (
+                "axial shading",
+                include_bytes!("../../../fixtures/generated/axial-gradient.pdf").as_slice(),
+                160,
+            ),
+            (
+                "transparency alpha",
+                include_bytes!("../../../fixtures/generated/transparency-alpha.pdf").as_slice(),
+                160,
+            ),
+        ] {
+            let options = ThumbnailOptions {
+                page_index: 0,
+                max_edge,
+                background: ferrugo_thumbnail::Rgba::WHITE,
+                output_format: ferrugo_thumbnail::OutputFormat::Rgba,
+                timeout: std::time::Duration::from_secs(5),
+                annotation_mode: AnnotationMode::Screen,
+                form_appearance_mode: FormAppearanceMode::DocumentState,
+            };
+            let serial = NativeBackend::low_memory()
+                .render(PdfSource::from_bytes(bytes), &options)
+                .unwrap_or_else(|error| {
+                    panic!("{label} serial low-memory render should succeed: {error}")
+                });
+
+            for workers in [2, 4, 8] {
+                let backend = NativeBackend::low_memory_parallel_with_workers(workers);
+                let parallel = backend
+                    .render(PdfSource::from_bytes(bytes), &options)
+                    .unwrap_or_else(|error| {
+                        panic!(
+                            "{label} {workers}-worker low-memory parallel render should succeed: {error}"
+                        )
+                    });
+                let parallel_bands = backend
+                    .render_raster_band_summary(PdfSource::from_bytes(bytes), &options)
+                    .unwrap_or_else(|error| {
+                        panic!(
+                            "{label} {workers}-worker low-memory parallel band summary should succeed: {error}"
+                        )
+                    });
+
+                assert_eq!(serial.bytes, parallel.bytes, "{label} workers={workers}");
+                assert!(parallel_bands.bands > 1, "{label} workers={workers}");
+                assert_eq!(
+                    parallel_bands.workers,
+                    workers.min(parallel_bands.bands),
+                    "{label} workers={workers}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn low_memory_parallel_render_should_scale_to_eight_workers_for_large_banded_page() {
+        let display_list = DisplayList::from_items(vec![DisplayItem::Path(PathDisplayItem {
+            segments: vec![
+                PathSegment::MoveTo(Point { x: 80.0, y: 80.0 }),
+                PathSegment::LineTo(Point { x: 560.0, y: 80.0 }),
+                PathSegment::LineTo(Point { x: 560.0, y: 560.0 }),
+                PathSegment::LineTo(Point { x: 80.0, y: 560.0 }),
+                PathSegment::Close,
+            ],
+            paint: PaintMode::Fill {
+                rule: FillRule::Nonzero,
+            },
+            state: GraphicsState {
+                fill_color: DeviceColor::Rgb {
+                    r: 0.15,
+                    g: 0.35,
+                    b: 0.72,
+                },
+                ..GraphicsState::default()
+            },
+            fill_pattern: None,
+        })]);
+
+        let (single, single_bands) = render_test_display_list_with_size_and_limits(
+            &display_list,
+            640,
+            640,
+            NativeRenderLimits::low_memory(),
+        );
+        let (parallel, parallel_bands) = render_test_display_list_with_size_and_limits(
+            &display_list,
+            640,
+            640,
+            NativeRenderLimits::low_memory_parallel_with_workers(8),
+        );
+
+        assert_eq!(single.bytes, parallel.bytes);
+        assert_eq!(single_bands.bands, 10);
+        assert_eq!(single_bands.workers, 1);
+        assert_eq!(parallel_bands.bands, 10);
+        assert_eq!(parallel_bands.workers, 8);
+        assert_eq!(parallel_bands.max_band_rows, 64);
+        assert_eq!(parallel_bands.active_target_peak_bytes(), 640 * 64 * 4 * 8);
     }
 
     #[test]

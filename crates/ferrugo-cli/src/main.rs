@@ -2168,7 +2168,7 @@ impl ReplayOperatorsConfig {
 enum NativeProfile {
     Default,
     LowMemory,
-    LowMemoryParallel,
+    LowMemoryParallel { workers: usize },
 }
 
 impl NativeProfile {
@@ -2176,7 +2176,9 @@ impl NativeProfile {
         match self {
             Self::Default => NativeBackend::new(),
             Self::LowMemory => NativeBackend::low_memory(),
-            Self::LowMemoryParallel => NativeBackend::low_memory_parallel(),
+            Self::LowMemoryParallel { workers } => {
+                NativeBackend::low_memory_parallel_with_workers(workers)
+            }
         }
     }
 
@@ -2184,7 +2186,10 @@ impl NativeProfile {
         match self {
             Self::Default => "default",
             Self::LowMemory => "low-memory",
-            Self::LowMemoryParallel => "low-memory-parallel",
+            Self::LowMemoryParallel { workers: 2 } => "low-memory-parallel",
+            Self::LowMemoryParallel { workers: 4 } => "low-memory-parallel-4",
+            Self::LowMemoryParallel { workers: 8 } => "low-memory-parallel-8",
+            Self::LowMemoryParallel { .. } => "low-memory-parallel-custom",
         }
     }
 }
@@ -2193,9 +2198,13 @@ fn parse_native_profile(value: &str) -> Result<NativeProfile, CliError> {
     match value {
         "default" => Ok(NativeProfile::Default),
         "low-memory" => Ok(NativeProfile::LowMemory),
-        "low-memory-parallel" => Ok(NativeProfile::LowMemoryParallel),
+        "low-memory-parallel" | "low-memory-parallel-2" => {
+            Ok(NativeProfile::LowMemoryParallel { workers: 2 })
+        }
+        "low-memory-parallel-4" => Ok(NativeProfile::LowMemoryParallel { workers: 4 }),
+        "low-memory-parallel-8" => Ok(NativeProfile::LowMemoryParallel { workers: 8 }),
         _ => Err(CliError::Usage(format!(
-            "unknown --native-profile `{value}`; expected `default`, `low-memory`, or `low-memory-parallel`"
+            "unknown --native-profile `{value}`; expected `default`, `low-memory`, `low-memory-parallel`, `low-memory-parallel-4`, or `low-memory-parallel-8`"
         ))),
     }
 }
@@ -12945,7 +12954,10 @@ status = "candidate"
         ])
         .expect("valid benchmark config");
 
-        assert_eq!(config.native_profile, NativeProfile::LowMemoryParallel);
+        assert_eq!(
+            config.native_profile,
+            NativeProfile::LowMemoryParallel { workers: 2 }
+        );
         assert_eq!(
             config
                 .native_profile
@@ -12953,6 +12965,46 @@ status = "candidate"
                 .memory_diagnostics()
                 .max_raster_band_workers,
             2
+        );
+
+        let config = BenchmarkConfig::parse(&[
+            OsString::from("fixtures/generated"),
+            OsString::from("--native-profile"),
+            OsString::from("low-memory-parallel-4"),
+        ])
+        .expect("valid benchmark config");
+
+        assert_eq!(
+            config.native_profile,
+            NativeProfile::LowMemoryParallel { workers: 4 }
+        );
+        assert_eq!(
+            config
+                .native_profile
+                .backend()
+                .memory_diagnostics()
+                .max_raster_band_workers,
+            4
+        );
+
+        let config = BenchmarkConfig::parse(&[
+            OsString::from("fixtures/generated"),
+            OsString::from("--native-profile"),
+            OsString::from("low-memory-parallel-8"),
+        ])
+        .expect("valid benchmark config");
+
+        assert_eq!(
+            config.native_profile,
+            NativeProfile::LowMemoryParallel { workers: 8 }
+        );
+        assert_eq!(
+            config
+                .native_profile
+                .backend()
+                .memory_diagnostics()
+                .max_raster_band_workers,
+            8
         );
     }
 
@@ -13554,10 +13606,10 @@ status = "candidate"
             max_ms: 60_000,
             max_output_bytes: 1_048_576,
             fail_on_budget: false,
-            native_profile: NativeProfile::LowMemoryParallel,
+            native_profile: NativeProfile::LowMemoryParallel { workers: 2 },
         };
 
-        let native = NativeProfile::LowMemoryParallel.backend();
+        let native = NativeProfile::LowMemoryParallel { workers: 2 }.backend();
         let report = benchmark_backend(
             &native,
             BenchmarkBackendPolicy {
