@@ -7065,6 +7065,74 @@ mod tests {
     }
 
     #[test]
+    fn low_memory_parallel_render_should_match_serial_type3_fixtures() {
+        for &(
+            label,
+            bytes,
+            expected_width,
+            expected_height,
+            expected_bands,
+            expected_active_target_bytes,
+        ) in &[
+            (
+                "subset Type3 repeated CharProcs",
+                include_bytes!("../../../fixtures/generated/subset-type3-repeated-charprocs.pdf")
+                    .as_slice(),
+                260,
+                120,
+                2,
+                124_800,
+            ),
+            (
+                "Type3 barcode font",
+                include_bytes!("../../../fixtures/generated/type3-barcode-font.pdf").as_slice(),
+                220,
+                160,
+                3,
+                112_640,
+            ),
+        ] {
+            let options = ThumbnailOptions {
+                page_index: 0,
+                max_edge: expected_width,
+                background: ferrugo_thumbnail::Rgba::WHITE,
+                output_format: ferrugo_thumbnail::OutputFormat::Rgba,
+                timeout: std::time::Duration::from_secs(5),
+                annotation_mode: AnnotationMode::Screen,
+                form_appearance_mode: FormAppearanceMode::DocumentState,
+            };
+
+            let serial = NativeBackend::low_memory()
+                .render(PdfSource::from_bytes(bytes), &options)
+                .unwrap_or_else(|error| {
+                    panic!("{label} serial low-memory Type3 render should succeed: {error}")
+                });
+            let parallel = NativeBackend::low_memory_parallel()
+                .render(PdfSource::from_bytes(bytes), &options)
+                .unwrap_or_else(|error| {
+                    panic!("{label} parallel low-memory Type3 render should succeed: {error}")
+                });
+            let parallel_bands = NativeBackend::low_memory_parallel()
+                .render_raster_band_summary(PdfSource::from_bytes(bytes), &options)
+                .unwrap_or_else(|error| {
+                    panic!("{label} parallel low-memory Type3 band summary should succeed: {error}")
+                });
+
+            assert_eq!(serial.bytes, parallel.bytes, "{label}");
+            assert_eq!(parallel.width, expected_width, "{label}");
+            assert_eq!(parallel.height, expected_height, "{label}");
+            assert_eq!(parallel_bands.bands, expected_bands, "{label}");
+            assert_eq!(parallel_bands.workers, 2, "{label}");
+            assert_eq!(parallel_bands.max_band_rows, 64, "{label}");
+            assert_eq!(
+                parallel_bands.active_target_peak_bytes(),
+                expected_active_target_bytes,
+                "{label}"
+            );
+        }
+    }
+
+    #[test]
     fn native_page_cache_policy_should_be_isolated_by_default() {
         let policy = NativePageCachePolicy::IsolatedRender;
 
