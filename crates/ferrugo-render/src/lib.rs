@@ -12190,9 +12190,9 @@ fn fill_path_with_coverage_spans(
         if intervals.is_empty() {
             continue;
         }
-        let sample_whole_interval = row_touches_horizontal_path_edge(path, y);
         for interval in &intervals {
-            mark_fill_interval_row_modes(&mut row_modes, bounds, *interval, sample_whole_interval);
+            mark_fill_interval_row_modes(&mut row_modes, bounds, *interval);
+            mark_fill_interval_edge_row_modes(&mut row_modes, bounds, *interval, path, y);
         }
         let mut offset = 0;
         while offset < row_modes.len() {
@@ -12341,37 +12341,74 @@ fn edge_crosses_scanline(edge: LineSegment, scan_y: f64) -> bool {
     (edge.from.y <= scan_y && edge.to.y > scan_y) || (edge.to.y <= scan_y && edge.from.y > scan_y)
 }
 
-fn row_touches_horizontal_path_edge(path: &FlattenedPath, y: u32) -> bool {
+fn row_touches_path_edge(edge: LineSegment, y: u32) -> Option<(f64, f64)> {
     let min_y = f64::from(y);
     let max_y = min_y + 1.0;
-    path.subpaths.iter().any(|subpath| {
-        polygon_edges(subpath).any(|edge| {
-            (edge.to.y - edge.from.y).abs() <= f64::EPSILON
-                && edge.from.y >= min_y - 1e-9
-                && edge.from.y <= max_y + 1e-9
-        })
-    })
+    let edge_min_y = edge.from.y.min(edge.to.y);
+    let edge_max_y = edge.from.y.max(edge.to.y);
+    if edge_max_y < min_y - 1e-9 || edge_min_y > max_y + 1e-9 {
+        return None;
+    }
+
+    let dy = edge.to.y - edge.from.y;
+    if dy.abs() <= f64::EPSILON {
+        return (edge.from.y >= min_y - 1e-9 && edge.from.y <= max_y + 1e-9)
+            .then_some((edge.from.x.min(edge.to.x), edge.from.x.max(edge.to.x)));
+    }
+
+    let clipped_min_y = edge_min_y.max(min_y);
+    let clipped_max_y = edge_max_y.min(max_y);
+    if clipped_max_y < clipped_min_y {
+        return None;
+    }
+    let x_at_y = |edge_y: f64| {
+        let ratio = (edge_y - edge.from.y) / dy;
+        (edge.to.x - edge.from.x).mul_add(ratio, edge.from.x)
+    };
+    let min_x = x_at_y(clipped_min_y);
+    let max_x = x_at_y(clipped_max_y);
+    Some((min_x.min(max_x), min_x.max(max_x)))
 }
 
-fn mark_fill_interval_row_modes(
-    row_modes: &mut [u8],
-    bounds: PixelBounds,
-    interval: FillInterval,
-    sample_whole_interval: bool,
-) {
+fn mark_fill_interval_row_modes(row_modes: &mut [u8], bounds: PixelBounds, interval: FillInterval) {
     let span_start = clamp_fill_row_x(interval.min_x.floor() as i64 - 1, bounds);
     let span_end = clamp_fill_row_x(interval.max_x.ceil() as i64 + 1, bounds);
     for mode in row_modes.iter_mut().take(span_end).skip(span_start) {
         *mode = FILL_ROW_SAMPLED;
-    }
-    if sample_whole_interval {
-        return;
     }
 
     let inner_start = clamp_fill_row_x(interval.min_x.ceil() as i64 + 1, bounds);
     let inner_end = clamp_fill_row_x(interval.max_x.floor() as i64 - 1, bounds);
     for mode in row_modes.iter_mut().take(inner_end).skip(inner_start) {
         *mode = FILL_ROW_FULL;
+    }
+}
+
+fn mark_fill_interval_edge_row_modes(
+    row_modes: &mut [u8],
+    bounds: PixelBounds,
+    interval: FillInterval,
+    path: &FlattenedPath,
+    y: u32,
+) {
+    let scan_y = f64::from(y) + 0.5;
+    for subpath in &path.subpaths {
+        for edge in polygon_edges(subpath) {
+            if edge_crosses_scanline(edge, scan_y) {
+                continue;
+            }
+            let Some((edge_min_x, edge_max_x)) = row_touches_path_edge(edge, y) else {
+                continue;
+            };
+            if edge_max_x < interval.min_x - 1.0 || edge_min_x > interval.max_x + 1.0 {
+                continue;
+            }
+            let sample_start = clamp_fill_row_x(edge_min_x.floor() as i64 - 1, bounds);
+            let sample_end = clamp_fill_row_x(edge_max_x.ceil() as i64 + 2, bounds);
+            for mode in row_modes.iter_mut().take(sample_end).skip(sample_start) {
+                *mode = FILL_ROW_SAMPLED;
+            }
+        }
     }
 }
 
@@ -14409,11 +14446,26 @@ fn scissor_pixel_bounds(
     })
 }
 
-fn pixel_bounds_area(bounds: PixelBounds) -> u32 {
-    bounds
-        .max_x
-        .saturating_sub(bounds.min_x)
-        .saturating_mul(bounds.max_y.saturating_sub(bounds.min_y))
+fn stroke_unclipped_pixel_area(lines: &[LineSegment], joins: &[StrokeJoin], radius: f64) -> u32 {
+    let mut bounds = None;
+    for line in lines {
+        bounds = Some(include_point(bounds, line.from));
+        bounds = Some(include_point(bounds, line.to));
+    }
+    for join in joins {
+        bounds = Some(include_point(bounds, join.point));
+    }
+    let Some(bounds) = bounds else {
+        return 0;
+    };
+    let padding = radius.ceil() + 1.0;
+    let width = ((bounds.max_x + padding).ceil() - (bounds.min_x - padding).floor())
+        .max(0.0)
+        .min(f64::from(u32::MAX)) as u32;
+    let height = ((bounds.max_y + padding).ceil() - (bounds.min_y - padding).floor())
+        .max(0.0)
+        .min(f64::from(u32::MAX)) as u32;
+    width.saturating_mul(height)
 }
 
 fn stroke_pixel_bounds(
@@ -14758,6 +14810,7 @@ fn stroke_path(
     };
     let sample_count = samples * samples;
     let dimensions = device.dimensions();
+    let route_pixel_area = stroke_unclipped_pixel_area(stroke_lines, joins, radius);
     let Some(bounds) =
         stroke_pixel_bounds(stroke_lines, joins, radius, dimensions).and_then(|bounds| {
             intersect_active_clip_pixel_bounds(
@@ -14854,8 +14907,7 @@ fn stroke_path(
         && radius >= 1.0
         && samples > 1
         && !joins.is_empty()
-        && (context.options.scissor.is_some()
-            || pixel_bounds_area(bounds) >= STROKE_JOINED_OUTLINE_MIN_PIXELS)
+        && route_pixel_area >= STROKE_JOINED_OUTLINE_MIN_PIXELS
         && joined_outline_subpath_candidate(&path.subpaths)
     {
         if let Some(outline) = joined_stroke_fill_outline(
@@ -25448,6 +25500,90 @@ mod tests {
         device
     }
 
+    fn rasterize_test_fill(
+        path: &FlattenedPath,
+        fill_route: FillRasterRoute,
+        width: u32,
+        height: u32,
+    ) -> RasterDevice {
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: f64::from(width),
+                    max_y: f64::from(height),
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            width,
+        )
+        .expect("valid transform");
+        let mut device = RasterDevice::new(width, height, Rgba::WHITE).expect("valid raster");
+        fill_path(
+            &mut device,
+            path,
+            FillRule::Nonzero,
+            DeviceColor::BLACK,
+            BlendMode::Normal,
+            1.0,
+            PathRasterContext {
+                transform,
+                options: PathRasterOptions {
+                    fill_route,
+                    ..PathRasterOptions::default()
+                },
+                clips: &[],
+                fill_routes: None,
+                stroke_routes: None,
+            },
+        )
+        .expect("test fill should rasterize");
+        device
+    }
+
+    fn shallow_top_edge_test_path() -> FlattenedPath {
+        FlattenedPath {
+            subpaths: vec![vec![
+                Point { x: 2.0, y: 3.2 },
+                Point { x: 14.0, y: 3.3 },
+                Point { x: 14.0, y: 10.0 },
+                Point { x: 2.0, y: 10.0 },
+            ]],
+            lines: vec![
+                LineSegment {
+                    from: Point { x: 2.0, y: 3.2 },
+                    to: Point { x: 14.0, y: 3.3 },
+                },
+                LineSegment {
+                    from: Point { x: 14.0, y: 3.3 },
+                    to: Point { x: 14.0, y: 10.0 },
+                },
+                LineSegment {
+                    from: Point { x: 14.0, y: 10.0 },
+                    to: Point { x: 2.0, y: 10.0 },
+                },
+                LineSegment {
+                    from: Point { x: 2.0, y: 10.0 },
+                    to: Point { x: 2.0, y: 3.2 },
+                },
+            ],
+            stats: FlattenedPathStats::default(),
+            joins: Vec::new(),
+        }
+    }
+
+    fn circle_test_path(center: Point, radius: f64) -> FlattenedPath {
+        let points = circle_outline_points(center, radius);
+        FlattenedPath {
+            lines: polygon_edges(&points).collect(),
+            subpaths: vec![points],
+            stats: FlattenedPathStats::default(),
+            joins: Vec::new(),
+        }
+    }
+
     #[test]
     fn analytic_fill_coverage_should_quantize_cell_area_to_8bit_alpha() {
         let path = FlattenedPath {
@@ -25935,6 +26071,67 @@ mod tests {
         assert!(fill_routes.coverage_analytic_edge_pixels > 0);
         assert!(fill_routes.max_coverage_cell_partial_alpha_levels_per_call > 0);
         assert_eq!(fill_routes.coverage_sampled_edge_pixels, 0);
+    }
+
+    #[test]
+    fn fill_path_coverage_routes_should_preserve_shallow_edge_alpha() {
+        let path = shallow_top_edge_test_path();
+        let expected_alpha = 190;
+        assert_eq!(
+            analytic_fill_coverage_for_pixel(&path, FillRule::Nonzero, 8, 3),
+            expected_alpha
+        );
+
+        for fill_route in [
+            FillRasterRoute::CoverageSpans,
+            FillRasterRoute::ScanlineCells,
+        ] {
+            let device = rasterize_test_fill(&path, fill_route, 16, 12);
+            assert_eq!(
+                device.pixel(8, 3).expect("shallow-edge pixel"),
+                Rgba {
+                    r: 65,
+                    g: 65,
+                    b: 65,
+                    a: 255,
+                },
+                "{fill_route:?} should keep the shallow top row partially covered"
+            );
+        }
+
+        let sampled = rasterize_test_fill(&path, FillRasterRoute::Sampled, 16, 12);
+        let sampled_pixel = sampled.pixel(8, 3).expect("sampled shallow-edge pixel");
+        assert!(
+            sampled_pixel.r > 0 && sampled_pixel.r < 255,
+            "sampled route should also render partial coverage, got {sampled_pixel:?}"
+        );
+    }
+
+    #[test]
+    fn fill_path_scanline_cells_should_preserve_circle_apex_alpha() {
+        let path = circle_test_path(Point { x: 8.0, y: 8.0 }, 5.0);
+        let expected_alpha = 238;
+        assert_eq!(
+            analytic_fill_coverage_for_pixel(&path, FillRule::Nonzero, 8, 3),
+            expected_alpha
+        );
+
+        for fill_route in [
+            FillRasterRoute::CoverageSpans,
+            FillRasterRoute::ScanlineCells,
+        ] {
+            let device = rasterize_test_fill(&path, fill_route, 16, 16);
+            assert_eq!(
+                device.pixel(8, 3).expect("circle-apex pixel"),
+                Rgba {
+                    r: 16,
+                    g: 16,
+                    b: 16,
+                    a: 255,
+                },
+                "{fill_route:?} should keep the circle apex partially covered"
+            );
+        }
     }
 
     #[test]

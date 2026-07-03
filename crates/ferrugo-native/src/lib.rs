@@ -7987,6 +7987,41 @@ mod tests {
     }
 
     #[test]
+    fn native_banded_raster_should_match_single_target_for_small_joined_strokes() {
+        let display_list = DisplayList::from_items(vec![DisplayItem::Path(PathDisplayItem {
+            segments: vec![
+                PathSegment::MoveTo(Point { x: 8.0, y: 12.0 }),
+                PathSegment::LineTo(Point { x: 26.0, y: 34.0 }),
+                PathSegment::LineTo(Point { x: 42.0, y: 12.0 }),
+                PathSegment::LineTo(Point { x: 54.0, y: 31.0 }),
+            ],
+            paint: PaintMode::Stroke,
+            state: GraphicsState {
+                line_width: 3.0,
+                stroke_color: DeviceColor::Rgb {
+                    r: 0.25,
+                    g: 0.45,
+                    b: 0.88,
+                },
+                line_cap: ferrugo_render::LineCap::Butt,
+                line_join: ferrugo_render::LineJoin::Miter,
+                ..GraphicsState::default()
+            },
+            fill_pattern: None,
+        })]);
+
+        let (single, single_bands) = render_test_display_list_with_size(&display_list, 0, 60, 50);
+        let (banded, banded_bands) = render_test_display_list_with_size(&display_list, 17, 60, 50);
+
+        assert_eq!(single.bytes, banded.bytes);
+        assert_eq!(single_bands.bands, 1);
+        assert!(banded_bands.bands > 1);
+        assert_eq!(banded_bands.max_band_rows, 17);
+        assert!(banded_bands.max_band_pixels < banded_bands.full_page_pixels);
+        assert!(banded_bands.active_target_byte_reduction_per_mille() > 0);
+    }
+
+    #[test]
     fn native_banded_raster_should_match_single_target_for_axis_aligned_single_line_caps() {
         let display_list = DisplayList::from_items(vec![
             DisplayItem::Path(PathDisplayItem {
