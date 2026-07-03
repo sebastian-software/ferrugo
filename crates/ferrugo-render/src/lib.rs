@@ -12965,6 +12965,11 @@ fn coverage_area_to_alpha(area: f64) -> u8 {
     (area.clamp(0.0, 1.0) * 255.0).round() as u8
 }
 
+// The 8-slot buffers rely on the input quad being simple (non-self-
+// intersecting): one half-plane clip of a simple quad yields at most 5
+// vertices and the second at most 6. Slab decomposition guarantees this
+// because edge-intersection y-breaks keep edges crossing-free within a
+// slab; a bowtie quad could overflow the buffers.
 fn polygon_area_in_vertical_strip(polygon: &[Point; 4], min_x: f64, max_x: f64) -> f64 {
     const EMPTY_POINT: Point = Point { x: 0.0, y: 0.0 };
     let mut input = [EMPTY_POINT; 8];
@@ -13000,10 +13005,18 @@ fn clip_polygon_by_vertical_boundary(
                 output_len += 1;
             }
             (true, false) => {
+                debug_assert!(
+                    output_len < output.len(),
+                    "clip output exceeds simple-quad bound"
+                );
                 output[output_len] = intersect_segment_with_vertical(previous, current, x);
                 output_len += 1;
             }
             (false, true) => {
+                debug_assert!(
+                    output_len + 1 < output.len(),
+                    "clip output exceeds simple-quad bound"
+                );
                 output[output_len] = intersect_segment_with_vertical(previous, current, x);
                 output[output_len + 1] = current;
                 output_len += 2;
@@ -14521,7 +14534,11 @@ fn round_polyline_stroke_outline(lines: &[LineSegment], radius: f64) -> Option<F
     );
 
     let mut outline = polygon_flattened_path(points)?;
-    outline.stats.skip_intersection_y_breaks = !polyline_has_non_adjacent_intersections(lines);
+    // The centerline check alone is not enough: at acute joins the inner
+    // offset edges of adjacent segments cross mid-edge, so the outline can
+    // self-intersect between vertex rows even when the centerline does not.
+    outline.stats.skip_intersection_y_breaks = !polyline_has_non_adjacent_intersections(lines)
+        && !closed_polygon_has_self_intersections_between_vertex_rows(&outline.subpaths[0]);
     Some(outline)
 }
 
@@ -14611,13 +14628,59 @@ fn closed_axis_aligned_rect_stroke_bounds(lines: &[LineSegment]) -> Option<PathB
     bounds
 }
 
+// Bounds the quadratic pair scans below; longer inputs conservatively keep
+// the y-break scans instead of paying the O(n^2) intersection test.
+const STROKE_INTERSECTION_SCAN_MAX_EDGES: usize = 256;
+
 fn polyline_has_non_adjacent_intersections(lines: &[LineSegment]) -> bool {
+    if lines.len() > STROKE_INTERSECTION_SCAN_MAX_EDGES {
+        return true;
+    }
     for left_index in 0..lines.len() {
         for right_index in left_index + 1..lines.len() {
             if stroke_line_indices_are_adjacent(left_index, right_index, lines) {
                 continue;
             }
             if segment_intersection_point(lines[left_index], lines[right_index]).is_some() {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+// Offset stroke outlines self-intersect at the inside of every join (the
+// untrimmed offset edges overshoot the corner), so plain self-intersection
+// would disqualify every joined polyline. The slab decomposition only needs
+// crossings to sit on y-break boundaries, and every polygon vertex y is a
+// y-break — so only crossings strictly between vertex rows are unsafe.
+fn closed_polygon_has_self_intersections_between_vertex_rows(points: &[Point]) -> bool {
+    if points.len() < 4 {
+        return false;
+    }
+    if points.len() > STROKE_INTERSECTION_SCAN_MAX_EDGES {
+        return true;
+    }
+    let edge_count = points.len();
+    let edge = |index: usize| LineSegment {
+        from: points[index],
+        to: points[(index + 1) % edge_count],
+    };
+    for left_index in 0..edge_count {
+        for right_index in left_index + 1..edge_count {
+            let adjacent =
+                right_index == left_index + 1 || (left_index == 0 && right_index == edge_count - 1);
+            if adjacent {
+                continue;
+            }
+            let Some(crossing) = segment_intersection_point(edge(left_index), edge(right_index))
+            else {
+                continue;
+            };
+            let on_vertex_row = points
+                .iter()
+                .any(|point| (point.y - crossing.y).abs() <= 1e-9);
+            if !on_vertex_row {
                 return true;
             }
         }
@@ -22503,7 +22566,7 @@ mod tests {
     }
 
     #[test]
-    fn round_polyline_stroke_outline_should_only_skip_y_breaks_for_simple_centerlines() {
+    fn round_polyline_stroke_outline_should_only_skip_y_breaks_for_simple_outlines() {
         let simple_lines = [
             LineSegment {
                 from: Point { x: 8.0, y: 8.0 },
@@ -22535,6 +22598,44 @@ mod tests {
         let crossing_outline =
             round_polyline_stroke_outline(&crossing_lines, 1.0).expect("crossing round outline");
         assert!(!crossing_outline.stats.skip_intersection_y_breaks);
+
+        // Acute join: the centerline is simple, but the inner offset edges of
+        // the two adjacent segments cross mid-edge, so the outline
+        // self-intersects and must keep the y-break scans.
+        let acute_lines = [
+            LineSegment {
+                from: Point { x: 2.0, y: 2.0 },
+                to: Point { x: 12.0, y: 3.0 },
+            },
+            LineSegment {
+                from: Point { x: 12.0, y: 3.0 },
+                to: Point { x: 2.0, y: 6.0 },
+            },
+        ];
+        let acute_outline =
+            round_polyline_stroke_outline(&acute_lines, 1.0).expect("acute round outline");
+        assert!(!acute_outline.stats.skip_intersection_y_breaks);
+    }
+
+    #[test]
+    fn round_polyline_stroke_outline_should_not_skip_y_breaks_past_the_scan_cap() {
+        let mut long_lines = Vec::new();
+        for index in 0..=STROKE_INTERSECTION_SCAN_MAX_EDGES {
+            let x = index as f64;
+            long_lines.push(LineSegment {
+                from: Point {
+                    x,
+                    y: 8.0 + f64::from(u8::from(index % 2 == 0)),
+                },
+                to: Point {
+                    x: x + 1.0,
+                    y: 8.0 + f64::from(u8::from((index + 1) % 2 == 0)),
+                },
+            });
+        }
+        let long_outline =
+            round_polyline_stroke_outline(&long_lines, 0.25).expect("long round outline");
+        assert!(!long_outline.stats.skip_intersection_y_breaks);
     }
 
     #[test]
