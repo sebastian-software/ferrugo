@@ -30,23 +30,11 @@ crate_version() {
 crate_version_exists() {
   local package="$1"
   local version="$2"
-  local status
+  local index_path
 
-  status="$(curl --silent --show-error --output /dev/null --write-out "%{http_code}" \
-    "https://crates.io/api/v1/crates/${package}/${version}")"
-
-  case "$status" in
-    200)
-      return 0
-      ;;
-    404)
-      return 1
-      ;;
-    *)
-      echo "Unexpected crates.io response ${status} while checking ${package} ${version}." >&2
-      return 1
-      ;;
-  esac
+  index_path="${package:0:2}/${package:2:2}/${package}"
+  curl -fsSL "https://index.crates.io/${index_path}" 2>/dev/null \
+    | grep -F "\"vers\":\"${version}\"" > /dev/null
 }
 
 publish_with_retry() {
