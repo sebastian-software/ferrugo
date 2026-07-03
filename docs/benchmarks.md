@@ -33,31 +33,38 @@ hardware-independent guarantees.
 
 ## Comparison Against Existing Renderers
 
-The best hard comparison currently available is the archived 0078
-Rust-native/PDFium smoke run. It used the same generated fixture corpus,
-`max_edge=160`, one iteration, and the shared thumbnail facade.
+The current PDFium comparison reference is the 2026-07-03 two-run
+performance-matrix refresh in
+[`docs/reports/pdfium-comparison-refresh-2026-07-03.md`](reports/pdfium-comparison-refresh-2026-07-03.md).
+It used the pinned PDFium revision
+`573758fe2dd928279cd52b5a4bc955a6938aab39`, the generated
+`fixtures/performance-matrix-manifest.tsv` corpus, `max_edge=160`, release
+builds, and both `cold-process` and `hot-render` modes.
 
-| Family | Ferrugo mean ms | PDFium mean ms | Read |
-| --- | ---: | ---: | --- |
-| `browser-print` | 38.607 | 0.665 | PDFium much faster |
-| `form` | 19.343 | 7.912 | PDFium faster |
-| `mixed-layout` | 17.910 | 2.338 | PDFium much faster |
-| `office-export` | 15.449 | 30.339 | Ferrugo faster on this early slice |
-| `presentation` | 15.452 | 0.382 | PDFium much faster |
-| `report` | 267.832 | 0.581 | PDFium much faster; Ferrugo had a vector-stress tail |
-| `scan` | 1.293 | 1.166 | roughly comparable |
+Both runs reported 44/44 rendered records with no fallbacks, missing tools,
+not-applicable rows, errors, or timing reliability caveats. RSS was available
+in both runs.
 
-The same run reported 50/52 Ferrugo-native renders, 1 typed fallback, and 1
-encrypted error. PDFium rendered 51/52 with the same encrypted error. This is
-why the project should not claim broad renderer performance parity yet.
+Current policy-compliant read:
 
-Memory comparison is less complete, but now has a dedicated path. The Phase 0
-PDFium release-CLI smoke measured roughly 24 MiB max RSS for `text-page.pdf` at
-256-1024 max edge with 0.03-0.04s wall time. Ferrugo's native gates currently
-enforce deterministic pixel, decoded-image, display-list, font, transparency,
-cache, and output-byte budgets. The `benchmark-matrix` cold-process mode also
-captures process peak RSS when `/usr/bin/time -l` is available, while hot-render
-mode records start/end RSS samples for in-process backends.
+- Ferrugo native hot-render p95 was below PDFium in every measured family.
+- Ferrugo native peak RSS was below PDFium in every measured family and mode.
+- Ferrugo native cold-process wall time was below PDFium in all families except
+  the `form` run-2 tie/noise case (`1.007x` Ferrugo/PDFium after run 1 measured
+  `0.536x`).
+- These are family-, mode-, metric-, host-, corpus-, and revision-scoped
+  observations, not a broad renderer-parity claim.
+
+The archived 0078 Rust-native/PDFium smoke run from 2026-06-24 is superseded
+for the focused performance-matrix corpus. Keep it only as historical context
+for early Phase 0 work; do not use its 8x-460x PDFium gap as the current
+reference.
+
+Memory comparison now has a dedicated path. The `benchmark-matrix`
+cold-process mode captures process peak RSS through `/usr/bin/time -l` when
+available, while hot-render mode records sampled process RSS for in-process
+backends. Ferrugo's native gates also enforce deterministic pixel,
+decoded-image, display-list, font, transparency, cache, and output-byte budgets.
 
 Poppler is now included in the same cold-process matrix through `pdftoppm`.
 MuPDF remains v2 backlog because setup, licensing, and tooling would slow the
