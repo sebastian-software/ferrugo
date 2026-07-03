@@ -6,6 +6,7 @@ members = [
     "crates/ferrugo-object",
     "crates/ferrugo-pdfium",
     "crates/ferrugo-render",
+    "crates/ferrugo-simd",
     "crates/ferrugo-syntax",
     "crates/ferrugo-thumbnail",
     "crates/ferrugo-wasm-smoke",
@@ -17,6 +18,7 @@ default-members = [
     "crates/ferrugo-native",
     "crates/ferrugo-object",
     "crates/ferrugo-render",
+    "crates/ferrugo-simd",
     "crates/ferrugo-syntax",
     "crates/ferrugo-thumbnail",
 ]

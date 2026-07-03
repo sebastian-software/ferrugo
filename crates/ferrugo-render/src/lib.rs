@@ -13646,22 +13646,11 @@ fn blend_source_over_normal_row_span(
     }
     let start = min_x as usize * PixelFormat::Rgba8.bytes_per_pixel();
     let end = max_x as usize * PixelFormat::Rgba8.bytes_per_pixel();
-    for chunk in
-        device.row_mut(y)?[start..end].chunks_exact_mut(PixelFormat::Rgba8.bytes_per_pixel())
-    {
-        let dest = Rgba {
-            r: chunk[0],
-            g: chunk[1],
-            b: chunk[2],
-            a: chunk[3],
-        };
-        let blended = if dest.a == 255 {
-            source_over_opaque(source, dest, coverage)
-        } else {
-            source_over(source, dest, coverage)
-        };
-        chunk.copy_from_slice(&[blended.r, blended.g, blended.b, blended.a]);
-    }
+    ferrugo_simd::source_over_opaque_normal_row(
+        &mut device.row_mut(y)?[start..end],
+        [source.r, source.g, source.b, source.a],
+        coverage,
+    );
     Ok(())
 }
 

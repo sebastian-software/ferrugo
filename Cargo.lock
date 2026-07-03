@@ -57,11 +57,16 @@ version = "0.1.0"
 dependencies = [
  "ferrugo-content",
  "ferrugo-object",
+ "ferrugo-simd",
  "ferrugo-syntax",
  "ferrugo-thumbnail",
  "ttf-parser",
  "zune-jpeg",
 ]
+
+[[package]]
+name = "ferrugo-simd"
+version = "0.1.0"
 
 [[package]]
 name = "ferrugo-syntax"

@@ -28,8 +28,8 @@ The boundary is:
   byte-parity oracle.
 - `ferrugo-render` keeps `#![forbid(unsafe_code)]`.
 - `ferrugo-native` keeps `#![forbid(unsafe_code)]`.
-- A future `ferrugo-simd` crate may contain reviewed unsafe intrinsics behind a
-  safe API.
+- `ferrugo-simd` owns the safe row-kernel API and may later contain reviewed
+  unsafe intrinsics behind that API.
 - Runtime dispatch happens once per process or per kernel family, and
   `ferrugo-render` only calls a safe function pointer/table selected below the
   existing row-blitter kind.
@@ -64,8 +64,8 @@ point. SIMD should not add another independent routing model.
 
 ## Consequences
 
-- The next implementation PR should add `crates/ferrugo-simd` and keep all
-  unsafe there.
+- Future SIMD implementation PRs should keep all unsafe inside
+  `crates/ferrugo-simd`.
 - The crate API should expose narrow row functions over RGBA byte slices, not
   PDF or renderer concepts.
 - Each SIMD kernel needs scalar parity tests for edge lengths, unaligned
