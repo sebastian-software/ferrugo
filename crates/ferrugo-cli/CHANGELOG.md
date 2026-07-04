@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.2.0](https://github.com/sebastian-software/ferrugo/compare/ferrugo-v0.1.0...ferrugo-v0.2.0) (2026-07-04)
+
+
+### Performance Improvements
+
+* **cli:** stream PNG filter rows into zlib ([c9e55c3](https://github.com/sebastian-software/ferrugo/commit/c9e55c3f0a0e697c447da827b3c360c03e9bb126))
+* **native:** add scanned-page direct image route ([5c41bd5](https://github.com/sebastian-software/ferrugo/commit/5c41bd560e2f972ae105522ddada50e89f84332e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * ferrugo-native bumped from 0.1.0 to 0.2.0
+    * ferrugo-pdfium bumped from 0.1.0 to 0.2.0
+    * ferrugo-thumbnail bumped from 0.1.0 to 0.2.0
+
 ## 0.1.0 (2026-07-03)
 
 
