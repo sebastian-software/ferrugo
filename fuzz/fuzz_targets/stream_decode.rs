@@ -31,6 +31,7 @@ fn fuzz_one(data: &[u8]) {
         };
         let _ = stream.decode_with_options(StreamDecodeOptions {
             max_decoded_len: 4096,
+            initial_capacity: None,
         });
     }
 }

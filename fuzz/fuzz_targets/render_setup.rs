@@ -1,8 +1,8 @@
 use ferrugo_fuzz::{minimal_pdf_with_content, run_target};
 use ferrugo_native::NativeBackend;
 use ferrugo_thumbnail::{
-    AnnotationMode, DocumentMetadataBackend, FormAppearanceMode, PdfSource, Rgba,
-    ThumbnailBackend, ThumbnailOptions,
+    AnnotationMode, DocumentMetadataBackend, FormAppearanceMode, PdfSource, Rgba, ThumbnailBackend,
+    ThumbnailOptions,
 };
 use std::time::Duration;
 
