@@ -73,6 +73,11 @@ availability and variance are understood on CI. Focused fixture subsets may
 become CI gates only after their variance is measured, their CoV threshold is
 configured, and their budgets are documented.
 
+README performance results are generated from the promoted benchmark-matrix JSON
+with `bash scripts/check_readme_benchmark_results.sh`. That check regenerates
+the README block and standardized report from the same artifact and fails when
+either one drifts.
+
 The current scoped native release gate uses
 `bash scripts/check_benchmark_suite.sh`. That script exercises the durable
 `benchmark-matrix` JSON/Markdown contract on the committed `small-text` fixture
@@ -89,5 +94,8 @@ Before changing README or other public copy:
    `cov_exceeded` in both artifacts.
 3. Record renderer versions, host details, fixture family, mode, and metric.
 4. Write the claim in workload-family terms.
-5. Run `bash scripts/check_performance_claims.sh`.
-6. Link the supporting plan, report, or benchmark artifact from the change.
+5. Promote the selected matrix JSON under `docs/benchmarks/promoted/`.
+6. Run `node scripts/generate_readme_benchmark_results.mjs --write`.
+7. Run `bash scripts/check_readme_benchmark_results.sh`.
+8. Run `bash scripts/check_performance_claims.sh`.
+9. Link the supporting plan, report, or benchmark artifact from the change.

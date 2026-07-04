@@ -115,32 +115,31 @@ and fallback state are not part of the runtime API.
 
 ## Performance snapshot
 
-Recent local smoke numbers on macOS/aarch64, `max_edge=160`:
+<!-- ferrugo:performance-results:start -->
+Generated from [`docs/benchmarks/promoted/performance-matrix-2026-07-04.json`](docs/benchmarks/promoted/performance-matrix-2026-07-04.json) with the full report in [`docs/reports/performance-matrix-promoted-2026-07-04.md`](docs/reports/performance-matrix-promoted-2026-07-04.md).
 
-| Profile | Result |
-| --- | ---: |
-| Low-memory corpus | 5/5 rendered natively, 0 fallbacks, 0 errors |
-| Low-memory common docs | 4.815 ms mean |
-| Low-memory scan fixture | 41.876 ms mean |
-| Low-memory vector-stress fixture | 139.301 ms mean |
-| Server batch | 16/16 jobs rendered natively, 0 budget failures |
-| Server batch throughput | 38.025 jobs/sec |
-| Server batch latency | 28.381 ms mean, 139.118 ms p95 |
+| Family | Ferrugo hot p95 | Ferrugo cold / RSS | PDFium cold / RSS | Poppler cold / RSS | Ghostscript cold / RSS | MuPDF cold / RSS |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `browser-print` | 0.207 ms | 2.730 ms / n/a | missing-tool | 13.708 ms / n/a | missing-tool | missing-tool |
+| `mixed-layout` | 0.117 ms | 0.183 ms / n/a | missing-tool | 21.489 ms / n/a | missing-tool | missing-tool |
+| `office-export` | 0.595 ms | 2.686 ms / n/a | missing-tool | 15.078 ms / n/a | missing-tool | missing-tool |
+| `report/vector` | 3.159 ms | 0.000 ms / n/a | missing-tool | 24.697 ms / n/a | missing-tool | missing-tool |
 
-The serverless profile is size-oriented and has a recent readiness measurement
-of about 1.0 MB for the native CLI binary, with first-render p95 under 6 ms for
-the small text fixture. Treat these as local gate numbers, not universal
-hardware-independent benchmarks.
+Caption: artifact docs/benchmarks/promoted/performance-matrix-2026-07-04.json; promoted 2026-07-04; macos/aarch64; rustc 1.95.0-nightly (842bd5be2 2026-01-29); max_edge=160; iterations=20; warmup=3.
+
+Reference renderer versions: pdfium: missing (missing-tool; unpinned); poppler: pdftoppm version 26.06.0 (match; expected pdftoppm version 26.06.0); ghostscript: missing (missing-tool; unpinned); mutool: missing (missing-tool; unpinned).
+
+Caveats: `rss-unavailable`, `pdfium-missing-tool`, `pdfium-hot-render-external-only`, `poppler-hot-render-external-only`, `ghostscript-missing-tool`, `ghostscript-hot-render-external-only`, `mutool-missing-tool`, `mutool-hot-render-external-only`. External PDFium, Poppler, Ghostscript, and MuPDF rows are cold-process oracle runs; hot-render p95 is reported only for Ferrugo native. Treat these as scoped benchmark-matrix results, not a broad renderer-parity claim.
+<!-- ferrugo:performance-results:end -->
 
 Against mature native renderers, the honest picture is mixed. Ferrugo is already
 attractive for small, bounded, server-side preview jobs because the supported
-runtime is compact, Rust-native, and explicitly budgeted. It is not generally
-faster than PDFium today: archived same-corpus smoke runs show PDFium ahead on
-many vector, form, presentation, and report cases, while Ferrugo is competitive
-on simple text and scan-style thumbnails. The next performance work uses the
-new `benchmark-matrix` harness to compare Ferrugo, PDFium, Poppler, and
-Ghostscript across cold-process time, hot-render distributions, output size,
-artifact hashes, and RSS where the host can expose it. See
+runtime is compact, Rust-native, and explicitly budgeted. Public performance
+copy is generated from promoted `benchmark-matrix` JSON and remains scoped by
+workload family, host, fixture set, renderer versions, and reliability caveats.
+The harness compares Ferrugo, PDFium, Poppler, Ghostscript, and MuPDF across
+cold-process time, hot-render distributions, output size, artifact hashes, and
+RSS where the host can expose it. See
 [Renderer benchmarks](docs/benchmarks.md) for the current
 comparison state, the data-first optimization loop, and the
 [performance claims policy](docs/policies/performance-claims.md) that applies

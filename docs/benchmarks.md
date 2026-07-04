@@ -188,6 +188,28 @@ Public claims use `--max-cov 0.15` unless the report explicitly documents a
 stricter threshold. Smoke gates may use a looser threshold to validate schema
 and harness plumbing without turning local scheduling noise into product copy.
 
+## Promoted README Results
+
+README performance results are generated from a promoted benchmark-matrix JSON
+series under `docs/benchmarks/promoted/`. Regenerate the README block and the
+standardized report after promoting a new artifact:
+
+```sh
+node scripts/generate_readme_benchmark_results.mjs --write
+```
+
+Validate that the README and report still match the promoted artifact:
+
+```sh
+bash scripts/check_readme_benchmark_results.sh
+```
+
+The generated report records host/platform metadata, fixture set, renderer
+version lock status, reliability caveats, per-family Ferrugo hot p95, cold
+process timings for each external oracle, and RSS where available. Keep the
+README wording scoped to that artifact; stronger public claims still require the
+performance-claims checklist.
+
 ## Benchmark Suite Tiers
 
 Ferrugo uses named benchmark tiers instead of one oversized performance job.
