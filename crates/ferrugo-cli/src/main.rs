@@ -48,6 +48,7 @@ const GOLDEN_HASH_ALGORITHM: &str = "fnv1a64";
 const DEFAULT_BENCHMARK_MATRIX_ITERATIONS: usize = 20;
 const DEFAULT_BENCHMARK_MATRIX_WARMUP: usize = 3;
 const DEFAULT_BENCHMARK_MATRIX_MAX_COV: f64 = 0.15;
+const EXTERNAL_PDFIUM_RENDERER_ENV: &str = "FERRUGO_PDFIUM_RENDERER";
 
 fn main() -> ExitCode {
     match run(env::args_os().skip(1).collect()) {
@@ -833,7 +834,7 @@ fn benchmark_matrix_records(
                     }
                 }
                 (MatrixBackend::Pdfium, MatrixMode::ColdProcess) => {
-                    if pdfium_matrix_available() {
+                    if resolve_command_path(&config.pdfium).is_some() {
                         for fixture in fixtures {
                             records.push(benchmark_matrix_pdfium_cold(
                                 fixture, manifest, options, config,
@@ -846,12 +847,19 @@ fn benchmark_matrix_records(
                             fixtures,
                             manifest,
                             options,
-                            pdfium_missing_message(),
+                            external_pdfium_missing_message(&config.pdfium),
                         ));
                     }
                 }
                 (MatrixBackend::Pdfium, MatrixMode::HotRender) => {
-                    append_pdfium_hot_records(&mut records, fixtures, manifest, options, config);
+                    records.extend(not_applicable_records(
+                        MatrixBackend::Pdfium,
+                        MatrixMode::HotRender,
+                        fixtures,
+                        manifest,
+                        options,
+                        "PDFium is measured as an external process only in this matrix",
+                    ));
                 }
                 (MatrixBackend::Poppler, MatrixMode::ColdProcess) => {
                     if resolve_command_path(&config.pdftoppm).is_some() {
@@ -961,23 +969,20 @@ fn benchmark_matrix_pdfium_cold(
     options: &ThumbnailOptions,
     config: &BenchmarkMatrixConfig,
 ) -> Result<BenchmarkMatrixRecord, CliError> {
-    let executable = env::current_exe().map_err(|source| {
-        CliError::Process(format!("failed to locate current executable: {source}"))
-    })?;
     let artifact = matrix_artifact_path(
         &config.artifact_dir,
         MatrixBackend::Pdfium,
         MatrixMode::ColdProcess,
         fixture,
-        "png",
+        "ppm",
     );
     let _ = fs::remove_file(&artifact);
-    let args = renderer_process_args("render-pdfium", fixture, options, &artifact);
-    let measurement = run_measured_process(&executable, &args, &[], options.timeout)?;
+    let args = external_pdfium_process_args(fixture, options, &artifact);
+    let measurement = run_measured_process(&config.pdfium, &args, &[], options.timeout)?;
     Ok(cold_process_record(
         MatrixBackend::Pdfium,
-        pdfium_backend_version(),
-        command_line(&executable, &args),
+        external_pdfium_backend_version(&config.pdfium),
+        command_line(&config.pdfium, &args),
         MatrixFixtureContext {
             fixture,
             manifest,
@@ -1115,6 +1120,25 @@ fn renderer_process_args(
         OsString::from(background_hex(options.background)),
         OsString::from("--timeout"),
         OsString::from(options.timeout.as_secs().to_string()),
+        OsString::from("--output"),
+        output.as_os_str().to_os_string(),
+    ]
+}
+
+fn external_pdfium_process_args(
+    fixture: &Path,
+    options: &ThumbnailOptions,
+    output: &Path,
+) -> Vec<OsString> {
+    vec![
+        OsString::from("--input"),
+        fixture.as_os_str().to_os_string(),
+        OsString::from("--page-index"),
+        OsString::from(options.page_index.to_string()),
+        OsString::from("--max-edge"),
+        OsString::from(options.max_edge.to_string()),
+        OsString::from("--background"),
+        OsString::from(background_hex(options.background)),
         OsString::from("--output"),
         output.as_os_str().to_os_string(),
     ]
@@ -1312,60 +1336,6 @@ fn hot_error_record(
     }
 }
 
-#[cfg(feature = "pdfium")]
-fn append_pdfium_hot_records(
-    records: &mut Vec<BenchmarkMatrixRecord>,
-    fixtures: &[PathBuf],
-    manifest: Option<&CorpusManifest>,
-    options: &ThumbnailOptions,
-    config: &BenchmarkMatrixConfig,
-) {
-    match PdfiumBackend::from_env() {
-        Ok(pdfium) => {
-            for fixture in fixtures {
-                records.push(benchmark_matrix_hot_backend(
-                    &pdfium,
-                    MatrixBackend::Pdfium,
-                    pdfium_backend_version(),
-                    MatrixFixtureContext {
-                        fixture,
-                        manifest,
-                        options,
-                    },
-                    config,
-                    false,
-                ));
-            }
-        }
-        Err(error) => records.extend(missing_tool_records(
-            MatrixBackend::Pdfium,
-            MatrixMode::HotRender,
-            fixtures,
-            manifest,
-            options,
-            format!("PDFium backend unavailable: {error}"),
-        )),
-    }
-}
-
-#[cfg(not(feature = "pdfium"))]
-fn append_pdfium_hot_records(
-    records: &mut Vec<BenchmarkMatrixRecord>,
-    fixtures: &[PathBuf],
-    manifest: Option<&CorpusManifest>,
-    options: &ThumbnailOptions,
-    _config: &BenchmarkMatrixConfig,
-) {
-    records.extend(missing_tool_records(
-        MatrixBackend::Pdfium,
-        MatrixMode::HotRender,
-        fixtures,
-        manifest,
-        options,
-        pdfium_missing_message(),
-    ));
-}
-
 fn missing_tool_records(
     backend: MatrixBackend,
     mode: MatrixMode,
@@ -1434,7 +1404,7 @@ fn matrix_unavailable_record(
         backend,
         backend_version: match backend {
             MatrixBackend::Native => native_backend_version(NativeProfile::Default),
-            MatrixBackend::Pdfium => pdfium_backend_version(),
+            MatrixBackend::Pdfium => "pdfium external".to_string(),
             MatrixBackend::Poppler => "pdftoppm".to_string(),
             MatrixBackend::Ghostscript => "ghostscript".to_string(),
         },
@@ -1490,20 +1460,6 @@ fn benchmark_matrix_report(
 }
 
 fn visual_diff_command(args: &[OsString]) -> Result<(), CliError> {
-    #[cfg(not(feature = "pdfium"))]
-    {
-        let _ = args;
-        Err(pdfium_feature_disabled())
-    }
-
-    #[cfg(feature = "pdfium")]
-    {
-        visual_diff_command_enabled(args)
-    }
-}
-
-#[cfg(feature = "pdfium")]
-fn visual_diff_command_enabled(args: &[OsString]) -> Result<(), CliError> {
     let config = VisualDiffConfig::parse(args)?;
     let options = ThumbnailOptions {
         page_index: config.page_index,
@@ -1522,14 +1478,13 @@ fn visual_diff_command_enabled(args: &[OsString]) -> Result<(), CliError> {
     let fixtures =
         filter_fixtures_by_family(&fixtures, manifest.as_ref(), &config.include_families)?;
     let native = NativeBackend::new();
-    let pdfium = PdfiumBackend::from_env().map_err(|err| CliError::Backend(err.to_string()))?;
     let report = visual_diff_report(
         &native,
-        &pdfium,
         &fixtures,
         &options,
         manifest.as_ref(),
         config.thresholds,
+        &config.pdfium,
     );
     let json = visual_diff_report_json(&report);
 
@@ -2602,6 +2557,7 @@ struct BenchmarkMatrixConfig {
     output: Option<PathBuf>,
     markdown_report: Option<PathBuf>,
     artifact_dir: PathBuf,
+    pdfium: PathBuf,
     pdftoppm: PathBuf,
     ghostscript: PathBuf,
     page_index: u32,
@@ -2660,6 +2616,7 @@ struct VisualDiffConfig {
     manifest: Option<PathBuf>,
     include_families: Vec<String>,
     output: Option<PathBuf>,
+    pdfium: PathBuf,
     page_index: u32,
     max_edge: u32,
     background: Rgba,
@@ -3173,6 +3130,9 @@ impl BenchmarkMatrixConfig {
         let mut output = None;
         let mut markdown_report = None;
         let mut artifact_dir = PathBuf::from("target/performance-matrix");
+        let mut pdfium = env::var_os(EXTERNAL_PDFIUM_RENDERER_ENV)
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("pdfium_test"));
         let mut pdftoppm = env::var_os("FERRUGO_POPPLER_PDFTOPPM")
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from("pdftoppm"));
@@ -3207,6 +3167,10 @@ impl BenchmarkMatrixConfig {
                 "--artifact-dir" => {
                     index += 1;
                     artifact_dir = required_path(args, index, "--artifact-dir")?;
+                }
+                "--pdfium" => {
+                    index += 1;
+                    pdfium = required_path(args, index, "--pdfium")?;
                 }
                 "--pdftoppm" => {
                     index += 1;
@@ -3316,6 +3280,7 @@ impl BenchmarkMatrixConfig {
             output,
             markdown_report,
             artifact_dir,
+            pdfium,
             pdftoppm,
             ghostscript,
             page_index,
@@ -3370,6 +3335,9 @@ impl VisualDiffConfig {
         let mut manifest = None;
         let mut include_families = Vec::new();
         let mut output = None;
+        let mut pdfium = env::var_os(EXTERNAL_PDFIUM_RENDERER_ENV)
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("pdfium_test"));
         let mut page_index = DEFAULT_PAGE_INDEX;
         let mut max_edge = 160;
         let mut background = Rgba::WHITE;
@@ -3394,6 +3362,10 @@ impl VisualDiffConfig {
                 "--output" | "-o" => {
                     index += 1;
                     output = Some(required_path(args, index, "--output")?);
+                }
+                "--pdfium" => {
+                    index += 1;
+                    pdfium = required_path(args, index, "--pdfium")?;
                 }
                 "--page-index" => {
                     index += 1;
@@ -3459,6 +3431,7 @@ impl VisualDiffConfig {
             manifest,
             include_families,
             output,
+            pdfium,
             page_index,
             max_edge,
             background,
@@ -4401,7 +4374,6 @@ enum RepeatBenchmarkOutcome {
     },
 }
 
-#[cfg(feature = "pdfium")]
 #[derive(Debug, Clone, PartialEq)]
 struct VisualDiffReport {
     platform: PlatformMetadata,
@@ -4512,7 +4484,6 @@ fn host_memory_bytes() -> Option<u64> {
     }
 }
 
-#[cfg(feature = "pdfium")]
 #[derive(Debug, Clone, Default, PartialEq)]
 struct FamilyVisualDiffSummary {
     total: usize,
@@ -4524,7 +4495,6 @@ struct FamilyVisualDiffSummary {
     both_errors: usize,
 }
 
-#[cfg(feature = "pdfium")]
 impl FamilyVisualDiffSummary {
     fn record(&mut self, record: &VisualDiffRecord) {
         self.total += 1;
@@ -4539,7 +4509,6 @@ impl FamilyVisualDiffSummary {
     }
 }
 
-#[cfg(feature = "pdfium")]
 #[derive(Debug, Clone, PartialEq)]
 struct VisualDiffRecord {
     path: String,
@@ -4556,15 +4525,11 @@ enum VisualDiffStatus {
     Exact,
     AcceptedDrift,
     Blocker,
-    #[cfg(feature = "pdfium")]
     NativeError,
-    #[cfg(feature = "pdfium")]
     PdfiumError,
-    #[cfg(feature = "pdfium")]
     BothError,
 }
 
-#[cfg(feature = "pdfium")]
 impl VisualDiffStatus {
     const fn as_str(self) -> &'static str {
         match self {
@@ -6790,17 +6755,10 @@ fn native_backend_version(profile: NativeProfile) -> String {
     )
 }
 
-fn pdfium_backend_version() -> String {
-    #[cfg(feature = "pdfium")]
-    {
-        env::var("FERRUGO_PDFIUM_LIBRARY")
-            .map(|path| format!("pdfium via {path}"))
-            .unwrap_or_else(|_| "pdfium feature enabled; library not configured".to_string())
-    }
-    #[cfg(not(feature = "pdfium"))]
-    {
-        "pdfium feature disabled".to_string()
-    }
+fn external_pdfium_backend_version(command: &Path) -> String {
+    command_stdout_path(command, &["--version"])
+        .map(|version| format!("pdfium external {version}"))
+        .unwrap_or_else(|| format!("pdfium external {}", command.display()))
 }
 
 fn poppler_backend_version(command: &Path) -> String {
@@ -6813,25 +6771,11 @@ fn ghostscript_backend_version(command: &Path) -> String {
         .unwrap_or_else(|| format!("ghostscript {}", command.display()))
 }
 
-#[cfg(feature = "pdfium")]
-fn pdfium_matrix_available() -> bool {
-    env::var_os("FERRUGO_PDFIUM_LIBRARY").is_some()
-}
-
-#[cfg(not(feature = "pdfium"))]
-const fn pdfium_matrix_available() -> bool {
-    false
-}
-
-fn pdfium_missing_message() -> String {
-    #[cfg(feature = "pdfium")]
-    {
-        "PDFium feature is enabled, but FERRUGO_PDFIUM_LIBRARY is not set".to_string()
-    }
-    #[cfg(not(feature = "pdfium"))]
-    {
-        PDFIUM_FEATURE_MESSAGE.to_string()
-    }
+fn external_pdfium_missing_message(command: &Path) -> String {
+    format!(
+        "`{}` was not found; set --pdfium or {EXTERNAL_PDFIUM_RENDERER_ENV}",
+        command.display()
+    )
 }
 
 fn benchmark_backend<B, F>(
@@ -6999,14 +6943,13 @@ fn benchmark_error_outcome(
     }
 }
 
-#[cfg(feature = "pdfium")]
-fn visual_diff_report<N: ThumbnailBackend, P: ThumbnailBackend>(
+fn visual_diff_report<N: ThumbnailBackend>(
     native: &N,
-    pdfium: &P,
     paths: &[PathBuf],
     options: &ThumbnailOptions,
     manifest: Option<&CorpusManifest>,
     thresholds: VisualDiffThresholds,
+    pdfium: &Path,
 ) -> VisualDiffReport {
     let mut families = BTreeMap::new();
     let mut fixtures = Vec::with_capacity(paths.len());
@@ -7061,10 +7004,9 @@ fn visual_diff_report<N: ThumbnailBackend, P: ThumbnailBackend>(
     }
 }
 
-#[cfg(feature = "pdfium")]
-fn visual_diff_fixture<N: ThumbnailBackend, P: ThumbnailBackend>(
+fn visual_diff_fixture<N: ThumbnailBackend>(
     native: &N,
-    pdfium: &P,
+    pdfium: &Path,
     path: &Path,
     options: &ThumbnailOptions,
     path_key: String,
@@ -7072,7 +7014,7 @@ fn visual_diff_fixture<N: ThumbnailBackend, P: ThumbnailBackend>(
     thresholds: VisualDiffThresholds,
 ) -> VisualDiffRecord {
     let native_result = native.render(PdfSource::from_path(path), options);
-    let pdfium_result = pdfium.render(PdfSource::from_path(path), options);
+    let pdfium_result = render_external_pdfium_ppm(pdfium, path, options);
     let subsystem = visual_diff_subsystem(path_key.as_str(), family.as_str());
 
     match (native_result, pdfium_result) {
@@ -7111,10 +7053,7 @@ fn visual_diff_fixture<N: ThumbnailBackend, P: ThumbnailBackend>(
             status: VisualDiffStatus::PdfiumError,
             metrics: None,
             native_error: None,
-            pdfium_error: Some(VisualDiffError {
-                class: pdfium.class().as_str(),
-                message: pdfium.to_string(),
-            }),
+            pdfium_error: Some(reference_visual_error(pdfium)),
         },
         (Err(native), Err(pdfium)) => VisualDiffRecord {
             path: path_key,
@@ -7126,10 +7065,7 @@ fn visual_diff_fixture<N: ThumbnailBackend, P: ThumbnailBackend>(
                 class: native.class().as_str(),
                 message: native.to_string(),
             }),
-            pdfium_error: Some(VisualDiffError {
-                class: pdfium.class().as_str(),
-                message: pdfium.to_string(),
-            }),
+            pdfium_error: Some(reference_visual_error(pdfium)),
         },
     }
 }
@@ -7340,11 +7276,8 @@ fn poppler_status_from_visual_status(status: VisualDiffStatus) -> PopplerVisualD
         VisualDiffStatus::Exact => PopplerVisualDiffStatus::Exact,
         VisualDiffStatus::AcceptedDrift => PopplerVisualDiffStatus::AcceptedDrift,
         VisualDiffStatus::Blocker => PopplerVisualDiffStatus::Blocker,
-        #[cfg(feature = "pdfium")]
         VisualDiffStatus::NativeError => PopplerVisualDiffStatus::NativeError,
-        #[cfg(feature = "pdfium")]
         VisualDiffStatus::PdfiumError => PopplerVisualDiffStatus::ReferenceError,
-        #[cfg(feature = "pdfium")]
         VisualDiffStatus::BothError => PopplerVisualDiffStatus::BothError,
     }
 }
@@ -7364,6 +7297,57 @@ fn reference_visual_error(error: CliError) -> VisualDiffError {
         class,
         message: error.to_string(),
     }
+}
+
+fn render_external_pdfium_ppm(
+    command: &Path,
+    path: &Path,
+    options: &ThumbnailOptions,
+) -> Result<ferrugo_thumbnail::Thumbnail, CliError> {
+    if resolve_command_path(command).is_none() {
+        return Err(CliError::Render {
+            class: "missing-tool",
+            message: external_pdfium_missing_message(command),
+        });
+    }
+    let temp_dir = env::temp_dir().join(format!(
+        "ferrugo-pdfium-{}-{}",
+        std::process::id(),
+        document_identity_hash(path)?
+    ));
+    fs::create_dir_all(&temp_dir).map_err(|source| CliError::Io {
+        path: temp_dir.clone(),
+        source,
+    })?;
+    let output_path = temp_dir.join("page.ppm");
+    let _ = fs::remove_file(&output_path);
+    let args = external_pdfium_process_args(path, options, &output_path);
+    let mut child = Command::new(command)
+        .args(&args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|source| CliError::Io {
+            path: command.to_path_buf(),
+            source,
+        })?;
+    let status = wait_for_child(&mut child, options.timeout)?;
+    if !status.success() {
+        let _ = fs::remove_file(&output_path);
+        let _ = fs::remove_dir(&temp_dir);
+        return Err(CliError::Process(format!(
+            "`{}` exited with status {status}",
+            command.display()
+        )));
+    }
+    let ppm = fs::read(&output_path).map_err(|source| CliError::ReadFile {
+        path: output_path.clone(),
+        source,
+    })?;
+    let _ = fs::remove_file(&output_path);
+    let _ = fs::remove_dir(&temp_dir);
+    decode_ppm_rgb_as_rgba(&ppm)
 }
 
 fn render_poppler_ppm(
@@ -7525,7 +7509,7 @@ fn wait_for_child(
             let _ = child.wait();
             return Err(CliError::Render {
                 class: "timeout",
-                message: format!("pdftoppm exceeded {}s timeout", timeout.as_secs()),
+                message: format!("child process exceeded {}s timeout", timeout.as_secs()),
             });
         }
         thread::sleep(WORKER_POLL_INTERVAL);
@@ -10619,16 +10603,6 @@ fn benchmark_matrix_timing_reliability(
                 MatrixStatus::MissingTool | MatrixStatus::NotApplicable
             )
     });
-    let native_hot_available = report.records.iter().any(|record| {
-        record.backend == MatrixBackend::Native
-            && record.mode == MatrixMode::HotRender
-            && record.status == MatrixStatus::Rendered
-    });
-    let pdfium_hot_available = report.records.iter().any(|record| {
-        record.backend == MatrixBackend::Pdfium
-            && record.mode == MatrixMode::HotRender
-            && record.status == MatrixStatus::Rendered
-    });
     let cold_reference_available = report.records.iter().any(|record| {
         matches!(
             record.backend,
@@ -10642,13 +10616,16 @@ fn benchmark_matrix_timing_reliability(
         .filter(|record| record.timing.cov_exceeded)
         .count();
 
-    let hot_pdfium_comparison_available = native_hot_available && pdfium_hot_available;
+    let hot_pdfium_comparison_available = false;
     let mut caveats = Vec::new();
     if !rss_available {
         caveats.push("rss-unavailable");
     }
-    if pdfium_requested && !pdfium_available {
+    if pdfium_requested && cold_requested && !pdfium_available {
         caveats.push("pdfium-missing-tool");
+    }
+    if pdfium_requested && hot_requested {
+        caveats.push("pdfium-hot-render-external-only");
     }
     if poppler_requested && cold_requested && !poppler_available {
         caveats.push("poppler-missing-tool");
@@ -10662,9 +10639,7 @@ fn benchmark_matrix_timing_reliability(
     if ghostscript_requested && hot_requested {
         caveats.push("ghostscript-hot-render-external-only");
     }
-    if hot_requested && pdfium_requested && !hot_pdfium_comparison_available {
-        caveats.push("pdfium-hot-reference-unavailable");
-    } else if hot_requested && !pdfium_requested {
+    if hot_requested && !pdfium_requested {
         caveats.push("pdfium-hot-reference-not-requested");
     }
     if cold_requested && !cold_reference_available {
@@ -11805,7 +11780,6 @@ fn benchmark_record_json(record: &BenchmarkRecord) -> String {
     )
 }
 
-#[cfg(feature = "pdfium")]
 fn visual_diff_report_json(report: &VisualDiffReport) -> String {
     let fixtures = report
         .fixtures
@@ -11842,7 +11816,6 @@ fn visual_diff_report_json(report: &VisualDiffReport) -> String {
     )
 }
 
-#[cfg(feature = "pdfium")]
 fn visual_diff_family_map_json(families: &BTreeMap<String, FamilyVisualDiffSummary>) -> String {
     let values = families
         .iter()
@@ -11858,7 +11831,6 @@ fn visual_diff_family_map_json(families: &BTreeMap<String, FamilyVisualDiffSumma
     format!("{{{values}}}")
 }
 
-#[cfg(feature = "pdfium")]
 fn visual_diff_family_summary_json(summary: &FamilyVisualDiffSummary) -> String {
     format!(
         concat!(
@@ -11882,7 +11854,6 @@ fn visual_diff_family_summary_json(summary: &FamilyVisualDiffSummary) -> String 
     )
 }
 
-#[cfg(feature = "pdfium")]
 fn visual_diff_record_json(record: &VisualDiffRecord) -> String {
     format!(
         concat!(
@@ -11906,7 +11877,6 @@ fn visual_diff_record_json(record: &VisualDiffRecord) -> String {
     )
 }
 
-#[cfg(feature = "pdfium")]
 fn visual_diff_metrics_json(metrics: Option<&VisualDiffMetrics>) -> String {
     match metrics {
         Some(metrics) => format!(
@@ -12814,7 +12784,7 @@ fn print_usage() {
         "Usage: ferrugo <render|render-auto|render-native|render-pdfium|render-isolated|compare-metadata|summarize-fallbacks|operator-coverage|trace-native|replay-operators|extract-corpus-metadata|producer-regression-report|classify-pdf20-usage|validate-local-corpus|compare-golden|benchmark-native|benchmark-batch-native|benchmark-repeat-native|benchmark-pdfium|benchmark-matrix|visual-diff|visual-diff-poppler> <input.pdf> \
          [--output PATH] [--page-index N] [--max-edge N] [--background #RRGGBB] \
          [--timeout SECONDS] [--iterations N] [--warmup N] [--max-cov N] [--repetitions N] [--pages-per-input N] [--max-events N] [--max-workers N] [--max-in-flight-pixels N] [--cancel-after-jobs N] [--max-ms N] [--max-p95-ms N] [--max-first-ms N] [--max-repeat-mean-ms N] [--max-output-bytes N] \
-         [--backend native|pdfium|poppler|ghostscript] [--mode cold-process|hot-render] [--report PATH] [--artifact-dir PATH] [--pdftoppm PATH] [--ghostscript PATH] [--native-only] [--manifest PATH] [--include-family FAMILY] \
+         [--backend native|pdfium|poppler|ghostscript] [--mode cold-process|hot-render] [--report PATH] [--artifact-dir PATH] [--pdfium PATH] [--pdftoppm PATH] [--ghostscript PATH] [--native-only] [--manifest PATH] [--include-family FAMILY] \
          [--diagnostics-dir PATH] [--allow-missing] [--annotation-mode screen|print] [--no-annotations] [--max-mae N] [--max-p95 N] [--max-changed-ratio N]"
     );
 }
@@ -13079,6 +13049,7 @@ mod tests {
 
     #[test]
     fn benchmark_matrix_config_should_default_to_all_backends_and_modes() {
+        env::remove_var(EXTERNAL_PDFIUM_RENDERER_ENV);
         let config = BenchmarkMatrixConfig::parse(&[
             OsString::from("fixtures/generated"),
             OsString::from("--manifest"),
@@ -13104,6 +13075,7 @@ mod tests {
         assert_eq!(config.iterations, DEFAULT_BENCHMARK_MATRIX_ITERATIONS);
         assert_eq!(config.warmup, DEFAULT_BENCHMARK_MATRIX_WARMUP);
         assert_eq!(config.max_cov, DEFAULT_BENCHMARK_MATRIX_MAX_COV);
+        assert_eq!(config.pdfium, PathBuf::from("pdfium_test"));
     }
 
     #[test]
@@ -13148,6 +13120,8 @@ mod tests {
             OsString::from("target/performance-matrix.md"),
             OsString::from("--artifact-dir"),
             OsString::from("target/perf-artifacts"),
+            OsString::from("--pdfium"),
+            OsString::from("target/pdfium-renderer"),
         ])
         .expect("valid matrix benchmark config");
 
@@ -13169,6 +13143,7 @@ mod tests {
             config.markdown_report,
             Some(PathBuf::from("target/performance-matrix.md"))
         );
+        assert_eq!(config.pdfium, PathBuf::from("target/pdfium-renderer"));
     }
 
     #[test]
@@ -13200,13 +13175,13 @@ mod tests {
             annotation_mode: AnnotationMode::Screen,
             form_appearance_mode: ferrugo_thumbnail::FormAppearanceMode::DocumentState,
         };
-        let mut records = missing_tool_records(
+        let mut records = not_applicable_records(
             MatrixBackend::Pdfium,
             MatrixMode::HotRender,
             std::slice::from_ref(&fixture),
             None,
             &options,
-            "PDFium unavailable".to_string(),
+            "PDFium is measured as an external process only in this matrix",
         );
         records.extend(not_applicable_records(
             MatrixBackend::Poppler,
@@ -13254,15 +13229,14 @@ mod tests {
             reliability.caveats,
             vec![
                 "rss-unavailable",
-                "pdfium-missing-tool",
+                "pdfium-hot-render-external-only",
                 "poppler-hot-render-external-only",
-                "pdfium-hot-reference-unavailable",
             ]
         );
         assert!(json.contains("\"timing_reliability\""));
         assert!(json.contains("\"pdfium_available\":false"));
         assert!(json.contains("\"poppler-hot-render-external-only\""));
-        assert!(json.contains("\"status\":\"missing-tool\""));
+        assert!(json.contains("\"pdfium-hot-render-external-only\""));
         assert!(json.contains("\"status\":\"not-applicable\""));
         assert!(json.contains("\"report_kind\": \"renderer-performance-matrix\""));
         assert!(markdown.contains("## Timing Reliability"));

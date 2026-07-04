@@ -654,9 +654,11 @@ Use `render-native` when scripts must make the native-only choice explicit.
 the normal render paths are already native-only. `--allow-pdfium-fallback` is
 rejected because runtime PDFium fallback has been removed.
 
-Use `render-pdfium`, `render-isolated`, `benchmark-pdfium`, `compare-metadata`,
-or `visual-diff` only in a CLI build compiled with `--features pdfium`; those
-commands are maintainer comparison tooling, not runtime fallback paths.
+Use `render-pdfium`, `render-isolated`, `benchmark-pdfium`, or
+`compare-metadata` only in a CLI build compiled with `--features pdfium`.
+`visual-diff` uses an external PDFium renderer through `--pdfium` or
+`FERRUGO_PDFIUM_RENDERER`. All of these commands are maintainer comparison
+tooling, not runtime fallback paths.
 
 Summarize a local corpus without rendering PDFium output:
 

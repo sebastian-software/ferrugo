@@ -14,13 +14,12 @@ MAX_COV="${MAX_COV:-0.15}"
 TIMEOUT="${TIMEOUT:-30}"
 PROFILE="${PROFILE:-release}"
 
-profile_args=()
+cargo_args=(run -p ferrugo)
 case "$PROFILE" in
   release)
-    profile_args=(--release)
+    cargo_args+=(--release)
     ;;
   dev | debug)
-    profile_args=()
     ;;
   *)
     echo "PROFILE must be one of: release, dev, debug" >&2
@@ -28,12 +27,7 @@ case "$PROFILE" in
     ;;
 esac
 
-features=(--no-default-features)
-if [[ -n "${FERRUGO_PDFIUM_LIBRARY:-}" ]]; then
-  features=(--features pdfium)
-fi
-
-cargo run -p ferrugo "${profile_args[@]}" "${features[@]}" -- benchmark-matrix fixtures/generated \
+cargo "${cargo_args[@]}" --no-default-features -- benchmark-matrix fixtures/generated \
   --manifest fixtures/performance-matrix-manifest.tsv \
   --max-edge "$MAX_EDGE" \
   --iterations "$ITERATIONS" \

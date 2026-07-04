@@ -5,10 +5,12 @@ This policy covers local native-versus-reference visual review runs produced by
 maintainer comparison policy, not a runtime or release-gate requirement. The
 release/oracle split is defined in `docs/policies/reference-oracle-strategy.md`.
 
-`visual-diff` uses PDFium behind the opt-in `pdfium` feature. `visual-diff-poppler`
-uses an external `pdftoppm` binary and writes no PDF bytes or rendered rasters to
-the repository. It uses a per-process writable Fontconfig cache so server-style
-sandbox runs do not depend on host home-directory caches.
+`visual-diff` uses an external PDFium renderer configured by `--pdfium PATH` or
+`FERRUGO_PDFIUM_RENDERER`; it does not require the `pdfium` Cargo feature.
+`visual-diff-poppler` uses an external `pdftoppm` binary and writes no PDF bytes
+or rendered rasters to the repository. It uses a per-process writable
+Fontconfig cache so server-style sandbox runs do not depend on host
+home-directory caches.
 
 Visual-diff JSON includes target platform metadata (`os`, `arch`, `family`,
 `endian`, and `pointer_width_bits`). Use that block when comparing drift across
@@ -77,7 +79,8 @@ not a replacement for typed renderer errors.
 
 ## Review Workflow
 
-1. Run `visual-diff` with the current corpus manifest and local PDFium build.
+1. Run `visual-diff` with the current corpus manifest and local external PDFium
+   renderer.
 2. Review the top-level summary first.
 3. Review `subsystems` next to identify the renderer area that should own the
    work.

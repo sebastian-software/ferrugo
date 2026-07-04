@@ -217,7 +217,8 @@ Goal: make the first optimization target defensible.
 
 - [x] Add or document a release-mode path for `scripts/generate_performance_matrix.sh`.
 - [x] Run the full starter matrix in release mode with `native + poppler`.
-- [ ] Run the same matrix with PDFium once `FERRUGO_PDFIUM_LIBRARY` is available.
+- [ ] Run the same matrix with PDFium once `FERRUGO_PDFIUM_RENDERER` is
+  available.
 - [x] Store baseline artifacts under `target/performance-matrix-baseline-*`.
 - [x] Record host details: OS, CPU, Rust version, Poppler path, PDFium path, and
   whether RSS was available.
@@ -261,9 +262,8 @@ cargo run -p ferrugo --release --no-default-features -- benchmark-matrix fixture
 PDFium variant:
 
 ```sh
-FERRUGO_PDFIUM_LIBRARY=/path/to/libpdfium.dylib \
-DYLD_LIBRARY_PATH=/path/to/pdfium/lib \
-cargo run -p ferrugo --release --features pdfium -- benchmark-matrix fixtures/generated \
+FERRUGO_PDFIUM_RENDERER=/path/to/pdfium-renderer \
+cargo run -p ferrugo --release --no-default-features -- benchmark-matrix fixtures/generated \
   --manifest fixtures/performance-matrix-manifest.tsv \
   --max-edge 160 \
   --iterations 5 \
@@ -276,8 +276,7 @@ cargo run -p ferrugo --release --features pdfium -- benchmark-matrix fixtures/ge
 
 PDFium path policy:
 
-- keep local PDFium paths in `FERRUGO_PDFIUM_LIBRARY` and
-  `DYLD_LIBRARY_PATH`;
+- keep local PDFium renderer paths in `FERRUGO_PDFIUM_RENDERER`;
 - do not commit absolute maintainer paths;
 - record the resolved command/path in the matrix report;
 - keep native-only runs valid by marking PDFium as `missing-tool`.

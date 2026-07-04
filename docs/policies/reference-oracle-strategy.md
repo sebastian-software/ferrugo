@@ -1,7 +1,7 @@
 # Reference Oracle Strategy
 
 Status: accepted.
-Date: 2026-06-26.
+Date: 2026-07-04.
 
 This policy defines how `ferrugo` validates visual behavior while keeping
 normal runtime and release gates independent from PDFium.
@@ -12,19 +12,23 @@ normal runtime and release gates independent from PDFium.
 | --- | --- | --- |
 | Runtime rendering | No | User-facing rendering through the Rust-native backend. |
 | Release gate | No | Supported-family pass/fail checks for packaging, fallback, and budget regressions. |
-| Maintainer oracle | Yes, explicit feature only | Local triage when a visual difference needs an external reference. |
+| Maintainer oracle | Yes, external process or explicit feature only | Local triage when a visual difference needs an external reference. |
 | Historical evidence | Yes, archived only | Previously recorded reports that explain why a gap or threshold exists. |
 | Manual review | No runtime dependency | Human decision for ambiguous or multi-oracle disagreements. |
 
-PDFium-enabled commands must stay behind `--features pdfium` and are not release
-prerequisites for the supported runtime slice.
+`benchmark-matrix --backend pdfium` and `visual-diff` use PDFium as an external
+process through `--pdfium PATH` or `FERRUGO_PDFIUM_RENDERER`. Legacy direct
+PDFium binding commands remain behind `--features pdfium` until that binding is
+removed. None of these oracle paths are release prerequisites for the supported
+runtime slice.
 
 ## 0215 Removal Decision
 
 Milestone 0215 keeps PDFium comparison tooling as maintainer-only infrastructure
-instead of deleting it. The retained tools are `ferrugo-pdfium`,
-`render-pdfium`, `render-isolated`, `compare-metadata`, `benchmark-pdfium`, and
-`visual-diff`. They remain outside supported runtime and release gates.
+instead of deleting it. After issue 109, `benchmark-matrix` and `visual-diff`
+use PDFium as an external process oracle. The retained legacy binding tools are
+`ferrugo-pdfium`, `render-pdfium`, `render-isolated`, `compare-metadata`, and
+`benchmark-pdfium`. They remain outside supported runtime and release gates.
 
 Deletion is blocked until native-only golden comparison coverage, retention
 policy, CI golden samples, and multi-oracle records cover the same triage value.
@@ -56,11 +60,13 @@ fallback.
 | Optional content, pattern shading, transparency, advanced color | Typed unsupported bucket until implemented | Multi-oracle comparison after native implementation work starts | Any single oracle disagrees with another or semantics depend on viewer policy. |
 | Encrypted, malformed, dynamic XFA | Typed policy outcome | Oracle only when investigating parser or security behavior | Error class is ambiguous or could hide renderable user content. |
 
-`benchmark-matrix` records Ghostscript as a provider-neutral external oracle
-without adding it to the runtime graph. A missing `gs` binary is represented as
-`missing-tool` data, not as a hidden fallback or a failed native release gate.
-Ghostscript records may support behavior triage, but they do not by themselves
-justify public speed or memory claims.
+`benchmark-matrix` records PDFium and Ghostscript as provider-neutral external
+oracles without adding them to the runtime graph. Missing `pdfium_test` or `gs`
+binaries are represented as `missing-tool` data, not as hidden fallbacks or
+failed native release gates. PDFium hot-render rows are `not-applicable`
+because PDFium is now measured as an external process in the matrix.
+External-oracle records may support behavior triage, but they do not by
+themselves justify public speed or memory claims.
 
 ## Threshold Calibration
 
