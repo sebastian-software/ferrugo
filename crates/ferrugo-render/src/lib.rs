@@ -1670,6 +1670,10 @@ pub struct FillRasterRouteSummary {
     pub coverage_source_over_row_pixels: usize,
     /// Fully covered pixels written through selected non-normal blend row blitters.
     pub coverage_blend_mode_row_pixels: usize,
+    /// Contiguous edge-alpha runs emitted through the coverage span blitter.
+    pub coverage_partial_span_runs: usize,
+    /// Partial-coverage edge pixels emitted through coverage span runs.
+    pub coverage_partial_span_pixels: usize,
     /// Edge pixels written from analytic 0-255 cell coverage.
     pub coverage_analytic_edge_pixels: usize,
     /// Edge pixels evaluated by the signed-area scanline cell accumulator.
@@ -1706,6 +1710,12 @@ impl FillRasterRouteSummary {
         self.coverage_blend_mode_row_pixels = self
             .coverage_blend_mode_row_pixels
             .saturating_add(stats.blend_mode_row_pixels);
+        self.coverage_partial_span_runs = self
+            .coverage_partial_span_runs
+            .saturating_add(stats.partial_span_runs);
+        self.coverage_partial_span_pixels = self
+            .coverage_partial_span_pixels
+            .saturating_add(stats.partial_span_pixels);
         self.coverage_analytic_edge_pixels = self
             .coverage_analytic_edge_pixels
             .saturating_add(stats.analytic_edge_pixels);
@@ -1924,6 +1934,8 @@ struct FillCoverageSpanStats {
     direct_row_pixels: usize,
     source_over_row_pixels: usize,
     blend_mode_row_pixels: usize,
+    partial_span_runs: usize,
+    partial_span_pixels: usize,
     analytic_edge_pixels: usize,
     cell_accumulator_pixels: usize,
     cell_partial_alpha_levels: [u64; 4],
@@ -1933,6 +1945,18 @@ struct FillCoverageSpanStats {
 }
 
 impl FillCoverageSpanStats {
+    fn record_partial_span(&mut self, coverage: &[u8]) {
+        let partial_pixels = coverage
+            .iter()
+            .filter(|alpha| **alpha > 0 && **alpha < 255)
+            .count();
+        if partial_pixels == 0 {
+            return;
+        }
+        self.partial_span_runs = self.partial_span_runs.saturating_add(1);
+        self.partial_span_pixels = self.partial_span_pixels.saturating_add(partial_pixels);
+    }
+
     fn record_cell_accumulator_coverage(&mut self, coverage: &[u8]) {
         self.cell_accumulator_pixels = self.cell_accumulator_pixels.saturating_add(coverage.len());
         self.analytic_edge_pixels = self
@@ -12195,11 +12219,12 @@ fn fill_path_with_coverage_spans(
                             &mut stats,
                         );
                         edge_row_buffer.apply_clip_mask(clip_mask, y, x, &mut stats);
-                        blitter.write_coverage_alpha_span(
+                        blitter.write_tracked_coverage_alpha_runs(
                             device,
                             y,
                             x,
                             edge_row_buffer.as_slice(),
+                            &mut stats,
                         )?;
                     } else if context.options.fill_route == FillRasterRoute::ScanlineCells
                         && edge_row_buffer.fill_scanline_cell_run(
@@ -12211,26 +12236,32 @@ fn fill_path_with_coverage_spans(
                             &mut stats,
                         )
                     {
-                        blitter.write_coverage_alpha_span(
+                        blitter.write_tracked_coverage_alpha_runs(
                             device,
                             y,
                             x,
                             edge_row_buffer.as_slice(),
+                            &mut stats,
                         )?;
                     } else {
-                        for run_offset in offset..run_end {
-                            let pixel_x = bounds.min_x + run_offset as u32;
-                            let path_coverage = edge_coverage.coverage_for_pixel(path, pixel_x, y);
-                            if path_coverage > 0 {
-                                edge_coverage.record_edge_pixel(&mut stats);
-                            }
-                            blitter.write_coverage_alpha_pixel(
-                                device,
-                                pixel_x,
+                        edge_row_buffer.fill_run(
+                            &mut edge_coverage,
+                            path,
+                            FillEdgeCoverageRun {
                                 y,
-                                path_coverage,
-                            )?;
-                        }
+                                base_x: bounds.min_x,
+                                run: offset..run_end,
+                                use_cell_accumulator: false,
+                            },
+                            &mut stats,
+                        );
+                        blitter.write_tracked_coverage_alpha_runs(
+                            device,
+                            y,
+                            x,
+                            edge_row_buffer.as_slice(),
+                            &mut stats,
+                        )?;
                     }
                     offset = run_end;
                     continue;
@@ -13440,11 +13471,12 @@ impl CoverageDrawBlitter {
                         .iter()
                         .position(|coverage| *coverage == 0 || *coverage == 255)
                         .unwrap_or(mask.len() - offset);
-                    self.write_coverage_alpha_span(
+                    self.write_tracked_coverage_alpha_span(
                         device,
                         y,
                         min_x + offset as u32,
                         &mask[offset..offset + run_len],
+                        stats,
                     )?;
                     stats.clip_mask_pixels = stats.clip_mask_pixels.saturating_add(run_len);
                     offset += run_len;
@@ -13503,10 +13535,70 @@ impl CoverageDrawBlitter {
     ) -> RasterResult<()> {
         let start = min_x as usize * PixelFormat::Rgba8.bytes_per_pixel();
         let end = start + coverage_alphas.len() * PixelFormat::Rgba8.bytes_per_pixel();
-        for (coverage_alpha, chunk) in coverage_alphas.iter().copied().zip(
-            device.row_mut(y)?[start..end].chunks_exact_mut(PixelFormat::Rgba8.bytes_per_pixel()),
-        ) {
-            self.write_coverage_alpha_chunk(chunk, coverage_alpha);
+        match self.kind {
+            CoverageDrawBlitterKind::OpaqueNormal
+            | CoverageDrawBlitterKind::SourceOverNormal
+            | CoverageDrawBlitterKind::NormalAlpha => {
+                ferrugo_simd::source_over_normal_row_with_coverage(
+                    &mut device.row_mut(y)?[start..end],
+                    [self.source.r, self.source.g, self.source.b, self.source.a],
+                    self.alpha,
+                    coverage_alphas,
+                );
+            }
+            CoverageDrawBlitterKind::Multiply | CoverageDrawBlitterKind::Screen => {
+                for (coverage_alpha, chunk) in coverage_alphas.iter().copied().zip(
+                    device.row_mut(y)?[start..end]
+                        .chunks_exact_mut(PixelFormat::Rgba8.bytes_per_pixel()),
+                ) {
+                    self.write_coverage_alpha_chunk(chunk, coverage_alpha);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn write_tracked_coverage_alpha_span(
+        self,
+        device: &mut RasterDevice,
+        y: u32,
+        min_x: u32,
+        coverage_alphas: &[u8],
+        stats: &mut FillCoverageSpanStats,
+    ) -> RasterResult<()> {
+        stats.record_partial_span(coverage_alphas);
+        self.write_coverage_alpha_span(device, y, min_x, coverage_alphas)
+    }
+
+    fn write_tracked_coverage_alpha_runs(
+        self,
+        device: &mut RasterDevice,
+        y: u32,
+        min_x: u32,
+        coverage_alphas: &[u8],
+        stats: &mut FillCoverageSpanStats,
+    ) -> RasterResult<()> {
+        let mut offset = 0;
+        while offset < coverage_alphas.len() {
+            let Some(relative_start) = coverage_alphas[offset..]
+                .iter()
+                .position(|coverage| *coverage != 0)
+            else {
+                break;
+            };
+            let run_start = offset + relative_start;
+            let run_len = coverage_alphas[run_start..]
+                .iter()
+                .position(|coverage| *coverage == 0)
+                .unwrap_or(coverage_alphas.len() - run_start);
+            self.write_tracked_coverage_alpha_span(
+                device,
+                y,
+                min_x + run_start as u32,
+                &coverage_alphas[run_start..run_start + run_len],
+                stats,
+            )?;
+            offset = run_start + run_len;
         }
         Ok(())
     }
@@ -26354,12 +26446,14 @@ mod tests {
         assert_eq!(fill_routes.coverage_source_over_row_pixels, 0);
         assert_eq!(fill_routes.coverage_blend_mode_row_pixels, 0);
         assert!(fill_routes.coverage_analytic_edge_pixels > 0);
+        assert!(fill_routes.coverage_partial_span_runs > 0);
+        assert!(fill_routes.coverage_partial_span_pixels > 0);
         assert_eq!(fill_routes.coverage_cell_accumulator_pixels, 0);
         assert_eq!(
             fill_routes.max_coverage_cell_partial_alpha_levels_per_call,
             0
         );
-        assert_eq!(fill_routes.coverage_edge_row_buffer_pixels, 0);
+        assert!(fill_routes.coverage_edge_row_buffer_pixels > 0);
         assert_eq!(fill_routes.coverage_clip_mask_pixels, 0);
         assert_eq!(fill_routes.coverage_sampled_edge_pixels, 0);
     }
@@ -26401,6 +26495,8 @@ mod tests {
         assert_eq!(fill_routes.sampled_calls, 0);
         assert!(fill_routes.coverage_cell_accumulator_pixels > 0);
         assert!(fill_routes.coverage_analytic_edge_pixels > 0);
+        assert!(fill_routes.coverage_partial_span_runs > 0);
+        assert!(fill_routes.coverage_partial_span_pixels > 0);
         assert!(fill_routes.max_coverage_cell_partial_alpha_levels_per_call > 0);
         assert_eq!(fill_routes.coverage_sampled_edge_pixels, 0);
     }
@@ -26709,8 +26805,10 @@ mod tests {
         assert_eq!(fill_routes.coverage_direct_row_pixels, 0);
         assert_eq!(fill_routes.coverage_blend_mode_row_pixels, 0);
         assert!(fill_routes.coverage_analytic_edge_pixels > 0);
+        assert!(fill_routes.coverage_partial_span_runs > 0);
+        assert!(fill_routes.coverage_partial_span_pixels > 0);
         assert_eq!(fill_routes.coverage_cell_accumulator_pixels, 0);
-        assert_eq!(fill_routes.coverage_edge_row_buffer_pixels, 0);
+        assert!(fill_routes.coverage_edge_row_buffer_pixels > 0);
     }
 
     #[test]
@@ -26753,8 +26851,10 @@ mod tests {
         assert_eq!(fill_routes.coverage_direct_row_pixels, 0);
         assert_eq!(fill_routes.coverage_source_over_row_pixels, 0);
         assert!(fill_routes.coverage_analytic_edge_pixels > 0);
+        assert!(fill_routes.coverage_partial_span_runs > 0);
+        assert!(fill_routes.coverage_partial_span_pixels > 0);
         assert_eq!(fill_routes.coverage_cell_accumulator_pixels, 0);
-        assert_eq!(fill_routes.coverage_edge_row_buffer_pixels, 0);
+        assert!(fill_routes.coverage_edge_row_buffer_pixels > 0);
     }
 
     #[test]
