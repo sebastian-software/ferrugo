@@ -17,8 +17,11 @@ material.
   plugin-free installation, and explicit reference-renderer comparison builds.
 - [Renderer benchmarks](benchmarks.md): local smoke commands and the current
   performance snapshot for bounded preview workloads.
+- [Scoped native 1.0 release train](reports/scoped-native-1-0-release-train-2026-07-04.md):
+  the current release boundary, blockers, non-blockers, gates, and
+  commit-driven versioning decision.
 - [1.4 readiness report](reports/pdfium-free-1-4-readiness-2026-06-29.md):
-  the current release decision and the clearest summary of what is ready.
+  historical gate evidence behind the scoped server/runtime claim.
 - [Native renderer conformance backlog](backlogs/native-renderer-conformance-backlog.md):
   the current follow-up work after completed readiness and conformance gates.
 
@@ -62,6 +65,7 @@ Read:
 
 - [Packaging](packaging.md)
 - [PDFium comparison tool removal decision](reports/pdfium-comparison-tool-removal-decision-2026-06-29.md)
+- [Scoped native 1.0 release train](reports/scoped-native-1-0-release-train-2026-07-04.md)
 - [PDFium-free 1.4 readiness](reports/pdfium-free-1-4-readiness-2026-06-29.md)
 
 The normal runtime path is Rust-native and does not package external PDF
@@ -72,6 +76,7 @@ comparison commands behind explicit Cargo features.
 
 Read:
 
+- [Scoped native 1.0 release train](reports/scoped-native-1-0-release-train-2026-07-04.md)
 - [PDFium-free 1.4 readiness](reports/pdfium-free-1-4-readiness-2026-06-29.md)
 - [Native renderer 1.3 coverage scorecard](reports/native-renderer-1-3-coverage-scorecard-2026-06-29.md)
 - [Unsupported feature SLA](policies/unsupported-feature-sla.md)
@@ -102,6 +107,7 @@ Read:
 - [Native renderer API cleanup backlog](backlogs/native-renderer-api-cleanup-backlog.md)
 - [Fixture policy](fixtures.md)
 - [Raster flattening policy](policies/raster-flattening.md)
+- [Scoped native 1.0 release train](reports/scoped-native-1-0-release-train-2026-07-04.md)
 - [PDFium-free 1.4 readiness](reports/pdfium-free-1-4-readiness-2026-06-29.md)
 
 Backlogs and reports are the working record. Keep validation notes, evidence,
@@ -126,10 +132,11 @@ a blanket PDF compatibility claim.
 
 1. [Project README](../README.md)
 2. [Ferrugo 1.0 user guide](guides/1-0-user-guide.md)
-3. [PDFium-free 1.4 readiness](reports/pdfium-free-1-4-readiness-2026-06-29.md)
-4. [Rust-native backend](backend/native.md)
-5. [Packaging](packaging.md)
-6. [Native renderer conformance backlog](backlogs/native-renderer-conformance-backlog.md)
-7. The report or policy for the subsystem you are changing
+3. [Scoped native 1.0 release train](reports/scoped-native-1-0-release-train-2026-07-04.md)
+4. [PDFium-free 1.4 readiness](reports/pdfium-free-1-4-readiness-2026-06-29.md)
+5. [Rust-native backend](backend/native.md)
+6. [Packaging](packaging.md)
+7. [Native renderer conformance backlog](backlogs/native-renderer-conformance-backlog.md)
+8. The report or policy for the subsystem you are changing
 
 That order gives you the current state before the older planning context.
