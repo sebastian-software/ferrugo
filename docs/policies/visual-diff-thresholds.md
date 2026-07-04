@@ -89,3 +89,8 @@ not a replacement for typed renderer errors.
 The JSON report is comparison evidence for review notes. Generated PNG or
 diff-image artifacts should stay local unless a later policy adds a bounded
 artifact retention policy.
+
+For PDFium-free release evidence, use
+`docs/policies/native-golden-images.md` and
+`bash scripts/check_native_golden_images.sh`. That gate stores committed
+baselines as hashes only and keeps rendered artifacts under `target/`.

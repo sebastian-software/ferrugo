@@ -95,12 +95,14 @@ bash scripts/check_crate_publish_ready.sh
 cargo test -p ferrugo --test cli_contract --no-default-features
 bash scripts/check_fuzz_smoke.sh
 bash scripts/check_benchmark_suite.sh
+bash scripts/check_native_golden_images.sh
 ```
 
 `check_native_only_release.sh` verifies the native-only workspace path, PDFium
 quarantine, plugin-free distribution, CLI binary contract behavior,
-fuzz/adversarial smoke coverage, benchmark suite smoke coverage, package file
-list, leaf package dry-runs, and all-features Clippy. Set
+fuzz/adversarial smoke coverage, benchmark suite smoke coverage, native golden
+image coverage, package file list, leaf package dry-runs, and all-features
+Clippy. Set
 `FERRUGO_NATIVE_RELEASE_VERIFY_REGISTRY=1` only when registry-backed package
 verification is available.
 
@@ -123,8 +125,15 @@ It writes `target/benchmark-suite/performance-matrix-smoke.json`,
 `target/benchmark-suite/performance-matrix-smoke.md`, and
 `target/benchmark-suite/benchmark-suite-summary.txt`. This gate proves the
 durable benchmark JSON/Markdown contract and native timing path without
-requiring PDFium, Poppler, private corpus files, or broad cross-renderer
-performance claims.
+reference renderer availability.
+
+`check_native_golden_images.sh` runs `ferrugo compare-golden` against
+`fixtures/native-golden-manifest.tsv` with PDFium disabled. It writes
+`target/native-golden/native-golden-comparison.json` and
+`target/native-golden/native-golden-summary.txt`. The committed manifest covers
+browser print, office export, static form, scanner, and PDF 2.0 accepted basics
+as hash-only reviewed baselines without requiring PDFium, Poppler, private
+corpus files, or broad cross-renderer performance claims.
 
 `check_crate_publish_ready.sh` verifies Cargo metadata, package file lists, leaf
 package archive dry-runs, and optionally registry-backed dependency-chain
