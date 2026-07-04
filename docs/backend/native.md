@@ -546,10 +546,10 @@ or no-view. Print mode renders only annotations whose `/F` flags include
 does not suppress print output.
 
 Existing normal appearance streams remain authoritative. Missing appearances
-are synthesized only for the bounded markup/widget subset documented in
-`docs/policies/annotation-fallbacks.md`. Appearance-free FreeText annotations
-return typed `annotation.appearance` unsupported rather than guessing text
-layout. See
+are synthesized for the bounded markup, FreeText, and widget subset documented
+in `docs/policies/annotation-fallbacks.md`. FreeText synthesis uses the
+annotation rectangle, `/Contents`, page font resources, and a deterministic
+thumbnail appearance; it does not attempt viewer-side editing behavior. See
 `docs/reports/annotation-print-preview-fidelity-2026-06-29.md`.
 
 ## Linearized First-Page Loading
