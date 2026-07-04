@@ -19,6 +19,9 @@ cargo test -p ferrugo --test cli_contract --no-default-features
 echo "==> fuzz and adversarial smoke gate"
 bash scripts/check_fuzz_smoke.sh
 
+echo "==> benchmark suite gate"
+bash scripts/check_benchmark_suite.sh
+
 echo "==> plugin-free distribution check"
 bash scripts/check_plugin_free_distribution.sh
 

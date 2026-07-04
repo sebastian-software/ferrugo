@@ -36,6 +36,7 @@ const requiredPolicyText = [
   "MuPDF remains v2 comparison backlog.",
   "The full benchmark matrix remains a local maintainer tool",
   "Focused fixture subsets may become CI gates only after their variance is measured",
+  "bash scripts/check_benchmark_suite.sh",
   "Run `bash scripts/check_performance_claims.sh`.",
 ];
 
@@ -51,6 +52,14 @@ if (!readme.includes("docs/policies/performance-claims.md")) {
 
 if (!benchmarks.includes("policies/performance-claims.md")) {
   throw new Error(`${benchmarksPath} must link the performance claims policy`);
+}
+
+if (!benchmarks.includes("## Benchmark Suite Tiers")) {
+  throw new Error(`${benchmarksPath} must document benchmark suite tiers`);
+}
+
+if (!benchmarks.includes("target/benchmark-suite/benchmark-suite-summary.txt")) {
+  throw new Error(`${benchmarksPath} must document benchmark suite artifacts`);
 }
 
 console.log("performance claims policy check passed");

@@ -6,6 +6,7 @@ cd "$ROOT"
 
 OUTPUT="${OUTPUT:-target/performance-matrix-smoke.json}"
 REPORT="${REPORT:-target/performance-matrix-smoke.md}"
+ARTIFACT_DIR="${ARTIFACT_DIR:-target/performance-matrix-smoke-artifacts}"
 FAMILY="${FAMILY:-small-text}"
 MAX_EDGE="${MAX_EDGE:-120}"
 ITERATIONS="${ITERATIONS:-3}"
@@ -37,7 +38,8 @@ cargo run -p ferrugo "${profile_args[@]}" --no-default-features -- benchmark-mat
   --warmup "$WARMUP" \
   --timeout "$TIMEOUT" \
   --output "$OUTPUT" \
-  --report "$REPORT"
+  --report "$REPORT" \
+  --artifact-dir "$ARTIFACT_DIR"
 
 node --input-type=module - "$OUTPUT" "$FAMILY" <<'NODE'
 import fs from "node:fs";

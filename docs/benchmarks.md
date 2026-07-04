@@ -139,6 +139,52 @@ artifacts, profile the top 5 Ferrugo fixtures with `sample`, Instruments, or
 Samply on release builds, and only then open optimization PRs with before/after
 evidence.
 
+## Benchmark Suite Tiers
+
+Ferrugo uses named benchmark tiers instead of one oversized performance job.
+Each tier has a different review purpose and failure policy.
+
+| Tier | Command | Required tools | Failure policy | Artifacts |
+| --- | --- | --- | --- | --- |
+| Smoke | `bash scripts/check_benchmark_suite.sh` | Rust toolchain only | Fails on missing schema/platform/timing fields, native errors, native fallbacks, or missing tools. Does not fail on broad timing comparisons. | `target/benchmark-suite/performance-matrix-smoke.json`, `target/benchmark-suite/performance-matrix-smoke.md`, `target/benchmark-suite/benchmark-suite-summary.txt` |
+| Release candidate | `bash scripts/check_native_only_release.sh` | Rust toolchain only | Includes the smoke tier and the native-only release gates. Stable budget failures are allowed only for bounded native release checks, not PDFium/Poppler availability or noisy cross-renderer ratios. | Native release artifacts plus the smoke tier artifacts. |
+| Local deep | `bash scripts/generate_performance_matrix.sh` | Rust toolchain; optional PDFium and Poppler | Does not block release by itself. Use it to collect repeated artifacts, inspect `timing_reliability`, and guide optimization issues. | `target/performance-matrix.json`, `target/performance-matrix.md`, `target/performance-matrix-artifacts/` |
+| Maintainer oracle comparison | `FERRUGO_PDFIUM_LIBRARY=/path/to/libpdfium.dylib bash scripts/generate_performance_matrix.sh` plus Poppler when available | PDFium and/or Poppler | Missing reference tools must be recorded as `missing-tool`, not hidden. Public claims need two stable runs and the performance-claims checklist. | Dated JSON/Markdown reports under `target/` or `docs/reports/` when promoted. |
+
+The smoke and release-candidate tiers run from a clean checkout with only
+committed generated fixtures. They do not require private corpus files, PDFium,
+Poppler, or network access. The initial release smoke uses the `small-text`
+family in native `hot-render` mode at `max_edge=120`; that subset is deliberately
+small enough to be stable while still proving the durable `benchmark-matrix`
+JSON, Markdown, platform, timing, family, and record fields.
+
+## Release Candidate Artifact Policy
+
+Release-candidate benchmark artifacts are evidence, not marketing copy. Keep
+them under `target/benchmark-suite/` for local gates and promote a dated report
+under `docs/reports/` only when it supports a specific release or performance
+claim.
+
+Required fields for release-candidate benchmark evidence:
+
+- `schema_version` and `report_kind` in JSON;
+- `platform.os`, `platform.arch`, and compiler/runtime metadata when available;
+- `config` with `input`, `manifest`, `include_families`, `max_edge`,
+  `iterations`, `warmup`, backend list, mode list, and native profile;
+- `timing_reliability` with caveats reviewed before public copy changes;
+- `summary`, `families`, and per-record `timing`, `output`, `memory`, and
+  `status` fields;
+- Markdown report generated from the same JSON artifact.
+
+Retention rules:
+
+- `target/benchmark-suite/*` is disposable local gate output.
+- PRs should list the commands and artifact paths they produced.
+- Dated reports in `docs/reports/` should include host details, command lines,
+  artifact names, and how missing PDFium/Poppler tools were handled.
+- Public README or release copy must cite promoted evidence and pass
+  `bash scripts/check_performance_claims.sh`.
+
 ## Commands
 
 Run the Rust-native benchmark against the generated fixture corpus:
