@@ -8474,9 +8474,9 @@ struct FlattenedPathStats {
     cubic_curves: usize,
     curve_segments: usize,
     max_curve_segments_per_curve: usize,
-    // Generated simple stroke outlines have no interior edge crossings, so
-    // scanline-cell coverage can skip per-row edge-intersection y-break scans.
-    skip_intersection_y_breaks: bool,
+    // Generated stroke outlines can prove that edge intersections do not add
+    // y-breaks. Seed the per-path cache as empty instead of recomputing that.
+    edge_intersection_y_breaks_known_empty: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -12498,7 +12498,7 @@ enum FillEdgeCoverageMode {
 #[derive(Debug, Clone)]
 struct FillEdgeCoverage {
     mode: FillEdgeCoverageMode,
-    requires_intersection_y_breaks: bool,
+    intersection_y_breaks: FillEdgeIntersectionYBreakCache,
     cell_accumulator: FillScanlineCellAccumulator,
     pixel_coverage: Vec<u8>,
 }
@@ -12511,7 +12511,7 @@ impl FillEdgeCoverage {
         };
         Self {
             mode,
-            requires_intersection_y_breaks: !path.stats.skip_intersection_y_breaks,
+            intersection_y_breaks: FillEdgeIntersectionYBreakCache::for_path(path),
             cell_accumulator: FillScanlineCellAccumulator::new(),
             pixel_coverage: Vec::with_capacity(128),
         }
@@ -12524,6 +12524,7 @@ impl FillEdgeCoverage {
 
     fn coverage_for_pixel(&mut self, path: &FlattenedPath, x: u32, y: u32) -> u8 {
         let rule = self.rule();
+        let intersection_y_breaks = self.intersection_y_breaks.y_breaks_for_path(path);
         self.cell_accumulator.fill_run(
             path,
             rule,
@@ -12531,8 +12532,8 @@ impl FillEdgeCoverage {
                 y,
                 base_x: x,
                 run: 0..1,
-                requires_intersection_y_breaks: self.requires_intersection_y_breaks,
             },
+            intersection_y_breaks,
             &mut self.pixel_coverage,
         );
         self.pixel_coverage.first().copied().unwrap_or_default()
@@ -12548,15 +12549,12 @@ impl FillEdgeCoverage {
         stats: &mut FillCoverageSpanStats,
     ) -> bool {
         let rule = self.rule();
+        let intersection_y_breaks = self.intersection_y_breaks.y_breaks_for_path(path);
         self.cell_accumulator.fill_run(
             path,
             rule,
-            FillScanlineCellRun {
-                y,
-                base_x,
-                run,
-                requires_intersection_y_breaks: self.requires_intersection_y_breaks,
-            },
+            FillScanlineCellRun { y, base_x, run },
+            intersection_y_breaks,
             coverage,
         );
         stats.record_cell_accumulator_coverage(coverage);
@@ -12575,6 +12573,96 @@ impl FillEdgeCoverage {
     }
 }
 
+const FILL_EDGE_INTERSECTION_Y_BREAK_CACHE_MAX_EDGES: usize = 256;
+
+#[derive(Debug, Clone)]
+struct FillEdgeIntersectionYBreakCache {
+    state: FillEdgeIntersectionYBreakCacheState,
+    known_empty: bool,
+    edges: Vec<LineSegment>,
+    y_breaks: Vec<f64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FillEdgeIntersectionYBreakCacheState {
+    Uncomputed,
+    Cached,
+    RowScanFallback,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum FillEdgeIntersectionYBreaks<'a> {
+    Cached(&'a [f64]),
+    RowScanFallback(&'a [LineSegment]),
+}
+
+impl FillEdgeIntersectionYBreakCache {
+    fn for_path(path: &FlattenedPath) -> Self {
+        Self {
+            state: FillEdgeIntersectionYBreakCacheState::Uncomputed,
+            known_empty: path.stats.edge_intersection_y_breaks_known_empty,
+            edges: Vec::new(),
+            y_breaks: Vec::new(),
+        }
+    }
+
+    #[cfg(test)]
+    fn new_for_test() -> Self {
+        Self {
+            state: FillEdgeIntersectionYBreakCacheState::Uncomputed,
+            known_empty: false,
+            edges: Vec::new(),
+            y_breaks: Vec::new(),
+        }
+    }
+
+    fn y_breaks_for_path(&mut self, path: &FlattenedPath) -> FillEdgeIntersectionYBreaks<'_> {
+        if matches!(self.state, FillEdgeIntersectionYBreakCacheState::Uncomputed) {
+            self.compute(path);
+        }
+        match self.state {
+            FillEdgeIntersectionYBreakCacheState::Cached => {
+                FillEdgeIntersectionYBreaks::Cached(&self.y_breaks)
+            }
+            FillEdgeIntersectionYBreakCacheState::RowScanFallback => {
+                FillEdgeIntersectionYBreaks::RowScanFallback(&self.edges)
+            }
+            FillEdgeIntersectionYBreakCacheState::Uncomputed => unreachable!(),
+        }
+    }
+
+    fn compute(&mut self, path: &FlattenedPath) {
+        self.edges.clear();
+        self.y_breaks.clear();
+        if self.known_empty {
+            self.state = FillEdgeIntersectionYBreakCacheState::Cached;
+            return;
+        }
+        self.edges.extend(
+            path.subpaths
+                .iter()
+                .flat_map(|subpath| polygon_edges(subpath)),
+        );
+        if self.edges.len() > FILL_EDGE_INTERSECTION_Y_BREAK_CACHE_MAX_EDGES {
+            self.state = FillEdgeIntersectionYBreakCacheState::RowScanFallback;
+            return;
+        }
+        for (left_index, left) in self.edges.iter().copied().enumerate() {
+            for right in self.edges.iter().copied().skip(left_index + 1) {
+                let Some(point) = segment_intersection_point(left, right) else {
+                    continue;
+                };
+                self.y_breaks.push(point.y);
+            }
+        }
+        self.y_breaks.sort_by(f64::total_cmp);
+        self.y_breaks
+            .dedup_by(|left, right| (*left - *right).abs() <= 1e-9);
+        self.edges.clear();
+        self.state = FillEdgeIntersectionYBreakCacheState::Cached;
+    }
+}
+
 #[derive(Debug, Clone)]
 struct FillScanlineCellAccumulator {
     y_breaks: Vec<f64>,
@@ -12587,7 +12675,6 @@ struct FillScanlineCellRun {
     y: u32,
     base_x: u32,
     run: Range<usize>,
-    requires_intersection_y_breaks: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -12596,7 +12683,6 @@ struct FillScanlineCellAreaRun {
     row_max_y: f64,
     base_x: u32,
     run: Range<usize>,
-    requires_intersection_y_breaks: bool,
 }
 
 impl FillScanlineCellAccumulator {
@@ -12613,6 +12699,7 @@ impl FillScanlineCellAccumulator {
         path: &FlattenedPath,
         rule: FillRule,
         request: FillScanlineCellRun,
+        intersection_y_breaks: FillEdgeIntersectionYBreaks<'_>,
         coverage: &mut Vec<u8>,
     ) {
         let run_len = request.run.end.saturating_sub(request.run.start);
@@ -12629,8 +12716,8 @@ impl FillScanlineCellAccumulator {
                 row_max_y: f64::from(request.y) + 1.0,
                 base_x: request.base_x,
                 run: request.run,
-                requires_intersection_y_breaks: request.requires_intersection_y_breaks,
             },
+            intersection_y_breaks,
         );
 
         coverage.extend(
@@ -12645,6 +12732,7 @@ impl FillScanlineCellAccumulator {
         path: &FlattenedPath,
         rule: FillRule,
         request: FillScanlineCellAreaRun,
+        intersection_y_breaks: FillEdgeIntersectionYBreaks<'_>,
     ) {
         self.y_breaks.clear();
         self.y_breaks.push(request.row_min_y);
@@ -12659,9 +12747,11 @@ impl FillScanlineCellAccumulator {
                         *point_y > request.row_min_y + 1e-9 && *point_y < request.row_max_y - 1e-9
                     }),
             );
-        if request.requires_intersection_y_breaks {
-            self.append_row_edge_intersection_y_breaks(path, request.row_min_y, request.row_max_y);
-        }
+        self.append_edge_intersection_y_breaks(
+            intersection_y_breaks,
+            request.row_min_y,
+            request.row_max_y,
+        );
         self.y_breaks.sort_by(f64::total_cmp);
         self.y_breaks
             .dedup_by(|left, right| (*left - *right).abs() <= 1e-9);
@@ -12686,23 +12776,38 @@ impl FillScanlineCellAccumulator {
         }
     }
 
-    fn append_row_edge_intersection_y_breaks(
+    fn append_edge_intersection_y_breaks(
         &mut self,
-        path: &FlattenedPath,
+        intersection_y_breaks: FillEdgeIntersectionYBreaks<'_>,
         row_min_y: f64,
         row_max_y: f64,
     ) {
-        let edges = path
-            .subpaths
-            .iter()
-            .flat_map(|subpath| polygon_edges(subpath))
-            .filter(|edge| {
-                edge.from.y.min(edge.to.y) < row_max_y - 1e-9
-                    && edge.from.y.max(edge.to.y) > row_min_y + 1e-9
-            })
-            .collect::<Vec<_>>();
+        match intersection_y_breaks {
+            FillEdgeIntersectionYBreaks::Cached(y_breaks) => {
+                let start = y_breaks.partition_point(|point_y| *point_y <= row_min_y + 1e-9);
+                let end = y_breaks.partition_point(|point_y| *point_y < row_max_y - 1e-9);
+                self.y_breaks.extend_from_slice(&y_breaks[start..end]);
+            }
+            FillEdgeIntersectionYBreaks::RowScanFallback(edges) => {
+                self.append_row_edge_intersection_y_breaks(edges, row_min_y, row_max_y);
+            }
+        }
+    }
+
+    fn append_row_edge_intersection_y_breaks(
+        &mut self,
+        edges: &[LineSegment],
+        row_min_y: f64,
+        row_max_y: f64,
+    ) {
         for (left_index, left) in edges.iter().copied().enumerate() {
+            if !edge_overlaps_scan_range(left, row_min_y, row_max_y) {
+                continue;
+            }
             for right in edges.iter().copied().skip(left_index + 1) {
+                if !edge_overlaps_scan_range(right, row_min_y, row_max_y) {
+                    continue;
+                }
                 let Some(point) = segment_intersection_point(left, right) else {
                     continue;
                 };
@@ -12824,6 +12929,10 @@ struct FillScanlineIntersection {
     x: f64,
     edge: LineSegment,
     winding_delta: i32,
+}
+
+fn edge_overlaps_scan_range(edge: LineSegment, min_y: f64, max_y: f64) -> bool {
+    edge.from.y.min(edge.to.y) < max_y - 1e-9 && edge.from.y.max(edge.to.y) > min_y + 1e-9
 }
 
 fn segment_intersection_point(left: LineSegment, right: LineSegment) -> Option<Point> {
@@ -14404,7 +14513,7 @@ fn simple_line_stroke_fill_outline(
         }
     }
     let mut outline = polygon_flattened_path(points)?;
-    outline.stats.skip_intersection_y_breaks = true;
+    outline.stats.edge_intersection_y_breaks_known_empty = true;
     Some(outline)
 }
 
@@ -14534,11 +14643,9 @@ fn round_polyline_stroke_outline(lines: &[LineSegment], radius: f64) -> Option<F
     );
 
     let mut outline = polygon_flattened_path(points)?;
-    // The centerline check alone is not enough: at acute joins the inner
-    // offset edges of adjacent segments cross mid-edge, so the outline can
-    // self-intersect between vertex rows even when the centerline does not.
-    outline.stats.skip_intersection_y_breaks = !polyline_has_non_adjacent_intersections(lines)
-        && !closed_polygon_has_self_intersections_between_vertex_rows(&outline.subpaths[0]);
+    outline.stats.edge_intersection_y_breaks_known_empty =
+        !polyline_has_non_adjacent_intersections(lines)
+            && !closed_polygon_has_self_intersections_between_vertex_rows(&outline.subpaths[0]);
     Some(outline)
 }
 
@@ -14628,12 +14735,8 @@ fn closed_axis_aligned_rect_stroke_bounds(lines: &[LineSegment]) -> Option<PathB
     bounds
 }
 
-// Bounds the quadratic pair scans below; longer inputs conservatively keep
-// the y-break scans instead of paying the O(n^2) intersection test.
-const STROKE_INTERSECTION_SCAN_MAX_EDGES: usize = 256;
-
 fn polyline_has_non_adjacent_intersections(lines: &[LineSegment]) -> bool {
-    if lines.len() > STROKE_INTERSECTION_SCAN_MAX_EDGES {
+    if lines.len() > FILL_EDGE_INTERSECTION_Y_BREAK_CACHE_MAX_EDGES {
         return true;
     }
     for left_index in 0..lines.len() {
@@ -14653,12 +14756,12 @@ fn polyline_has_non_adjacent_intersections(lines: &[LineSegment]) -> bool {
 // untrimmed offset edges overshoot the corner), so plain self-intersection
 // would disqualify every joined polyline. The slab decomposition only needs
 // crossings to sit on y-break boundaries, and every polygon vertex y is a
-// y-break — so only crossings strictly between vertex rows are unsafe.
+// y-break; only crossings strictly between vertex rows need cached y-breaks.
 fn closed_polygon_has_self_intersections_between_vertex_rows(points: &[Point]) -> bool {
     if points.len() < 4 {
         return false;
     }
-    if points.len() > STROKE_INTERSECTION_SCAN_MAX_EDGES {
+    if points.len() > FILL_EDGE_INTERSECTION_Y_BREAK_CACHE_MAX_EDGES {
         return true;
     }
     let edge_count = points.len();
@@ -22566,7 +22669,62 @@ mod tests {
     }
 
     #[test]
-    fn round_polyline_stroke_outline_should_only_skip_y_breaks_for_simple_outlines() {
+    fn fill_edge_intersection_y_break_cache_should_store_sorted_unique_breaks() {
+        let path = FlattenedPath {
+            subpaths: vec![vec![
+                Point { x: 0.0, y: 0.0 },
+                Point { x: 2.0, y: 2.0 },
+                Point { x: 0.0, y: 2.0 },
+                Point { x: 2.0, y: 0.0 },
+            ]],
+            lines: Vec::new(),
+            joins: Vec::new(),
+            stats: FlattenedPathStats::default(),
+        };
+        let mut cache = FillEdgeIntersectionYBreakCache::new_for_test();
+
+        let y_breaks = match cache.y_breaks_for_path(&path) {
+            FillEdgeIntersectionYBreaks::Cached(y_breaks) => y_breaks,
+            FillEdgeIntersectionYBreaks::RowScanFallback(_) => {
+                panic!("small path should use cached y-breaks")
+            }
+        };
+
+        assert_eq!(y_breaks, &[1.0]);
+    }
+
+    #[test]
+    fn fill_edge_intersection_y_break_cache_should_fallback_past_edge_cap() {
+        let mut points = Vec::new();
+        for index in 0..=FILL_EDGE_INTERSECTION_Y_BREAK_CACHE_MAX_EDGES {
+            points.push(Point {
+                x: index as f64,
+                y: f64::from(u8::from(index % 2 == 0)),
+            });
+        }
+        let path = FlattenedPath {
+            subpaths: vec![points],
+            lines: Vec::new(),
+            joins: Vec::new(),
+            stats: FlattenedPathStats::default(),
+        };
+        let mut cache = FillEdgeIntersectionYBreakCache::new_for_test();
+
+        let edges = match cache.y_breaks_for_path(&path) {
+            FillEdgeIntersectionYBreaks::Cached(_) => {
+                panic!("large path should preserve row-scan fallback")
+            }
+            FillEdgeIntersectionYBreaks::RowScanFallback(edges) => edges,
+        };
+
+        assert_eq!(
+            edges.len(),
+            FILL_EDGE_INTERSECTION_Y_BREAK_CACHE_MAX_EDGES + 1
+        );
+    }
+
+    #[test]
+    fn round_polyline_stroke_outline_should_mark_only_simple_y_break_caches_empty() {
         let simple_lines = [
             LineSegment {
                 from: Point { x: 8.0, y: 8.0 },
@@ -22579,7 +22737,7 @@ mod tests {
         ];
         let simple_outline =
             round_polyline_stroke_outline(&simple_lines, 1.0).expect("simple round outline");
-        assert!(simple_outline.stats.skip_intersection_y_breaks);
+        assert!(simple_outline.stats.edge_intersection_y_breaks_known_empty);
 
         let crossing_lines = [
             LineSegment {
@@ -22597,11 +22755,12 @@ mod tests {
         ];
         let crossing_outline =
             round_polyline_stroke_outline(&crossing_lines, 1.0).expect("crossing round outline");
-        assert!(!crossing_outline.stats.skip_intersection_y_breaks);
+        assert!(
+            !crossing_outline
+                .stats
+                .edge_intersection_y_breaks_known_empty
+        );
 
-        // Acute join: the centerline is simple, but the inner offset edges of
-        // the two adjacent segments cross mid-edge, so the outline
-        // self-intersects and must keep the y-break scans.
         let acute_lines = [
             LineSegment {
                 from: Point { x: 2.0, y: 2.0 },
@@ -22614,28 +22773,7 @@ mod tests {
         ];
         let acute_outline =
             round_polyline_stroke_outline(&acute_lines, 1.0).expect("acute round outline");
-        assert!(!acute_outline.stats.skip_intersection_y_breaks);
-    }
-
-    #[test]
-    fn round_polyline_stroke_outline_should_not_skip_y_breaks_past_the_scan_cap() {
-        let mut long_lines = Vec::new();
-        for index in 0..=STROKE_INTERSECTION_SCAN_MAX_EDGES {
-            let x = index as f64;
-            long_lines.push(LineSegment {
-                from: Point {
-                    x,
-                    y: 8.0 + f64::from(u8::from(index % 2 == 0)),
-                },
-                to: Point {
-                    x: x + 1.0,
-                    y: 8.0 + f64::from(u8::from((index + 1) % 2 == 0)),
-                },
-            });
-        }
-        let long_outline =
-            round_polyline_stroke_outline(&long_lines, 0.25).expect("long round outline");
-        assert!(!long_outline.stats.skip_intersection_y_breaks);
+        assert!(!acute_outline.stats.edge_intersection_y_breaks_known_empty);
     }
 
     #[test]
