@@ -92,7 +92,7 @@ explicit manifest. The default matrix covers both modes:
   intentionally measured as external tools.
 
 The focused starter manifest is `fixtures/performance-matrix-manifest.tsv`.
-It maps the initial families to real generated fixtures:
+It maps the initial generated families plus the #97 real-world seed families:
 
 - `small-text`
 - `office-export`
@@ -102,12 +102,32 @@ It maps the initial families to real generated fixtures:
 - `presentation`
 - `report/vector`
 - `mixed-layout`
+- `real-office-export`
+- `real-browser-print`
+- `real-scan`
+- `real-report`
 
 Run the repeatable matrix:
 
 ```sh
 bash scripts/generate_performance_matrix.sh
 ```
+
+Run the committed real-world seed tier at larger preview scale:
+
+```sh
+INPUT=fixtures/real-world MAX_EDGE=1024 ITERATIONS=5 WARMUP=1 \
+  OUTPUT=target/real-world-performance-matrix.json \
+  REPORT=target/real-world-performance-matrix.md \
+  ARTIFACT_DIR=target/real-world-performance-matrix-artifacts \
+  bash scripts/generate_performance_matrix.sh
+```
+
+Those real-world rows include multi-page documents and high-DPI benchmark tags
+so the same matrix schema can show public form, browser-print, scan, and report
+families separately from synthetic generated fixtures. Keep the smoke gate on
+the generated `small-text` subset; the real-world tier is evidence for review
+and trend artifacts until #115/#114 promote scheduled benchmark publication.
 
 Run the budget-free native smoke gate before wiring a focused subset into CI:
 
@@ -171,7 +191,7 @@ Each tier has a different review purpose and failure policy.
 | --- | --- | --- | --- | --- |
 | Smoke | `bash scripts/check_benchmark_suite.sh` | Rust toolchain only | Fails on missing schema/platform/timing fields, native errors, native fallbacks, or missing tools. Does not fail on broad timing comparisons. | `target/benchmark-suite/performance-matrix-smoke.json`, `target/benchmark-suite/performance-matrix-smoke.md`, `target/benchmark-suite/benchmark-suite-summary.txt` |
 | Release candidate | `bash scripts/check_native_only_release.sh` | Rust toolchain only | Includes the smoke tier and the native-only release gates. Stable budget failures are allowed only for bounded native release checks, not PDFium/Poppler availability or noisy cross-renderer ratios. | Native release artifacts plus the smoke tier artifacts. |
-| Local deep | `bash scripts/generate_performance_matrix.sh` | Rust toolchain; optional PDFium and Poppler | Does not block release by itself. Use it to collect repeated artifacts, inspect `timing_reliability`, and guide optimization issues. | `target/performance-matrix.json`, `target/performance-matrix.md`, `target/performance-matrix-artifacts/` |
+| Local deep | `bash scripts/generate_performance_matrix.sh`; use `INPUT=fixtures/real-world MAX_EDGE=1024` for the committed real-world seed tier | Rust toolchain; optional PDFium, Poppler, and Ghostscript | Does not block release by itself. Use it to collect repeated artifacts, inspect `timing_reliability`, and guide optimization issues. | `target/performance-matrix.json`, `target/performance-matrix.md`, `target/performance-matrix-artifacts/` |
 | Maintainer oracle comparison | `FERRUGO_PDFIUM_RENDERER=/path/to/pdfium-renderer bash scripts/generate_performance_matrix.sh` plus Poppler when available | PDFium and/or Poppler | Missing reference tools must be recorded as `missing-tool`, not hidden. Public claims need two stable runs and the performance-claims checklist. | Dated JSON/Markdown reports under `target/` or `docs/reports/` when promoted. |
 
 The smoke and release-candidate tiers run from a clean checkout with only

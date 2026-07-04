@@ -7,6 +7,7 @@ cd "$ROOT"
 OUTPUT="${OUTPUT:-target/performance-matrix.json}"
 REPORT="${REPORT:-target/performance-matrix.md}"
 ARTIFACT_DIR="${ARTIFACT_DIR:-target/performance-matrix-artifacts}"
+INPUT="${INPUT:-fixtures/generated}"
 MAX_EDGE="${MAX_EDGE:-160}"
 ITERATIONS="${ITERATIONS:-20}"
 WARMUP="${WARMUP:-3}"
@@ -27,7 +28,7 @@ case "$PROFILE" in
     ;;
 esac
 
-cargo "${cargo_args[@]}" --no-default-features -- benchmark-matrix fixtures/generated \
+cargo "${cargo_args[@]}" --no-default-features -- benchmark-matrix "$INPUT" \
   --manifest fixtures/performance-matrix-manifest.tsv \
   --max-edge "$MAX_EDGE" \
   --iterations "$ITERATIONS" \

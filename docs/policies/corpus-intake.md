@@ -1,7 +1,7 @@
 # Corpus Intake Policy
 
-Status: accepted.
-Date: 2026-06-24.
+Status: accepted, updated for #97 real-world seed tier.
+Date: 2026-07-04.
 
 The validation corpus must improve PDFium-retirement evidence without storing
 private or legally ambiguous documents in Git.
@@ -12,6 +12,9 @@ private or legally ambiguous documents in Git.
 - Synthetic-realistic documents that contain no private data.
 - Public documents only when the license permits redistribution and the source
   is recorded.
+- Small public redistributable real-world PDFs under `fixtures/real-world/`
+  when provenance, license, page count, hash, and producer notes are recorded
+  in the fixture README before commit.
 - Local-only private samples under `fixtures/local-corpus/`, excluded from Git,
   with aggregated metadata only.
 
@@ -96,7 +99,7 @@ counts only.
 
 ## Categories
 
-The real-world-style corpus uses production-shaped categories:
+The generated real-world-style corpus uses production-shaped categories:
 
 - `invoice`
 - `report`
@@ -111,6 +114,18 @@ The real-world-style corpus uses production-shaped categories:
 
 These categories may map back to broader generated-corpus families when
 reporting historical coverage.
+
+The committed public real-world tier uses explicit `real-*` families:
+
+- `real-office-export`
+- `real-browser-print`
+- `real-scan`
+- `real-report`
+
+Private local PDFs that need benchmark-matrix coverage can use the same
+seven-column TSV schema as `fixtures/performance-matrix-manifest.tsv`; start
+from `fixtures/local-corpus-matrix.example.tsv` and keep the concrete TSV
+untracked under `fixtures/local-corpus/`.
 
 ## Size Policy
 

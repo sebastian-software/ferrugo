@@ -1,0 +1,3 @@
+path	family	source	license	page_count	features	notes
+fixtures/local-corpus/private-office-export.pdf	local-office-export	local-private-corpus	local-review-only	8	local-only,office-export,multipage,high-dpi	Example only; keep the PDF and concrete manifest untracked under fixtures/local-corpus/.
+fixtures/local-corpus/private-scan-packet.pdf	local-scan	local-private-corpus	local-review-only	24	local-only,scan,large-image,multipage,high-dpi	Example only; publish aggregate results without paths, hashes, text, or rendered pixels.
