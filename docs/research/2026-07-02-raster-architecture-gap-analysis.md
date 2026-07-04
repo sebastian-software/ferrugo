@@ -52,7 +52,7 @@ where path and text rasterization dominate.
 **Release profiles put nearly all time in per-pixel geometry predicates and
 per-pixel blending.** The 2026-06-30 release sample on `vector-stress`
 (recorded in the
-[performance working plan](../plans/2026-06-29-performance-optimization-working-plan.md))
+[renderer performance optimization backlog](../backlogs/renderer-performance-optimization-backlog.md))
 has `rasterize_row_bucketed_stroke_ranges`, `blend_pixel`,
 `rasterize_span_covered_stroke_ranges`, `stroke_path`, and
 `axis_stroke_raster_spans` as the top symbols. Content tokenization and object

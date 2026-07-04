@@ -1,12 +1,12 @@
-# Performance Optimization Working Plan
+# Renderer Performance Optimization Backlog
 
-Status: active working document.
+Status: active backlog.
 Date: 2026-06-29.
 
 ## Purpose
 
 Ferrugo now has a first renderer performance matrix. This document is the
-editable work board for turning that measurement infrastructure into real
+active backlog for turning that measurement infrastructure into real
 renderer speed and memory improvements.
 
 This is not a claim document. It should change as new benchmark reports,
@@ -957,7 +957,7 @@ Accepted stroke row-bucket result from 2026-06-30:
   dominant `vector-stress` fixture by more than 10% while keeping the previous
   protection regressions out of the repeat run.
 - Validation:
-  `cargo fmt --all --check`, `git diff --check -- crates/ferrugo-render/src/lib.rs docs/plans/2026-06-29-performance-optimization-working-plan.md`,
+  `cargo fmt --all --check`, `git diff --check -- crates/ferrugo-render/src/lib.rs docs/backlogs/renderer-performance-optimization-backlog.md`,
   `cargo check --workspace --no-default-features`,
   `cargo test --workspace --no-default-features`, and
   `cargo clippy --workspace --all-targets --all-features -- -D warnings`
@@ -1513,7 +1513,7 @@ Accepted sparse axis-stroke raster result from 2026-06-30:
   block.
 - Validation:
   `cargo fmt --all --check`,
-  `git diff --check -- crates/ferrugo-render/src/lib.rs docs/plans/2026-06-29-performance-optimization-working-plan.md`,
+  `git diff --check -- crates/ferrugo-render/src/lib.rs docs/backlogs/renderer-performance-optimization-backlog.md`,
   `cargo check -p ferrugo-render --no-default-features`,
   `cargo test -p ferrugo-render axis_stroke --no-default-features`,
   `cargo test --workspace --no-default-features`,
@@ -1563,7 +1563,7 @@ Accepted empty-join stroke predicate skip from 2026-06-30:
   zero-dependency branch removal and no protection-set failures.
 - Validation:
   `cargo fmt --all --check`,
-  `git diff --check -- crates/ferrugo-render/src/lib.rs docs/plans/2026-06-29-performance-optimization-working-plan.md`,
+  `git diff --check -- crates/ferrugo-render/src/lib.rs docs/backlogs/renderer-performance-optimization-backlog.md`,
   `cargo check -p ferrugo-render --no-default-features`,
   `cargo test -p ferrugo-render axis_stroke --no-default-features`,
   `cargo test --workspace --no-default-features`,
@@ -1616,7 +1616,7 @@ Accepted join-bucket stroke predicate index from 2026-06-30:
 - Validation:
   `cargo fmt --all`,
   `cargo fmt --all --check`,
-  `git diff --check -- crates/ferrugo-render/src/lib.rs docs/plans/2026-06-29-performance-optimization-working-plan.md`,
+  `git diff --check -- crates/ferrugo-render/src/lib.rs docs/backlogs/renderer-performance-optimization-backlog.md`,
   `cargo check -p ferrugo-render --no-default-features`,
   `cargo test -p ferrugo-render stroke_join_buckets --no-default-features`,
   `cargo test --workspace --no-default-features`,
