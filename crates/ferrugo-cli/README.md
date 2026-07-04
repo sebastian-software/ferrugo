@@ -35,3 +35,5 @@ cargo install ferrugo --features pdfium --locked
 ```
 
 See the repository README for current support boundaries and release notes.
+For install, Rust API, error handling, and troubleshooting examples, read the
+[Ferrugo 1.0 user guide](../../docs/guides/1-0-user-guide.md).
