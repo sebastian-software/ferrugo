@@ -3,16 +3,14 @@
 Status: supported for generated fixture coverage.
 Date: 2026-06-24.
 
-The Rust-native backend lives in `crates/ferrugo-native` and implements the same
-`ferrugo-thumbnail` facade traits as the PDFium backend:
+The Rust-native backend lives in `crates/ferrugo-native` and implements the
+`ferrugo-thumbnail` facade traits:
 
 - `ThumbnailBackend` for single-page RGBA thumbnail rendering.
 - `DocumentMetadataBackend` for page-count and page-size inspection.
 
-Callers can switch between `PdfiumBackend` and `NativeBackend` without changing
-the facade input or output types. The native backend returns raw RGBA thumbnail
-buffers through `Thumbnail::rgba`; CLI PNG encoding remains owned by
-`ferrugo`, matching the PDFium backend path.
+The native backend returns raw RGBA thumbnail buffers through
+`Thumbnail::rgba`; CLI PNG encoding remains owned by `ferrugo`.
 
 ## Supported Contract
 
@@ -654,11 +652,10 @@ Use `render-native` when scripts must make the native-only choice explicit.
 the normal render paths are already native-only. `--allow-pdfium-fallback` is
 rejected because runtime PDFium fallback has been removed.
 
-Use `render-pdfium`, `render-isolated`, `benchmark-pdfium`, or
-`compare-metadata` only in a CLI build compiled with `--features pdfium`.
 `visual-diff` uses an external PDFium renderer through `--pdfium` or
-`FERRUGO_PDFIUM_RENDERER`. All of these commands are maintainer comparison
-tooling, not runtime fallback paths.
+`FERRUGO_PDFIUM_RENDERER`. `benchmark-matrix --backend pdfium` uses the same
+external process contract. These commands are maintainer comparison tooling,
+not runtime fallback paths.
 
 Summarize a local corpus without rendering PDFium output:
 
@@ -703,12 +700,5 @@ cargo run -p ferrugo -- extract-corpus-metadata fixtures/generated \
   --output target/ferrugo-thumbnails/corpus-metadata.json
 ```
 
-Compare metadata with PDFium when the local PDFium environment is available:
-
-```sh
-cargo run -p ferrugo --features pdfium -- compare-metadata fixtures/generated/text-page.pdf \
-  --output target/ferrugo-thumbnails/text-page-metadata-comparison.json
-```
-
-The comparison JSON includes `rust_native_memory`, which records the default
-native memory budget snapshot used for the local run.
+Native metadata extraction includes the default native memory budget snapshot
+used for the local run.

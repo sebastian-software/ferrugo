@@ -13,7 +13,6 @@ name = "ferrugo"
 version = "0.3.1"
 dependencies = [
  "ferrugo-native",
- "ferrugo-pdfium",
  "ferrugo-thumbnail",
 ]
 
@@ -42,13 +41,6 @@ version = "0.3.1"
 dependencies = [
  "ferrugo-syntax",
  "flate2",
-]
-
-[[package]]
-name = "ferrugo-pdfium"
-version = "0.3.1"
-dependencies = [
- "ferrugo-thumbnail",
 ]
 
 [[package]]

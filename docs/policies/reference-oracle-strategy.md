@@ -12,27 +12,21 @@ normal runtime and release gates independent from PDFium.
 | --- | --- | --- |
 | Runtime rendering | No | User-facing rendering through the Rust-native backend. |
 | Release gate | No | Supported-family pass/fail checks for packaging, fallback, and budget regressions. |
-| Maintainer oracle | Yes, external process or explicit feature only | Local triage when a visual difference needs an external reference. |
+| Maintainer oracle | Yes, external process only | Local triage when a visual difference needs an external reference. |
 | Historical evidence | Yes, archived only | Previously recorded reports that explain why a gap or threshold exists. |
 | Manual review | No runtime dependency | Human decision for ambiguous or multi-oracle disagreements. |
 
 `benchmark-matrix --backend pdfium` and `visual-diff` use PDFium as an external
-process through `--pdfium PATH` or `FERRUGO_PDFIUM_RENDERER`. Legacy direct
-PDFium binding commands remain behind `--features pdfium` until that binding is
-removed. None of these oracle paths are release prerequisites for the supported
-runtime slice.
+process through `--pdfium PATH` or `FERRUGO_PDFIUM_RENDERER`. The workspace has
+no PDFium binding crate or `pdfium` Cargo feature. None of these oracle paths
+are release prerequisites for the supported runtime slice.
 
 ## 0215 Removal Decision
 
-Milestone 0215 keeps PDFium comparison tooling as maintainer-only infrastructure
-instead of deleting it. After issue 109, `benchmark-matrix` and `visual-diff`
-use PDFium as an external process oracle. The retained legacy binding tools are
-`ferrugo-pdfium`, `render-pdfium`, `render-isolated`, `compare-metadata`, and
-`benchmark-pdfium`. They remain outside supported runtime and release gates.
-
-Deletion is blocked until native-only golden comparison coverage, retention
-policy, CI golden samples, and multi-oracle records cover the same triage value.
-Active corpus expectations should describe native behavior, such as
+Issue 116 removed the legacy PDFium binding tools: `ferrugo-pdfium`,
+`render-pdfium`, `render-isolated`, `compare-metadata`, and
+`benchmark-pdfium`. Active corpus expectations should describe native behavior,
+such as
 `expected:native` or `expected:native-unsupported`, rather than a PDFium runtime
 fallback.
 
@@ -43,7 +37,7 @@ fallback.
 | Native supported gate | `summarize-fallbacks --fail-on-fallback` with no default features | Yes | Yes | A family is expected to render without typed fallback or render errors. |
 | Native budget gate | `benchmark-native` with memory/output/time budgets | Yes | Yes | Throughput or memory regressions could affect server-side rendering. |
 | Package/quarantine gate | `cargo package`, `check_plugin_free_distribution.sh`, `check_pdfium_quarantine.sh` | Yes | Yes | Verifying the default artifact has no PDFium runtime edge. |
-| Metadata baseline | `compare-metadata` or backend-neutral baseline JSON | Local or scheduled | No, unless a native-only equivalent exists | Page count and page geometry need oracle confirmation. |
+| Metadata baseline | Backend-neutral baseline JSON or `extract-corpus-metadata` | Local or scheduled | No, unless promoted to a native-only gate | Page count and page geometry need confirmation. |
 | Pixel visual diff | `visual-diff` with an explicit maintainer oracle | Local or scheduled | No | A renderer subsystem needs triage against external output. |
 | Golden image comparison | Future committed baseline compare command | Yes after tooling lands | Yes for bounded fixture sets | A reviewed fixture has stable expected output independent from live PDFium. |
 | Multi-oracle review | `benchmark-matrix` with PDFium, Poppler, Ghostscript, MuPDF, or PDF.js evidence | Local or scheduled | No | Engines disagree or PDF semantics are underspecified for the fixture. |

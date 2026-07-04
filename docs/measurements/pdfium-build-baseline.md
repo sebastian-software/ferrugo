@@ -3,6 +3,11 @@
 Status: measured locally.
 Date: 2026-06-24.
 
+Archive note: this report is retained as historical PDFium build evidence. The
+in-process `ferrugo-pdfium` binding crate and `pdfium` Cargo feature were
+removed on 2026-07-04 by issue #116; current comparison workflows use an
+external PDFium renderer process through `benchmark-matrix` and `visual-diff`.
+
 This report records the Phase 0 PDFium source-build and thumbnail-render
 baseline for the pinned checkout.
 

@@ -226,21 +226,6 @@ cargo run -p ferrugo -- benchmark-native fixtures/generated \
   --output target/benchmark-native-smoke.json
 ```
 
-Run the legacy in-process PDFium baseline with the same budgets. This command
-uses the optional Rust binding and is not the `benchmark-matrix` PDFium oracle:
-
-```sh
-FERRUGO_PDFIUM_LIBRARY=/path/to/pdfium/out/ferrugo-dylib/libpdfium.dylib \
-DYLD_LIBRARY_PATH=/path/to/pdfium/out/ferrugo-dylib \
-cargo run -p ferrugo --features pdfium -- benchmark-pdfium fixtures/generated \
-  --manifest fixtures/corpus-manifest.tsv \
-  --max-edge 160 \
-  --iterations 1 \
-  --max-ms 1000 \
-  --max-output-bytes 1048576 \
-  --output target/benchmark-pdfium-smoke.json
-```
-
 For a deeper local pass, increase both raster size and iterations:
 
 ```sh
@@ -257,7 +242,7 @@ cargo run -p ferrugo -- benchmark-native fixtures/generated \
 
 Each report includes:
 
-- `backend`: `rust-native` or `pdfium`.
+- `backend`: `rust-native`.
 - `platform`: target `os`, `arch`, `family`, `endian`, and
   `pointer_width_bits`.
 - `config`: iteration count, render-time budget, and output-byte budget.
@@ -267,8 +252,9 @@ Each report includes:
 - `fixtures`: per-file outcome and budget violations.
 
 The field name `native_rendered` means "rendered by the selected benchmark
-backend" in the generic report schema. For PDFium reports, it indicates PDFium
-successes.
+backend" in the generic report schema. Historical PDFium reports used the same
+field name for PDFium successes, but new PDFium comparison work should use
+`benchmark-matrix`.
 
 ## Budget Policy
 
@@ -292,9 +278,9 @@ Budget violations are typed:
   PDFium fallback.
 - `render_error`: the selected backend returned a non-fallback render error.
 
-The legacy `benchmark-native` and `benchmark-pdfium` reports deliberately do
-not report operating-system peak RSS. Memory expectations remain enforced
-through deterministic renderer budgets documented in
+The legacy `benchmark-native` report deliberately does not report
+operating-system peak RSS. Memory expectations remain enforced through
+deterministic renderer budgets documented in
 `docs/policies/renderer-memory-budgets.md`; legacy benchmark output bytes are
 only a lightweight allocation proxy. Use `benchmark-matrix` for cross-renderer
 RSS fields.

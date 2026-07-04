@@ -16,7 +16,6 @@ packages=(
   ferrugo-simd
   ferrugo-render
   ferrugo-native
-  ferrugo-pdfium
   ferrugo
 )
 
@@ -77,5 +76,4 @@ publish_with_retry ferrugo-content 5 30
 publish_with_retry ferrugo-simd 5 30
 publish_with_retry ferrugo-render 5 30
 publish_with_retry ferrugo-native 5 30
-publish_with_retry ferrugo-pdfium 5 30
 publish_with_retry ferrugo 5 30

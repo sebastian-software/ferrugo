@@ -44,8 +44,9 @@ success as a rendering prerequisite.
 - Text extraction, text search, OCR generation, or OCR confidence metadata.
   Invisible OCR text is a visual-rendering concern until a dedicated native text
   extraction API exists.
-- PDFium parity for extended metadata fields; PDFium remains a page
-  count/size oracle in `compare-metadata`.
+- PDFium parity for extended metadata fields; the in-process PDFium metadata
+  oracle has been removed, so parity decisions need reviewed baseline records
+  or a future external oracle.
 
 ## Bounds
 

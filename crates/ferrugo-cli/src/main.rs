@@ -20,10 +20,6 @@ use ferrugo_native::{
     ScannedPageFastPathSummary, StrokeRasterRouteSummary, StrokeShapeSummary,
     Type3CharProcTemplateCacheSummary, DEFAULT_CURVE_FLATTENING_TOLERANCE,
 };
-#[cfg(feature = "pdfium")]
-use ferrugo_pdfium::PdfiumBackend;
-#[cfg(any(feature = "pdfium", test))]
-use ferrugo_thumbnail::PageSize;
 use ferrugo_thumbnail::{
     AnnotationMode, DocumentMetadata, DocumentMetadataBackend, PdfSource, Rgba, ThumbnailBackend,
     ThumbnailError, ThumbnailOptions, DEFAULT_MAX_EDGE, DEFAULT_PAGE_INDEX, DEFAULT_TIMEOUT,
@@ -35,13 +31,8 @@ const LOW_AMPLITUDE_VISUAL_DRIFT_P95_MAX_DELTA: u8 = 4;
 const LOW_P95_EDGE_DRIFT_MAX_MAE: f64 = 3.5;
 const LOW_P95_EDGE_DRIFT_MAX_DELTA: u8 = 5;
 const LOW_P95_EDGE_DRIFT_MAX_CHANGED_RATIO: f64 = 0.5;
-#[cfg(not(feature = "pdfium"))]
-const PDFIUM_FEATURE_MESSAGE: &str =
-    "PDFium support is disabled; rebuild ferrugo with --features pdfium";
 const PDFIUM_RUNTIME_FALLBACK_REMOVED_MESSAGE: &str =
-    "PDFium runtime fallback has been removed from render/render-auto; use render-pdfium or maintainer comparison commands with --features pdfium";
-#[cfg(feature = "pdfium")]
-const PDFIUM_RENDER_WORKER_ENV: &str = "FERRUGO_PDFIUM_RENDER_WORKER";
+    "PDFium runtime fallback has been removed from render/render-auto; use external oracle commands for comparison";
 const DEFAULT_TRACE_MAX_EVENTS: usize = 256;
 const TRACE_MAX_EVENTS_LIMIT: usize = 4096;
 const GOLDEN_HASH_ALGORITHM: &str = "fnv1a64";
@@ -64,11 +55,7 @@ fn run(args: Vec<OsString>) -> Result<(), CliError> {
     let command = args.first().and_then(|arg| arg.to_str());
     match command {
         Some("render") | Some("render-auto") => render_auto_command(&args[1..]),
-        Some("render-pdfium") => render_direct_command(&args[1..]),
-        Some("render-worker") => render_worker_command(&args[1..]),
         Some("render-native") => render_native_command(&args[1..]),
-        Some("render-isolated") => render_isolated_command(&args[1..]),
-        Some("compare-metadata") => compare_metadata_command(&args[1..]),
         Some("summarize-fallbacks") => summarize_fallbacks_command(&args[1..]),
         Some("operator-coverage") => operator_coverage_command(&args[1..]),
         Some("trace-native") => trace_native_command(&args[1..]),
@@ -81,7 +68,6 @@ fn run(args: Vec<OsString>) -> Result<(), CliError> {
         Some("benchmark-native") => benchmark_native_command(&args[1..]),
         Some("benchmark-batch-native") => benchmark_batch_native_command(&args[1..]),
         Some("benchmark-repeat-native") => benchmark_repeat_native_command(&args[1..]),
-        Some("benchmark-pdfium") => benchmark_pdfium_command(&args[1..]),
         Some("benchmark-matrix") => benchmark_matrix_command(&args[1..]),
         Some("visual-diff") => visual_diff_command(&args[1..]),
         Some("visual-diff-poppler") => visual_diff_poppler_command(&args[1..]),
@@ -95,62 +81,6 @@ fn run(args: Vec<OsString>) -> Result<(), CliError> {
         }
         Some(other) => Err(CliError::Usage(format!("unknown command `{other}`"))),
     }
-}
-
-fn render_direct_command(args: &[OsString]) -> Result<(), CliError> {
-    #[cfg(not(feature = "pdfium"))]
-    {
-        let _ = args;
-        Err(pdfium_feature_disabled())
-    }
-
-    #[cfg(feature = "pdfium")]
-    {
-        render_direct_command_pdfium(args)
-    }
-}
-
-fn render_worker_command(args: &[OsString]) -> Result<(), CliError> {
-    #[cfg(not(feature = "pdfium"))]
-    {
-        let _ = args;
-        Err(pdfium_feature_disabled())
-    }
-
-    #[cfg(feature = "pdfium")]
-    {
-        if env::var_os(PDFIUM_RENDER_WORKER_ENV).is_none() {
-            return Err(CliError::Usage(
-                "render-worker is private maintainer tooling; use render-isolated".to_string(),
-            ));
-        }
-        render_direct_command_pdfium(args)
-    }
-}
-
-#[cfg(feature = "pdfium")]
-fn render_direct_command_pdfium(args: &[OsString]) -> Result<(), CliError> {
-    let config = RenderConfig::parse(args)?;
-    render_direct(config)
-}
-
-#[cfg(feature = "pdfium")]
-fn render_direct(config: RenderConfig) -> Result<(), CliError> {
-    let backend = PdfiumBackend::from_env().map_err(|err| CliError::Backend(err.to_string()))?;
-    let options = thumbnail_options(&config);
-    let source = PdfSource::from_path(&config.input);
-    let thumbnail = backend
-        .render(source, &options)
-        .map_err(|err| CliError::Render {
-            class: err.class().as_str(),
-            message: err.to_string(),
-        })?;
-    let png = encode_rgba_png(&thumbnail)?;
-    fs::write(&config.output, png).map_err(|source| CliError::Io {
-        path: config.output,
-        source,
-    })?;
-    Ok(())
 }
 
 fn render_auto_command(args: &[OsString]) -> Result<(), CliError> {
@@ -277,67 +207,6 @@ fn parse_annotation_mode(value: &str) -> Result<AnnotationMode, CliError> {
         _ => Err(CliError::Usage(format!(
             "invalid --annotation-mode `{value}`; expected screen or print"
         ))),
-    }
-}
-
-fn render_isolated_command(args: &[OsString]) -> Result<(), CliError> {
-    #[cfg(not(feature = "pdfium"))]
-    {
-        let _ = args;
-        Err(pdfium_feature_disabled())
-    }
-
-    #[cfg(feature = "pdfium")]
-    {
-        render_isolated_command_pdfium(args)
-    }
-}
-
-#[cfg(feature = "pdfium")]
-fn render_isolated_command_pdfium(args: &[OsString]) -> Result<(), CliError> {
-    let config = RenderConfig::parse(args)?;
-    render_isolated(config)
-}
-
-fn compare_metadata_command(args: &[OsString]) -> Result<(), CliError> {
-    #[cfg(not(feature = "pdfium"))]
-    {
-        let _ = args;
-        Err(pdfium_feature_disabled())
-    }
-
-    #[cfg(feature = "pdfium")]
-    {
-        compare_metadata_command_pdfium(args)
-    }
-}
-
-#[cfg(feature = "pdfium")]
-fn compare_metadata_command_pdfium(args: &[OsString]) -> Result<(), CliError> {
-    let config = CompareMetadataConfig::parse(args)?;
-    let pdfium = PdfiumBackend::from_env().map_err(|err| CliError::Backend(err.to_string()))?;
-    let native = NativeBackend::new();
-    let pdfium_result = pdfium.inspect(PdfSource::from_path(&config.input));
-    let native_result = native.inspect(PdfSource::from_path(&config.input));
-    let comparison = compare_metadata_results(
-        MetadataOutcome::from_result(pdfium_result),
-        MetadataOutcome::from_result(native_result),
-    );
-    let json = comparison_json(&config.input, &comparison);
-
-    if let Some(output) = config.output {
-        fs::write(&output, &json).map_err(|source| CliError::Io {
-            path: output,
-            source,
-        })?;
-    } else {
-        println!("{json}");
-    }
-
-    if comparison.matches {
-        Ok(())
-    } else {
-        Err(CliError::Compare(comparison.mismatches.join("; ")))
     }
 }
 
@@ -696,54 +565,6 @@ fn benchmark_repeat_native_command(args: &[OsString]) -> Result<(), CliError> {
     } else {
         Ok(())
     }
-}
-
-fn benchmark_pdfium_command(args: &[OsString]) -> Result<(), CliError> {
-    #[cfg(not(feature = "pdfium"))]
-    {
-        let _ = args;
-        Err(pdfium_feature_disabled())
-    }
-
-    #[cfg(feature = "pdfium")]
-    {
-        benchmark_pdfium_command_enabled(args)
-    }
-}
-
-#[cfg(feature = "pdfium")]
-fn benchmark_pdfium_command_enabled(args: &[OsString]) -> Result<(), CliError> {
-    let config = BenchmarkConfig::parse(args)?;
-    let options = ThumbnailOptions {
-        page_index: config.page_index,
-        max_edge: config.max_edge,
-        background: config.background,
-        output_format: ferrugo_thumbnail::OutputFormat::Rgba,
-        timeout: config.timeout,
-        annotation_mode: AnnotationMode::Screen,
-        form_appearance_mode: ferrugo_thumbnail::FormAppearanceMode::DocumentState,
-    };
-    let fixtures = pdf_inputs(&config.input)?;
-    let manifest = match &config.manifest {
-        Some(path) => Some(read_corpus_manifest(path)?),
-        None => None,
-    };
-    let fixtures =
-        filter_fixtures_by_family(&fixtures, manifest.as_ref(), &config.include_families)?;
-    let pdfium = PdfiumBackend::from_env().map_err(|err| CliError::Backend(err.to_string()))?;
-    let report = benchmark_backend(
-        &pdfium,
-        BenchmarkBackendPolicy {
-            name: "pdfium",
-            unsupported_is_fallback: false,
-        },
-        &fixtures,
-        &options,
-        manifest.as_ref(),
-        &config,
-        |_, _, _| NativeBenchmarkDiagnostics::default(),
-    );
-    write_benchmark_report(config, report)
 }
 
 fn benchmark_matrix_command(args: &[OsString]) -> Result<(), CliError> {
@@ -1540,11 +1361,6 @@ fn visual_diff_poppler_command(args: &[OsString]) -> Result<(), CliError> {
     Ok(())
 }
 
-#[cfg(not(feature = "pdfium"))]
-fn pdfium_feature_disabled() -> CliError {
-    CliError::Usage(PDFIUM_FEATURE_MESSAGE.to_string())
-}
-
 fn write_benchmark_report(
     config: BenchmarkConfig,
     report: BenchmarkReport,
@@ -1568,155 +1384,6 @@ fn write_benchmark_report(
     } else {
         Ok(())
     }
-}
-
-#[cfg(feature = "pdfium")]
-fn render_isolated(config: RenderConfig) -> Result<(), CliError> {
-    let executable = env::current_exe().map_err(|source| {
-        CliError::Process(format!("failed to locate current executable: {source}"))
-    })?;
-    let temp_output = temporary_output_path(&config.output);
-    let _ = fs::remove_file(&temp_output);
-
-    let mut child = Command::new(executable)
-        .arg("render-worker")
-        .args(worker_args(&config, &temp_output))
-        .env(PDFIUM_RENDER_WORKER_ENV, "1")
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|source| CliError::Process(format!("failed to spawn render worker: {source}")))?;
-
-    match wait_for_worker(&mut child, config.timeout) {
-        Ok(()) => {
-            fs::rename(&temp_output, &config.output).map_err(|source| CliError::Io {
-                path: config.output,
-                source,
-            })?;
-            Ok(())
-        }
-        Err(error) => {
-            let _ = fs::remove_file(&temp_output);
-            Err(error)
-        }
-    }
-}
-
-#[cfg(feature = "pdfium")]
-fn worker_args(config: &RenderConfig, output: &Path) -> Vec<OsString> {
-    vec![
-        config.input.as_os_str().to_owned(),
-        OsString::from("--output"),
-        output.as_os_str().to_owned(),
-        OsString::from("--page-index"),
-        OsString::from(config.page_index.to_string()),
-        OsString::from("--max-edge"),
-        OsString::from(config.max_edge.to_string()),
-        OsString::from("--background"),
-        OsString::from(format_background(config.background)),
-        OsString::from("--timeout"),
-        OsString::from(config.timeout.as_secs().to_string()),
-    ]
-}
-
-#[cfg(feature = "pdfium")]
-fn wait_for_worker(child: &mut Child, timeout: Duration) -> Result<(), CliError> {
-    if timeout.is_zero() {
-        terminate_worker(child);
-        return Err(timeout_error());
-    }
-
-    let deadline = Instant::now()
-        .checked_add(timeout)
-        .ok_or_else(|| CliError::Process("timeout deadline overflow".to_string()))?;
-
-    loop {
-        if let Some(status) = child.try_wait().map_err(|source| {
-            CliError::Process(format!("failed to poll render worker: {source}"))
-        })? {
-            let stderr = read_worker_stderr(child);
-            return if status.success() {
-                Ok(())
-            } else {
-                Err(worker_failure(stderr, status.to_string()))
-            };
-        }
-
-        let now = Instant::now();
-        if now >= deadline {
-            terminate_worker(child);
-            return Err(timeout_error());
-        }
-
-        thread::sleep((deadline - now).min(WORKER_POLL_INTERVAL));
-    }
-}
-
-#[cfg(feature = "pdfium")]
-fn terminate_worker(child: &mut Child) {
-    let _ = child.kill();
-    let _ = child.wait();
-    let _ = read_worker_stderr(child);
-}
-
-#[cfg(feature = "pdfium")]
-fn read_worker_stderr(child: &mut Child) -> String {
-    let mut stderr = String::new();
-    if let Some(mut pipe) = child.stderr.take() {
-        let _ = pipe.read_to_string(&mut stderr);
-    }
-    stderr.trim().to_string()
-}
-
-#[cfg(any(feature = "pdfium", test))]
-fn worker_failure(stderr: String, fallback: String) -> CliError {
-    parse_worker_render_error(&stderr).unwrap_or_else(|| {
-        let message = if stderr.is_empty() { fallback } else { stderr };
-        CliError::Render {
-            class: "internal",
-            message,
-        }
-    })
-}
-
-#[cfg(any(feature = "pdfium", test))]
-fn parse_worker_render_error(stderr: &str) -> Option<CliError> {
-    let rest = stderr.strip_prefix("render error [")?;
-    let (class, message) = rest.split_once("]: ")?;
-    Some(CliError::Render {
-        class: stable_error_class(class),
-        message: message.to_string(),
-    })
-}
-
-#[cfg(any(feature = "pdfium", test))]
-fn stable_error_class(class: &str) -> &'static str {
-    match class {
-        "encrypted" => "encrypted",
-        "malformed" => "malformed",
-        "unsupported" => "unsupported",
-        "timeout" => "timeout",
-        _ => "internal",
-    }
-}
-
-#[cfg(feature = "pdfium")]
-fn timeout_error() -> CliError {
-    CliError::Render {
-        class: ThumbnailError::Timeout.class().as_str(),
-        message: ThumbnailError::Timeout.to_string(),
-    }
-}
-
-#[cfg(any(feature = "pdfium", test))]
-fn temporary_output_path(output: &Path) -> PathBuf {
-    let parent = output.parent().unwrap_or_else(|| Path::new("."));
-    let file_name = output
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("thumbnail.png");
-    parent.join(format!(".{file_name}.{}.tmp", std::process::id()))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1814,13 +1481,6 @@ impl RenderConfig {
             annotation_mode,
         })
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(not(feature = "pdfium"), allow(dead_code))]
-struct CompareMetadataConfig {
-    input: PathBuf,
-    output: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -3441,43 +3101,6 @@ impl VisualDiffConfig {
     }
 }
 
-#[cfg(any(feature = "pdfium", test))]
-impl CompareMetadataConfig {
-    fn parse(args: &[OsString]) -> Result<Self, CliError> {
-        let mut input = None;
-        let mut output = None;
-
-        let mut index = 0;
-        while index < args.len() {
-            let arg = args[index]
-                .to_str()
-                .ok_or_else(|| CliError::Usage("arguments must be valid UTF-8".to_string()))?;
-            match arg {
-                "--output" | "-o" => {
-                    index += 1;
-                    output = Some(required_path(args, index, "--output")?);
-                }
-                value if value.starts_with('-') => {
-                    return Err(CliError::Usage(format!("unknown option `{value}`")));
-                }
-                value => {
-                    if input.replace(PathBuf::from(value)).is_some() {
-                        return Err(CliError::Usage(
-                            "only one input PDF is supported".to_string(),
-                        ));
-                    }
-                }
-            }
-            index += 1;
-        }
-
-        Ok(Self {
-            input: input.ok_or_else(|| CliError::Usage("missing input PDF".to_string()))?,
-            output,
-        })
-    }
-}
-
 #[derive(Debug, Clone, PartialEq)]
 enum MetadataOutcome {
     Success(Box<DocumentMetadata>),
@@ -3497,15 +3120,6 @@ impl MetadataOutcome {
             },
         }
     }
-}
-
-#[cfg_attr(not(feature = "pdfium"), allow(dead_code))]
-#[derive(Debug, Clone, PartialEq)]
-struct MetadataComparison {
-    matches: bool,
-    pdfium: MetadataOutcome,
-    native: MetadataOutcome,
-    mismatches: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -4718,68 +4332,6 @@ enum BenchmarkOutcome {
         message: String,
         mean_ms: f64,
     },
-}
-
-#[cfg(any(feature = "pdfium", test))]
-fn compare_metadata_results(
-    pdfium: MetadataOutcome,
-    native: MetadataOutcome,
-) -> MetadataComparison {
-    let mut mismatches = Vec::new();
-    match (&pdfium, &native) {
-        (MetadataOutcome::Success(expected), MetadataOutcome::Success(actual)) => {
-            if expected.page_count() != actual.page_count() {
-                mismatches.push(format!(
-                    "page_count expected {} from pdfium but rust-native returned {}",
-                    expected.page_count(),
-                    actual.page_count()
-                ));
-            }
-            let shared_pages = expected.pages.len().min(actual.pages.len());
-            for index in 0..shared_pages {
-                let expected_size = expected.pages[index].size;
-                let actual_size = actual.pages[index].size;
-                if !page_sizes_match(expected_size, actual_size) {
-                    mismatches.push(format!(
-                        "page {index} size expected {:.3}x{:.3} from pdfium but rust-native returned {:.3}x{:.3}",
-                        expected_size.width,
-                        expected_size.height,
-                        actual_size.width,
-                        actual_size.height
-                    ));
-                }
-            }
-        }
-        (
-            MetadataOutcome::Error {
-                class: expected, ..
-            },
-            MetadataOutcome::Error { class: actual, .. },
-        ) => {
-            if expected != actual {
-                mismatches.push(format!(
-                    "error_class expected {expected} from pdfium but rust-native returned {actual}"
-                ));
-            }
-        }
-        (MetadataOutcome::Success(_), MetadataOutcome::Error { class, message }) => {
-            mismatches.push(format!(
-                "pdfium inspected metadata but rust-native returned {class}: {message}"
-            ));
-        }
-        (MetadataOutcome::Error { class, message }, MetadataOutcome::Success(_)) => {
-            mismatches.push(format!(
-                "pdfium returned {class}: {message} but rust-native inspected metadata"
-            ));
-        }
-    }
-
-    MetadataComparison {
-        matches: mismatches.is_empty(),
-        pdfium,
-        native,
-        mismatches,
-    }
 }
 
 fn pdf_inputs(input: &Path) -> Result<Vec<PathBuf>, CliError> {
@@ -7288,7 +6840,6 @@ fn reference_visual_error(error: CliError) -> VisualDiffError {
         CliError::Process(_) => "process",
         CliError::Io { .. } | CliError::ReadFile { .. } | CliError::ReadDir { .. } => "io",
         CliError::Usage(_) => "usage",
-        CliError::Backend(_) => "backend",
         CliError::Compare(_) => "compare",
         CliError::Benchmark(_) => "benchmark",
         CliError::Encode(_) => "decode",
@@ -7311,7 +6862,7 @@ fn render_external_pdfium_ppm(
         });
     }
     let temp_dir = env::temp_dir().join(format!(
-        "ferrugo-pdfium-{}-{}",
+        "ferrugo-external-pdfium-{}-{}",
         std::process::id(),
         document_identity_hash(path)?
     ));
@@ -8575,19 +8126,9 @@ fn normalize_manifest_path(path: &Path) -> String {
         .unwrap_or(path)
 }
 
-#[cfg(any(feature = "pdfium", test))]
-fn page_sizes_match(expected: PageSize, actual: PageSize) -> bool {
-    const EPSILON: f64 = 0.01;
-    (expected.width - actual.width).abs() <= EPSILON
-        && (expected.height - actual.height).abs() <= EPSILON
-}
-
 #[derive(Debug)]
 enum CliError {
     Usage(String),
-    #[cfg_attr(not(feature = "pdfium"), allow(dead_code))]
-    Backend(String),
-    #[cfg_attr(not(feature = "pdfium"), allow(dead_code))]
     Process(String),
     Render {
         class: &'static str,
@@ -8614,7 +8155,6 @@ impl fmt::Display for CliError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Usage(message) => write!(f, "usage error: {message}"),
-            Self::Backend(message) => write!(f, "backend error: {message}"),
             Self::Process(message) => write!(f, "process error: {message}"),
             Self::Render { class, message } => write!(f, "render error [{class}]: {message}"),
             Self::Compare(message) => write!(f, "metadata comparison mismatch: {message}"),
@@ -8701,48 +8241,6 @@ fn parse_background(value: &str) -> Result<Rgba, CliError> {
             "--background must be #RRGGBB or #RRGGBBAA".to_string(),
         )),
     }
-}
-
-#[cfg(any(feature = "pdfium", test))]
-fn format_background(color: Rgba) -> String {
-    format!(
-        "#{:02x}{:02x}{:02x}{:02x}",
-        color.r, color.g, color.b, color.a
-    )
-}
-
-#[cfg(any(feature = "pdfium", test))]
-fn comparison_json(input: &Path, comparison: &MetadataComparison) -> String {
-    let status = if comparison.matches {
-        "match"
-    } else {
-        "mismatch"
-    };
-    format!(
-        concat!(
-            "{{\n",
-            "  \"schema_version\": 1,\n",
-            "  \"fixture\": {{\n",
-            "    \"path\": {}\n",
-            "  }},\n",
-            "  \"comparison\": {{\n",
-            "    \"oracle\": \"pdfium\",\n",
-            "    \"candidate\": \"rust-native\",\n",
-            "    \"status\": {},\n",
-            "    \"mismatches\": {}\n",
-            "  }},\n",
-            "  \"pdfium\": {},\n",
-            "  \"rust_native\": {},\n",
-            "  \"rust_native_memory\": {}\n",
-            "}}\n"
-        ),
-        json_string(&input.to_string_lossy()),
-        json_string(status),
-        json_string_array(&comparison.mismatches),
-        metadata_outcome_json(&comparison.pdfium),
-        metadata_outcome_json(&comparison.native),
-        native_memory_diagnostics_json(&NativeBackend::new().memory_diagnostics())
-    )
 }
 
 fn native_memory_diagnostics_json(diagnostics: &NativeMemoryDiagnostics) -> String {
@@ -12781,7 +12279,7 @@ fn crc32(bytes: impl IntoIterator<Item = u8>) -> u32 {
 
 fn print_usage() {
     println!(
-        "Usage: ferrugo <render|render-auto|render-native|render-pdfium|render-isolated|compare-metadata|summarize-fallbacks|operator-coverage|trace-native|replay-operators|extract-corpus-metadata|producer-regression-report|classify-pdf20-usage|validate-local-corpus|compare-golden|benchmark-native|benchmark-batch-native|benchmark-repeat-native|benchmark-pdfium|benchmark-matrix|visual-diff|visual-diff-poppler> <input.pdf> \
+        "Usage: ferrugo <render|render-auto|render-native|summarize-fallbacks|operator-coverage|trace-native|replay-operators|extract-corpus-metadata|producer-regression-report|classify-pdf20-usage|validate-local-corpus|compare-golden|benchmark-native|benchmark-batch-native|benchmark-repeat-native|benchmark-matrix|visual-diff|visual-diff-poppler> <input.pdf> \
          [--output PATH] [--page-index N] [--max-edge N] [--background #RRGGBB] \
          [--timeout SECONDS] [--iterations N] [--warmup N] [--max-cov N] [--repetitions N] [--pages-per-input N] [--max-events N] [--max-workers N] [--max-in-flight-pixels N] [--cancel-after-jobs N] [--max-ms N] [--max-p95-ms N] [--max-first-ms N] [--max-repeat-mean-ms N] [--max-output-bytes N] \
          [--backend native|pdfium|poppler|ghostscript] [--mode cold-process|hot-render] [--report PATH] [--artifact-dir PATH] [--pdfium PATH] [--pdftoppm PATH] [--ghostscript PATH] [--native-only] [--manifest PATH] [--include-family FAMILY] \
@@ -12791,7 +12289,7 @@ fn print_usage() {
 
 #[cfg(test)]
 mod tests {
-    use ferrugo_thumbnail::{PageMetadata, PixelFormat, Thumbnail};
+    use ferrugo_thumbnail::{PixelFormat, Thumbnail};
 
     use super::*;
 
@@ -12848,28 +12346,8 @@ mod tests {
         assert!(png.starts_with(b"\x89PNG\r\n\x1a\n"));
     }
 
-    #[cfg(not(feature = "pdfium"))]
-    #[test]
-    fn pdfium_commands_should_report_disabled_in_native_only_build() {
-        for command in [
-            "render-pdfium",
-            "render-isolated",
-            "compare-metadata",
-            "benchmark-pdfium",
-        ] {
-            let error = run(vec![OsString::from(command)])
-                .expect_err("PDFium command should be disabled without feature");
-
-            assert_eq!(
-                error.to_string(),
-                format!("usage error: {PDFIUM_FEATURE_MESSAGE}")
-            );
-        }
-    }
-
     #[test]
     fn render_auto_command_should_use_native_for_supported_fixture() {
-        env::remove_var("FERRUGO_PDFIUM_LIBRARY");
         let output =
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/auto-native-vector-test.png");
         let input =
@@ -12894,7 +12372,6 @@ mod tests {
 
     #[test]
     fn render_command_should_default_to_auto_mode() {
-        env::remove_var("FERRUGO_PDFIUM_LIBRARY");
         let output =
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/default-auto-vector-test.png");
         let input =
@@ -12919,7 +12396,6 @@ mod tests {
 
     #[test]
     fn render_auto_thumbnail_should_report_native_backend_choice() {
-        env::remove_var("FERRUGO_PDFIUM_LIBRARY");
         let input =
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/generated/vector-paths.pdf");
         let output = PathBuf::from("target/unused-auto-choice.png");
@@ -12940,7 +12416,6 @@ mod tests {
 
     #[test]
     fn render_auto_thumbnail_should_return_native_unsupported_without_pdfium_fallback() {
-        env::remove_var("FERRUGO_PDFIUM_LIBRARY");
         let input = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../fixtures/generated/optional-content-usage-application.pdf");
         let output = PathBuf::from("target/unused-default-fallback.png");
@@ -12978,20 +12453,6 @@ mod tests {
         assert_eq!(
             error.to_string(),
             format!("usage error: {PDFIUM_RUNTIME_FALLBACK_REMOVED_MESSAGE}")
-        );
-    }
-
-    #[cfg(feature = "pdfium")]
-    #[test]
-    fn render_worker_should_reject_direct_cli_invocation() {
-        env::remove_var(PDFIUM_RENDER_WORKER_ENV);
-
-        let error = run(vec![OsString::from("render-worker")])
-            .expect_err("render-worker should only be launched by render-isolated");
-
-        assert_eq!(
-            error.to_string(),
-            "usage error: render-worker is private maintainer tooling; use render-isolated"
         );
     }
 
@@ -14889,137 +14350,6 @@ status = "candidate"
     }
 
     #[test]
-    fn compare_metadata_config_should_accept_optional_output() {
-        let config = CompareMetadataConfig::parse(&[
-            OsString::from("fixtures/generated/text-page.pdf"),
-            OsString::from("--output"),
-            OsString::from("target/metadata.json"),
-        ])
-        .expect("valid config");
-
-        assert_eq!(
-            config.input,
-            PathBuf::from("fixtures/generated/text-page.pdf")
-        );
-        assert_eq!(config.output, Some(PathBuf::from("target/metadata.json")));
-    }
-
-    #[test]
-    fn metadata_comparison_should_match_equal_page_metadata() {
-        let metadata = DocumentMetadata::new(vec![PageMetadata {
-            index: 0,
-            size: PageSize {
-                width: 300.0,
-                height: 160.0,
-            },
-        }]);
-
-        let comparison = compare_metadata_results(
-            MetadataOutcome::Success(Box::new(metadata.clone())),
-            MetadataOutcome::Success(Box::new(metadata)),
-        );
-
-        assert!(comparison.matches);
-        assert!(comparison.mismatches.is_empty());
-    }
-
-    #[test]
-    fn metadata_comparison_should_report_page_size_mismatch() {
-        let pdfium = DocumentMetadata::new(vec![PageMetadata {
-            index: 0,
-            size: PageSize {
-                width: 300.0,
-                height: 160.0,
-            },
-        }]);
-        let native = DocumentMetadata::new(vec![PageMetadata {
-            index: 0,
-            size: PageSize {
-                width: 301.0,
-                height: 160.0,
-            },
-        }]);
-
-        let comparison = compare_metadata_results(
-            MetadataOutcome::Success(Box::new(pdfium)),
-            MetadataOutcome::Success(Box::new(native)),
-        );
-
-        assert!(!comparison.matches);
-        assert_eq!(comparison.mismatches.len(), 1);
-        assert!(comparison.mismatches[0].contains("page 0 size expected"));
-    }
-
-    #[test]
-    fn metadata_comparison_should_match_equal_error_classes() {
-        let comparison = compare_metadata_results(
-            MetadataOutcome::Error {
-                class: "malformed",
-                message: "PDF is malformed".to_string(),
-            },
-            MetadataOutcome::Error {
-                class: "malformed",
-                message: "different backend text".to_string(),
-            },
-        );
-
-        assert!(comparison.matches);
-    }
-
-    #[test]
-    fn comparison_json_should_include_match_status() {
-        let mut metadata = DocumentMetadata::new(vec![PageMetadata {
-            index: 0,
-            size: PageSize {
-                width: 300.0,
-                height: 160.0,
-            },
-        }]);
-        metadata.info.title = Some("Metadata Fixture".to_string());
-        metadata.structure.has_xmp_metadata = true;
-        metadata.outlines = ferrugo_thumbnail::OutlineMetadata {
-            has_outlines: true,
-            item_count: 2,
-            truncated: false,
-        };
-        metadata
-            .page_labels
-            .labels
-            .push(ferrugo_thumbnail::PageLabel {
-                page_index: 0,
-                label: "A-1".to_string(),
-            });
-        let comparison = compare_metadata_results(
-            MetadataOutcome::Success(Box::new(metadata.clone())),
-            MetadataOutcome::Success(Box::new(metadata)),
-        );
-
-        let json = comparison_json(Path::new("fixtures/generated/text-page.pdf"), &comparison);
-
-        assert!(json.contains("\"status\": \"match\""));
-        assert!(json.contains("\"page_count\":1"));
-        assert!(json.contains("\"title\":\"Metadata Fixture\""));
-        assert!(json.contains("\"has_xmp_metadata\":true"));
-        assert!(json.contains("\"item_count\":2"));
-        assert!(json.contains("\"label\":\"A-1\""));
-        assert!(json.contains("\"optional_content\""));
-        assert!(json.contains("\"has_oc_properties\":false"));
-        assert!(json.contains("\"rust_native_memory\""));
-        assert!(json.contains("\"max_page_pixels\":16777216"));
-        assert!(json.contains("\"max_raster_band_rows\":64"));
-        assert!(json.contains("\"min_raster_band_pixels\":160000"));
-        assert!(json.contains("\"max_total_image_bytes\":134217728"));
-        assert!(json.contains("\"max_session_image_resource_entries\":16"));
-        assert!(json.contains("\"max_session_font_resource_entries\":16"));
-        assert!(json.contains("\"max_session_font_resource_bytes\":67108864"));
-        assert!(json.contains("\"max_session_type3_template_entries\":512"));
-        assert!(json.contains("\"max_session_type3_template_bytes\":1048576"));
-        assert!(json.contains("\"max_session_type3_render_entries\":128"));
-        assert!(json.contains("\"max_session_type3_render_bytes\":1048576"));
-        assert!(json.contains("\"spooling_enabled\":false"));
-    }
-
-    #[test]
     fn parse_background_should_accept_rgb() {
         let color = parse_background("#102030").expect("valid color");
 
@@ -15031,45 +14361,6 @@ status = "candidate"
                 b: 0x30,
                 a: 0xff,
             }
-        );
-    }
-
-    #[test]
-    fn format_background_should_emit_rgba_hex() {
-        let color = Rgba {
-            r: 0x10,
-            g: 0x20,
-            b: 0x30,
-            a: 0x40,
-        };
-
-        assert_eq!(format_background(color), "#10203040");
-    }
-
-    #[test]
-    fn temporary_output_path_should_stay_next_to_target() {
-        let output = Path::new("target/ferrugo-thumbnails/text-page.png");
-
-        let temporary = temporary_output_path(output);
-
-        assert_eq!(temporary.parent(), output.parent());
-        assert!(temporary
-            .file_name()
-            .and_then(|name| name.to_str())
-            .expect("file name")
-            .starts_with(".text-page.png."));
-    }
-
-    #[test]
-    fn worker_failure_should_preserve_render_error_class() {
-        let error = worker_failure(
-            "render error [malformed]: PDF is malformed".to_string(),
-            "fallback".to_string(),
-        );
-
-        assert_eq!(
-            error.to_string(),
-            "render error [malformed]: PDF is malformed"
         );
     }
 

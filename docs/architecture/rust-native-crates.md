@@ -86,15 +86,12 @@ the trailer `/Root`, catalog `/Pages`, page tree `Kids`, inherited page boxes,
 and inherited resource references into `PageTree` and `PageMetadata` values.
 Content streams and rendering remain separate layers.
 
-`ferrugo-thumbnail` now also owns the backend-neutral `DocumentMetadataBackend`
-contract used by the differential harness. `ferrugo-pdfium` implements it by
-loading a document through PDFium and reading page count plus page sizes.
-`ferrugo-native` implements it through the Rust object model and page tree
-without rendering pixels. It also exposes common classic-document inspection
-signals for document info fields, XMP presence, outlines, page labels, named
-destinations, and tagged-PDF presence. The CLI `compare-metadata` command
-records the PDFium oracle and Rust-native candidate results in the baseline
-format; `extract-corpus-metadata` serializes the extended native metadata for
+`ferrugo-thumbnail` owns the backend-neutral `DocumentMetadataBackend`
+contract. `ferrugo-native` implements it through the Rust object model and page
+tree without rendering pixels. It also exposes common classic-document
+inspection signals for document info fields, XMP presence, outlines, page
+labels, named destinations, and tagged-PDF presence. The CLI
+`extract-corpus-metadata` command serializes the extended native metadata for
 corpus work.
 
 `ferrugo-content` starts with a borrowed content-stream tokenizer. It reuses

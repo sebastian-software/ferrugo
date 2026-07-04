@@ -15,7 +15,7 @@ reviewed as explicit SemVer decisions instead of accidental renderer churn.
 | `ferrugo-native::NativeBackend` | Stable native entry point | Keep construction, render limits, diagnostics, preview APIs, and trait impls public. |
 | `ThumbnailErrorClass::as_str()` | Stable strings | Preserve class strings for logs and baseline metadata. |
 | `ThumbnailError::UnsupportedFeature` buckets | Stable diagnostic boundary | Keep bucket constants and `STABLE_UNSUPPORTED_FEATURE_BUCKETS` as the 1.0 diagnostic strings. |
-| `ferrugo-pdfium` | Maintainer-only oracle | Keep optional and outside normal runtime SemVer expectations. |
+| PDFium external oracle wiring | Maintainer-only oracle | Keep outside normal runtime SemVer expectations. |
 | Low-level renderer crates | Internal implementation surface | Avoid recommending direct application use before a separate API design is accepted. |
 
 ## Cleanup Candidates

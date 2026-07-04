@@ -108,12 +108,10 @@ The workspace is split into small crates so each layer can be tested on its own.
 | `ferrugo-content` | Content stream tokenization and operator handling. |
 | `ferrugo-render` | Display-list and raster rendering pieces. |
 | `ferrugo` | Local CLI for rendering, corpus analysis, benchmarks, and reports. |
-| `ferrugo-pdfium` | Optional PDFium backend for maintainer comparison workflows. |
 | `ferrugo-wasm-smoke` | Small WASM smoke crate for secondary compatibility checks. |
 
-The public boundary is the thumbnail facade and native backend. PDFium handles,
-fallback state, and comparison-only commands are not part of the normal runtime
-API.
+The public boundary is the thumbnail facade and native backend. PDFium handles
+and fallback state are not part of the runtime API.
 
 ## Performance snapshot
 
@@ -160,25 +158,10 @@ drift?", not "what should the runtime depend on?"
 
 `benchmark-matrix --backend pdfium` and `visual-diff` use an external PDFium
 renderer configured with `FERRUGO_PDFIUM_RENDERER` or `--pdfium`; they do not
-require the `pdfium` Cargo feature.
-
-To build and run legacy direct PDFium binding commands, enable the feature
-explicitly:
-
-```sh
-cargo build -p ferrugo --features pdfium
-cargo test -p ferrugo --features pdfium
-```
-
-Then point the CLI at a local PDFium dynamic library:
-
-```sh
-export FERRUGO_PDFIUM_LIBRARY="/path/to/libpdfium.dylib"
-export DYLD_LIBRARY_PATH="/path/to/pdfium/lib"
-```
+require or use a Rust PDFium binding.
 
 See [PDFium checkout recipe](docs/build/pdfium-checkout.md) for the local
-source-build path used by maintainers.
+source-build and renderer-adapter path used by maintainers.
 
 ## Safety and resource limits
 

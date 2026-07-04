@@ -14,7 +14,6 @@ packages=(
   ferrugo-simd
   ferrugo-render
   ferrugo-native
-  ferrugo-pdfium
   ferrugo
 )
 

@@ -134,11 +134,9 @@ page count mismatch or a specific `page N size` mismatch. Error comparisons use
 The `rust_native_memory` block records the default Rust-native budget snapshot
 used to interpret local comparison results.
 
-Run a local metadata comparison with:
+Record current native metadata with:
 
 ```sh
-FERRUGO_PDFIUM_LIBRARY=/path/to/libpdfium.dylib \
-DYLD_LIBRARY_PATH=/path/to/pdfium/out \
-cargo run -p ferrugo -- compare-metadata fixtures/generated/text-page.pdf \
-  --output target/ferrugo-thumbnails/text-page-metadata-comparison.json
+cargo run -p ferrugo -- extract-corpus-metadata fixtures/generated/text-page.pdf \
+  --output target/ferrugo-thumbnails/text-page-metadata.json
 ```
