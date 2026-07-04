@@ -6,6 +6,9 @@ material.
 
 ## Start here
 
+- [Ferrugo 1.0 user guide](guides/1-0-user-guide.md): install, CLI rendering,
+  Rust API examples, typed errors, troubleshooting, and maintainer-only
+  comparison workflows.
 - [Project README](../README.md): product scope, quick start, and the main
   architectural split.
 - [Rust-native backend](backend/native.md): what the native renderer supports,
@@ -25,6 +28,7 @@ material.
 
 Read:
 
+- [Ferrugo 1.0 user guide](guides/1-0-user-guide.md)
 - [Project README](../README.md#quick-start)
 - [Packaging](packaging.md#native-only-build)
 - [Rust-native backend](backend/native.md#supported-contract)
@@ -113,7 +117,7 @@ a blanket PDF compatibility claim.
 | `backlogs/` | Active follow-up work split out from reports, gates, and ADRs. |
 | `concepts/` | Earlier design sketches and API concepts. |
 | `decisions/` | Architecture decisions that should stay stable. |
-| `guides/` | User-facing migration and workflow guides. |
+| `guides/` | User-facing installation, rendering, migration, and workflow guides. |
 | `policies/` | Compatibility, licensing, attribution, API, and support policy. |
 | `reports/` | Evidence from gates, benchmarks, corpus sweeps, and release checks. |
 | `research/` | Landscape and comparison research. |
@@ -121,10 +125,11 @@ a blanket PDF compatibility claim.
 ## Reading order for maintainers
 
 1. [Project README](../README.md)
-2. [PDFium-free 1.4 readiness](reports/pdfium-free-1-4-readiness-2026-06-29.md)
-3. [Rust-native backend](backend/native.md)
-4. [Packaging](packaging.md)
-5. [Native renderer conformance backlog](backlogs/native-renderer-conformance-backlog.md)
-6. The report or policy for the subsystem you are changing
+2. [Ferrugo 1.0 user guide](guides/1-0-user-guide.md)
+3. [PDFium-free 1.4 readiness](reports/pdfium-free-1-4-readiness-2026-06-29.md)
+4. [Rust-native backend](backend/native.md)
+5. [Packaging](packaging.md)
+6. [Native renderer conformance backlog](backlogs/native-renderer-conformance-backlog.md)
+7. The report or policy for the subsystem you are changing
 
 That order gives you the current state before the older planning context.

@@ -52,6 +52,9 @@ Not a good fit yet:
 
 ## Quick start
 
+For the direct 1.0 consumer path, start with the
+[Ferrugo 1.0 user guide](docs/guides/1-0-user-guide.md).
+
 Requirements:
 
 - Rust 1.81 or newer.
@@ -218,6 +221,8 @@ PNG output under `target/` so normal runs do not dirty the repository.
 
 Start here:
 
+- [Ferrugo 1.0 user guide](docs/guides/1-0-user-guide.md) for install, CLI,
+  Rust API, error handling, and troubleshooting examples.
 - [Documentation guide](docs/README.md) for a reader-friendly map of the docs.
 - [Rust-native backend](docs/backend/native.md) for the current renderer
   contract and limits.
