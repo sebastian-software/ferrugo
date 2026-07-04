@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.3.1](https://github.com/sebastian-software/ferrugo/compare/ferrugo-v0.3.0...ferrugo-v0.3.1) (2026-07-04)
+
+
+### Performance Improvements
+
+* **native:** stream band rows into PNG output ([d60f4ce](https://github.com/sebastian-software/ferrugo/commit/d60f4cea1f494001d91a643be77d3b8a0ba10fc9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * ferrugo-native bumped from 0.3.0 to 0.3.1
+    * ferrugo-pdfium bumped from 0.3.0 to 0.3.1
+    * ferrugo-thumbnail bumped from 0.3.0 to 0.3.1
+
 ## [0.3.0](https://github.com/sebastian-software/ferrugo/compare/ferrugo-v0.2.0...ferrugo-v0.3.0) (2026-07-04)
 
 
