@@ -1674,6 +1674,10 @@ pub struct FillRasterRouteSummary {
     pub coverage_partial_span_runs: usize,
     /// Partial-coverage edge pixels emitted through coverage span runs.
     pub coverage_partial_span_pixels: usize,
+    /// Coverage-alpha span pixels handled by an architecture SIMD row kernel.
+    pub coverage_simd_row_kernel_pixels: usize,
+    /// Coverage-alpha span pixels handled by scalar row kernels.
+    pub coverage_scalar_row_kernel_pixels: usize,
     /// Edge pixels written from analytic 0-255 cell coverage.
     pub coverage_analytic_edge_pixels: usize,
     /// Edge pixels evaluated by the signed-area scanline cell accumulator.
@@ -1716,6 +1720,12 @@ impl FillRasterRouteSummary {
         self.coverage_partial_span_pixels = self
             .coverage_partial_span_pixels
             .saturating_add(stats.partial_span_pixels);
+        self.coverage_simd_row_kernel_pixels = self
+            .coverage_simd_row_kernel_pixels
+            .saturating_add(stats.simd_row_kernel_pixels);
+        self.coverage_scalar_row_kernel_pixels = self
+            .coverage_scalar_row_kernel_pixels
+            .saturating_add(stats.scalar_row_kernel_pixels);
         self.coverage_analytic_edge_pixels = self
             .coverage_analytic_edge_pixels
             .saturating_add(stats.analytic_edge_pixels);
@@ -1936,6 +1946,8 @@ struct FillCoverageSpanStats {
     blend_mode_row_pixels: usize,
     partial_span_runs: usize,
     partial_span_pixels: usize,
+    simd_row_kernel_pixels: usize,
+    scalar_row_kernel_pixels: usize,
     analytic_edge_pixels: usize,
     cell_accumulator_pixels: usize,
     cell_partial_alpha_levels: [u64; 4],
@@ -1955,6 +1967,14 @@ impl FillCoverageSpanStats {
         }
         self.partial_span_runs = self.partial_span_runs.saturating_add(1);
         self.partial_span_pixels = self.partial_span_pixels.saturating_add(partial_pixels);
+    }
+
+    fn record_row_kernel(&mut self, backend: ferrugo_simd::RowKernelBackend, pixels: usize) {
+        if backend.is_simd() {
+            self.simd_row_kernel_pixels = self.simd_row_kernel_pixels.saturating_add(pixels);
+        } else {
+            self.scalar_row_kernel_pixels = self.scalar_row_kernel_pixels.saturating_add(pixels);
+        }
     }
 
     fn record_cell_accumulator_coverage(&mut self, coverage: &[u8]) {
@@ -13532,10 +13552,10 @@ impl CoverageDrawBlitter {
         y: u32,
         min_x: u32,
         coverage_alphas: &[u8],
-    ) -> RasterResult<()> {
+    ) -> RasterResult<ferrugo_simd::RowKernelBackend> {
         let start = min_x as usize * PixelFormat::Rgba8.bytes_per_pixel();
         let end = start + coverage_alphas.len() * PixelFormat::Rgba8.bytes_per_pixel();
-        match self.kind {
+        let backend = match self.kind {
             CoverageDrawBlitterKind::OpaqueNormal
             | CoverageDrawBlitterKind::SourceOverNormal
             | CoverageDrawBlitterKind::NormalAlpha => {
@@ -13544,7 +13564,7 @@ impl CoverageDrawBlitter {
                     [self.source.r, self.source.g, self.source.b, self.source.a],
                     self.alpha,
                     coverage_alphas,
-                );
+                )
             }
             CoverageDrawBlitterKind::Multiply | CoverageDrawBlitterKind::Screen => {
                 for (coverage_alpha, chunk) in coverage_alphas.iter().copied().zip(
@@ -13553,9 +13573,10 @@ impl CoverageDrawBlitter {
                 ) {
                     self.write_coverage_alpha_chunk(chunk, coverage_alpha);
                 }
+                ferrugo_simd::RowKernelBackend::ScalarFloat
             }
-        }
-        Ok(())
+        };
+        Ok(backend)
     }
 
     fn write_tracked_coverage_alpha_span(
@@ -13567,7 +13588,9 @@ impl CoverageDrawBlitter {
         stats: &mut FillCoverageSpanStats,
     ) -> RasterResult<()> {
         stats.record_partial_span(coverage_alphas);
-        self.write_coverage_alpha_span(device, y, min_x, coverage_alphas)
+        let backend = self.write_coverage_alpha_span(device, y, min_x, coverage_alphas)?;
+        stats.record_row_kernel(backend, coverage_alphas.len());
+        Ok(())
     }
 
     fn write_tracked_coverage_alpha_runs(
