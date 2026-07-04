@@ -22,6 +22,7 @@
         "ferrugo-render",
         "ferrugo-native",
         "ferrugo-pdfium",
+        "ferrugo-wasm-smoke",
         "ferrugo"
       ]
     }
@@ -50,6 +51,9 @@
     },
     "crates/ferrugo-pdfium": {
       "component": "ferrugo-pdfium"
+    },
+    "crates/ferrugo-wasm-smoke": {
+      "component": "ferrugo-wasm-smoke"
     },
     "crates/ferrugo-cli": {
       "component": "ferrugo"
