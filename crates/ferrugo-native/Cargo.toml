@@ -1,6 +1,6 @@
 [package]
 name = "ferrugo-native"
-version = "0.1.0"
+version = "0.2.0"
 edition.workspace = true
 description = "Rust-native PDF thumbnail backend for Ferrugo."
 license.workspace = true
@@ -11,11 +11,11 @@ keywords = ["pdf", "thumbnail", "renderer", "rust"]
 include = ["src/**", "Cargo.toml", "README.md"]
 
 [dependencies]
-ferrugo-content = { version = "0.1.0", path = "../ferrugo-content" }
-ferrugo-object = { version = "0.1.0", path = "../ferrugo-object" }
-ferrugo-render = { version = "0.1.0", path = "../ferrugo-render" }
-ferrugo-syntax = { version = "0.1.0", path = "../ferrugo-syntax" }
-ferrugo-thumbnail = { version = "0.1.0", path = "../ferrugo-thumbnail" }
+ferrugo-content = { version = "0.2.0", path = "../ferrugo-content" }
+ferrugo-object = { version = "0.2.0", path = "../ferrugo-object" }
+ferrugo-render = { version = "0.2.0", path = "../ferrugo-render" }
+ferrugo-syntax = { version = "0.2.0", path = "../ferrugo-syntax" }
+ferrugo-thumbnail = { version = "0.2.0", path = "../ferrugo-thumbnail" }
 
 [lints]
 workspace = true

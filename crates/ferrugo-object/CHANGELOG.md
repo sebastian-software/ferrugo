@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.2.0](https://github.com/sebastian-software/ferrugo/compare/ferrugo-object-v0.1.0...ferrugo-object-v0.2.0) (2026-07-04)
+
+
+### Miscellaneous Chores
+
+* **ferrugo-object:** Synchronize ferrugo versions
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * ferrugo-syntax bumped from 0.1.0 to 0.2.0
+
 ## 0.1.0 (2026-07-03)
 
 

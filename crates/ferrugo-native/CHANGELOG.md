@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.2.0](https://github.com/sebastian-software/ferrugo/compare/ferrugo-native-v0.1.0...ferrugo-native-v0.2.0) (2026-07-04)
+
+
+### Performance Improvements
+
+* **native:** add scanned-page direct image route ([5c41bd5](https://github.com/sebastian-software/ferrugo/commit/5c41bd560e2f972ae105522ddada50e89f84332e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * ferrugo-content bumped from 0.1.0 to 0.2.0
+    * ferrugo-object bumped from 0.1.0 to 0.2.0
+    * ferrugo-render bumped from 0.1.0 to 0.2.0
+    * ferrugo-syntax bumped from 0.1.0 to 0.2.0
+    * ferrugo-thumbnail bumped from 0.1.0 to 0.2.0
+
 ## 0.1.0 (2026-07-03)
 
 
