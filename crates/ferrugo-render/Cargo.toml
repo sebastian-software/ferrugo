@@ -13,6 +13,7 @@ include = ["src/**", "Cargo.toml", "README.md"]
 [dependencies]
 ferrugo-content = { version = "0.1.0", path = "../ferrugo-content" }
 ferrugo-object = { version = "0.1.0", path = "../ferrugo-object" }
+ferrugo-simd = { version = "0.1.0", path = "../ferrugo-simd" }
 ferrugo-syntax = { version = "0.1.0", path = "../ferrugo-syntax" }
 ferrugo-thumbnail = { version = "0.1.0", path = "../ferrugo-thumbnail" }
 ttf-parser = { version = "0.25.1", default-features = false, features = ["std"] }
