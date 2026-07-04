@@ -11638,20 +11638,10 @@ fn encode_rgba_png(thumbnail: &ferrugo_thumbnail::Thumbnail) -> Result<Vec<u8>, 
     let row_len = (width as usize)
         .checked_mul(4)
         .ok_or_else(|| CliError::Encode("row length overflow".to_string()))?;
-    let filtered_len = row_len
-        .checked_add(1)
-        .and_then(|row| row.checked_mul(height as usize))
-        .ok_or_else(|| CliError::Encode("image size overflow".to_string()))?;
     if thumbnail.bytes.len() != row_len * height as usize {
         return Err(CliError::Encode(
             "thumbnail buffer length does not match dimensions".to_string(),
         ));
-    }
-
-    let mut filtered = Vec::with_capacity(filtered_len);
-    for row in thumbnail.bytes.chunks_exact(row_len) {
-        filtered.push(0);
-        filtered.extend_from_slice(row);
     }
 
     let mut png = Vec::new();
@@ -11661,26 +11651,84 @@ fn encode_rgba_png(thumbnail: &ferrugo_thumbnail::Thumbnail) -> Result<Vec<u8>, 
     ihdr.extend_from_slice(&height.to_be_bytes());
     ihdr.extend_from_slice(&[8, 6, 0, 0, 0]);
     write_png_chunk(&mut png, b"IHDR", &ihdr)?;
-    write_png_chunk(&mut png, b"IDAT", &zlib_store(&filtered)?)?;
+    write_png_chunk(
+        &mut png,
+        b"IDAT",
+        &zlib_store_rgba_rows(thumbnail, row_len)?,
+    )?;
     write_png_chunk(&mut png, b"IEND", &[])?;
     Ok(png)
 }
 
-fn zlib_store(data: &[u8]) -> Result<Vec<u8>, CliError> {
-    let mut out = Vec::with_capacity(data.len() + 6 + (data.len() / 65_535) * 5);
-    out.extend_from_slice(&[0x78, 0x01]);
-    let block_count = data.chunks(65_535).count();
-    for (block_index, block) in data.chunks(65_535).enumerate() {
-        let final_block = block_index + 1 == block_count;
-        out.push(final_block as u8);
-        let len = u16::try_from(block.len())
-            .map_err(|_| CliError::Encode("deflate block too large".to_string()))?;
-        out.extend_from_slice(&len.to_le_bytes());
-        out.extend_from_slice(&(!len).to_le_bytes());
-        out.extend_from_slice(block);
+fn zlib_store_rgba_rows(
+    thumbnail: &ferrugo_thumbnail::Thumbnail,
+    row_len: usize,
+) -> Result<Vec<u8>, CliError> {
+    let filtered_len = row_len
+        .checked_add(1)
+        .and_then(|row| row.checked_mul(thumbnail.height as usize))
+        .ok_or_else(|| CliError::Encode("image size overflow".to_string()))?;
+    let mut stream = ZlibStoreStream::with_capacity(filtered_len);
+    for row in thumbnail.bytes.chunks_exact(row_len) {
+        stream.push_byte(0)?;
+        stream.push_slice(row)?;
     }
-    out.extend_from_slice(&adler32(data).to_be_bytes());
-    Ok(out)
+    stream.finish()
+}
+
+struct ZlibStoreStream {
+    out: Vec<u8>,
+    pending: Vec<u8>,
+    adler_a: u32,
+    adler_b: u32,
+}
+
+impl ZlibStoreStream {
+    fn with_capacity(data_len: usize) -> Self {
+        let mut out = Vec::with_capacity(data_len + 6 + (data_len / 65_535) * 5);
+        out.extend_from_slice(&[0x78, 0x01]);
+        Self {
+            out,
+            pending: Vec::with_capacity(65_535),
+            adler_a: 1,
+            adler_b: 0,
+        }
+    }
+
+    fn push_slice(&mut self, bytes: &[u8]) -> Result<(), CliError> {
+        for byte in bytes {
+            self.push_byte(*byte)?;
+        }
+        Ok(())
+    }
+
+    fn push_byte(&mut self, byte: u8) -> Result<(), CliError> {
+        if self.pending.len() == 65_535 {
+            self.flush_pending(false)?;
+        }
+        self.pending.push(byte);
+        self.adler_a = (self.adler_a + u32::from(byte)) % ADLER32_MOD;
+        self.adler_b = (self.adler_b + self.adler_a) % ADLER32_MOD;
+        Ok(())
+    }
+
+    fn finish(mut self) -> Result<Vec<u8>, CliError> {
+        self.flush_pending(true)?;
+        self.out
+            .extend_from_slice(&((self.adler_b << 16) | self.adler_a).to_be_bytes());
+        Ok(self.out)
+    }
+
+    fn flush_pending(&mut self, final_block: bool) -> Result<(), CliError> {
+        self.out.push(final_block as u8);
+        let len = u16::try_from(self.pending.len())
+            .map_err(|_| CliError::Encode("deflate block too large".to_string()))?;
+        self.out.extend_from_slice(&len.to_le_bytes());
+        self.out.extend_from_slice(&(!len).to_le_bytes());
+        self.out.extend_from_slice(&self.pending);
+        self.pending.clear();
+        Ok(())
+    }
 }
 
 fn write_png_chunk(out: &mut Vec<u8>, chunk_type: &[u8; 4], data: &[u8]) -> Result<(), CliError> {
@@ -11694,16 +11742,7 @@ fn write_png_chunk(out: &mut Vec<u8>, chunk_type: &[u8; 4], data: &[u8]) -> Resu
     Ok(())
 }
 
-fn adler32(data: &[u8]) -> u32 {
-    const MOD_ADLER: u32 = 65_521;
-    let mut a = 1_u32;
-    let mut b = 0_u32;
-    for byte in data {
-        a = (a + u32::from(*byte)) % MOD_ADLER;
-        b = (b + a) % MOD_ADLER;
-    }
-    (b << 16) | a
-}
+const ADLER32_MOD: u32 = 65_521;
 
 fn crc32(bytes: impl IntoIterator<Item = u8>) -> u32 {
     let mut crc = 0xffff_ffff_u32;
@@ -13998,6 +14037,56 @@ status = "candidate"
         let png = encode_rgba_png(&thumbnail).expect("valid PNG");
 
         assert_eq!(&png[..8], b"\x89PNG\r\n\x1a\n");
+    }
+
+    #[test]
+    fn streaming_png_zlib_store_should_match_full_filtered_reference() {
+        let width = 257;
+        let height = 70;
+        let row_len = width * 4;
+        let bytes = (0..row_len * height)
+            .map(|index| (index % 251) as u8)
+            .collect::<Vec<_>>();
+        let thumbnail = Thumbnail {
+            width: width as u32,
+            height: height as u32,
+            stride: row_len,
+            pixel_format: PixelFormat::Rgba8,
+            bytes,
+        };
+        let mut filtered = Vec::with_capacity((row_len + 1) * height);
+        for row in thumbnail.bytes.chunks_exact(row_len) {
+            filtered.push(0);
+            filtered.extend_from_slice(row);
+        }
+
+        assert_eq!(
+            zlib_store_rgba_rows(&thumbnail, row_len).expect("streaming zlib store"),
+            zlib_store_reference_for_test(&filtered).expect("reference zlib store")
+        );
+    }
+
+    fn zlib_store_reference_for_test(data: &[u8]) -> Result<Vec<u8>, CliError> {
+        let mut out = Vec::with_capacity(data.len() + 6 + (data.len() / 65_535) * 5);
+        out.extend_from_slice(&[0x78, 0x01]);
+        let block_count = data.chunks(65_535).count();
+        for (block_index, block) in data.chunks(65_535).enumerate() {
+            let final_block = block_index + 1 == block_count;
+            out.push(final_block as u8);
+            let len = u16::try_from(block.len())
+                .map_err(|_| CliError::Encode("deflate block too large".to_string()))?;
+            out.extend_from_slice(&len.to_le_bytes());
+            out.extend_from_slice(&(!len).to_le_bytes());
+            out.extend_from_slice(block);
+        }
+        let mut adler_a = 1_u32;
+        let mut adler_b = 0_u32;
+        for byte in data {
+            adler_a = (adler_a + u32::from(*byte)) % ADLER32_MOD;
+            adler_b = (adler_b + adler_a) % ADLER32_MOD;
+        }
+        out.extend_from_slice(&((adler_b << 16) | adler_a).to_be_bytes());
+        Ok(out)
     }
 
     #[test]
