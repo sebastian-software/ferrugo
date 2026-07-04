@@ -1,0 +1,77 @@
+name: Scheduled benchmarks
+
+env:
+  CARGO_TERM_COLOR: always
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+on:
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: "Cargo profile for benchmark runs"
+        required: false
+        default: "release"
+        type: choice
+        options:
+          - release
+          - dev
+      matrix_iterations:
+        description: "Generated matrix measured iterations"
+        required: false
+        default: "10"
+      real_world_iterations:
+        description: "Real-world matrix measured iterations"
+        required: false
+        default: "5"
+
+concurrency:
+  group: scheduled-benchmarks-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  scheduled-benchmarks:
+    name: Scheduled benchmark artifacts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install benchmark tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ghostscript mupdf-tools poppler-utils ripgrep
+
+      - name: Record oracle tool versions
+        run: |
+          pdftoppm -v || true
+          gs --version || true
+          mutool -v || true
+
+      - name: Generate scheduled benchmark artifacts
+        env:
+          PROFILE: ${{ inputs.profile || 'release' }}
+          MATRIX_ITERATIONS: ${{ inputs.matrix_iterations || '10' }}
+          REAL_WORLD_ITERATIONS: ${{ inputs.real_world_iterations || '5' }}
+          OUTPUT_DIR: target/scheduled-benchmarks
+        run: bash scripts/generate_scheduled_benchmark_artifacts.sh
+
+      - name: Upload scheduled benchmark artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: scheduled-benchmarks-${{ github.run_id }}-${{ github.run_attempt }}
+          path: target/scheduled-benchmarks/
+          if-no-files-found: error
+          retention-days: 30
