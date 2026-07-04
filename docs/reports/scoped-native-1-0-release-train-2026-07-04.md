@@ -65,8 +65,12 @@ server/runtime release unless the issue-specific evidence changes:
 - #71 office text and font visual-fidelity blockers;
 - #72 dense table/grid and report rendering-core blockers;
 - #69 static form and annotation appearance parity;
-- #67 CCITT, JBIG2, and JPX scan codec strategy;
-- #65 transparency soft-mask and advanced blend boundaries;
+- #67 CCITT, JBIG2, and JPX scan codec strategy, now closed as a typed
+  `image.filter` release-boundary decision with CCITT selected as the first
+  future implementation candidate;
+- #65 transparency soft-mask and advanced blend boundaries, now closed as typed
+  `graphics.transparency` release boundaries for luminosity soft masks and
+  Overlay/advanced blend modes;
 - #49, #50, #51, and #52 performance implementation slices.
 
 If one of these becomes release-blocking, update this report, #58, and the
@@ -134,6 +138,12 @@ reference renderer availability.
 browser print, office export, static form, scanner, and PDF 2.0 accepted basics
 as hash-only reviewed baselines without requiring PDFium, Poppler, private
 corpus files, or broad cross-renderer performance claims.
+
+`check_codec_transparency_boundaries.sh` runs the focused #67/#65 boundary gate.
+It validates supported image-codec and transparency families, asserts the
+deferred CCITT/JBIG2/JPX and advanced-transparency fallback buckets, runs
+image-heavy and transparency low-memory budget checks, performs a focused
+transparency visual comparison, and includes the fuzz smoke gate.
 
 `check_crate_publish_ready.sh` verifies Cargo metadata, package file lists, leaf
 package archive dry-runs, and optionally registry-backed dependency-chain
