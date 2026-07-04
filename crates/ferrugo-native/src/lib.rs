@@ -177,6 +177,63 @@ pub struct NativeRenderTrace {
     pub raster_bands: RasterBandSummary,
 }
 
+/// Dimensions for a streamed RGBA native render.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeRgbaRowsDimensions {
+    /// Output width in pixels.
+    pub width: u32,
+    /// Output height in pixels.
+    pub height: u32,
+    /// Number of RGBA bytes in one row.
+    pub stride: usize,
+}
+
+/// Completed native row-stream render diagnostics.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeRgbaRowsOutput {
+    /// Streamed RGBA output dimensions.
+    pub dimensions: NativeRgbaRowsDimensions,
+    /// Raster banding used by the native renderer.
+    pub raster_bands: RasterBandSummary,
+}
+
+/// Receives native RGBA rows in top-to-bottom order.
+pub trait NativeRgbaRowSink {
+    /// Starts a streamed RGBA render.
+    fn begin(&mut self, dimensions: NativeRgbaRowsDimensions) -> Result<(), ThumbnailError>;
+
+    /// Writes one completed output row.
+    fn write_row(&mut self, y: u32, row: &[u8]) -> Result<(), ThumbnailError>;
+
+    /// Finishes the stream after the last row has been written.
+    fn finish(&mut self) -> Result<(), ThumbnailError>;
+}
+
+enum NativeRenderOutput {
+    Thumbnail(Thumbnail),
+    Rows(NativeRgbaRowsOutput),
+}
+
+impl NativeRenderOutput {
+    fn into_thumbnail(self) -> Result<Thumbnail, ThumbnailError> {
+        match self {
+            Self::Thumbnail(thumbnail) => Ok(thumbnail),
+            Self::Rows(_) => Err(ThumbnailError::internal(
+                "row-stream output cannot be returned as a thumbnail",
+            )),
+        }
+    }
+
+    fn into_rows(self) -> Result<NativeRgbaRowsOutput, ThumbnailError> {
+        match self {
+            Self::Rows(output) => Ok(output),
+            Self::Thumbnail(_) => Err(ThumbnailError::internal(
+                "thumbnail output cannot be returned as row-stream output",
+            )),
+        }
+    }
+}
+
 /// Native renderer counters for the scanned-page direct-image route.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct ScannedPageFastPathSummary {
@@ -277,10 +334,27 @@ impl RasterBandSummary {
         }
     }
 
+    /// Estimated peak RGBA bytes retained when output rows stream out instead
+    /// of retaining the full final thumbnail buffer.
+    #[must_use]
+    pub fn estimated_peak_streaming_raster_bytes(self) -> usize {
+        self.active_target_peak_bytes()
+    }
+
     /// Per-mille reduction of the active raster target versus a full-page target.
     #[must_use]
     pub fn active_target_byte_reduction_per_mille(self) -> usize {
         reduction_per_mille(self.full_page_bytes(), self.active_target_peak_bytes())
+    }
+
+    /// Per-mille reduction of row-streaming raster buffers versus the current
+    /// full-buffer banded raster/output path.
+    #[must_use]
+    pub fn streaming_raster_byte_reduction_per_mille(self) -> usize {
+        reduction_per_mille(
+            self.estimated_peak_raster_bytes(),
+            self.estimated_peak_streaming_raster_bytes(),
+        )
     }
 }
 
@@ -976,6 +1050,30 @@ impl NativeBackend {
             type3_templates,
             raster_bands,
         })
+    }
+
+    /// Renders one page and streams completed RGBA rows to `sink`.
+    ///
+    /// Serial banded renders write each completed band before allocating a
+    /// full-page output buffer. Parallel band streaming is intentionally out of
+    /// scope; parallel profiles still render through the existing deterministic
+    /// thumbnail path.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ThumbnailError`] when the source cannot be read, rendered, or
+    /// accepted by the row sink.
+    pub fn render_rgba_rows(
+        &self,
+        source: PdfSource<'_>,
+        options: &ThumbnailOptions,
+        sink: &mut dyn NativeRgbaRowSink,
+    ) -> Result<NativeRgbaRowsOutput, ThumbnailError> {
+        reject_form_appearance_mutation(options)?;
+        let bytes = load_source(source)?;
+        let input = PdfBytes::new(bytes.as_ref());
+        let (document, page_tree) = load_render_document(input, options.page_index)?;
+        render_loaded_document_to_rgba_rows(&document, &page_tree, options, self.limits, sink)
     }
 
     /// Renders one thumbnail and returns only the raster-band scheduler summary.
@@ -1771,6 +1869,7 @@ impl<'a> NativeDocumentSession<'a> {
             options,
             self.limits,
             trace_sinks,
+            None,
             Some(&self.image_resource_cache),
             Some(&self.font_resource_cache),
             Some(&self.icc_transform_cache),
@@ -2326,7 +2425,33 @@ fn render_loaded_document(
         None,
         None,
         None,
+        None,
     )
+    .and_then(NativeRenderOutput::into_thumbnail)
+}
+
+fn render_loaded_document_to_rgba_rows(
+    document: &ClassicDocument<'_>,
+    page_tree: &PageTree,
+    options: &ThumbnailOptions,
+    limits: NativeRenderLimits,
+    sink: &mut dyn NativeRgbaRowSink,
+) -> Result<NativeRgbaRowsOutput, ThumbnailError> {
+    render_loaded_document_inner(
+        document,
+        page_tree,
+        options,
+        limits,
+        RenderTraceSinks::none(),
+        Some(sink),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+    .and_then(NativeRenderOutput::into_rows)
 }
 
 #[expect(
@@ -2351,6 +2476,7 @@ fn render_loaded_document_with_session_cache(
         options,
         limits,
         RenderTraceSinks::none(),
+        None,
         Some(image_resource_cache),
         Some(font_resource_cache),
         Some(icc_transform_cache),
@@ -2358,6 +2484,7 @@ fn render_loaded_document_with_session_cache(
         Some(type3_template_cache),
         Some(type3_render_cache),
     )
+    .and_then(NativeRenderOutput::into_thumbnail)
 }
 
 #[expect(
@@ -2383,6 +2510,7 @@ fn render_loaded_document_with_timings_and_session_cache(
         options,
         limits,
         RenderTraceSinks::with_timings(timings),
+        None,
         Some(image_resource_cache),
         Some(font_resource_cache),
         Some(icc_transform_cache),
@@ -2390,6 +2518,7 @@ fn render_loaded_document_with_timings_and_session_cache(
         Some(type3_template_cache),
         Some(type3_render_cache),
     )
+    .and_then(NativeRenderOutput::into_thumbnail)
 }
 
 fn render_loaded_document_with_trace(
@@ -2411,7 +2540,9 @@ fn render_loaded_document_with_trace(
         None,
         None,
         None,
+        None,
     )
+    .and_then(NativeRenderOutput::into_thumbnail)
 }
 
 #[expect(
@@ -2424,13 +2555,14 @@ fn render_loaded_document_inner(
     options: &ThumbnailOptions,
     limits: NativeRenderLimits,
     mut trace_sinks: RenderTraceSinks<'_>,
+    row_sink: Option<&mut dyn NativeRgbaRowSink>,
     image_resource_cache: Option<&RefCell<SessionImageResourceCache>>,
     font_resource_cache: Option<&RefCell<SessionFontResourceCache>>,
     icc_transform_cache: Option<&RefCell<IccTransformCache>>,
     glyph_bitmap_cache: Option<&RefCell<GlyphBitmapCache>>,
     type3_template_cache: Option<&RefCell<Type3CharProcTemplateCache>>,
     type3_render_cache: Option<&RefCell<Type3GlyphRenderCache>>,
-) -> Result<Thumbnail, ThumbnailError> {
+) -> Result<NativeRenderOutput, ThumbnailError> {
     enforce_xfa_render_policy(document)?;
     let local_icc_transform_cache = RefCell::new(IccTransformCache::new(
         limits.max_icc_transform_cache_entries,
@@ -2757,6 +2889,7 @@ fn render_loaded_document_inner(
         options.background,
         limits,
         &mut trace_sinks,
+        row_sink,
         glyph_bitmap_cache,
         type3_template_cache,
         type3_render_cache,
@@ -3112,6 +3245,85 @@ fn direct_scanned_page_thumbnail(
     Thumbnail::rgba(dimensions.width, dimensions.height, pixels)
 }
 
+fn direct_scanned_page_rows(
+    image: &ImageDisplayItem,
+    transform: PageTransform,
+    sink: &mut dyn NativeRgbaRowSink,
+) -> Result<NativeRgbaRowsOutput, ThumbnailError> {
+    let image_to_device = transform.matrix.multiply(image.transform);
+    let inverse = image_to_device
+        .inverse()
+        .ok_or_else(|| ThumbnailError::internal("direct image transform is singular"))?;
+    let dimensions = transform.dimensions;
+    sink.begin(native_rgba_rows_dimensions(dimensions))?;
+    let sample_x_by_column: Vec<usize> = (0..dimensions.width)
+        .map(|x| {
+            let sample_x = inverse
+                .a
+                .mul_add(f64::from(x) + 0.5, inverse.e)
+                .clamp(0.0, 1.0);
+            direct_image_sample_x(image.image.width, sample_x) as usize
+        })
+        .collect();
+    let sample_y_by_row: Vec<u32> = (0..dimensions.height)
+        .map(|y| {
+            direct_image_sample_y(
+                image.image.height,
+                inverse
+                    .d
+                    .mul_add(f64::from(y) + 0.5, inverse.f)
+                    .clamp(0.0, 1.0),
+            )
+        })
+        .collect();
+    let mut row = vec![0; dimensions.stride];
+    match image.image.color_space {
+        ImageColorSpace::DeviceGray => {
+            for (y, sample_y) in sample_y_by_row.iter().copied().enumerate() {
+                let source_row_start = sample_y as usize * image.image.width as usize;
+                for (chunk, sample_x) in row.chunks_exact_mut(4).zip(sample_x_by_column.iter()) {
+                    let channel = image.image.samples[source_row_start + *sample_x];
+                    chunk.copy_from_slice(&[channel, channel, channel, 255]);
+                }
+                sink.write_row(y as u32, &row)?;
+            }
+        }
+        ImageColorSpace::DeviceRgb => {
+            let sample_x_byte_by_column: Vec<usize> = sample_x_by_column
+                .iter()
+                .map(|sample_x| sample_x * 3)
+                .collect();
+            for (y, sample_y) in sample_y_by_row.iter().copied().enumerate() {
+                let source_row_start = sample_y as usize * image.image.width as usize * 3;
+                for (chunk, sample_x_byte_offset) in
+                    row.chunks_exact_mut(4).zip(sample_x_byte_by_column.iter())
+                {
+                    let index = source_row_start + *sample_x_byte_offset;
+                    chunk.copy_from_slice(&[
+                        image.image.samples[index],
+                        image.image.samples[index + 1],
+                        image.image.samples[index + 2],
+                        255,
+                    ]);
+                }
+                sink.write_row(y as u32, &row)?;
+            }
+        }
+        ImageColorSpace::DeviceCmyk
+        | ImageColorSpace::IndexedGray
+        | ImageColorSpace::IndexedRgb => {
+            return Err(ThumbnailError::internal(
+                "direct image color space was not classified",
+            ));
+        }
+    }
+    sink.finish()?;
+    Ok(NativeRgbaRowsOutput {
+        dimensions: native_rgba_rows_dimensions(dimensions),
+        raster_bands: raster_band_summary(dimensions, None, DEFAULT_RASTER_BAND_WORKERS),
+    })
+}
+
 fn write_direct_gray_image_rows(
     image: &ImageDisplayItem,
     dimensions: RasterDimensions,
@@ -3241,17 +3453,20 @@ fn rasterize_native_page_work_to_thumbnail(
     background: ferrugo_thumbnail::Rgba,
     limits: NativeRenderLimits,
     trace_sinks: &mut RenderTraceSinks<'_>,
+    mut row_sink: Option<&mut dyn NativeRgbaRowSink>,
     glyph_bitmap_cache: &RefCell<GlyphBitmapCache>,
     type3_template_cache: &RefCell<Type3CharProcTemplateCache>,
     type3_render_cache: Option<&RefCell<Type3GlyphRenderCache>>,
-) -> Result<Thumbnail, ThumbnailError> {
+) -> Result<NativeRenderOutput, ThumbnailError> {
     let band_rows = raster_band_rows(
         transform.dimensions,
         limits.max_raster_band_rows,
         limits.min_raster_band_pixels,
     )
     .filter(|_| native_raster_work_supports_banded_replay(work));
-    let parallel_band_replay = trace_sinks.supports_parallel_band_replay()
+    let stream_rows = row_sink.is_some();
+    let parallel_band_replay = !stream_rows
+        && trace_sinks.supports_parallel_band_replay()
         && type3_render_cache.is_none()
         && limits.max_raster_band_workers > DEFAULT_RASTER_BAND_WORKERS;
     let band_workers = band_rows.map_or(DEFAULT_RASTER_BAND_WORKERS, |band_rows| {
@@ -3270,14 +3485,28 @@ fn rasterize_native_page_work_to_thumbnail(
             if let Some(summary) = trace_sinks.scanned_page_fast_path.as_deref_mut() {
                 summary.record_candidate();
             }
-            match record_render_phase(&mut trace_sinks.timings, NativeRenderPhase::Output, || {
-                direct_scanned_page_thumbnail(image, transform)
-            }) {
-                Ok(thumbnail) => {
+            if let Some(sink) = row_sink.as_deref_mut() {
+                let output = record_render_phase(
+                    &mut trace_sinks.timings,
+                    NativeRenderPhase::Output,
+                    || direct_scanned_page_rows(image, transform, sink),
+                )?;
+                if let Some(summary) = trace_sinks.scanned_page_fast_path.as_deref_mut() {
+                    summary.record_direct_call();
+                }
+                return Ok(NativeRenderOutput::Rows(output));
+            }
+            let direct =
+                record_render_phase(&mut trace_sinks.timings, NativeRenderPhase::Output, || {
+                    direct_scanned_page_thumbnail(image, transform)
+                        .map(NativeRenderOutput::Thumbnail)
+                });
+            match direct {
+                Ok(output) => {
                     if let Some(summary) = trace_sinks.scanned_page_fast_path.as_deref_mut() {
                         summary.record_direct_call();
                     }
-                    return Ok(thumbnail);
+                    return Ok(output);
                 }
                 Err(_) => {
                     if let Some(summary) = trace_sinks.scanned_page_fast_path.as_deref_mut() {
@@ -3307,8 +3536,15 @@ fn rasterize_native_page_work_to_thumbnail(
             type3_render_cache,
         )?;
         return record_render_phase(&mut trace_sinks.timings, NativeRenderPhase::Output, || {
-            let dimensions = raster.dimensions();
-            Thumbnail::rgba(dimensions.width, dimensions.height, raster.into_pixels())
+            match row_sink.as_deref_mut() {
+                Some(sink) => stream_raster_device_rows(&raster, band_summary, sink)
+                    .map(NativeRenderOutput::Rows),
+                None => {
+                    let dimensions = raster.dimensions();
+                    Thumbnail::rgba(dimensions.width, dimensions.height, raster.into_pixels())
+                        .map(NativeRenderOutput::Thumbnail)
+                }
+            }
         });
     };
 
@@ -3322,7 +3558,49 @@ fn rasterize_native_page_work_to_thumbnail(
             band_rows,
             band_workers,
             trace_sinks,
-        );
+        )
+        .map(NativeRenderOutput::Thumbnail);
+    }
+
+    if let Some(sink) = row_sink {
+        sink.begin(native_rgba_rows_dimensions(transform.dimensions))?;
+        let mut band_y = 0;
+        while band_y < transform.dimensions.height {
+            let band_height = band_rows.min(transform.dimensions.height - band_y);
+            let band_transform =
+                raster_band_transform(transform, band_y, band_height).map_err(map_raster_error)?;
+            let band_path_options = PathRasterOptions {
+                scissor: Some(RasterScissor::new(
+                    0,
+                    0,
+                    transform.dimensions.width,
+                    band_height,
+                )),
+                ..path_options
+            };
+            let mut band_raster = band_transform
+                .create_device(background)
+                .map_err(map_raster_error)?;
+            rasterize_native_page_work_into(
+                work,
+                &mut band_raster,
+                band_transform,
+                band_path_options,
+                trace_sinks,
+                glyph_bitmap_cache,
+                type3_template_cache,
+                type3_render_cache,
+            )?;
+            stream_band_rows(band_y, &band_raster, sink)?;
+            band_y += band_height;
+        }
+        return record_render_phase(&mut trace_sinks.timings, NativeRenderPhase::Output, || {
+            sink.finish()?;
+            Ok(NativeRenderOutput::Rows(NativeRgbaRowsOutput {
+                dimensions: native_rgba_rows_dimensions(transform.dimensions),
+                raster_bands: band_summary,
+            }))
+        });
     }
 
     let mut output = transform
@@ -3361,6 +3639,7 @@ fn rasterize_native_page_work_to_thumbnail(
     record_render_phase(&mut trace_sinks.timings, NativeRenderPhase::Output, || {
         let dimensions = output.dimensions();
         Thumbnail::rgba(dimensions.width, dimensions.height, output.into_pixels())
+            .map(NativeRenderOutput::Thumbnail)
     })
 }
 
@@ -3947,6 +4226,45 @@ fn raster_band_summary(
         max_band_rows,
         max_band_pixels: (dimensions.width as usize) * (max_band_rows as usize),
     }
+}
+
+fn native_rgba_rows_dimensions(dimensions: RasterDimensions) -> NativeRgbaRowsDimensions {
+    NativeRgbaRowsDimensions {
+        width: dimensions.width,
+        height: dimensions.height,
+        stride: dimensions.stride,
+    }
+}
+
+fn stream_raster_device_rows(
+    raster: &ferrugo_render::RasterDevice,
+    raster_bands: RasterBandSummary,
+    sink: &mut dyn NativeRgbaRowSink,
+) -> Result<NativeRgbaRowsOutput, ThumbnailError> {
+    let dimensions = raster.dimensions();
+    sink.begin(native_rgba_rows_dimensions(dimensions))?;
+    for y in 0..dimensions.height {
+        let row = raster.row(y).map_err(map_raster_error)?;
+        sink.write_row(y, row)?;
+    }
+    sink.finish()?;
+    Ok(NativeRgbaRowsOutput {
+        dimensions: native_rgba_rows_dimensions(dimensions),
+        raster_bands,
+    })
+}
+
+fn stream_band_rows(
+    band_y: u32,
+    band_raster: &ferrugo_render::RasterDevice,
+    sink: &mut dyn NativeRgbaRowSink,
+) -> Result<(), ThumbnailError> {
+    let dimensions = band_raster.dimensions();
+    for y in 0..dimensions.height {
+        let row = band_raster.row(y).map_err(map_raster_error)?;
+        sink.write_row(band_y + y, row)?;
+    }
+    Ok(())
 }
 
 fn raster_pixels_to_bytes(pixels: usize) -> usize {
@@ -7986,9 +8304,127 @@ mod tests {
         assert_eq!(trace.raster_bands.active_target_peak_bytes(), 81_920);
         assert_eq!(trace.raster_bands.full_page_bytes(), 563_200);
         assert_eq!(
+            trace.raster_bands.estimated_peak_streaming_raster_bytes(),
+            81_920
+        );
+        assert_eq!(
+            trace
+                .raster_bands
+                .streaming_raster_byte_reduction_per_mille(),
+            873
+        );
+        assert_eq!(
             trace.raster_bands.active_target_byte_reduction_per_mille(),
             854
         );
+    }
+
+    #[derive(Default)]
+    struct CollectingRgbaRows {
+        dimensions: Option<NativeRgbaRowsDimensions>,
+        rows: Vec<Vec<u8>>,
+        next_y: u32,
+        finished: bool,
+    }
+
+    impl NativeRgbaRowSink for CollectingRgbaRows {
+        fn begin(&mut self, dimensions: NativeRgbaRowsDimensions) -> Result<(), ThumbnailError> {
+            self.dimensions = Some(dimensions);
+            self.rows.clear();
+            self.next_y = 0;
+            self.finished = false;
+            Ok(())
+        }
+
+        fn write_row(&mut self, y: u32, row: &[u8]) -> Result<(), ThumbnailError> {
+            assert_eq!(y, self.next_y);
+            self.rows.push(row.to_vec());
+            self.next_y += 1;
+            Ok(())
+        }
+
+        fn finish(&mut self) -> Result<(), ThumbnailError> {
+            let dimensions = self.dimensions.expect("stream dimensions");
+            assert_eq!(self.next_y, dimensions.height);
+            self.finished = true;
+            Ok(())
+        }
+    }
+
+    impl CollectingRgbaRows {
+        fn into_thumbnail(self) -> Thumbnail {
+            assert!(self.finished);
+            let dimensions = self.dimensions.expect("stream dimensions");
+            let bytes = self.rows.into_iter().flatten().collect::<Vec<_>>();
+            Thumbnail::rgba(dimensions.width, dimensions.height, bytes)
+                .expect("streamed rows should form thumbnail")
+        }
+    }
+
+    #[test]
+    fn native_rgba_row_stream_should_match_banded_thumbnail_output() {
+        let bytes = include_bytes!("../../../fixtures/generated/high-dpi-preview-fidelity.pdf");
+        let options = ThumbnailOptions {
+            page_index: 0,
+            max_edge: 1024,
+            background: ferrugo_thumbnail::Rgba::WHITE,
+            output_format: ferrugo_thumbnail::OutputFormat::Rgba,
+            timeout: std::time::Duration::from_secs(5),
+            annotation_mode: AnnotationMode::Screen,
+            form_appearance_mode: FormAppearanceMode::DocumentState,
+        };
+        let backend = NativeBackend::new();
+        let full = backend
+            .render(PdfSource::from_bytes(bytes), &options)
+            .expect("full thumbnail should render");
+        let mut rows = CollectingRgbaRows::default();
+        let output = backend
+            .render_rgba_rows(PdfSource::from_bytes(bytes), &options, &mut rows)
+            .expect("row stream should render");
+        let streamed = rows.into_thumbnail();
+
+        assert_eq!(streamed.bytes, full.bytes);
+        assert_eq!(streamed.width, full.width);
+        assert_eq!(streamed.height, full.height);
+        assert!(output.raster_bands.bands > 1);
+        assert_eq!(output.raster_bands.output_buffer_bytes(), full.bytes.len());
+        assert_eq!(
+            output.raster_bands.estimated_peak_streaming_raster_bytes(),
+            output.raster_bands.active_target_peak_bytes()
+        );
+        assert!(
+            output
+                .raster_bands
+                .streaming_raster_byte_reduction_per_mille()
+                > 0
+        );
+    }
+
+    #[test]
+    fn native_rgba_row_stream_should_match_scanned_page_direct_output() {
+        let bytes = include_bytes!("../../../fixtures/generated/scanned-page.pdf");
+        let options = ThumbnailOptions {
+            page_index: 0,
+            max_edge: 200,
+            background: ferrugo_thumbnail::Rgba::WHITE,
+            output_format: ferrugo_thumbnail::OutputFormat::Rgba,
+            timeout: std::time::Duration::from_secs(5),
+            annotation_mode: AnnotationMode::Screen,
+            form_appearance_mode: FormAppearanceMode::DocumentState,
+        };
+        let backend = NativeBackend::new();
+        let full = backend
+            .render(PdfSource::from_bytes(bytes), &options)
+            .expect("full thumbnail should render");
+        let mut rows = CollectingRgbaRows::default();
+        let output = backend
+            .render_rgba_rows(PdfSource::from_bytes(bytes), &options, &mut rows)
+            .expect("row stream should render");
+        let streamed = rows.into_thumbnail();
+
+        assert_eq!(streamed.bytes, full.bytes);
+        assert_eq!(output.raster_bands.bands, 1);
+        assert_eq!(output.raster_bands.output_buffer_bytes(), full.bytes.len());
     }
 
     #[test]
@@ -8827,11 +9263,14 @@ mod tests {
             ferrugo_thumbnail::Rgba::WHITE,
             limits,
             &mut trace_sinks,
+            None,
             &glyph_bitmap_cache,
             &type3_template_cache,
             None,
         )
-        .expect("test display list should render");
+        .expect("test display list should render")
+        .into_thumbnail()
+        .expect("test display list should return thumbnail");
         (thumbnail, raster_bands)
     }
 
@@ -8893,11 +9332,14 @@ mod tests {
                 ..NativeRenderLimits::default()
             },
             &mut trace_sinks,
+            None,
             &glyph_bitmap_cache,
             &type3_template_cache,
             None,
         )
-        .expect("test display list should render");
+        .expect("test display list should render")
+        .into_thumbnail()
+        .expect("test display list should return thumbnail");
         (thumbnail, raster_bands, fill_routes)
     }
 

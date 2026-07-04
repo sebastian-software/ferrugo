@@ -15,9 +15,10 @@ use ferrugo_native::{
     scan_operator_coverage, FillRasterRouteSummary, GlyphBitmapCacheSummary, ImagePlacementSummary,
     ImageResourceSummary, NativeBackend, NativeDocumentSessionStats, NativeMemoryDiagnostics,
     NativePageCacheKey, NativePageCachePolicy, NativeRenderLimits, NativeRenderPhaseTimings,
-    NativeRenderTrace, OperatorCoverageEntry, OperatorCoverageOptions, OperatorSupportStatus,
-    PathFlatteningSummary, RasterBandSummary, ScannedPageFastPathSummary, StrokeRasterRouteSummary,
-    StrokeShapeSummary, Type3CharProcTemplateCacheSummary, DEFAULT_CURVE_FLATTENING_TOLERANCE,
+    NativeRenderTrace, NativeRgbaRowSink, NativeRgbaRowsDimensions, OperatorCoverageEntry,
+    OperatorCoverageOptions, OperatorSupportStatus, PathFlatteningSummary, RasterBandSummary,
+    ScannedPageFastPathSummary, StrokeRasterRouteSummary, StrokeShapeSummary,
+    Type3CharProcTemplateCacheSummary, DEFAULT_CURVE_FLATTENING_TOLERANCE,
 };
 #[cfg(feature = "pdfium")]
 use ferrugo_pdfium::PdfiumBackend;
@@ -154,9 +155,11 @@ fn render_auto_command(args: &[OsString]) -> Result<(), CliError> {
 }
 
 fn render_auto(config: RenderConfig) -> Result<(), CliError> {
-    let outcome = render_auto_thumbnail(&config)?;
-    eprintln!("render backend: {}", outcome.backend);
-    let png = encode_rgba_png(&outcome.thumbnail)?;
+    let backend = NativeBackend::new();
+    let options = thumbnail_options(&config);
+    let source = PdfSource::from_path(&config.input);
+    let png = encode_native_rgba_rows_png(&backend, source, &options)?;
+    eprintln!("render backend: {}", AutoRenderBackend::Native);
     fs::write(&config.output, png).map_err(|source| CliError::Io {
         path: config.output,
         source,
@@ -164,6 +167,7 @@ fn render_auto(config: RenderConfig) -> Result<(), CliError> {
     Ok(())
 }
 
+#[cfg(test)]
 fn render_auto_thumbnail(config: &RenderConfig) -> Result<AutoRenderOutcome, CliError> {
     let options = thumbnail_options(config);
     let source = PdfSource::from_path(&config.input);
@@ -230,6 +234,7 @@ impl FallbackReason {
     }
 }
 
+#[cfg(test)]
 #[derive(Debug, PartialEq, Eq)]
 struct AutoRenderOutcome {
     thumbnail: ferrugo_thumbnail::Thumbnail,
@@ -241,13 +246,7 @@ fn render_native_command(args: &[OsString]) -> Result<(), CliError> {
     let backend = NativeBackend::new();
     let options = thumbnail_options(&config);
     let source = PdfSource::from_path(&config.input);
-    let thumbnail = backend
-        .render(source, &options)
-        .map_err(|err| CliError::Render {
-            class: err.class().as_str(),
-            message: err.to_string(),
-        })?;
-    let png = encode_rgba_png(&thumbnail)?;
+    let png = encode_native_rgba_rows_png(&backend, source, &options)?;
     fs::write(&config.output, png).map_err(|source| CliError::Io {
         path: config.output,
         source,
@@ -9919,7 +9918,9 @@ fn trace_raster_band_summary_json(summary: Result<&RasterBandSummary, &Thumbnail
                 "\"output_buffer_pixels\":{},",
                 "\"output_buffer_bytes\":{},",
                 "\"estimated_peak_raster_bytes\":{},",
-                "\"active_target_byte_reduction_per_mille\":{}",
+                "\"estimated_peak_streaming_raster_bytes\":{},",
+                "\"active_target_byte_reduction_per_mille\":{},",
+                "\"streaming_raster_byte_reduction_per_mille\":{}",
                 "}}"
             ),
             summary.full_page_pixels,
@@ -9934,7 +9935,9 @@ fn trace_raster_band_summary_json(summary: Result<&RasterBandSummary, &Thumbnail
             summary.output_buffer_pixels(),
             summary.output_buffer_bytes(),
             summary.estimated_peak_raster_bytes(),
-            summary.active_target_byte_reduction_per_mille()
+            summary.estimated_peak_streaming_raster_bytes(),
+            summary.active_target_byte_reduction_per_mille(),
+            summary.streaming_raster_byte_reduction_per_mille()
         ),
         Err(error) => format!(
             "{{\"status\":\"error\",\"class\":{},\"bucket\":{}}}",
@@ -12482,6 +12485,124 @@ fn encode_rgba_png(thumbnail: &ferrugo_thumbnail::Thumbnail) -> Result<Vec<u8>, 
     Ok(png)
 }
 
+fn encode_native_rgba_rows_png(
+    backend: &NativeBackend,
+    source: PdfSource<'_>,
+    options: &ThumbnailOptions,
+) -> Result<Vec<u8>, CliError> {
+    let mut sink = PngRowStreamSink::default();
+    backend
+        .render_rgba_rows(source, options, &mut sink)
+        .map_err(|err| CliError::Render {
+            class: err.class().as_str(),
+            message: err.to_string(),
+        })?;
+    sink.into_png()
+}
+
+#[derive(Default)]
+struct PngRowStreamSink {
+    png: Vec<u8>,
+    stream: Option<ZlibStoreStream>,
+    dimensions: Option<NativeRgbaRowsDimensions>,
+    expected_y: u32,
+    finished: bool,
+}
+
+impl PngRowStreamSink {
+    fn into_png(self) -> Result<Vec<u8>, CliError> {
+        if self.finished {
+            Ok(self.png)
+        } else {
+            Err(CliError::Encode(
+                "PNG row stream was not finished".to_string(),
+            ))
+        }
+    }
+
+    fn map_error(error: CliError) -> ThumbnailError {
+        ThumbnailError::internal(format!("PNG row stream encode failed: {error}"))
+    }
+}
+
+impl NativeRgbaRowSink for PngRowStreamSink {
+    fn begin(&mut self, dimensions: NativeRgbaRowsDimensions) -> Result<(), ThumbnailError> {
+        if self.stream.is_some() || self.dimensions.is_some() {
+            return Err(ThumbnailError::internal("PNG row stream already started"));
+        }
+        let row_len = (dimensions.width as usize)
+            .checked_mul(4)
+            .ok_or_else(|| ThumbnailError::internal("PNG row length overflow"))?;
+        if dimensions.stride != row_len {
+            return Err(ThumbnailError::internal(
+                "PNG row stream requires tightly packed RGBA rows",
+            ));
+        }
+        let filtered_len = row_len
+            .checked_add(1)
+            .and_then(|row| row.checked_mul(dimensions.height as usize))
+            .ok_or_else(|| ThumbnailError::internal("PNG row stream image size overflow"))?;
+        self.png.clear();
+        self.png.extend_from_slice(b"\x89PNG\r\n\x1a\n");
+        let mut ihdr = Vec::with_capacity(13);
+        ihdr.extend_from_slice(&dimensions.width.to_be_bytes());
+        ihdr.extend_from_slice(&dimensions.height.to_be_bytes());
+        ihdr.extend_from_slice(&[8, 6, 0, 0, 0]);
+        write_png_chunk(&mut self.png, b"IHDR", &ihdr).map_err(Self::map_error)?;
+        self.stream = Some(ZlibStoreStream::with_capacity(filtered_len));
+        self.dimensions = Some(dimensions);
+        self.expected_y = 0;
+        self.finished = false;
+        Ok(())
+    }
+
+    fn write_row(&mut self, y: u32, row: &[u8]) -> Result<(), ThumbnailError> {
+        let dimensions = self
+            .dimensions
+            .ok_or_else(|| ThumbnailError::internal("PNG row stream was not started"))?;
+        if y != self.expected_y {
+            return Err(ThumbnailError::internal(format!(
+                "PNG row stream expected row {}, got {y}",
+                self.expected_y
+            )));
+        }
+        if row.len() != dimensions.stride {
+            return Err(ThumbnailError::internal(
+                "PNG row stream row length mismatch",
+            ));
+        }
+        let stream = self
+            .stream
+            .as_mut()
+            .ok_or_else(|| ThumbnailError::internal("PNG row stream was not started"))?;
+        stream.push_byte(0).map_err(Self::map_error)?;
+        stream.push_slice(row).map_err(Self::map_error)?;
+        self.expected_y = self.expected_y.saturating_add(1);
+        Ok(())
+    }
+
+    fn finish(&mut self) -> Result<(), ThumbnailError> {
+        let dimensions = self
+            .dimensions
+            .ok_or_else(|| ThumbnailError::internal("PNG row stream was not started"))?;
+        if self.expected_y != dimensions.height {
+            return Err(ThumbnailError::internal(format!(
+                "PNG row stream expected {} rows, got {}",
+                dimensions.height, self.expected_y
+            )));
+        }
+        let stream = self
+            .stream
+            .take()
+            .ok_or_else(|| ThumbnailError::internal("PNG row stream was not started"))?;
+        let idat = stream.finish().map_err(Self::map_error)?;
+        write_png_chunk(&mut self.png, b"IDAT", &idat).map_err(Self::map_error)?;
+        write_png_chunk(&mut self.png, b"IEND", &[]).map_err(Self::map_error)?;
+        self.finished = true;
+        Ok(())
+    }
+}
+
 fn zlib_store_rgba_rows(
     thumbnail: &ferrugo_thumbnail::Thumbnail,
     row_len: usize,
@@ -13358,7 +13479,9 @@ mod tests {
         assert!(json.contains("\"active_target_peak_bytes\""));
         assert!(json.contains("\"output_buffer_bytes\""));
         assert!(json.contains("\"estimated_peak_raster_bytes\""));
+        assert!(json.contains("\"estimated_peak_streaming_raster_bytes\""));
         assert!(json.contains("\"active_target_byte_reduction_per_mille\""));
+        assert!(json.contains("\"streaming_raster_byte_reduction_per_mille\""));
         assert!(json.contains("\"process_memory_summary\""));
         assert!(json.contains("\"rss_start_bytes\""));
         assert!(json.contains("\"rss_high_water_bytes\""));
@@ -14594,6 +14717,7 @@ status = "candidate"
         assert!(raster_bands.active_target_byte_reduction_per_mille() > 0);
         assert!(json.contains("\"raster_band_summary\""));
         assert!(json.contains("\"active_target_byte_reduction_per_mille\""));
+        assert!(json.contains("\"streaming_raster_byte_reduction_per_mille\""));
     }
 
     #[test]
@@ -14940,6 +15064,39 @@ status = "candidate"
         assert_eq!(
             zlib_store_rgba_rows(&thumbnail, row_len).expect("streaming zlib store"),
             zlib_store_reference_for_test(&filtered).expect("reference zlib store")
+        );
+    }
+
+    #[test]
+    fn png_row_stream_sink_should_match_full_thumbnail_encoder() {
+        let width = 13usize;
+        let height = 9usize;
+        let row_len = width * 4;
+        let bytes = (0..row_len * height)
+            .map(|index| ((index * 17) % 251) as u8)
+            .collect::<Vec<_>>();
+        let thumbnail = Thumbnail {
+            width: width as u32,
+            height: height as u32,
+            stride: row_len,
+            pixel_format: PixelFormat::Rgba8,
+            bytes,
+        };
+        let mut sink = PngRowStreamSink::default();
+        sink.begin(NativeRgbaRowsDimensions {
+            width: thumbnail.width,
+            height: thumbnail.height,
+            stride: thumbnail.stride,
+        })
+        .expect("start PNG row stream");
+        for (y, row) in thumbnail.bytes.chunks_exact(row_len).enumerate() {
+            sink.write_row(y as u32, row).expect("write PNG row");
+        }
+        sink.finish().expect("finish PNG row stream");
+
+        assert_eq!(
+            sink.into_png().expect("streamed PNG"),
+            encode_rgba_png(&thumbnail).expect("full PNG")
         );
     }
 
