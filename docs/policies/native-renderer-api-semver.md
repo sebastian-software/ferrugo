@@ -10,7 +10,7 @@ application changes.
 
 ## Public Consumer Boundary
 
-The stable consumer boundary is:
+The 1.0 stable consumer boundary is:
 
 - `ferrugo-thumbnail`: backend-neutral source, options, thumbnail, metadata,
   backend trait, and error taxonomy types.
@@ -21,9 +21,51 @@ The stable consumer boundary is:
 - `ferrugo` default commands: native-only `render`, `render-auto`, and
   `render-native` behavior for smoke tests and operational automation.
 
+The stable Rust consumer surface is intentionally narrow:
+
+| Surface | 1.0 contract |
+| --- | --- |
+| `PdfSource`, `ThumbnailOptions`, `Thumbnail`, `PixelFormat`, `OutputFormat`, `Rgba` | Stable thumbnail input, output, and options. Existing fields and enum variants stay compatible through the 1.x line. |
+| `ThumbnailBackend`, `DocumentMetadataBackend`, `TextExtractionBackend` | Stable backend-neutral traits for render, metadata, and bounded text extraction. |
+| `DocumentMetadata` and nested metadata structs | Stable bounded metadata result shapes for consumer inspection. Existing fields stay compatible through the 1.x line. |
+| `ThumbnailError`, `ThumbnailErrorClass`, `unsupported_feature_buckets`, `STABLE_UNSUPPORTED_FEATURE_BUCKETS` | Stable high-level error classes and stable unsupported-feature diagnostic buckets. |
+| `NativeBackend`, `NativeRenderLimits`, `NativeMemoryDiagnostics`, first-page preview, partial preview, and document-session entry points | Stable native backend entry points and budget/profile data needed by server/runtime consumers. |
+
 Consumer APIs must not expose PDFium handles, PDFium-specific error values, or
 PDFium fallback state. PDFium remains an optional maintainer oracle behind the
 `pdfium` feature, not part of the normal API contract.
+
+## CLI Consumer Contract
+
+The 1.0 stable CLI consumer contract is the native rendering path:
+
+| Command | Contract |
+| --- | --- |
+| `ferrugo render` | Render one page with the Rust-native backend and write PNG output. |
+| `ferrugo render-auto` | Alias for the native runtime path; no runtime PDFium fallback is attempted. |
+| `ferrugo render-native` | Force the native backend explicitly for scripts that want the backend in the command name. |
+| `ferrugo --version` / `ferrugo -V` | Print `ferrugo <version>`. |
+| `ferrugo --help` / `ferrugo -h` | Print command usage. Help text may gain commands or options but must keep the stable native render options visible. |
+
+Stable native render options are:
+
+- positional input PDF path;
+- `--output PATH` / `-o PATH`;
+- `--page-index N`;
+- `--max-edge N`;
+- `--background #RRGGBB` or `#RRGGBBAA`;
+- `--timeout SECONDS`;
+- `--annotation-mode screen|print`;
+- `--native-only` and `--no-pdfium-fallback` as compatibility no-ops because
+  the native path is already PDFium-free.
+
+CLI success exits with status 0 and writes the requested PNG. CLI failures exit
+non-zero, write a human-readable error to stderr, and preserve the
+`render error [<class>]` prefix for native render errors where `<class>` is one
+of the stable `ThumbnailErrorClass::as_str()` values.
+
+`--allow-pdfium-fallback` remains a stable rejection on native commands. It must
+not silently re-enable runtime PDFium fallback.
 
 ## Maintainer And Internal Boundary
 
@@ -33,13 +75,39 @@ The following surfaces are not committed as stable application APIs:
   low-level parser, object, display-list, and raster internals.
 - `ferrugo-pdfium` and PDFium-specific CLI commands such as `render-pdfium`,
   `render-isolated`, `compare-metadata`, `benchmark-pdfium`, and `visual-diff`.
+- Maintainer CLI commands and reports such as `summarize-fallbacks`,
+  `operator-coverage`, `trace-native`, `replay-operators`,
+  `extract-corpus-metadata`, `producer-regression-report`,
+  `classify-pdf20-usage`, `validate-local-corpus`, `benchmark-native`,
+  `benchmark-batch-native`, `benchmark-repeat-native`, `benchmark-matrix`, and
+  `visual-diff-poppler`.
 - Exact visual-diff thresholds, fixture manifests, benchmark JSON shape, and
   conformance triage reports.
 - Low-level renderer diagnostics beyond the stable unsupported-feature buckets
-  exposed by `ferrugo-thumbnail`.
+  exposed by `ferrugo-thumbnail`, including native trace, route summary,
+  operator coverage, benchmark, cache, and visual-oracle JSON shapes.
+- Public Rust types used mainly by maintainer tooling, including native trace,
+  timing, operator coverage, raster route, cache summary, and benchmark helper
+  structures, unless they are also listed in the public consumer boundary.
 
 Internal crates can change between release slices as long as the public consumer
 boundary above continues to build, test, and preserve documented behavior.
+
+## Extensibility Decision
+
+The 1.0 surface does not add `#[non_exhaustive]` to the stable consumer enums or
+replace stable option/result structs with builders. That decision keeps the
+existing Rust facade straightforward for the first stable server/runtime line.
+
+The cost is explicit: adding enum variants, removing variants, changing stable
+field names or types, or adding required fields to stable public structs is a
+breaking change for the 1.x line. New optional convenience constructors,
+builders, helper methods, and trait implementations may be added later when
+existing literal construction, defaults, and trait calls keep compiling.
+
+Maintainer-only public types can still change during the 0.x line. Before a 1.0
+release, any maintainer type that should become consumer-stable must be moved
+into the public consumer boundary table above and covered by examples or tests.
 
 ## Semver Rules
 
@@ -49,12 +117,11 @@ Until the PDFium-free 1.0 release, each public crate stays on the `0.x` train:
   `ThumbnailErrorClass::as_str()` values, or default native runtime behavior.
 - Minor releases may include planned public API cleanup only when the release slice
   includes migration notes and the package dry-run passes.
-- Public structs with public fields are treated as literal-construction
-  compatible. Adding, removing, or renaming a field is a breaking change unless
-  the type is first explicitly marked and documented as extensible.
-- Public enums are exhaustive today. Adding variants is a breaking change for
-  consumers that match exhaustively unless the enum is first explicitly marked
-  and documented as extensible.
+- Stable consumer structs with public fields are treated as
+  literal-construction compatible. Adding, removing, or renaming a field is a
+  breaking change for the 1.x line.
+- Stable consumer enums are exhaustive. Adding variants is a breaking change for
+  consumers that match exhaustively.
 - New inherent methods, trait implementations, and new optional CLI commands
   are non-breaking when existing behavior remains unchanged.
 
