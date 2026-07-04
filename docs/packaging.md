@@ -210,12 +210,13 @@ dependencies to be available from the registry. Publish or otherwise provide
 the crates in dependency order:
 
 1. `ferrugo-syntax` and `ferrugo-thumbnail`
-2. `ferrugo-object`
-3. `ferrugo-content`
-4. `ferrugo-render`
-5. `ferrugo-native`
-6. `ferrugo-pdfium` when maintainer PDFium workflows are distributed
-7. `ferrugo`
+2. `ferrugo-simd`
+3. `ferrugo-object`
+4. `ferrugo-content`
+5. `ferrugo-render`
+6. `ferrugo-native`
+7. `ferrugo-pdfium` when maintainer PDFium workflows are distributed
+8. `ferrugo`
 
 Run the local publish-readiness gate before starting the release train:
 
@@ -225,8 +226,8 @@ bash scripts/check_crate_publish_ready.sh
 
 The gate writes package-file lists for every publishable crate to
 `target/publish-ready/`, then builds package archives for the two leaf crates
-that have no internal registry dependency: `ferrugo-syntax` and
-`ferrugo-thumbnail`.
+that have no internal registry dependency: `ferrugo-syntax`,
+`ferrugo-thumbnail`, and `ferrugo-simd`.
 
 Cargo verifies dependency-chain crates such as `ferrugo-object`,
 `ferrugo-render`, and `ferrugo` against crates.io. Their full `cargo package`
@@ -243,6 +244,7 @@ Local package dry-runs can validate leaf crates before the full release train:
 ```sh
 cargo package -p ferrugo-syntax --allow-dirty --no-verify
 cargo package -p ferrugo-thumbnail --allow-dirty --no-verify
+cargo package -p ferrugo-simd --allow-dirty --no-verify
 ```
 
 Once the previous crates in the sequence are visible on crates.io, publish the
@@ -251,6 +253,7 @@ next crate from the same checkout:
 ```sh
 cargo publish -p ferrugo-syntax --locked
 cargo publish -p ferrugo-thumbnail --locked
+cargo publish -p ferrugo-simd --locked
 cargo publish -p ferrugo-object --locked
 cargo publish -p ferrugo-content --locked
 cargo publish -p ferrugo-render --locked
@@ -296,7 +299,8 @@ Repository setup required outside Git:
    the secret is absent.
 2. In crates.io, configure Trusted Publishing for each published crate:
    `ferrugo-syntax`, `ferrugo-thumbnail`, `ferrugo-object`, `ferrugo-content`,
-   `ferrugo-render`, `ferrugo-native`, `ferrugo-pdfium`, and `ferrugo`.
+   `ferrugo-simd`, `ferrugo-render`, `ferrugo-native`, `ferrugo-pdfium`, and
+   `ferrugo`.
 3. Point each trusted publisher at repository `sebastian-software/ferrugo` and
    workflow `.github/workflows/publish.yml`.
 

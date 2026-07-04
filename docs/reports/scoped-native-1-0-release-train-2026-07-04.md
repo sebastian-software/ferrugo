@@ -109,12 +109,13 @@ Publish the workspace crates in dependency order:
 
 1. `ferrugo-syntax`
 2. `ferrugo-thumbnail`
-3. `ferrugo-object`
-4. `ferrugo-content`
-5. `ferrugo-render`
-6. `ferrugo-native`
-7. `ferrugo-pdfium` for maintainer comparison workflows
-8. `ferrugo`
+3. `ferrugo-simd`
+4. `ferrugo-object`
+5. `ferrugo-content`
+6. `ferrugo-render`
+7. `ferrugo-native`
+8. `ferrugo-pdfium` for maintainer comparison workflows
+9. `ferrugo`
 
 Release Please keeps the train linked through the Cargo workspace and
 `linked-versions` plugin. The publish workflow then skips versions that already
