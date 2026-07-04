@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.3.0](https://github.com/sebastian-software/ferrugo/compare/ferrugo-render-v0.2.0...ferrugo-render-v0.3.0) (2026-07-04)
+
+
+### Bug Fixes
+
+* **render:** classify office fallback fonts ([c11295b](https://github.com/sebastian-software/ferrugo/commit/c11295b878ac4618cb4787aabc344a97aded7aed))
+* **render:** clip text in dense table cells ([83f53d5](https://github.com/sebastian-software/ferrugo/commit/83f53d50f530efa3efb9ab59cecf3578678be6d2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * ferrugo-content bumped from 0.2.0 to 0.3.0
+    * ferrugo-object bumped from 0.2.0 to 0.3.0
+    * ferrugo-simd bumped from 0.2.0 to 0.3.0
+    * ferrugo-syntax bumped from 0.2.0 to 0.3.0
+    * ferrugo-thumbnail bumped from 0.2.0 to 0.3.0
+
 ## [0.2.0](https://github.com/sebastian-software/ferrugo/compare/ferrugo-render-v0.1.0...ferrugo-render-v0.2.0) (2026-07-04)
 
 

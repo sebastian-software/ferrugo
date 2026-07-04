@@ -1,6 +1,6 @@
 [package]
 name = "ferrugo-content"
-version = "0.2.0"
+version = "0.3.0"
 edition.workspace = true
 description = "PDF content stream tokenizer and operator model for Ferrugo."
 license.workspace = true
@@ -11,8 +11,8 @@ keywords = ["pdf", "content", "parser", "graphics"]
 include = ["src/**", "Cargo.toml", "README.md"]
 
 [dependencies]
-ferrugo-object = { version = "0.2.0", path = "../ferrugo-object" }
-ferrugo-syntax = { version = "0.2.0", path = "../ferrugo-syntax" }
+ferrugo-object = { version = "0.3.0", path = "../ferrugo-object" }
+ferrugo-syntax = { version = "0.3.0", path = "../ferrugo-syntax" }
 
 [lints]
 workspace = true

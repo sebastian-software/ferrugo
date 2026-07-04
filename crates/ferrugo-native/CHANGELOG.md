@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.3.0](https://github.com/sebastian-software/ferrugo/compare/ferrugo-native-v0.2.0...ferrugo-native-v0.3.0) (2026-07-04)
+
+
+### Features
+
+* **native:** render simple optional content memberships ([9034c64](https://github.com/sebastian-software/ferrugo/commit/9034c64bcb78954ea0e70441e48dcf390573511f))
+* **native:** synthesize static freetext annotations ([de50498](https://github.com/sebastian-software/ferrugo/commit/de50498cdc41352a2b31e76161cdda7418345a6e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * ferrugo-content bumped from 0.2.0 to 0.3.0
+    * ferrugo-object bumped from 0.2.0 to 0.3.0
+    * ferrugo-render bumped from 0.2.0 to 0.3.0
+    * ferrugo-syntax bumped from 0.2.0 to 0.3.0
+    * ferrugo-thumbnail bumped from 0.2.0 to 0.3.0
+
 ## [0.2.0](https://github.com/sebastian-software/ferrugo/compare/ferrugo-native-v0.1.0...ferrugo-native-v0.2.0) (2026-07-04)
 
 
