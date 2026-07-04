@@ -22,6 +22,8 @@ checklist below before adding or strengthening performance language.
 Every public performance claim needs:
 
 - [ ] Two stable matrix runs.
+- [ ] Every hot-render record uses at least 20 measured samples after warmup.
+- [ ] Every claimed timing record stays at or below the configured CoV gate.
 - [ ] Same host or documented host differences.
 - [ ] Reference renderer versions recorded.
 - [ ] Timing reliability caveats reviewed.
@@ -39,6 +41,11 @@ faster than PDFium` is not.
 - Use release builds for claim evidence.
 - Compare the same fixture set, `max_edge`, backend set, warmup, iteration
   count, timeout, and host unless the host difference is part of the claim.
+- Treat a stable matrix run as at least 20 measured hot-render samples after a
+  separate warmup phase, with `stddev_ms`, `cov`, and interpolated percentile
+  fields present for every rendered hot record.
+- Public speed claims require `cov <= 0.15` for every timing record named by
+  the claim, unless the claim explicitly uses a stricter threshold.
 - Treat `benchmark-matrix` `timing_reliability.caveats` as blocking until the
   claim explains why they do not affect the conclusion.
 - Memory claims need a named metric: peak RSS, allocation count, allocation
@@ -63,22 +70,23 @@ matrix fields exist for it.
 
 The full benchmark matrix remains a local maintainer tool until reference-tool
 availability and variance are understood on CI. Focused fixture subsets may
-become CI gates only after their variance is measured and their budgets are
-documented.
+become CI gates only after their variance is measured, their CoV threshold is
+configured, and their budgets are documented.
 
 The current scoped native release gate uses
 `bash scripts/check_benchmark_suite.sh`. That script exercises the durable
 `benchmark-matrix` JSON/Markdown contract on the committed `small-text` fixture
 family with the native backend only. It may fail on missing fields, native
-errors, native fallbacks, or missing native timing data; it must not fail on
-PDFium, Poppler, or cross-renderer timing ratios.
+errors, native fallbacks, missing native timing data, or CoV threshold breaches;
+it must not fail on PDFium, Poppler, or cross-renderer timing ratios.
 
 ## Update Workflow
 
 Before changing README or other public copy:
 
 1. Run or identify two stable release-mode matrix artifacts.
-2. Check `timing_reliability` in both artifacts.
+2. Check `timing_reliability`, `sample_count`, `stddev_ms`, `cov`, and
+   `cov_exceeded` in both artifacts.
 3. Record renderer versions, host details, fixture family, mode, and metric.
 4. Write the claim in workload-family terms.
 5. Run `bash scripts/check_performance_claims.sh`.

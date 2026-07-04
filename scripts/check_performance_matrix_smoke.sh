@@ -9,8 +9,9 @@ REPORT="${REPORT:-target/performance-matrix-smoke.md}"
 ARTIFACT_DIR="${ARTIFACT_DIR:-target/performance-matrix-smoke-artifacts}"
 FAMILY="${FAMILY:-small-text}"
 MAX_EDGE="${MAX_EDGE:-120}"
-ITERATIONS="${ITERATIONS:-3}"
-WARMUP="${WARMUP:-1}"
+ITERATIONS="${ITERATIONS:-20}"
+WARMUP="${WARMUP:-3}"
+MAX_COV="${MAX_COV:-0.50}"
 TIMEOUT="${TIMEOUT:-30}"
 PROFILE="${PROFILE:-release}"
 
@@ -36,6 +37,7 @@ cargo run -p ferrugo "${profile_args[@]}" --no-default-features -- benchmark-mat
   --max-edge "$MAX_EDGE" \
   --iterations "$ITERATIONS" \
   --warmup "$WARMUP" \
+  --max-cov "$MAX_COV" \
   --timeout "$TIMEOUT" \
   --output "$OUTPUT" \
   --report "$REPORT" \
@@ -53,6 +55,11 @@ if (records.length === 0) {
 }
 if (!report.timing_reliability) {
   throw new Error("performance smoke must include timing_reliability");
+}
+if (report.timing_reliability.cov_exceeded_records !== 0) {
+  throw new Error(
+    `performance smoke has ${report.timing_reliability.cov_exceeded_records} CoV breach(es)`,
+  );
 }
 if (report.summary?.errors !== 0) {
   throw new Error(`performance smoke reported ${report.summary.errors} errors`);
@@ -78,6 +85,18 @@ for (const record of records) {
   }
   if (typeof record.timing?.p95_ms !== "number") {
     throw new Error(`${record.fixture} is missing p95 timing`);
+  }
+  if (record.timing.sample_count < 20) {
+    throw new Error(`${record.fixture} has too few timing samples: ${record.timing.sample_count}`);
+  }
+  if (typeof record.timing.stddev_ms !== "number") {
+    throw new Error(`${record.fixture} is missing timing stddev`);
+  }
+  if (typeof record.timing.cov !== "number") {
+    throw new Error(`${record.fixture} is missing timing CoV`);
+  }
+  if (record.timing.cov_exceeded) {
+    throw new Error(`${record.fixture} exceeded timing CoV threshold`);
   }
 }
 

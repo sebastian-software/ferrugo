@@ -45,6 +45,9 @@ const PDFIUM_RENDER_WORKER_ENV: &str = "FERRUGO_PDFIUM_RENDER_WORKER";
 const DEFAULT_TRACE_MAX_EVENTS: usize = 256;
 const TRACE_MAX_EVENTS_LIMIT: usize = 4096;
 const GOLDEN_HASH_ALGORITHM: &str = "fnv1a64";
+const DEFAULT_BENCHMARK_MATRIX_ITERATIONS: usize = 20;
+const DEFAULT_BENCHMARK_MATRIX_WARMUP: usize = 3;
+const DEFAULT_BENCHMARK_MATRIX_MAX_COV: f64 = 0.15;
 
 fn main() -> ExitCode {
     match run(env::args_os().skip(1).collect()) {
@@ -1154,8 +1157,13 @@ fn cold_process_record(
             wall_ms: Some(measurement.wall_ms),
             warmup_iterations: 0,
             measured_iterations: 1,
+            sample_count: 1,
             samples_ms: vec![measurement.wall_ms],
             mean_ms: Some(measurement.wall_ms),
+            stddev_ms: Some(0.0),
+            cov: Some(0.0),
+            cov_threshold: None,
+            cov_exceeded: false,
             p50_ms: Some(measurement.wall_ms),
             p95_ms: Some(measurement.wall_ms),
             max_ms: Some(measurement.wall_ms),
@@ -1221,7 +1229,7 @@ fn benchmark_matrix_hot_backend<B: ThumbnailBackend>(
     }
     let rss_end_bytes = current_rss_kib().map(kib_to_bytes);
     let thumbnail = last_thumbnail.expect("iterations is validated as non-zero");
-    let timing = matrix_timing_from_samples(config.warmup, samples);
+    let timing = matrix_timing_from_samples(config.warmup, samples, Some(config.max_cov));
     BenchmarkMatrixRecord {
         backend: matrix_backend,
         backend_version,
@@ -1280,8 +1288,13 @@ fn hot_error_record(
             wall_ms: None,
             warmup_iterations: config.warmup,
             measured_iterations: config.iterations,
+            sample_count: 0,
             samples_ms: Vec::new(),
             mean_ms: None,
+            stddev_ms: None,
+            cov: None,
+            cov_threshold: Some(config.max_cov),
+            cov_exceeded: false,
             p50_ms: None,
             p95_ms: None,
             max_ms: None,
@@ -1465,6 +1478,7 @@ fn benchmark_matrix_report(
             timeout_secs: config.timeout.as_secs(),
             iterations: config.iterations,
             warmup: config.warmup,
+            max_cov: config.max_cov,
             backends: config.backends.clone(),
             modes: config.modes.clone(),
             native_profile: config.native_profile,
@@ -2580,7 +2594,7 @@ struct RepeatBenchmarkConfig {
     native_profile: NativeProfile,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 struct BenchmarkMatrixConfig {
     input: PathBuf,
     manifest: Option<PathBuf>,
@@ -2596,6 +2610,7 @@ struct BenchmarkMatrixConfig {
     timeout: Duration,
     iterations: usize,
     warmup: usize,
+    max_cov: f64,
     backends: Vec<MatrixBackend>,
     modes: Vec<MatrixMode>,
     native_profile: NativeProfile,
@@ -3168,8 +3183,9 @@ impl BenchmarkMatrixConfig {
         let mut max_edge = 160;
         let mut background = Rgba::WHITE;
         let mut timeout = DEFAULT_TIMEOUT;
-        let mut iterations = 3;
-        let mut warmup = 1;
+        let mut iterations = DEFAULT_BENCHMARK_MATRIX_ITERATIONS;
+        let mut warmup = DEFAULT_BENCHMARK_MATRIX_WARMUP;
+        let mut max_cov = DEFAULT_BENCHMARK_MATRIX_MAX_COV;
         let mut backends = Vec::new();
         let mut modes = Vec::new();
         let mut native_profile = NativeProfile::Default;
@@ -3234,6 +3250,10 @@ impl BenchmarkMatrixConfig {
                     index += 1;
                     warmup = parse_usize(args, index, "--warmup")?;
                 }
+                "--max-cov" => {
+                    index += 1;
+                    max_cov = parse_f64(args, index, "--max-cov")?;
+                }
                 "--backend" => {
                     index += 1;
                     backends.push(parse_matrix_backend(required_str(
@@ -3275,6 +3295,11 @@ impl BenchmarkMatrixConfig {
                 "--iterations must be greater than zero".to_string(),
             ));
         }
+        if !max_cov.is_finite() || max_cov < 0.0 {
+            return Err(CliError::Usage(
+                "--max-cov must be a finite non-negative number".to_string(),
+            ));
+        }
         if backends.is_empty() {
             backends.extend(MatrixBackend::ALL);
         }
@@ -3299,6 +3324,7 @@ impl BenchmarkMatrixConfig {
             timeout,
             iterations,
             warmup,
+            max_cov,
             backends,
             modes,
             native_profile,
@@ -4052,10 +4078,11 @@ struct BenchmarkMatrixTimingReliability {
     ghostscript_available: bool,
     hot_pdfium_comparison_available: bool,
     cold_reference_available: bool,
+    cov_exceeded_records: usize,
     caveats: Vec<&'static str>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 struct BenchmarkMatrixReportConfig {
     input: String,
     manifest: Option<String>,
@@ -4065,6 +4092,7 @@ struct BenchmarkMatrixReportConfig {
     timeout_secs: u64,
     iterations: usize,
     warmup: usize,
+    max_cov: f64,
     backends: Vec<MatrixBackend>,
     modes: Vec<MatrixMode>,
     native_profile: NativeProfile,
@@ -4145,8 +4173,13 @@ struct MatrixTiming {
     wall_ms: Option<f64>,
     warmup_iterations: usize,
     measured_iterations: usize,
+    sample_count: usize,
     samples_ms: Vec<f64>,
     mean_ms: Option<f64>,
+    stddev_ms: Option<f64>,
+    cov: Option<f64>,
+    cov_threshold: Option<f64>,
+    cov_exceeded: bool,
     p50_ms: Option<f64>,
     p95_ms: Option<f64>,
     max_ms: Option<f64>,
@@ -6409,7 +6442,11 @@ fn parse_unsupported_feature_bucket(stderr: &str) -> Option<&str> {
     rest.get(..end)
 }
 
-fn matrix_timing_from_samples(warmup_iterations: usize, samples_ms: Vec<f64>) -> MatrixTiming {
+fn matrix_timing_from_samples(
+    warmup_iterations: usize,
+    samples_ms: Vec<f64>,
+    cov_threshold: Option<f64>,
+) -> MatrixTiming {
     let mut sorted = samples_ms.clone();
     sorted.sort_by(f64::total_cmp);
     let mean = if samples_ms.is_empty() {
@@ -6417,16 +6454,63 @@ fn matrix_timing_from_samples(warmup_iterations: usize, samples_ms: Vec<f64>) ->
     } else {
         Some(samples_ms.iter().sum::<f64>() / samples_ms.len() as f64)
     };
+    let stddev = mean.and_then(|mean| matrix_sample_stddev(&samples_ms, mean));
+    let cov = match (mean, stddev) {
+        (Some(mean), Some(stddev)) if mean.abs() > f64::EPSILON => Some(stddev / mean.abs()),
+        (Some(_), Some(stddev)) if stddev <= f64::EPSILON => Some(0.0),
+        _ => None,
+    };
+    let cov_exceeded = cov
+        .zip(cov_threshold)
+        .is_some_and(|(cov, threshold)| cov > threshold);
     MatrixTiming {
         wall_ms: mean,
         warmup_iterations,
         measured_iterations: samples_ms.len(),
+        sample_count: samples_ms.len(),
         samples_ms,
         mean_ms: mean,
-        p50_ms: (!sorted.is_empty()).then(|| percentile(&sorted, 0.50)),
-        p95_ms: (!sorted.is_empty()).then(|| percentile(&sorted, 0.95)),
+        stddev_ms: stddev,
+        cov,
+        cov_threshold,
+        cov_exceeded,
+        p50_ms: (!sorted.is_empty()).then(|| interpolated_percentile(&sorted, 0.50)),
+        p95_ms: (!sorted.is_empty()).then(|| interpolated_percentile(&sorted, 0.95)),
         max_ms: sorted.last().copied(),
     }
+}
+
+fn matrix_sample_stddev(samples_ms: &[f64], mean: f64) -> Option<f64> {
+    match samples_ms.len() {
+        0 => None,
+        1 => Some(0.0),
+        len => {
+            let variance = samples_ms
+                .iter()
+                .map(|sample| {
+                    let delta = sample - mean;
+                    delta * delta
+                })
+                .sum::<f64>()
+                / (len - 1) as f64;
+            Some(variance.sqrt())
+        }
+    }
+}
+
+fn interpolated_percentile(sorted_values: &[f64], percentile: f64) -> f64 {
+    if sorted_values.len() == 1 {
+        return sorted_values[0];
+    }
+    let clamped = percentile.clamp(0.0, 1.0);
+    let rank = clamped * (sorted_values.len() - 1) as f64;
+    let lower = rank.floor() as usize;
+    let upper = rank.ceil() as usize;
+    if lower == upper {
+        return sorted_values[lower];
+    }
+    let fraction = rank - lower as f64;
+    sorted_values[lower] + (sorted_values[upper] - sorted_values[lower]) * fraction
 }
 
 fn matrix_output_from_path(path: &Path) -> MatrixOutput {
@@ -6633,7 +6717,7 @@ fn matrix_family_timing(
         return None;
     }
     values.sort_by(f64::total_cmp);
-    Some(percentile(&values, 0.95))
+    Some(interpolated_percentile(&values, 0.95))
 }
 
 fn ratio(left: Option<f64>, right: Option<f64>) -> Option<f64> {
@@ -10458,6 +10542,7 @@ fn benchmark_matrix_config_json(config: &BenchmarkMatrixReportConfig) -> String 
             "\"timeout_secs\":{},",
             "\"iterations\":{},",
             "\"warmup\":{},",
+            "\"max_cov\":{},",
             "\"backends\":[{}],",
             "\"modes\":[{}],",
             "\"native_profile\":{}",
@@ -10471,6 +10556,7 @@ fn benchmark_matrix_config_json(config: &BenchmarkMatrixReportConfig) -> String 
         config.timeout_secs,
         config.iterations,
         config.warmup,
+        optional_json_f64(Some(config.max_cov)),
         backends,
         modes,
         json_string(config.native_profile.as_str())
@@ -10550,6 +10636,11 @@ fn benchmark_matrix_timing_reliability(
         ) && record.mode == MatrixMode::ColdProcess
             && record.status == MatrixStatus::Rendered
     });
+    let cov_exceeded_records = report
+        .records
+        .iter()
+        .filter(|record| record.timing.cov_exceeded)
+        .count();
 
     let hot_pdfium_comparison_available = native_hot_available && pdfium_hot_available;
     let mut caveats = Vec::new();
@@ -10579,6 +10670,9 @@ fn benchmark_matrix_timing_reliability(
     if cold_requested && !cold_reference_available {
         caveats.push("cold-reference-unavailable");
     }
+    if cov_exceeded_records > 0 {
+        caveats.push("timing-cov-threshold-exceeded");
+    }
 
     BenchmarkMatrixTimingReliability {
         rss_available,
@@ -10590,6 +10684,7 @@ fn benchmark_matrix_timing_reliability(
         ghostscript_available,
         hot_pdfium_comparison_available,
         cold_reference_available,
+        cov_exceeded_records,
         caveats,
     }
 }
@@ -10609,6 +10704,7 @@ fn benchmark_matrix_timing_reliability_json(
             "\"ghostscript_available\":{},",
             "\"hot_pdfium_comparison_available\":{},",
             "\"cold_reference_available\":{},",
+            "\"cov_exceeded_records\":{},",
             "\"caveats\":{}",
             "}}"
         ),
@@ -10621,6 +10717,7 @@ fn benchmark_matrix_timing_reliability_json(
         reliability.ghostscript_available,
         reliability.hot_pdfium_comparison_available,
         reliability.cold_reference_available,
+        reliability.cov_exceeded_records,
         json_str_array(&reliability.caveats)
     )
 }
@@ -10729,8 +10826,13 @@ fn matrix_timing_json(timing: &MatrixTiming) -> String {
             "\"wall_ms\":{},",
             "\"warmup_iterations\":{},",
             "\"measured_iterations\":{},",
+            "\"sample_count\":{},",
             "\"samples_ms\":{},",
             "\"mean_ms\":{},",
+            "\"stddev_ms\":{},",
+            "\"cov\":{},",
+            "\"cov_threshold\":{},",
+            "\"cov_exceeded\":{},",
             "\"p50_ms\":{},",
             "\"p95_ms\":{},",
             "\"max_ms\":{}",
@@ -10739,8 +10841,13 @@ fn matrix_timing_json(timing: &MatrixTiming) -> String {
         optional_json_f64(timing.wall_ms),
         timing.warmup_iterations,
         timing.measured_iterations,
+        timing.sample_count,
         float_array_json(&timing.samples_ms),
         optional_json_f64(timing.mean_ms),
+        optional_json_f64(timing.stddev_ms),
+        optional_json_f64(timing.cov),
+        optional_json_f64(timing.cov_threshold),
+        timing.cov_exceeded,
         optional_json_f64(timing.p50_ms),
         optional_json_f64(timing.p95_ms),
         optional_json_f64(timing.max_ms)
@@ -10782,7 +10889,7 @@ fn benchmark_matrix_markdown_report(report: &BenchmarkMatrixReport) -> String {
     markdown.push_str("## Timing Reliability\n\n");
     markdown.push_str("| Signal | Value |\n| --- | --- |\n");
     markdown.push_str(&format!(
-        "| RSS samples available | {} |\n| PDFium requested | {} |\n| PDFium available | {} |\n| Poppler requested | {} |\n| Poppler available | {} |\n| Ghostscript requested | {} |\n| Ghostscript available | {} |\n| Hot PDFium comparison available | {} |\n| Cold reference available | {} |\n\n",
+        "| RSS samples available | {} |\n| PDFium requested | {} |\n| PDFium available | {} |\n| Poppler requested | {} |\n| Poppler available | {} |\n| Ghostscript requested | {} |\n| Ghostscript available | {} |\n| Hot PDFium comparison available | {} |\n| Cold reference available | {} |\n| CoV threshold | {:.3} |\n| Records over CoV threshold | {} |\n\n",
         markdown_bool(timing_reliability.rss_available),
         markdown_bool(timing_reliability.pdfium_requested),
         markdown_bool(timing_reliability.pdfium_available),
@@ -10791,7 +10898,9 @@ fn benchmark_matrix_markdown_report(report: &BenchmarkMatrixReport) -> String {
         markdown_bool(timing_reliability.ghostscript_requested),
         markdown_bool(timing_reliability.ghostscript_available),
         markdown_bool(timing_reliability.hot_pdfium_comparison_available),
-        markdown_bool(timing_reliability.cold_reference_available)
+        markdown_bool(timing_reliability.cold_reference_available),
+        report.config.max_cov,
+        timing_reliability.cov_exceeded_records
     ));
     if timing_reliability.caveats.is_empty() {
         markdown.push_str("Caveats: none.\n\n");
@@ -10817,18 +10926,19 @@ fn benchmark_matrix_markdown_report(report: &BenchmarkMatrixReport) -> String {
     ));
 
     markdown.push_str("## Top 25 Slowest Ferrugo Fixtures\n\n");
-    markdown.push_str("| Rank | Fixture | Family | Mode | Time ms | Status |\n| ---: | --- | --- | --- | ---: | --- |\n");
+    markdown.push_str("| Rank | Fixture | Family | Mode | Time ms | CoV | Status |\n| ---: | --- | --- | --- | ---: | ---: | --- |\n");
     for (index, record) in top_ferrugo_slowest_records(&report.records, 25)
         .iter()
         .enumerate()
     {
         markdown.push_str(&format!(
-            "| {} | `{}` | `{}` | `{}` | {} | `{}` |\n",
+            "| {} | `{}` | `{}` | `{}` | {} | {} | `{}` |\n",
             index + 1,
             record.fixture,
             record.family,
             record.mode.as_str(),
             markdown_optional_ms(record.timing.p95_ms.or(record.timing.wall_ms)),
+            markdown_optional_ratio(record.timing.cov),
             record.status.as_str()
         ));
     }
@@ -12703,7 +12813,7 @@ fn print_usage() {
     println!(
         "Usage: ferrugo <render|render-auto|render-native|render-pdfium|render-isolated|compare-metadata|summarize-fallbacks|operator-coverage|trace-native|replay-operators|extract-corpus-metadata|producer-regression-report|classify-pdf20-usage|validate-local-corpus|compare-golden|benchmark-native|benchmark-batch-native|benchmark-repeat-native|benchmark-pdfium|benchmark-matrix|visual-diff|visual-diff-poppler> <input.pdf> \
          [--output PATH] [--page-index N] [--max-edge N] [--background #RRGGBB] \
-         [--timeout SECONDS] [--iterations N] [--warmup N] [--repetitions N] [--pages-per-input N] [--max-events N] [--max-workers N] [--max-in-flight-pixels N] [--cancel-after-jobs N] [--max-ms N] [--max-p95-ms N] [--max-first-ms N] [--max-repeat-mean-ms N] [--max-output-bytes N] \
+         [--timeout SECONDS] [--iterations N] [--warmup N] [--max-cov N] [--repetitions N] [--pages-per-input N] [--max-events N] [--max-workers N] [--max-in-flight-pixels N] [--cancel-after-jobs N] [--max-ms N] [--max-p95-ms N] [--max-first-ms N] [--max-repeat-mean-ms N] [--max-output-bytes N] \
          [--backend native|pdfium|poppler|ghostscript] [--mode cold-process|hot-render] [--report PATH] [--artifact-dir PATH] [--pdftoppm PATH] [--ghostscript PATH] [--native-only] [--manifest PATH] [--include-family FAMILY] \
          [--diagnostics-dir PATH] [--allow-missing] [--annotation-mode screen|print] [--no-annotations] [--max-mae N] [--max-p95 N] [--max-changed-ratio N]"
     );
@@ -12991,6 +13101,9 @@ mod tests {
             config.modes,
             vec![MatrixMode::ColdProcess, MatrixMode::HotRender]
         );
+        assert_eq!(config.iterations, DEFAULT_BENCHMARK_MATRIX_ITERATIONS);
+        assert_eq!(config.warmup, DEFAULT_BENCHMARK_MATRIX_WARMUP);
+        assert_eq!(config.max_cov, DEFAULT_BENCHMARK_MATRIX_MAX_COV);
     }
 
     #[test]
@@ -13060,13 +13173,19 @@ mod tests {
 
     #[test]
     fn benchmark_matrix_timing_should_calculate_distribution() {
-        let timing = matrix_timing_from_samples(1, vec![4.0, 1.0, 9.0, 2.0]);
+        let timing = matrix_timing_from_samples(1, vec![4.0, 1.0, 9.0, 2.0], Some(1.0));
 
         assert_eq!(timing.warmup_iterations, 1);
         assert_eq!(timing.measured_iterations, 4);
+        assert_eq!(timing.sample_count, 4);
         assert_eq!(timing.mean_ms, Some(4.0));
-        assert_eq!(timing.p50_ms, Some(2.0));
-        assert_eq!(timing.p95_ms, Some(9.0));
+        assert_eq!(timing.stddev_ms, Some((38.0_f64 / 3.0).sqrt()));
+        assert_eq!(timing.cov, Some((38.0_f64 / 3.0).sqrt() / 4.0));
+        assert_eq!(timing.cov_threshold, Some(1.0));
+        assert!(!timing.cov_exceeded);
+        assert_eq!(timing.p50_ms, Some(3.0));
+        assert!((timing.p95_ms.expect("p95") - 8.25).abs() < 1e-9);
+        assert_eq!(timing.max_ms, Some(9.0));
     }
 
     #[test]
@@ -13109,6 +13228,7 @@ mod tests {
                 timeout_secs: 5,
                 iterations: 1,
                 warmup: 0,
+                max_cov: DEFAULT_BENCHMARK_MATRIX_MAX_COV,
                 backends: vec![MatrixBackend::Pdfium, MatrixBackend::Poppler],
                 modes: vec![MatrixMode::HotRender],
                 native_profile: NativeProfile::Default,

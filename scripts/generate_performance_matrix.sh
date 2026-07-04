@@ -8,8 +8,9 @@ OUTPUT="${OUTPUT:-target/performance-matrix.json}"
 REPORT="${REPORT:-target/performance-matrix.md}"
 ARTIFACT_DIR="${ARTIFACT_DIR:-target/performance-matrix-artifacts}"
 MAX_EDGE="${MAX_EDGE:-160}"
-ITERATIONS="${ITERATIONS:-3}"
-WARMUP="${WARMUP:-1}"
+ITERATIONS="${ITERATIONS:-20}"
+WARMUP="${WARMUP:-3}"
+MAX_COV="${MAX_COV:-0.15}"
 TIMEOUT="${TIMEOUT:-30}"
 PROFILE="${PROFILE:-release}"
 
@@ -37,6 +38,7 @@ cargo run -p ferrugo "${profile_args[@]}" "${features[@]}" -- benchmark-matrix f
   --max-edge "$MAX_EDGE" \
   --iterations "$ITERATIONS" \
   --warmup "$WARMUP" \
+  --max-cov "$MAX_COV" \
   --timeout "$TIMEOUT" \
   --output "$OUTPUT" \
   --report "$REPORT" \
