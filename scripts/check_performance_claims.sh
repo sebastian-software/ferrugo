@@ -39,9 +39,11 @@ const requiredPolicyText = [
   "The full benchmark matrix remains a local maintainer tool",
   "Focused fixture subsets may become CI gates only after their variance is measured",
   "their CoV threshold is configured",
+  "README performance results are generated from the promoted benchmark-matrix JSON",
   "Public speed claims require `cov <= 0.15`",
   "at least 20 measured hot-render samples after a separate warmup phase",
   "bash scripts/check_benchmark_suite.sh",
+  "bash scripts/check_readme_benchmark_results.sh",
   "Run `bash scripts/check_performance_claims.sh`.",
 ];
 
@@ -69,3 +71,5 @@ if (!benchmarks.includes("target/benchmark-suite/benchmark-suite-summary.txt")) 
 
 console.log("performance claims policy check passed");
 NODE
+
+bash scripts/check_readme_benchmark_results.sh
