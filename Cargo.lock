@@ -78,7 +78,7 @@ version = "0.1.0"
 
 [[package]]
 name = "ferrugo-wasm-smoke"
-version = "0.1.1"
+version = "0.1.0"
 dependencies = [
  "ferrugo-native",
  "ferrugo-thumbnail",
