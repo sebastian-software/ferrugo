@@ -155,15 +155,17 @@ export FERRUGO_PDFIUM_LIBRARY="/path/to/pdfium/out/ferrugo-dylib/libpdfium.dylib
 export DYLD_LIBRARY_PATH="/path/to/pdfium/out/ferrugo-dylib"
 ```
 
-The PDFium-enabled CLI adds:
+The PDFium-enabled CLI adds the legacy direct binding commands:
 
 - `render-pdfium`
 - `render-isolated`
 - `compare-metadata`
 - `benchmark-pdfium`
-- `visual-diff`
 
-It does not add runtime fallback to `render` / `render-auto`.
+`visual-diff` and `benchmark-matrix --backend pdfium` use an external PDFium
+renderer through `--pdfium` or `FERRUGO_PDFIUM_RENDERER`; they do not require
+the `pdfium` Cargo feature. The feature does not add runtime fallback to
+`render` / `render-auto`.
 The internal `render-worker` entry point is private child-process plumbing for
 `render-isolated`; direct CLI invocation is rejected.
 

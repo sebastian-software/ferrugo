@@ -158,7 +158,12 @@ budgets, and narrow unsafe boundaries. When PDFium or Poppler are used, they
 answer "what should this document look like?" or "where did the native renderer
 drift?", not "what should the runtime depend on?"
 
-To build and run PDFium comparison commands, enable the feature explicitly:
+`benchmark-matrix --backend pdfium` and `visual-diff` use an external PDFium
+renderer configured with `FERRUGO_PDFIUM_RENDERER` or `--pdfium`; they do not
+require the `pdfium` Cargo feature.
+
+To build and run legacy direct PDFium binding commands, enable the feature
+explicitly:
 
 ```sh
 cargo build -p ferrugo --features pdfium

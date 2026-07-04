@@ -19,7 +19,7 @@ supported-family pass/fail decisions.
 | Native supported gate | Available through `summarize-fallbacks --fail-on-fallback`. | Primary release gate for supported families. |
 | Native budget gate | Available through `benchmark-native`. | Primary release gate for server-side throughput and bounded output. |
 | Package/quarantine gate | Available through packaging and quarantine scripts. | Primary release gate for plugin-free/PDFium-free distribution. |
-| PDFium visual diff | Available behind `--features pdfium`. | Maintainer triage only. |
+| PDFium visual diff | Available through external `--pdfium PATH` or `FERRUGO_PDFIUM_RENDERER`. | Maintainer triage only. |
 | Backend-neutral baseline JSON | Documented in `docs/baselines.md`. | Evidence format, not yet a native-only golden-image gate. |
 | Golden image comparison | Not implemented as a committed CLI gate. | Backlog item before it can become release evidence. |
 | Multi-oracle review | Strategy defined; provider probes not yet implemented. | Maintainer evidence for disputed behavior. |
@@ -54,7 +54,8 @@ they do not mean production rendering needs PDFium.
 The current evidence split is:
 
 - runtime evidence: native-only gates and package/quarantine checks;
-- comparison evidence: explicit maintainer visual-diff and metadata commands;
+- comparison evidence: explicit maintainer visual-diff, benchmark-matrix, and
+  metadata commands;
 - historical evidence: older PDFium reports and milestone notes.
 
 ## Golden Image Gap

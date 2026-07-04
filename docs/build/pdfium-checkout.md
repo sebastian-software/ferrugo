@@ -91,6 +91,34 @@ Expected output:
 573758fe2dd928279cd52b5a4bc955a6938aab39
 ```
 
+## External Renderer Adapter
+
+`benchmark-matrix --backend pdfium` and `visual-diff` use PDFium through an
+external process. They do not load `libpdfium` through the Rust binding and do
+not require the `pdfium` Cargo feature.
+
+Configure the renderer with `--pdfium PATH` or `FERRUGO_PDFIUM_RENDERER`.
+When neither is set, the CLI looks for `pdfium_test` on `PATH`.
+
+The command must accept this adapter contract:
+
+```sh
+pdfium_test \
+  --input fixtures/generated/text-page.pdf \
+  --page-index 0 \
+  --max-edge 160 \
+  --background '#FFFFFFFF' \
+  --output target/pdfium-page.ppm
+```
+
+The adapter must render one page and write a binary PPM (`P6`) RGB image to the
+output path. Keep the adapter script or binary outside this repository unless a
+later issue adds a checked-in wrapper.
+
+Missing renderer commands are recorded as `missing-tool` rows in
+`benchmark-matrix`. `visual-diff` reports the PDFium side as a reference error
+for the affected fixture.
+
 ## Local Validation Notes
 
 In this environment on 2026-06-24, `git ls-remote` successfully resolved the

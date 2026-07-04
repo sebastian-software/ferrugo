@@ -39,7 +39,9 @@ performance-matrix refresh in
 It used the pinned PDFium revision
 `573758fe2dd928279cd52b5a4bc955a6938aab39`, the generated
 `fixtures/performance-matrix-manifest.tsv` corpus, `max_edge=160`, release
-builds, and both `cold-process` and `hot-render` modes.
+builds, and both `cold-process` and `hot-render` modes. The PDFium matrix path
+has since moved to an external process oracle; use this report as historical
+same-corpus evidence, not as the current command recipe.
 
 Both runs reported 44/44 rendered records with no fallbacks, missing tools,
 not-applicable rows, errors, or timing reliability caveats. RSS was available
@@ -66,13 +68,13 @@ available, while hot-render mode records sampled process RSS for in-process
 backends. Ferrugo's native gates also enforce deterministic pixel,
 decoded-image, display-list, font, transparency, cache, and output-byte budgets.
 
-Poppler is now included in the same cold-process matrix through `pdftoppm`.
-Ghostscript is also available as an external cold-process oracle through `gs`
-or `FERRUGO_GHOSTSCRIPT`, with missing tools recorded as matrix data. MuPDF
-remains v2 backlog because setup, licensing, and tooling would slow the first
-repeatable benchmark slice. A fair MuPDF claim still needs the same first-page
-latency, output-size, and RSS fields across the same fixture families. Public
-speed or memory copy must follow the
+PDFium, Poppler, and Ghostscript are now external cold-process oracles. PDFium
+is configured through `--pdfium PATH` or `FERRUGO_PDFIUM_RENDERER`; Poppler uses
+`pdftoppm`; Ghostscript uses `gs` or `FERRUGO_GHOSTSCRIPT`. Missing tools are
+recorded as matrix data. MuPDF remains v2 backlog because setup, licensing, and
+tooling would slow the first repeatable benchmark slice. A fair MuPDF claim
+still needs the same first-page latency, output-size, and RSS fields across the
+same fixture families. Public speed or memory copy must follow the
 [performance claims policy](policies/performance-claims.md).
 
 ## Performance Matrix
@@ -83,9 +85,9 @@ explicit manifest. The default matrix covers both modes:
 
 - `cold-process`: starts a CLI/tool process per fixture and records wall time,
   exit status, output bytes, output dimensions, and peak RSS when available.
-- `hot-render`: runs in-process repetitions with warmup for Ferrugo native and
-  PDFium, then reports sample count, mean, sample standard deviation,
-  coefficient of variation (CoV), interpolated p50/p95, and max. Poppler and
+- `hot-render`: runs in-process repetitions with warmup for Ferrugo native,
+  then reports sample count, mean, sample standard deviation, coefficient of
+  variation (CoV), interpolated p50/p95, and max. PDFium, Poppler, and
   Ghostscript are recorded as `not-applicable` in this mode because they are
   intentionally measured as external tools.
 
@@ -134,10 +136,11 @@ cargo run -p ferrugo --no-default-features -- benchmark-matrix fixtures/generate
   --report target/performance-matrix.md
 ```
 
-If `FERRUGO_PDFIUM_LIBRARY` is set, the helper script enables the `pdfium`
-feature. Set `FERRUGO_GHOSTSCRIPT=/path/to/gs` when Ghostscript is not on
-`PATH`. If PDFium, Poppler, or Ghostscript are missing, the matrix records
-`missing-tool` rows instead of failing the run.
+Set `FERRUGO_PDFIUM_RENDERER=/path/to/pdfium-renderer` or pass
+`--pdfium /path/to/pdfium-renderer` for the external PDFium oracle. Set
+`FERRUGO_GHOSTSCRIPT=/path/to/gs` when Ghostscript is not on `PATH`. If PDFium,
+Poppler, or Ghostscript are missing, the matrix records `missing-tool` rows
+instead of failing the run.
 
 The Markdown report lists:
 
@@ -169,7 +172,7 @@ Each tier has a different review purpose and failure policy.
 | Smoke | `bash scripts/check_benchmark_suite.sh` | Rust toolchain only | Fails on missing schema/platform/timing fields, native errors, native fallbacks, or missing tools. Does not fail on broad timing comparisons. | `target/benchmark-suite/performance-matrix-smoke.json`, `target/benchmark-suite/performance-matrix-smoke.md`, `target/benchmark-suite/benchmark-suite-summary.txt` |
 | Release candidate | `bash scripts/check_native_only_release.sh` | Rust toolchain only | Includes the smoke tier and the native-only release gates. Stable budget failures are allowed only for bounded native release checks, not PDFium/Poppler availability or noisy cross-renderer ratios. | Native release artifacts plus the smoke tier artifacts. |
 | Local deep | `bash scripts/generate_performance_matrix.sh` | Rust toolchain; optional PDFium and Poppler | Does not block release by itself. Use it to collect repeated artifacts, inspect `timing_reliability`, and guide optimization issues. | `target/performance-matrix.json`, `target/performance-matrix.md`, `target/performance-matrix-artifacts/` |
-| Maintainer oracle comparison | `FERRUGO_PDFIUM_LIBRARY=/path/to/libpdfium.dylib bash scripts/generate_performance_matrix.sh` plus Poppler when available | PDFium and/or Poppler | Missing reference tools must be recorded as `missing-tool`, not hidden. Public claims need two stable runs and the performance-claims checklist. | Dated JSON/Markdown reports under `target/` or `docs/reports/` when promoted. |
+| Maintainer oracle comparison | `FERRUGO_PDFIUM_RENDERER=/path/to/pdfium-renderer bash scripts/generate_performance_matrix.sh` plus Poppler when available | PDFium and/or Poppler | Missing reference tools must be recorded as `missing-tool`, not hidden. Public claims need two stable runs and the performance-claims checklist. | Dated JSON/Markdown reports under `target/` or `docs/reports/` when promoted. |
 
 The smoke and release-candidate tiers run from a clean checkout with only
 committed generated fixtures. They do not require private corpus files, PDFium,
@@ -223,7 +226,8 @@ cargo run -p ferrugo -- benchmark-native fixtures/generated \
   --output target/benchmark-native-smoke.json
 ```
 
-Run the PDFium baseline with the same budgets:
+Run the legacy in-process PDFium baseline with the same budgets. This command
+uses the optional Rust binding and is not the `benchmark-matrix` PDFium oracle:
 
 ```sh
 FERRUGO_PDFIUM_LIBRARY=/path/to/pdfium/out/ferrugo-dylib/libpdfium.dylib \

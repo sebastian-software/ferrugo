@@ -10,11 +10,11 @@ comparison infrastructure. Each deletion item should be small and reversible.
 
 | Area | Decision | Reason |
 | --- | --- | --- |
-| `ferrugo-pdfium` crate | Keep as optional maintainer tooling. | It is the current local oracle for metadata, PDFium benchmarks, and visual diffs. |
+| `ferrugo-pdfium` crate | Keep as optional maintainer tooling until issue 116 removes it. | It still supports legacy direct probes while matrix and visual-diff move to an external PDFium oracle. |
 | `render-pdfium` / `render-isolated` | Keep behind `--features pdfium`. | Maintainers still need direct oracle renders and process-isolated probes. |
 | `compare-metadata` | Keep behind `--features pdfium`. | Native metadata expansion still needs an oracle for page-count and page-size parity. |
-| `benchmark-pdfium` | Keep behind `--features pdfium`. | Performance regression work needs a reference backend. |
-| `visual-diff` | Keep behind `--features pdfium`. | Pixel-diff blocker triage currently depends on a PDFium oracle. |
+| `benchmark-pdfium` | Keep behind `--features pdfium` until issue 116 removes it. | Legacy in-process comparison remains available while matrix comparisons use an external PDFium process. |
+| `visual-diff` | Use external PDFium through `--pdfium` or `FERRUGO_PDFIUM_RENDERER`. | Pixel-diff blocker triage needs a PDFium oracle without reintroducing the Rust binding. |
 | PDFium build docs and measurements | Keep as historical and maintainer setup docs. | They make oracle runs reproducible without bundling PDFium. |
 
 ## Delete Candidates
@@ -50,6 +50,7 @@ Normal supported-document rendering must use:
 - `render`, `render-auto`, or `render-native`
 - supported-family fallback gates with `--fail-on-fallback`
 
-Maintainer PDFium commands must be isolated in explicit `--features pdfium`
-jobs and must not be required for normal package installation, deployment, or
-native-only smoke tests.
+Maintainer PDFium binding commands must be isolated in explicit
+`--features pdfium` jobs. External PDFium oracle runs must use
+`FERRUGO_PDFIUM_RENDERER` or `--pdfium`. Neither path may be required for normal
+package installation, deployment, or native-only smoke tests.
