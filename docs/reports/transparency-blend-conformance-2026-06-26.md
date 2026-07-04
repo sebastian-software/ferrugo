@@ -102,6 +102,28 @@ errors are intentional typed unsupported boundaries.
   `PathRasterOptions::max_transparency_group_pixels` and covered by renderer
   budget tests.
 
+## Issue 65 Boundary Closure
+
+Issue 65 closes as an explicit scoped-release boundary. The native renderer
+continues to support the high-value transparency slice already covered here:
+ExtGState alpha, isolated groups, knockout metadata, Multiply/Screen blend modes,
+blend-mode array fallback to a supported entry, and image soft masks.
+
+ExtGState luminosity soft masks and Overlay/advanced blend modes remain typed
+`graphics.transparency` unsupported boundaries. This avoids silently expanding
+the renderer into ambiguous partial support, avoids a new fallback bucket, and
+does not introduce unbounded intermediate surfaces. Future reductions should add
+one semantic at a time, with fixture coverage, Poppler/PDFium-oracle comparison
+where available, and explicit pixel/memory budgets before changing the supported
+surface.
+
+`scripts/check_codec_transparency_boundaries.sh` is the focused ongoing gate for
+this boundary. It runs render-layer ExtGState and transparency-group budget
+tests, native transparency/blend/luminosity tests, supported and unsupported
+fallback summaries, a low-memory transparency-stack benchmark, a focused
+Poppler visual comparison over group/blend/image-soft-mask rows, and the fuzz
+smoke gate.
+
 ## Validation
 
 Commands run:

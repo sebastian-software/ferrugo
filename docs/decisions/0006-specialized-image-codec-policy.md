@@ -81,6 +81,28 @@ Milestone 0209 promotes this into a deployment gate with
 paths must render natively, while CCITT, JBIG2, and JPX remain typed
 `image.filter` boundaries.
 
+## Issue 67 Closure
+
+Issue 67 closes as a release-boundary decision, not as a new decoder adoption.
+The first future implementation candidate is `CCITTFaxDecode`/`CCF`, because it
+is common in monochrome fax/archive scans and has a narrower format surface than
+JPX or JBIG2. That future slice still needs corpus evidence, malformed-data
+tests, row and byte-alignment coverage, decoded-byte budgets, and benchmark
+evidence before it can become a default native path.
+
+JPX remains deferred until there is a pure-Rust or tightly isolated decoder with
+explicit memory/decompression budgets. JBIG2 remains deferred until there is a
+sandboxed or otherwise strongly isolated decoder strategy and a separate safety
+review. Direct unsafe decoder bindings are not acceptable for either path in the
+default native runtime.
+
+The current scoped release keeps all three specialized scan codecs typed as
+`image.filter`. `scripts/check_codec_transparency_boundaries.sh` is the focused
+gate for this policy: it validates the supported image-codec manifest, asserts
+that the CCITT/JBIG2/JPX fixtures still produce exactly three `image.filter`
+fallbacks, runs the image-heavy low-memory test, runs the image-codec benchmark
+gate, and includes the fuzz-smoke release gate.
+
 ## Follow-Up Criteria
 
 A future codec implementation slice should proceed only when it has:

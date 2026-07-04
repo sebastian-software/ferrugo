@@ -10,7 +10,7 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
 name = "ferrugo-content"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "ferrugo-object",
  "ferrugo-syntax",
@@ -29,7 +29,7 @@ dependencies = [
 
 [[package]]
 name = "ferrugo-native"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "ferrugo-content",
  "ferrugo-object",
@@ -40,7 +40,7 @@ dependencies = [
 
 [[package]]
 name = "ferrugo-object"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "ferrugo-syntax",
  "flate2",
@@ -48,7 +48,7 @@ dependencies = [
 
 [[package]]
 name = "ferrugo-render"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "ferrugo-content",
  "ferrugo-object",
@@ -61,15 +61,15 @@ dependencies = [
 
 [[package]]
 name = "ferrugo-simd"
-version = "0.2.0"
+version = "0.3.0"
 
 [[package]]
 name = "ferrugo-syntax"
-version = "0.2.0"
+version = "0.3.0"
 
 [[package]]
 name = "ferrugo-thumbnail"
-version = "0.2.0"
+version = "0.3.0"
 
 [[package]]
 name = "flate2"

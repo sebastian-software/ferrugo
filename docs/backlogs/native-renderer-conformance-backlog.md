@@ -15,9 +15,9 @@ follow-up slices. Counts come from
 | 2 | Dense office table/grid rendering | `rendering-core` + `office-export`: rectangular text clipping reduced for spreadsheet cell overflow. | Continue splitting spreadsheet/table fixtures into remaining operator semantics, hairline/grid stroke, dense layout, and broad visual parity cases. | Focused visual diff and native benchmark over spreadsheet-grid fixtures plus clipped text regression tests. |
 | 3 | Form and annotation appearance parity | `annotations-forms` + `form`: 11 remaining blockers after FreeText missing-appearance synthesis. | Compare native synthesized appearances against explicit appearance streams; isolate checkbox/radio/text-field/signature/stamp differences. | Focused visual diff over form fixtures and native form appearance tests. |
 | 4 | Report rendering-core fidelity | `rendering-core` + `report`: 12 blockers. | Triage scientific, long-report, technical, and dashboard fixtures by operator surface before broad fixes. | Focused report-family visual diff and operator snapshot coverage from 0144. |
-| 5 | Scan image/color parity | `images-color` + `scan`: 5 blockers plus 3 typed codec errors. | Separate resampling/color-conversion drift from unsupported CCITT/JBIG2/JPX codec policy. | Image visual diff subset plus typed unsupported checks for deferred codecs. |
+| 5 | Scan image/color parity | `images-color` + `scan`: 5 blockers; CCITT/JBIG2/JPX are now explicit typed codec boundaries. | Continue resampling/color-conversion drift work separately from the deferred codec policy. | Image visual diff subset plus `scripts/check_codec_transparency_boundaries.sh`. |
 | 6 | Page geometry drift | `page-geometry`: 9 blockers across office, scan, presentation, report, and browser-print. | Audit rotation, user-unit, crop-box, and linearized first-page transform parity by fixture. | Page geometry visual subset and `page_transform` unit tests. |
-| 7 | Remaining vector/transparency boundaries | 3 vector blockers, 1 transparency blocker, 3 native unsupported vector/transparency errors. | Keep gradients/shadings with accepted low-amplitude drift separate from high-delta vector and soft-mask/blend work. | Vector/transparency visual subset plus typed unsupported feature tests. |
+| 7 | Remaining vector/transparency boundaries | 3 vector blockers, 1 transparency blocker; luminosity soft masks and Overlay/advanced blends are now explicit typed boundaries. | Keep gradients/shadings with accepted low-amplitude drift separate from high-delta vector work and future one-semantic transparency reductions. | Vector/transparency visual subset plus `scripts/check_codec_transparency_boundaries.sh`. |
 | 8 | Document structure and policy boundaries | 1 hybrid-reference blocker, 1 encrypted both-error, 1 dynamic XFA native error. | Keep encryption and dynamic XFA as policy boundaries; investigate hybrid visual parity separately. | Metadata/render policy tests plus focused hybrid-reference visual diff. |
 
 ## Operator-Audit Routing
@@ -49,6 +49,26 @@ viewer-side annotation mutation stay out of scope. Current focused annotation
 manifests now classify `freetext-annotation-without-appearance.pdf` as
 `expected:native`; remaining parity work is visual fidelity for synthesized
 static forms, stamps, signatures, and explicit appearance stream matching.
+
+## Codec And Transparency Boundary Delta
+
+Issues 67 and 65 close the release-train ambiguity around specialized scan
+codecs and advanced transparency. CCITT Fax is the first future codec candidate
+when a safe decoder slice is accepted; JPX and JBIG2 remain deferred behind
+isolation and safety evidence. For the current scoped runtime, CCITT/JBIG2/JPX
+must continue to produce typed `image.filter` fallbacks.
+
+Luminosity soft masks and Overlay/advanced blend modes remain typed
+`graphics.transparency` boundaries. Supported transparency work remains focused
+on alpha, isolated groups, knockout metadata, Multiply/Screen, blend arrays that
+fall through to a supported mode, and image soft masks. Future transparency
+reductions should add one semantic at a time with visual oracle evidence and
+explicit intermediate-surface budgets.
+
+The shared executable gate is
+`scripts/check_codec_transparency_boundaries.sh`; it combines supported
+fallback-summary coverage, typed unsupported assertions, low-memory/profile
+coverage, focused transparency visual comparison, and fuzz smoke coverage.
 
 Milestone 0144 found no fully unsupported content-stream operators in the
 scanned generated corpus. The next fidelity work should therefore focus on
