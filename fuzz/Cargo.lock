@@ -9,23 +9,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
-name = "cfg-if"
-version = "1.0.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
-
-[[package]]
-name = "crc32fast"
-version = "1.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9481c1c90cbf2ac953f07c8d4a58aa3945c425b7185c9154d67a65e4230da511"
-dependencies = [
- "cfg-if",
-]
-
-[[package]]
 name = "ferrugo-content"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "ferrugo-object",
  "ferrugo-syntax",
@@ -44,7 +29,7 @@ dependencies = [
 
 [[package]]
 name = "ferrugo-native"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "ferrugo-content",
  "ferrugo-object",
@@ -55,7 +40,7 @@ dependencies = [
 
 [[package]]
 name = "ferrugo-object"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "ferrugo-syntax",
  "flate2",
@@ -63,10 +48,11 @@ dependencies = [
 
 [[package]]
 name = "ferrugo-render"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "ferrugo-content",
  "ferrugo-object",
+ "ferrugo-simd",
  "ferrugo-syntax",
  "ferrugo-thumbnail",
  "ttf-parser",
@@ -74,12 +60,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ferrugo-simd"
+version = "0.2.0"
+
+[[package]]
 name = "ferrugo-syntax"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "ferrugo-thumbnail"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "flate2"
@@ -87,8 +77,8 @@ version = "1.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "843fba2746e448b37e26a819579957415c8cef339bf08564fe8b7ddbd959573c"
 dependencies = [
- "crc32fast",
  "miniz_oxide",
+ "zlib-rs",
 ]
 
 [[package]]
@@ -112,6 +102,12 @@ name = "ttf-parser"
 version = "0.25.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d2df906b07856748fa3f6e0ad0cbaa047052d4a7dd609e231c4f72cee8c36f31"
+
+[[package]]
+name = "zlib-rs"
+version = "0.6.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5431d5661c32445236631278f27946e444ddafe4684cac70b185272d4f9c52d5"
 
 [[package]]
 name = "zune-core"

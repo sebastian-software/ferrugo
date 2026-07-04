@@ -17,8 +17,9 @@ unbounded allocation, uncontrolled CPU work, and unstable error boundaries.
 | `content_tokenize` | Content stream tokenization and inline images. | Unterminated data, operand/operator ambiguity. |
 | `render_setup` | Native metadata inspection and first-page render setup. | Page setup, declared image dimensions, renderer budgets. |
 
-`scripts/check_fuzz_smoke.sh` runs the current matrix and is the local/nightly
-smoke entry point.
+`scripts/check_fuzz_smoke.sh` runs the current matrix, writes
+`target/fuzz-smoke-summary.txt`, and is the local release-gate smoke entry
+point.
 
 ## Finding Classes
 
@@ -54,9 +55,20 @@ Resolved fuzz findings should leave one of:
 For resource exhaustion findings, the regression must prove that the failure
 happens before the large allocation or unbounded loop.
 
-## Nightly Gate
+## Release And Nightly Gate
 
-The nightly or local smoke loop should run:
+The scoped native release gate runs the deterministic fuzz/adversarial smoke
+matrix through:
+
+```sh
+bash scripts/check_fuzz_smoke.sh
+```
+
+The expected artifact is `target/fuzz-smoke-summary.txt`, containing one
+completed smoke-case line for `primitive_parse`, `xref_load`, `stream_decode`,
+`content_tokenize`, and `render_setup`, followed by `Fuzz smoke gate passed`.
+
+The fuller nightly or local hardening loop should run:
 
 ```sh
 bash scripts/check_fuzz_smoke.sh
@@ -64,5 +76,7 @@ cargo test --workspace --no-default-features
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 ```
 
-Long-running fuzz campaigns can use the same targets, but their crash corpus
-must go through the artifact workflow before anything is committed.
+Long-running fuzz campaigns and scheduled CI fuzz jobs can use the same targets,
+but they are post-scoped-release hardening unless a release-candidate smoke run
+finds a panic, abort, uncontrolled allocation, or unstable error boundary. Their
+crash corpus must go through the artifact workflow before anything is committed.

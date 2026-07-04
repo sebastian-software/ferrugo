@@ -93,11 +93,13 @@ These are the named local release gates for the scoped native release train:
 bash scripts/check_native_only_release.sh
 bash scripts/check_crate_publish_ready.sh
 cargo test -p ferrugo --test cli_contract --no-default-features
+bash scripts/check_fuzz_smoke.sh
 ```
 
 `check_native_only_release.sh` verifies the native-only workspace path, PDFium
-quarantine, plugin-free distribution, CLI binary contract behavior, package file
-list, leaf package dry-runs, and all-features Clippy. Set
+quarantine, plugin-free distribution, CLI binary contract behavior,
+fuzz/adversarial smoke coverage, package file list, leaf package dry-runs, and
+all-features Clippy. Set
 `FERRUGO_NATIVE_RELEASE_VERIFY_REGISTRY=1` only when registry-backed package
 verification is available.
 
@@ -105,6 +107,14 @@ The `cli_contract` integration test invokes the built `ferrugo` binary as a
 process and covers help/version output, successful native rendering, stable JSON
 report shapes, durable usage errors, and native-only PDFium-disabled failures
 without requiring PDFium, Poppler, or private corpus files.
+
+`check_fuzz_smoke.sh` runs the required fuzz/adversarial release matrix for
+`primitive_parse`, `xref_load`, `stream_decode`, `content_tokenize`, and
+`render_setup`. It writes `target/fuzz-smoke-summary.txt`; the expected artifact
+contains one completed smoke-case line per target plus `Fuzz smoke gate passed`.
+Scheduled or long-running fuzz campaigns remain post-scoped-release hardening
+unless this local release gate discovers a concrete crash, panic, timeout, or
+unstable error-boundary gap.
 
 `check_crate_publish_ready.sh` verifies Cargo metadata, package file lists, leaf
 package archive dry-runs, and optionally registry-backed dependency-chain

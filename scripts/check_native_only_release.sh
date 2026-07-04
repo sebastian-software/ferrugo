@@ -16,6 +16,9 @@ cargo test --workspace --no-default-features
 echo "==> native-only CLI contract test"
 cargo test -p ferrugo --test cli_contract --no-default-features
 
+echo "==> fuzz and adversarial smoke gate"
+bash scripts/check_fuzz_smoke.sh
+
 echo "==> plugin-free distribution check"
 bash scripts/check_plugin_free_distribution.sh
 

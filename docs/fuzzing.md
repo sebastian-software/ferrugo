@@ -11,6 +11,21 @@ Run all current smoke targets:
 bash scripts/check_fuzz_smoke.sh
 ```
 
+For the scoped 1.0 release train, this command is part of
+`scripts/check_native_only_release.sh`. A passing release-candidate run must
+produce:
+
+- one successful smoke line for each target in the matrix below;
+- `target/fuzz-smoke-summary.txt` with the target list and smoke-case counts;
+- the final `Fuzz smoke gate passed` line.
+
+The smoke gate is intentionally local-release-gate coverage rather than a
+scheduled CI campaign for this slice. It runs quickly from committed fixtures
+and seeds, needs no PDFium, Poppler, network, or private corpus files, and keeps
+the scoped release claim reproducible from a clean native-only checkout.
+Long-running scheduled fuzz campaigns remain post-scoped-release hardening until
+the project has a broader CI workflow surface than the current publish workflow.
+
 Run one target against saved inputs:
 
 ```sh
