@@ -84,9 +84,10 @@ explicit manifest. The default matrix covers both modes:
 - `cold-process`: starts a CLI/tool process per fixture and records wall time,
   exit status, output bytes, output dimensions, and peak RSS when available.
 - `hot-render`: runs in-process repetitions with warmup for Ferrugo native and
-  PDFium, then reports mean, p50, p95, and max. Poppler and Ghostscript are
-  recorded as `not-applicable` in this mode because they are intentionally
-  measured as external tools.
+  PDFium, then reports sample count, mean, sample standard deviation,
+  coefficient of variation (CoV), interpolated p50/p95, and max. Poppler and
+  Ghostscript are recorded as `not-applicable` in this mode because they are
+  intentionally measured as external tools.
 
 The focused starter manifest is `fixtures/performance-matrix-manifest.tsv`.
 It maps the initial families to real generated fixtures:
@@ -125,8 +126,9 @@ Or call the CLI directly:
 cargo run -p ferrugo --no-default-features -- benchmark-matrix fixtures/generated \
   --manifest fixtures/performance-matrix-manifest.tsv \
   --max-edge 160 \
-  --iterations 3 \
-  --warmup 1 \
+  --iterations 20 \
+  --warmup 3 \
+  --max-cov 0.15 \
   --timeout 30 \
   --output target/performance-matrix.json \
   --report target/performance-matrix.md
@@ -145,10 +147,17 @@ The Markdown report lists:
 - family-level Ferrugo/PDFium, Ferrugo/Poppler, and Ferrugo/Ghostscript ratios
   with p95/error counts.
 
-This matrix is intentionally not a hard CI budget yet. First collect stable
-artifacts, profile the top 5 Ferrugo fixtures with `sample`, Instruments, or
-Samply on release builds, and only then open optimization PRs with before/after
-evidence.
+This matrix is intentionally not a broad cross-renderer CI budget yet. First
+collect stable artifacts, profile the top 5 Ferrugo fixtures with `sample`,
+Instruments, or Samply on release builds, and only then open optimization PRs
+with before/after evidence.
+
+For benchmark-matrix evidence, "stable" means each hot-render record used at
+least 20 measured samples after a separate warmup phase, includes sample
+standard deviation and CoV, and stays at or below the configured CoV threshold.
+Public claims use `--max-cov 0.15` unless the report explicitly documents a
+stricter threshold. Smoke gates may use a looser threshold to validate schema
+and harness plumbing without turning local scheduling noise into product copy.
 
 ## Benchmark Suite Tiers
 
@@ -167,7 +176,8 @@ committed generated fixtures. They do not require private corpus files, PDFium,
 Poppler, or network access. The initial release smoke uses the `small-text`
 family in native `hot-render` mode at `max_edge=120`; that subset is deliberately
 small enough to be stable while still proving the durable `benchmark-matrix`
-JSON, Markdown, platform, timing, family, and record fields.
+JSON, Markdown, platform, timing, sample-count, stddev, CoV, family, and record
+fields.
 
 ## Release Candidate Artifact Policy
 
@@ -181,10 +191,13 @@ Required fields for release-candidate benchmark evidence:
 - `schema_version` and `report_kind` in JSON;
 - `platform.os`, `platform.arch`, and compiler/runtime metadata when available;
 - `config` with `input`, `manifest`, `include_families`, `max_edge`,
-  `iterations`, `warmup`, backend list, mode list, and native profile;
+  `iterations`, `warmup`, `max_cov`, backend list, mode list, and native
+  profile;
 - `timing_reliability` with caveats reviewed before public copy changes;
 - `summary`, `families`, and per-record `timing`, `output`, `memory`, and
   `status` fields;
+- per-record `timing.sample_count`, `timing.stddev_ms`, `timing.cov`,
+  `timing.cov_threshold`, and `timing.cov_exceeded`;
 - Markdown report generated from the same JSON artifact.
 
 Retention rules:

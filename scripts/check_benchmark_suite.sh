@@ -44,6 +44,11 @@ if (!report.config || report.config.max_edge !== 120) {
 if (!report.timing_reliability) {
   throw new Error("benchmark matrix must include timing_reliability");
 }
+if (report.timing_reliability.cov_exceeded_records !== 0) {
+  throw new Error(
+    `benchmark matrix has ${report.timing_reliability.cov_exceeded_records} CoV breach(es)`,
+  );
+}
 if (report.summary?.errors !== 0 || report.summary?.fallback_required !== 0) {
   throw new Error("benchmark matrix release smoke must have zero errors and fallbacks");
 }
@@ -65,6 +70,18 @@ for (const record of records) {
   }
   if (typeof record.timing?.p95_ms !== "number") {
     throw new Error(`${record.fixture} is missing p95 timing`);
+  }
+  if (record.timing.sample_count < 20) {
+    throw new Error(`${record.fixture} has too few timing samples: ${record.timing.sample_count}`);
+  }
+  if (typeof record.timing.stddev_ms !== "number") {
+    throw new Error(`${record.fixture} is missing timing stddev`);
+  }
+  if (typeof record.timing.cov !== "number") {
+    throw new Error(`${record.fixture} is missing timing CoV`);
+  }
+  if (record.timing.cov_exceeded) {
+    throw new Error(`${record.fixture} exceeded timing CoV threshold`);
   }
 }
 if (!markdown.includes("# Ferrugo Renderer Performance Matrix")) {

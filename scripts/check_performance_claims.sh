@@ -20,6 +20,8 @@ const requiredChecklistItems = [
   "Same host or documented host differences.",
   "Reference renderer versions recorded.",
   "Timing reliability caveats reviewed.",
+  "Every hot-render record uses at least 20 measured samples after warmup.",
+  "Every claimed timing record stays at or below the configured CoV gate.",
   "Workload family named.",
   "Metric named.",
   "Local artifacts named.",
@@ -36,6 +38,9 @@ const requiredPolicyText = [
   "MuPDF remains v2 comparison backlog.",
   "The full benchmark matrix remains a local maintainer tool",
   "Focused fixture subsets may become CI gates only after their variance is measured",
+  "their CoV threshold is configured",
+  "Public speed claims require `cov <= 0.15`",
+  "at least 20 measured hot-render samples after a separate warmup phase",
   "bash scripts/check_benchmark_suite.sh",
   "Run `bash scripts/check_performance_claims.sh`.",
 ];
