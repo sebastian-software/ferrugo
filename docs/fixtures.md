@@ -1,21 +1,32 @@
 # Fixture Policy
 
-Status: accepted Phase 0 policy.
-Date: 2026-06-24.
+Status: accepted Phase 0 policy, updated for #97 real-world seed tier.
+Date: 2026-07-04.
 
-Fixtures committed to this repository must be generated, license-safe, small,
-and easy to inspect. They exist to exercise thumbnail plumbing, not to claim
-full PDF feature coverage.
+Fixtures committed to this repository must be license-safe, small, and easy to
+inspect. Generated fixtures remain the default because they are reproducible
+without network access. A small real-world tier is allowed only when the source
+is public and redistributable, provenance is documented per file, and the
+fixture fills a benchmark coverage gap that generated reductions cannot.
 
 ## Committed Fixtures
 
-Committed fixtures live under `fixtures/generated/` and must meet these rules:
+Generated committed fixtures live under `fixtures/generated/` and must meet
+these rules:
 
 - Generated from repository scripts or short handwritten source.
-- No private, customer, user-supplied, scanned, or licensed third-party PDFs.
 - Small enough for review; prefer simple one-page files.
 - Focused on one behavior per fixture.
 - Regenerable without network access.
+
+Real-world committed fixtures live under `fixtures/real-world/` and must meet
+these rules:
+
+- Public source URL recorded in `fixtures/real-world/README.md`.
+- Redistribution license recorded per file and per manifest row.
+- No private, customer, user-supplied, or legally ambiguous PDFs.
+- Small enough for normal repository checkout and benchmark review.
+- SHA-256, page count, and producer notes recorded before commit.
 
 `fixtures/corpus-manifest.tsv` assigns each committed fixture to a corpus
 family and records source, license, page-count, feature, and note metadata.
@@ -83,8 +94,8 @@ The initial seed set covers:
 
 ## Local Corpora
 
-Real-world PDFs are useful for manual probes, but they must stay out of Git.
-Store them under `fixtures/local-corpus/` and describe them with
+Private, reference-only, or license-unclear real-world PDFs must stay out of
+Git. Store them under `fixtures/local-corpus/` and describe them with
 `fixtures/local-corpus.example.toml` before running local measurements. The
 metadata is aggregate-only and is validated with:
 
@@ -98,8 +109,15 @@ Do not commit:
 - PDFs from users or private documents
 - proprietary sample packs
 - large public corpora
+- public PDFs without an explicit redistribution basis
 - generated PNG outputs from local measurements unless a milestone explicitly
   asks for a small committed artifact
+
+Local PDFs can feed the same benchmark-matrix schema by creating an untracked
+TSV shaped like `fixtures/local-corpus-matrix.example.tsv` and passing it with
+`--manifest`. Keep concrete local filenames, hashes, text, screenshots, and
+rendered pixels out of published reports unless they have completed a separate
+redistribution review.
 
 ## Regeneration
 

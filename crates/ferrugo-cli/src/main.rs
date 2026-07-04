@@ -13319,6 +13319,45 @@ mod tests {
     }
 
     #[test]
+    fn corpus_manifest_should_include_real_world_tier() {
+        let fixture_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let manifest_path = fixture_root.join("fixtures/corpus-manifest.tsv");
+        let manifest = read_corpus_manifest(&manifest_path).expect("manifest should parse");
+        let input = PathBuf::from("fixtures/real-world/uspto-patent-6289801.pdf");
+        let entry = manifest
+            .entry_for_path("fixtures/real-world/uspto-patent-6289801.pdf")
+            .expect("real-world fixture should have manifest entry");
+
+        assert_eq!(manifest.family_for_path(&input), Some("real-scan"));
+        assert_eq!(entry.page_count, 6);
+        assert!(entry.license.contains("Public domain"));
+        assert!(entry.features.iter().any(|feature| feature == "real-world"));
+        assert!(entry.features.iter().any(|feature| feature == "high-dpi"));
+    }
+
+    #[test]
+    fn performance_matrix_manifest_should_filter_real_world_families() {
+        let fixture_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let manifest_path = fixture_root.join("fixtures/performance-matrix-manifest.tsv");
+        let manifest = read_corpus_manifest(&manifest_path).expect("manifest should parse");
+        let paths = vec![
+            fixture_root.join("fixtures/real-world/irs-fw9.pdf"),
+            fixture_root.join("fixtures/real-world/usagov-report-scams-chrome-print.pdf"),
+            fixture_root.join("fixtures/real-world/uspto-patent-6289801.pdf"),
+            fixture_root.join("fixtures/real-world/cdc-data-brief-492.pdf"),
+        ];
+
+        let filtered =
+            filter_fixtures_by_family(&paths, Some(&manifest), &[String::from("real-report")])
+                .expect("real-world family should filter");
+
+        assert_eq!(
+            filtered,
+            vec![fixture_root.join("fixtures/real-world/cdc-data-brief-492.pdf")]
+        );
+    }
+
+    #[test]
     fn corpus_metadata_json_should_include_manifest_and_page_size() {
         let fixture_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let manifest_path = fixture_root.join("fixtures/corpus-manifest.tsv");

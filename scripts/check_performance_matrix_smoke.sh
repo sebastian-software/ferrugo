@@ -7,6 +7,7 @@ cd "$ROOT"
 OUTPUT="${OUTPUT:-target/performance-matrix-smoke.json}"
 REPORT="${REPORT:-target/performance-matrix-smoke.md}"
 ARTIFACT_DIR="${ARTIFACT_DIR:-target/performance-matrix-smoke-artifacts}"
+INPUT="${INPUT:-fixtures/generated}"
 FAMILY="${FAMILY:-small-text}"
 MAX_EDGE="${MAX_EDGE:-120}"
 ITERATIONS="${ITERATIONS:-20}"
@@ -15,13 +16,12 @@ MAX_COV="${MAX_COV:-0.50}"
 TIMEOUT="${TIMEOUT:-30}"
 PROFILE="${PROFILE:-release}"
 
-profile_args=()
+cargo_args=(run -p ferrugo)
 case "$PROFILE" in
   release)
-    profile_args=(--release)
+    cargo_args+=(--release)
     ;;
   dev | debug)
-    profile_args=()
     ;;
   *)
     echo "PROFILE must be one of: release, dev, debug" >&2
@@ -29,7 +29,7 @@ case "$PROFILE" in
     ;;
 esac
 
-cargo run -p ferrugo "${profile_args[@]}" --no-default-features -- benchmark-matrix fixtures/generated \
+cargo "${cargo_args[@]}" --no-default-features -- benchmark-matrix "$INPUT" \
   --manifest fixtures/performance-matrix-manifest.tsv \
   --backend native \
   --mode hot-render \
