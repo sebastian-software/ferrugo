@@ -18,6 +18,7 @@
         "ferrugo-thumbnail",
         "ferrugo-object",
         "ferrugo-content",
+        "ferrugo-simd",
         "ferrugo-render",
         "ferrugo-native",
         "ferrugo-pdfium",
@@ -37,6 +38,9 @@
     },
     "crates/ferrugo-content": {
       "component": "ferrugo-content"
+    },
+    "crates/ferrugo-simd": {
+      "component": "ferrugo-simd"
     },
     "crates/ferrugo-render": {
       "component": "ferrugo-render"

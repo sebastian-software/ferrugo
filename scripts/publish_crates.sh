@@ -13,6 +13,7 @@ packages=(
   ferrugo-thumbnail
   ferrugo-object
   ferrugo-content
+  ferrugo-simd
   ferrugo-render
   ferrugo-native
   ferrugo-pdfium
@@ -73,6 +74,7 @@ publish_with_retry ferrugo-syntax 1 0
 publish_with_retry ferrugo-thumbnail 1 0
 publish_with_retry ferrugo-object 5 30
 publish_with_retry ferrugo-content 5 30
+publish_with_retry ferrugo-simd 5 30
 publish_with_retry ferrugo-render 5 30
 publish_with_retry ferrugo-native 5 30
 publish_with_retry ferrugo-pdfium 5 30

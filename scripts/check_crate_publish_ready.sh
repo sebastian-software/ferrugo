@@ -11,6 +11,7 @@ packages=(
   ferrugo-thumbnail
   ferrugo-object
   ferrugo-content
+  ferrugo-simd
   ferrugo-render
   ferrugo-native
   ferrugo-pdfium
@@ -28,6 +29,7 @@ done
 echo "==> leaf package archive dry-runs"
 cargo package -p ferrugo-syntax --allow-dirty --no-verify
 cargo package -p ferrugo-thumbnail --allow-dirty --no-verify
+cargo package -p ferrugo-simd --allow-dirty --no-verify
 
 if [[ "${FERRUGO_VERIFY_REGISTRY_PACKAGES:-0}" == "1" ]]; then
   echo "==> registry-backed package dry-runs"
