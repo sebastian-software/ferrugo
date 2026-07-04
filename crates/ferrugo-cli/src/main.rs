@@ -43,6 +43,7 @@ const PDFIUM_RUNTIME_FALLBACK_REMOVED_MESSAGE: &str =
 const PDFIUM_RENDER_WORKER_ENV: &str = "FERRUGO_PDFIUM_RENDER_WORKER";
 const DEFAULT_TRACE_MAX_EVENTS: usize = 256;
 const TRACE_MAX_EVENTS_LIMIT: usize = 4096;
+const GOLDEN_HASH_ALGORITHM: &str = "fnv1a64";
 
 fn main() -> ExitCode {
     match run(env::args_os().skip(1).collect()) {
@@ -71,6 +72,7 @@ fn run(args: Vec<OsString>) -> Result<(), CliError> {
         Some("producer-regression-report") => producer_regression_report_command(&args[1..]),
         Some("classify-pdf20-usage") => classify_pdf20_usage_command(&args[1..]),
         Some("validate-local-corpus") => validate_local_corpus_command(&args[1..]),
+        Some("compare-golden") => compare_golden_command(&args[1..]),
         Some("benchmark-native") => benchmark_native_command(&args[1..]),
         Some("benchmark-batch-native") => benchmark_batch_native_command(&args[1..]),
         Some("benchmark-repeat-native") => benchmark_repeat_native_command(&args[1..]),
@@ -538,6 +540,32 @@ fn validate_local_corpus_command(args: &[OsString]) -> Result<(), CliError> {
     })?;
     let report = validate_local_corpus_metadata(&content)?;
     println!("{}", local_corpus_validation_json(&report));
+    Ok(())
+}
+
+fn compare_golden_command(args: &[OsString]) -> Result<(), CliError> {
+    let config = GoldenComparisonConfig::parse(args)?;
+    let manifest = read_golden_manifest(&config.manifest)?;
+    let baselines = filter_golden_baselines(&manifest, &config.input)?;
+    let options = ThumbnailOptions {
+        page_index: config.page_index,
+        max_edge: config.max_edge,
+        background: config.background,
+        output_format: ferrugo_thumbnail::OutputFormat::Rgba,
+        timeout: config.timeout,
+        annotation_mode: AnnotationMode::Screen,
+        form_appearance_mode: ferrugo_thumbnail::FormAppearanceMode::DocumentState,
+    };
+    let native = NativeBackend::new();
+    let report = compare_native_golden(&native, &baselines, &options, &config)?;
+    let failures = report.summary.failures;
+    let json = golden_comparison_report_json(&report);
+    write_optional_json(config.output.as_deref(), &json)?;
+    if failures > 0 {
+        return Err(CliError::Compare(format!(
+            "native golden comparison failed with {failures} failure(s)"
+        )));
+    }
     Ok(())
 }
 
@@ -2545,6 +2573,17 @@ struct VisualDiffConfig {
     thresholds: VisualDiffThresholds,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct GoldenComparisonConfig {
+    input: PathBuf,
+    manifest: PathBuf,
+    output: Option<PathBuf>,
+    page_index: u32,
+    max_edge: u32,
+    background: Rgba,
+    timeout: Duration,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct VisualDiffThresholds {
     max_mean_abs_error: f64,
@@ -2559,6 +2598,81 @@ impl Default for VisualDiffThresholds {
             max_p95_channel_delta: 16,
             max_changed_ratio: 0.05,
         }
+    }
+}
+
+impl GoldenComparisonConfig {
+    fn parse(args: &[OsString]) -> Result<Self, CliError> {
+        let mut input = None;
+        let mut manifest = None;
+        let mut output = None;
+        let mut page_index = DEFAULT_PAGE_INDEX;
+        let mut max_edge = 160;
+        let mut background = Rgba::WHITE;
+        let mut timeout = DEFAULT_TIMEOUT;
+
+        let mut index = 0;
+        while index < args.len() {
+            let arg = args[index]
+                .to_str()
+                .ok_or_else(|| CliError::Usage("arguments must be valid UTF-8".to_string()))?;
+            match arg {
+                "--output" | "-o" => {
+                    index += 1;
+                    output = Some(required_path(args, index, "--output")?);
+                }
+                "--manifest" => {
+                    index += 1;
+                    manifest = Some(required_path(args, index, "--manifest")?);
+                }
+                "--page-index" => {
+                    index += 1;
+                    page_index = parse_u32(args, index, "--page-index")?;
+                }
+                "--max-edge" => {
+                    index += 1;
+                    max_edge = parse_u32(args, index, "--max-edge")?;
+                }
+                "--background" => {
+                    index += 1;
+                    background = parse_background(required_str(args, index, "--background")?)?;
+                }
+                "--timeout" => {
+                    index += 1;
+                    let seconds = parse_u64(args, index, "--timeout")?;
+                    timeout = Duration::from_secs(seconds);
+                }
+                value if value.starts_with('-') => {
+                    return Err(CliError::Usage(format!("unknown option `{value}`")));
+                }
+                value => {
+                    if input.replace(PathBuf::from(value)).is_some() {
+                        return Err(CliError::Usage(
+                            "only one input path is supported".to_string(),
+                        ));
+                    }
+                }
+            }
+            index += 1;
+        }
+
+        if max_edge == 0 {
+            return Err(CliError::Usage(
+                "--max-edge must be greater than zero".to_string(),
+            ));
+        }
+
+        Ok(Self {
+            input: input.ok_or_else(|| CliError::Usage("missing input path".to_string()))?,
+            manifest: manifest.ok_or_else(|| {
+                CliError::Usage("--manifest is required for compare-golden".to_string())
+            })?,
+            output,
+            page_index,
+            max_edge,
+            background,
+            timeout,
+        })
     }
 }
 
@@ -3667,6 +3781,109 @@ enum LocalCorpusValue {
     String(String),
     Integer(usize),
     StringArray(Vec<String>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct GoldenManifest {
+    baselines: Vec<GoldenBaseline>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct GoldenBaseline {
+    fixture: String,
+    family: String,
+    backend: String,
+    platform_os: String,
+    platform_arch: String,
+    page_index: u32,
+    max_edge: u32,
+    width: u32,
+    height: u32,
+    decoded_pixel_hash: String,
+    encoded_artifact_hash: String,
+    hash_algorithm: String,
+    tolerance_policy: String,
+    reviewer: String,
+    reviewed_at: String,
+    notes: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct GoldenComparisonReport {
+    platform: PlatformMetadata,
+    config: GoldenComparisonReportConfig,
+    summary: GoldenComparisonSummary,
+    records: Vec<GoldenComparisonRecord>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct GoldenComparisonReportConfig {
+    input: String,
+    manifest: String,
+    backend: &'static str,
+    page_index: u32,
+    max_edge: u32,
+    timeout_secs: u64,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct GoldenComparisonSummary {
+    total: usize,
+    matched: usize,
+    mismatches: usize,
+    missing_fixtures: usize,
+    render_errors: usize,
+    manifest_errors: usize,
+    failures: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct GoldenComparisonRecord {
+    fixture: String,
+    family: String,
+    status: GoldenComparisonStatus,
+    reason: Option<String>,
+    expected: GoldenImageEvidence,
+    actual: Option<GoldenImageEvidence>,
+    backend: String,
+    platform_os: String,
+    platform_arch: String,
+    tolerance_policy: String,
+    reviewer: String,
+    reviewed_at: String,
+    notes: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct GoldenImageEvidence {
+    width: u32,
+    height: u32,
+    page_index: u32,
+    max_edge: u32,
+    decoded_pixel_hash: String,
+    encoded_artifact_hash: String,
+    hash_algorithm: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GoldenComparisonStatus {
+    Matched,
+    Mismatch,
+    MissingFixture,
+    RenderError,
+    ManifestError,
+}
+
+impl GoldenComparisonStatus {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Matched => "matched",
+            Self::Mismatch => "mismatch",
+            Self::MissingFixture => "missing_fixture",
+            Self::RenderError => "render_error",
+            Self::ManifestError => "manifest_error",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -5800,6 +6017,18 @@ fn document_identity_hash(path: &Path) -> Result<u64, CliError> {
     Ok(hash)
 }
 
+fn stable_hash_hex(bytes: &[u8]) -> String {
+    const FNV_OFFSET: u64 = 0xcbf29ce484222325;
+    const FNV_PRIME: u64 = 0x100000001b3;
+
+    let mut hash = FNV_OFFSET;
+    for byte in bytes {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(FNV_PRIME);
+    }
+    format!("{hash:016x}")
+}
+
 fn batch_latency_summary(records: &[BatchBenchmarkRecord]) -> BatchLatencySummary {
     if records.is_empty() {
         return BatchLatencySummary::default();
@@ -7387,6 +7616,322 @@ impl CorpusManifest {
     fn entry_for_path(&self, path: &str) -> Option<&CorpusManifestEntry> {
         self.entries_by_path.get(path)
     }
+}
+
+fn compare_native_golden(
+    native: &NativeBackend,
+    baselines: &[&GoldenBaseline],
+    options: &ThumbnailOptions,
+    config: &GoldenComparisonConfig,
+) -> Result<GoldenComparisonReport, CliError> {
+    let mut summary = GoldenComparisonSummary {
+        total: baselines.len(),
+        ..GoldenComparisonSummary::default()
+    };
+    let mut records = Vec::with_capacity(baselines.len());
+
+    for baseline in baselines {
+        let record = compare_native_golden_fixture(native, baseline, options)?;
+        match record.status {
+            GoldenComparisonStatus::Matched => summary.matched += 1,
+            GoldenComparisonStatus::Mismatch => summary.mismatches += 1,
+            GoldenComparisonStatus::MissingFixture => summary.missing_fixtures += 1,
+            GoldenComparisonStatus::RenderError => summary.render_errors += 1,
+            GoldenComparisonStatus::ManifestError => summary.manifest_errors += 1,
+        }
+        if record.status != GoldenComparisonStatus::Matched {
+            summary.failures += 1;
+        }
+        records.push(record);
+    }
+
+    Ok(GoldenComparisonReport {
+        platform: PlatformMetadata::current(),
+        config: GoldenComparisonReportConfig {
+            input: normalize_manifest_path(&config.input),
+            manifest: normalize_manifest_path(&config.manifest),
+            backend: "rust-native",
+            page_index: config.page_index,
+            max_edge: config.max_edge,
+            timeout_secs: config.timeout.as_secs(),
+        },
+        summary,
+        records,
+    })
+}
+
+fn compare_native_golden_fixture(
+    native: &NativeBackend,
+    baseline: &GoldenBaseline,
+    options: &ThumbnailOptions,
+) -> Result<GoldenComparisonRecord, CliError> {
+    let expected = baseline.expected_evidence();
+    let mut record = baseline.record_shell(expected);
+    let path = PathBuf::from(&baseline.fixture);
+
+    if baseline.backend != "rust-native" {
+        record.status = GoldenComparisonStatus::ManifestError;
+        record.reason = Some(format!(
+            "manifest backend `{}` is not supported by compare-golden",
+            baseline.backend
+        ));
+        return Ok(record);
+    }
+    if baseline.hash_algorithm != GOLDEN_HASH_ALGORITHM {
+        record.status = GoldenComparisonStatus::ManifestError;
+        record.reason = Some(format!(
+            "manifest hash algorithm `{}` is not supported",
+            baseline.hash_algorithm
+        ));
+        return Ok(record);
+    }
+    if baseline.tolerance_policy != "exact" {
+        record.status = GoldenComparisonStatus::ManifestError;
+        record.reason = Some(format!(
+            "manifest tolerance policy `{}` is not supported; use exact",
+            baseline.tolerance_policy
+        ));
+        return Ok(record);
+    }
+    if !golden_platform_matches(&baseline.platform_os, std::env::consts::OS)
+        || !golden_platform_matches(&baseline.platform_arch, std::env::consts::ARCH)
+    {
+        record.status = GoldenComparisonStatus::ManifestError;
+        record.reason = Some(format!(
+            "manifest platform {}/{} does not match current {}/{}",
+            baseline.platform_os,
+            baseline.platform_arch,
+            std::env::consts::OS,
+            std::env::consts::ARCH
+        ));
+        return Ok(record);
+    }
+    if baseline.page_index != options.page_index || baseline.max_edge != options.max_edge {
+        record.status = GoldenComparisonStatus::ManifestError;
+        record.reason = Some(format!(
+            "manifest render options page_index={} max_edge={} do not match current page_index={} max_edge={}",
+            baseline.page_index, baseline.max_edge, options.page_index, options.max_edge
+        ));
+        return Ok(record);
+    }
+    if !path.exists() {
+        record.status = GoldenComparisonStatus::MissingFixture;
+        record.reason = Some("fixture path from golden manifest does not exist".to_string());
+        return Ok(record);
+    }
+
+    let thumbnail = match native.render(PdfSource::from_path(&path), options) {
+        Ok(thumbnail) => thumbnail,
+        Err(error) => {
+            record.status = GoldenComparisonStatus::RenderError;
+            record.reason = Some(format!("{}: {}", error.class().as_str(), error));
+            return Ok(record);
+        }
+    };
+    let png = encode_rgba_png(&thumbnail)?;
+    let actual = GoldenImageEvidence {
+        width: thumbnail.width,
+        height: thumbnail.height,
+        page_index: options.page_index,
+        max_edge: options.max_edge,
+        decoded_pixel_hash: stable_hash_hex(&thumbnail.bytes),
+        encoded_artifact_hash: stable_hash_hex(&png),
+        hash_algorithm: GOLDEN_HASH_ALGORITHM.to_string(),
+    };
+    record.reason = golden_mismatch_reason(&record.expected, &actual);
+    record.status = if record.reason.is_some() {
+        GoldenComparisonStatus::Mismatch
+    } else {
+        GoldenComparisonStatus::Matched
+    };
+    record.actual = Some(actual);
+    Ok(record)
+}
+
+fn golden_mismatch_reason(
+    expected: &GoldenImageEvidence,
+    actual: &GoldenImageEvidence,
+) -> Option<String> {
+    if expected.width != actual.width || expected.height != actual.height {
+        return Some(format!(
+            "dimensions differ: expected {}x{}, actual {}x{}",
+            expected.width, expected.height, actual.width, actual.height
+        ));
+    }
+    if expected.decoded_pixel_hash != actual.decoded_pixel_hash {
+        return Some(format!(
+            "decoded pixel hash differs: expected {}, actual {}",
+            expected.decoded_pixel_hash, actual.decoded_pixel_hash
+        ));
+    }
+    if expected.encoded_artifact_hash != actual.encoded_artifact_hash {
+        return Some(format!(
+            "encoded artifact hash differs: expected {}, actual {}",
+            expected.encoded_artifact_hash, actual.encoded_artifact_hash
+        ));
+    }
+    None
+}
+
+fn golden_platform_matches(expected: &str, actual: &str) -> bool {
+    expected == "any" || expected == actual
+}
+
+impl GoldenBaseline {
+    fn expected_evidence(&self) -> GoldenImageEvidence {
+        GoldenImageEvidence {
+            width: self.width,
+            height: self.height,
+            page_index: self.page_index,
+            max_edge: self.max_edge,
+            decoded_pixel_hash: self.decoded_pixel_hash.clone(),
+            encoded_artifact_hash: self.encoded_artifact_hash.clone(),
+            hash_algorithm: self.hash_algorithm.clone(),
+        }
+    }
+
+    fn record_shell(&self, expected: GoldenImageEvidence) -> GoldenComparisonRecord {
+        GoldenComparisonRecord {
+            fixture: self.fixture.clone(),
+            family: self.family.clone(),
+            status: GoldenComparisonStatus::ManifestError,
+            reason: None,
+            expected,
+            actual: None,
+            backend: self.backend.clone(),
+            platform_os: self.platform_os.clone(),
+            platform_arch: self.platform_arch.clone(),
+            tolerance_policy: self.tolerance_policy.clone(),
+            reviewer: self.reviewer.clone(),
+            reviewed_at: self.reviewed_at.clone(),
+            notes: self.notes.clone(),
+        }
+    }
+}
+
+fn read_golden_manifest(path: &Path) -> Result<GoldenManifest, CliError> {
+    let content = fs::read_to_string(path).map_err(|source| CliError::ReadFile {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    parse_golden_manifest(&content)
+}
+
+fn parse_golden_manifest(content: &str) -> Result<GoldenManifest, CliError> {
+    let mut baselines = Vec::new();
+    for (line_index, line) in content.lines().enumerate() {
+        if line_index == 0 || line.trim().is_empty() {
+            continue;
+        }
+        let columns = line.split('\t').collect::<Vec<_>>();
+        if columns.len() != 16 {
+            return Err(CliError::Usage(format!(
+                "golden manifest line {} must have 16 tab-separated columns",
+                line_index + 1
+            )));
+        }
+        let baseline = GoldenBaseline {
+            fixture: columns[0].to_string(),
+            family: columns[1].to_string(),
+            backend: columns[2].to_string(),
+            platform_os: columns[3].to_string(),
+            platform_arch: columns[4].to_string(),
+            page_index: parse_manifest_u32(columns[5], line_index + 1, "page_index")?,
+            max_edge: parse_manifest_u32(columns[6], line_index + 1, "max_edge")?,
+            width: parse_manifest_u32(columns[7], line_index + 1, "width")?,
+            height: parse_manifest_u32(columns[8], line_index + 1, "height")?,
+            decoded_pixel_hash: columns[9].to_string(),
+            encoded_artifact_hash: columns[10].to_string(),
+            hash_algorithm: columns[11].to_string(),
+            tolerance_policy: columns[12].to_string(),
+            reviewer: columns[13].to_string(),
+            reviewed_at: columns[14].to_string(),
+            notes: columns[15].to_string(),
+        };
+        validate_golden_baseline(&baseline, line_index + 1)?;
+        baselines.push(baseline);
+    }
+    if baselines.is_empty() {
+        return Err(CliError::Usage(
+            "golden manifest must contain at least one baseline".to_string(),
+        ));
+    }
+    Ok(GoldenManifest { baselines })
+}
+
+fn parse_manifest_u32(value: &str, line_number: usize, field: &str) -> Result<u32, CliError> {
+    value.parse().map_err(|_| {
+        CliError::Usage(format!(
+            "golden manifest line {line_number} field `{field}` must be an unsigned integer"
+        ))
+    })
+}
+
+fn validate_golden_baseline(baseline: &GoldenBaseline, line_number: usize) -> Result<(), CliError> {
+    if !baseline.fixture.starts_with("fixtures/generated/") || !baseline.fixture.ends_with(".pdf") {
+        return Err(CliError::Usage(format!(
+            "golden manifest line {line_number} fixture must point to fixtures/generated/*.pdf"
+        )));
+    }
+    if baseline.family.is_empty() || baseline.reviewer.is_empty() || baseline.reviewed_at.is_empty()
+    {
+        return Err(CliError::Usage(format!(
+            "golden manifest line {line_number} family, reviewer, and reviewed_at are required"
+        )));
+    }
+    if baseline.width == 0 || baseline.height == 0 || baseline.max_edge == 0 {
+        return Err(CliError::Usage(format!(
+            "golden manifest line {line_number} dimensions and max_edge must be greater than zero"
+        )));
+    }
+    validate_golden_hash(
+        &baseline.decoded_pixel_hash,
+        line_number,
+        "decoded_pixel_hash",
+    )?;
+    validate_golden_hash(
+        &baseline.encoded_artifact_hash,
+        line_number,
+        "encoded_artifact_hash",
+    )?;
+    Ok(())
+}
+
+fn validate_golden_hash(value: &str, line_number: usize, field: &str) -> Result<(), CliError> {
+    if value.len() == 16 && value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        Ok(())
+    } else {
+        Err(CliError::Usage(format!(
+            "golden manifest line {line_number} field `{field}` must be a 16-character hex fingerprint"
+        )))
+    }
+}
+
+fn filter_golden_baselines<'a>(
+    manifest: &'a GoldenManifest,
+    input: &Path,
+) -> Result<Vec<&'a GoldenBaseline>, CliError> {
+    let input_key = normalize_manifest_path(input);
+    let selected = if input.extension().and_then(|ext| ext.to_str()) == Some("pdf") {
+        manifest
+            .baselines
+            .iter()
+            .filter(|baseline| baseline.fixture == input_key)
+            .collect::<Vec<_>>()
+    } else {
+        let prefix = format!("{}/", input_key.trim_end_matches('/'));
+        manifest
+            .baselines
+            .iter()
+            .filter(|baseline| baseline.fixture.starts_with(&prefix))
+            .collect::<Vec<_>>()
+    };
+    if selected.is_empty() {
+        return Err(CliError::Usage(
+            "golden manifest matched no input fixtures".to_string(),
+        ));
+    }
+    Ok(selected)
 }
 
 fn read_corpus_manifest(path: &Path) -> Result<CorpusManifest, CliError> {
@@ -9637,6 +10182,138 @@ fn benchmark_matrix_report_json(report: &BenchmarkMatrixReport) -> String {
     )
 }
 
+fn golden_comparison_report_json(report: &GoldenComparisonReport) -> String {
+    let records = report
+        .records
+        .iter()
+        .map(golden_comparison_record_json)
+        .collect::<Vec<_>>()
+        .join(",");
+    format!(
+        concat!(
+            "{{\n",
+            "  \"schema_version\": 1,\n",
+            "  \"report_kind\": \"native-golden-comparison\",\n",
+            "  \"privacy\": {{\"includes_pdf_bytes\":false,\"includes_rendered_pixels\":false,\"committed_artifacts\":\"hashes-only\"}},\n",
+            "  \"platform\": {},\n",
+            "  \"config\": {},\n",
+            "  \"summary\": {},\n",
+            "  \"records\": [{}]\n",
+            "}}\n"
+        ),
+        platform_metadata_json(&report.platform),
+        golden_comparison_config_json(&report.config),
+        golden_comparison_summary_json(&report.summary),
+        records
+    )
+}
+
+fn golden_comparison_config_json(config: &GoldenComparisonReportConfig) -> String {
+    format!(
+        concat!(
+            "{{",
+            "\"input\":{},",
+            "\"manifest\":{},",
+            "\"backend\":{},",
+            "\"page_index\":{},",
+            "\"max_edge\":{},",
+            "\"timeout_secs\":{}",
+            "}}"
+        ),
+        json_string(&config.input),
+        json_string(&config.manifest),
+        json_string(config.backend),
+        config.page_index,
+        config.max_edge,
+        config.timeout_secs
+    )
+}
+
+fn golden_comparison_summary_json(summary: &GoldenComparisonSummary) -> String {
+    format!(
+        concat!(
+            "{{",
+            "\"total\":{},",
+            "\"matched\":{},",
+            "\"mismatches\":{},",
+            "\"missing_fixtures\":{},",
+            "\"render_errors\":{},",
+            "\"manifest_errors\":{},",
+            "\"failures\":{}",
+            "}}"
+        ),
+        summary.total,
+        summary.matched,
+        summary.mismatches,
+        summary.missing_fixtures,
+        summary.render_errors,
+        summary.manifest_errors,
+        summary.failures
+    )
+}
+
+fn golden_comparison_record_json(record: &GoldenComparisonRecord) -> String {
+    format!(
+        concat!(
+            "{{",
+            "\"fixture\":{},",
+            "\"family\":{},",
+            "\"status\":{},",
+            "\"reason\":{},",
+            "\"expected\":{},",
+            "\"actual\":{},",
+            "\"backend\":{},",
+            "\"platform_os\":{},",
+            "\"platform_arch\":{},",
+            "\"tolerance_policy\":{},",
+            "\"reviewer\":{},",
+            "\"reviewed_at\":{},",
+            "\"notes\":{}",
+            "}}"
+        ),
+        json_string(&record.fixture),
+        json_string(&record.family),
+        json_string(record.status.as_str()),
+        optional_json_string(record.reason.as_deref()),
+        golden_image_evidence_json(&record.expected),
+        record
+            .actual
+            .as_ref()
+            .map(golden_image_evidence_json)
+            .unwrap_or_else(|| "null".to_string()),
+        json_string(&record.backend),
+        json_string(&record.platform_os),
+        json_string(&record.platform_arch),
+        json_string(&record.tolerance_policy),
+        json_string(&record.reviewer),
+        json_string(&record.reviewed_at),
+        json_string(&record.notes)
+    )
+}
+
+fn golden_image_evidence_json(evidence: &GoldenImageEvidence) -> String {
+    format!(
+        concat!(
+            "{{",
+            "\"width\":{},",
+            "\"height\":{},",
+            "\"page_index\":{},",
+            "\"max_edge\":{},",
+            "\"decoded_pixel_hash\":{},",
+            "\"encoded_artifact_hash\":{},",
+            "\"hash_algorithm\":{}",
+            "}}"
+        ),
+        evidence.width,
+        evidence.height,
+        evidence.page_index,
+        evidence.max_edge,
+        json_string(&evidence.decoded_pixel_hash),
+        json_string(&evidence.encoded_artifact_hash),
+        json_string(&evidence.hash_algorithm)
+    )
+}
+
 fn benchmark_matrix_config_json(config: &BenchmarkMatrixReportConfig) -> String {
     let backends = config
         .backends
@@ -11758,7 +12435,7 @@ fn crc32(bytes: impl IntoIterator<Item = u8>) -> u32 {
 
 fn print_usage() {
     println!(
-        "Usage: ferrugo <render|render-auto|render-native|render-pdfium|render-isolated|compare-metadata|summarize-fallbacks|operator-coverage|trace-native|replay-operators|extract-corpus-metadata|producer-regression-report|classify-pdf20-usage|validate-local-corpus|benchmark-native|benchmark-batch-native|benchmark-repeat-native|benchmark-pdfium|benchmark-matrix|visual-diff|visual-diff-poppler> <input.pdf> \
+        "Usage: ferrugo <render|render-auto|render-native|render-pdfium|render-isolated|compare-metadata|summarize-fallbacks|operator-coverage|trace-native|replay-operators|extract-corpus-metadata|producer-regression-report|classify-pdf20-usage|validate-local-corpus|compare-golden|benchmark-native|benchmark-batch-native|benchmark-repeat-native|benchmark-pdfium|benchmark-matrix|visual-diff|visual-diff-poppler> <input.pdf> \
          [--output PATH] [--page-index N] [--max-edge N] [--background #RRGGBB] \
          [--timeout SECONDS] [--iterations N] [--warmup N] [--repetitions N] [--pages-per-input N] [--max-events N] [--max-workers N] [--max-in-flight-pixels N] [--cancel-after-jobs N] [--max-ms N] [--max-p95-ms N] [--max-first-ms N] [--max-repeat-mean-ms N] [--max-output-bytes N] \
          [--backend native|pdfium|poppler] [--mode cold-process|hot-render] [--report PATH] [--artifact-dir PATH] [--pdftoppm PATH] [--native-only] [--manifest PATH] [--include-family FAMILY] \
@@ -14037,6 +14714,52 @@ status = "candidate"
         let png = encode_rgba_png(&thumbnail).expect("valid PNG");
 
         assert_eq!(&png[..8], b"\x89PNG\r\n\x1a\n");
+    }
+
+    #[test]
+    fn stable_hash_hex_should_emit_fixed_width_fingerprint() {
+        assert_eq!(stable_hash_hex(b"ferrugo"), "88a252b802d081d5");
+    }
+
+    #[test]
+    fn golden_manifest_should_parse_reviewed_baseline_schema() {
+        let manifest = parse_golden_manifest(concat!(
+            "fixture\tfamily\tbackend\tplatform_os\tplatform_arch\tpage_index\tmax_edge\twidth\theight\tdecoded_pixel_hash\tencoded_artifact_hash\thash_algorithm\ttolerance_policy\treviewer\treviewed_at\tnotes\n",
+            "fixtures/generated/text-page.pdf\toffice-export\trust-native\tany\tany\t0\t160\t124\t160\t0123456789abcdef\tfedcba9876543210\tfnv1a64\texact\tferrugo-maintainers\t2026-07-04\tbaseline\n"
+        ))
+        .expect("valid golden manifest");
+
+        assert_eq!(manifest.baselines.len(), 1);
+        assert_eq!(
+            manifest.baselines[0].fixture,
+            "fixtures/generated/text-page.pdf"
+        );
+        assert_eq!(manifest.baselines[0].tolerance_policy, "exact");
+    }
+
+    #[test]
+    fn golden_mismatch_reason_should_name_decoded_hash_drift() {
+        let expected = GoldenImageEvidence {
+            width: 2,
+            height: 2,
+            page_index: 0,
+            max_edge: 160,
+            decoded_pixel_hash: "0123456789abcdef".to_string(),
+            encoded_artifact_hash: "fedcba9876543210".to_string(),
+            hash_algorithm: GOLDEN_HASH_ALGORITHM.to_string(),
+        };
+        let actual = GoldenImageEvidence {
+            decoded_pixel_hash: "1111111111111111".to_string(),
+            ..expected.clone()
+        };
+
+        assert_eq!(
+            golden_mismatch_reason(&expected, &actual),
+            Some(
+                "decoded pixel hash differs: expected 0123456789abcdef, actual 1111111111111111"
+                    .to_string()
+            )
+        );
     }
 
     #[test]

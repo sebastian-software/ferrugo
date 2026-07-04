@@ -70,10 +70,11 @@ For release-candidate validation, run the full native-only release gate:
 bash scripts/check_native_only_release.sh
 ```
 
-This local CI-equivalent gate runs native-only check/test, plugin-free and
-PDFium quarantine scans, `ferrugo` package file inspection, leaf package
-artifact dry-runs, and all-features clippy. It writes the inspected CLI package
-file list to
+This local CI-equivalent gate runs native-only check/test, fuzz smoke,
+benchmark smoke, native golden image comparison, plugin-free and PDFium
+quarantine scans, `ferrugo` package file inspection, leaf package artifact
+dry-runs, and all-features clippy. It writes the inspected CLI package file list
+to
 `target/native-only-release-ferrugo-package-files.txt`.
 
 ## Serverless Profile

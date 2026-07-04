@@ -22,6 +22,9 @@ bash scripts/check_fuzz_smoke.sh
 echo "==> benchmark suite gate"
 bash scripts/check_benchmark_suite.sh
 
+echo "==> native golden image gate"
+bash scripts/check_native_golden_images.sh
+
 echo "==> plugin-free distribution check"
 bash scripts/check_plugin_free_distribution.sh
 

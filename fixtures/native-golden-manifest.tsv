@@ -1,0 +1,6 @@
+fixture	family	backend	platform_os	platform_arch	page_index	max_edge	width	height	decoded_pixel_hash	encoded_artifact_hash	hash_algorithm	tolerance_policy	reviewer	reviewed_at	notes
+fixtures/generated/browser-print-clipped-backgrounds.pdf	browser-print	rust-native	any	any	0	160	160	160	2fa8f7019fdcd765	eac650809d43117d	fnv1a64	exact	ferrugo-maintainers	2026-07-04	Browser print clipped background baseline.
+fixtures/generated/office-table.pdf	office-export	rust-native	any	any	0	160	160	98	41a8b69316cc5d6f	36f0128227120785	fnv1a64	exact	ferrugo-maintainers	2026-07-04	Office export table baseline.
+fixtures/generated/flattened-form-export.pdf	form	rust-native	any	any	0	160	160	109	91031c5f7fbf4802	1f0b6ebd446b2532	fnv1a64	exact	ferrugo-maintainers	2026-07-04	Static flattened form baseline.
+fixtures/generated/scanner-skewed-mailroom-page.pdf	scan	rust-native	any	any	0	160	122	160	ca42318110e8aa5e	a8f021a8c48346e5	fnv1a64	exact	ferrugo-maintainers	2026-07-04	Scanner mailroom page baseline.
+fixtures/generated/pdf20-basic-office.pdf	office-export	rust-native	any	any	0	160	160	102	dd266d7163319322	000a7c8740879464	fnv1a64	exact	ferrugo-maintainers	2026-07-04	PDF 2.0 accepted basic office baseline.
