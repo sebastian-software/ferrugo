@@ -55,10 +55,9 @@ memory accounting.
 
 ## Diagnostics
 
-`ferrugo compare-metadata` includes a `rust_native_memory` JSON block with
-the Rust-native default budget snapshot, including the page-level image budget
-and disabled spooling policy. This makes local differential runs explainable
-when a fixture fails due to a budget limit.
+Native metadata and benchmark reports include Rust-native budget context where
+that context is needed to interpret local runs. This makes local diagnostics
+explainable when a fixture fails due to a budget limit.
 
 ## Non-Goals
 

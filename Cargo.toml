@@ -4,7 +4,6 @@ members = [
     "crates/ferrugo-content",
     "crates/ferrugo-native",
     "crates/ferrugo-object",
-    "crates/ferrugo-pdfium",
     "crates/ferrugo-render",
     "crates/ferrugo-simd",
     "crates/ferrugo-syntax",

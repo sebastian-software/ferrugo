@@ -73,8 +73,8 @@ The following surfaces are not committed as stable application APIs:
 
 - `ferrugo-content`, `ferrugo-object`, `ferrugo-render`, and `ferrugo-syntax`
   low-level parser, object, display-list, and raster internals.
-- `ferrugo-pdfium` and PDFium-specific CLI commands such as `render-pdfium`,
-  `render-isolated`, `compare-metadata`, `benchmark-pdfium`, and `visual-diff`.
+- External-oracle CLI commands such as `benchmark-matrix`, `visual-diff`, and
+  `visual-diff-poppler`.
 - Maintainer CLI commands and reports such as `summarize-fallbacks`,
   `operator-coverage`, `trace-native`, `replay-operators`,
   `extract-corpus-metadata`, `producer-regression-report`,

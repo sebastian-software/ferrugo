@@ -147,28 +147,18 @@ fn built_cli_should_report_durable_usage_failures() {
     assert!(stderr(&output).contains("usage error: missing --output path"));
 }
 
-#[cfg(not(feature = "pdfium"))]
 #[test]
-fn native_only_built_cli_should_fail_pdfium_commands_without_feature() {
-    let input = fixture("text-page.pdf");
-    let output_path = unique_target_path("pdfium-disabled", "png");
-
-    for args in [
-        vec![
-            OsString::from("render-pdfium"),
-            input.as_os_str().to_os_string(),
-            OsString::from("--output"),
-            output_path.as_os_str().to_os_string(),
-        ],
-        vec![
-            OsString::from("compare-metadata"),
-            input.as_os_str().to_os_string(),
-        ],
+fn built_cli_should_reject_removed_pdfium_binding_commands() {
+    for command in [
+        "render-pdfium",
+        "render-isolated",
+        "render-worker",
+        "compare-metadata",
+        "benchmark-pdfium",
     ] {
-        let output = ferrugo(args);
+        let output = ferrugo([command]);
 
         assert!(!output.status.success());
-        assert!(stderr(&output)
-            .contains("PDFium support is disabled; rebuild ferrugo with --features pdfium"));
+        assert!(stderr(&output).contains("usage error: unknown command"));
     }
 }

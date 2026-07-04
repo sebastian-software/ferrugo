@@ -1,7 +1,14 @@
 # 0002: Timeout And Process Isolation
 
 Date: 2026-06-24.
-Status: accepted for Phase 1 implementation.
+Status: superseded for PDFium binding work on 2026-07-04 by issue #116.
+
+The process-isolation model remains the product timeout direction for native
+rendering, but the PDFium-specific worker path described below is historical.
+Ferrugo no longer ships an in-process PDFium binding, `pdfium` Cargo feature,
+or `render-worker`/`render-isolated` CLI commands. Maintainer PDFium
+comparison now uses an external renderer process through `benchmark-matrix` and
+`visual-diff`.
 
 ## Context
 
@@ -108,9 +115,10 @@ For isolated rendering, `ThumbnailOptions::timeout` means a hard wall-clock
 deadline for one render job. If the child process does not complete before the
 deadline, the parent terminates it and returns `ThumbnailError::Timeout`.
 
-For direct in-process `PdfiumBackend::render`, timeout remains a configuration
-field but is not a hard cancellation guarantee. Callers that need robust
-timeout behavior must use the isolated runner once it exists.
+For direct in-process `PdfiumBackend::render`, timeout was a configuration
+field but not a hard cancellation guarantee. That binding path has since been
+removed from the product. Callers that need robust timeout behavior should use
+native rendering surfaces that enforce a parent-owned deadline.
 
 ## Security And Memory Tradeoffs
 
@@ -130,7 +138,7 @@ Later hardening can add:
 
 ## Next Implementation Slice
 
-Implement one small child-process render path before Node-API work:
+Historical PDFium-specific implementation slice:
 
 1. Add a private render-worker command that accepts one input PDF, one output
    path, page index, max edge, background, and timeout value.

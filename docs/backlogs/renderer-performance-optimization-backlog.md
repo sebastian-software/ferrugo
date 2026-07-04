@@ -349,8 +349,9 @@ Host details recorded on 2026-06-29:
 - Rust: `rustc 1.95.0-nightly (842bd5be2 2026-01-29)`, LLVM 22.1.0.
 - Poppler: `pdftoppm` version 26.05.0 from the Codex runtime dependency
   bundle. The absolute local runtime path is intentionally not committed.
-- PDFium: `FERRUGO_PDFIUM_LIBRARY` was not set in this shell, so PDFium matrix
-  runs remain deferred and reports must use `missing-tool` until configured.
+- PDFium: an external renderer was not configured in this shell, so PDFium
+  matrix rows use `missing-tool` until `FERRUGO_PDFIUM_RENDERER` or `--pdfium`
+  points at a compatible renderer.
 - RSS caveat: the local sandbox rejected `ps`, so `current_rss_kib()` reports
   no RSS samples in this environment. Treat RSS fields from this run as
   unavailable rather than as zero memory use.

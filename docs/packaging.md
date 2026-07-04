@@ -3,9 +3,10 @@
 Status: accepted.
 Date: 2026-06-24.
 
-`ferrugo` builds native-only by default. The PDFium backend remains in the
-workspace for maintainer comparison workflows, but it is not part of the
-default CLI dependency graph or normal runtime rendering path.
+`ferrugo` builds and ships as a Rust-native product. The workspace no longer
+contains a PDFium binding crate or a `pdfium` Cargo feature. PDFium can appear
+only as an external process oracle for maintainer benchmark and visual
+comparison workflows.
 
 ## Native-Only Build
 
@@ -31,26 +32,22 @@ default feature set empty:
 cargo install --path crates/ferrugo-cli --no-default-features
 ```
 
-The native-only CLI includes:
+The CLI includes:
 
 - `render` / `render-auto` for Rust-native first rendering.
 - `render-native` to force the Rust-native backend.
-- `summarize-fallbacks` and `extract-corpus-metadata` for corpus work that does
-  not load PDFium.
+- `summarize-fallbacks` and `extract-corpus-metadata` for corpus work.
 - `benchmark-native` for Rust-native benchmark reports.
 
-PDFium-specific commands remain visible but fail with a usage error in
-native-only builds. This keeps scripts diagnosable while making accidental
-PDFium packaging obvious.
-
-Before changing CLI features or package dependencies, run:
+Before changing CLI dispatch or package dependencies, run:
 
 ```sh
 bash scripts/check_pdfium_quarantine.sh
 ```
 
-This check fails if native-only `ferrugo` regains a `ferrugo-pdfium`
-dependency edge or if runtime crates grow forbidden PDFium integration symbols.
+This check fails if the workspace regains `crates/ferrugo-pdfium`, a
+`ferrugo-pdfium` dependency edge, PDFium binding symbols, PDFium dynamic-library
+configuration, or packaged native PDFium assets.
 
 Run the plugin-free distribution check before release packaging or install
 workflow changes:
@@ -59,7 +56,7 @@ workflow changes:
 bash scripts/check_plugin_free_distribution.sh
 ```
 
-This check confirms that the native-only CLI dependency graph contains neither
+This check confirms that the CLI dependency graph contains neither
 `ferrugo-pdfium` nor network/TLS download crates, that runtime sources do not
 contain hidden fetch or plugin hooks, and that no native binary artifacts are
 checked in under `crates/`.
@@ -120,16 +117,14 @@ ferrugo render fixtures/generated/text-page.pdf \
   --output target/plugin-free-smoke/text-page.png
 ```
 
-No `FERRUGO_PDFIUM_LIBRARY`, `DYLD_LIBRARY_PATH`, or system PDF renderer is
-required for the native-only path. The Rust crates used by the default CLI are
-pure Rust except for the Rust standard library and normal Cargo build tooling.
+No PDFium dynamic library, PDFium environment variable, or system PDF renderer
+is required for the native path. The Rust crates used by the CLI are pure Rust
+except for the Rust standard library and normal Cargo build tooling.
 
 ## Consumer Migration Checklist
 
-- Remove `FERRUGO_PDFIUM_LIBRARY` and platform dynamic-library packaging from
-  normal deployment images.
-- Build `ferrugo` without `--features pdfium` for production native-only
-  usage.
+- Remove PDFium dynamic-library packaging from normal deployment images.
+- Build `ferrugo` normally; there is no `pdfium` feature.
 - Use `render` / `render-auto` for normal native-only runtime rendering.
 - Use `render-native` when scripts must make the native backend explicit.
 - Remove `--allow-pdfium-fallback`; runtime PDFium fallback has been removed.
@@ -138,54 +133,24 @@ pure Rust except for the Rust standard library and normal Cargo build tooling.
 - Follow `docs/guides/native-only-consumer-migration.md` and
   `docs/policies/unsupported-feature-sla.md` for class/bucket routing.
 
-## PDFium-Enabled Build
-
-Enable PDFium explicitly when oracle comparison, direct PDFium probes, or PDFium
-benchmark work is needed:
-
-```sh
-cargo build -p ferrugo --features pdfium
-cargo test -p ferrugo --features pdfium
-```
-
-Then provide the local dynamic library at runtime:
-
-```sh
-export FERRUGO_PDFIUM_LIBRARY="/path/to/pdfium/out/ferrugo-dylib/libpdfium.dylib"
-export DYLD_LIBRARY_PATH="/path/to/pdfium/out/ferrugo-dylib"
-```
-
-The PDFium-enabled CLI adds the legacy direct binding commands:
-
-- `render-pdfium`
-- `render-isolated`
-- `compare-metadata`
-- `benchmark-pdfium`
+## External PDFium Oracle
 
 `visual-diff` and `benchmark-matrix --backend pdfium` use an external PDFium
-renderer through `--pdfium` or `FERRUGO_PDFIUM_RENDERER`; they do not require
-the `pdfium` Cargo feature. The feature does not add runtime fallback to
-`render` / `render-auto`.
-The internal `render-worker` entry point is private child-process plumbing for
-`render-isolated`; direct CLI invocation is rejected.
+renderer through `--pdfium` or `FERRUGO_PDFIUM_RENDERER`. The renderer is a
+local maintainer tool and is not packaged by Ferrugo.
 
 ## Workspace Defaults
 
-The workspace `default-members` exclude `crates/ferrugo-pdfium`, so root-level
-`cargo build`, `cargo check`, and `cargo test` focus on the native-only stack.
-Run `cargo test -p ferrugo-pdfium` or `cargo clippy --workspace --all-features`
-when the PDFium crate itself must be checked.
+Root-level `cargo build`, `cargo check`, and `cargo test` focus on the
+Rust-native stack.
 
 The dependency graph difference is visible with:
 
 ```sh
 cargo tree -p ferrugo --no-default-features
-cargo tree -p ferrugo --features pdfium
 ```
 
-The native-only graph has no `ferrugo-pdfium` edge. The PDFium-enabled graph
-adds only the optional `ferrugo-pdfium` crate and its shared
-`ferrugo-thumbnail` facade dependency.
+The graph must have no `ferrugo-pdfium` edge.
 
 ## Native-Only Maintenance Gate
 
@@ -193,8 +158,6 @@ The 0120 maintenance gate confirmed that:
 
 - `cargo tree -p ferrugo --no-default-features` has no
   `ferrugo-pdfium` dependency edge.
-- `cargo tree -p ferrugo --features pdfium` adds the optional
-  `ferrugo-pdfium` dependency only under the explicit feature.
 - `cargo package -p ferrugo --allow-dirty --no-verify --list` contains only
   CLI package files and Cargo metadata.
 - `cargo package -p ferrugo --allow-dirty --no-verify` is blocked until
@@ -218,8 +181,7 @@ the crates in dependency order:
 4. `ferrugo-content`
 5. `ferrugo-render`
 6. `ferrugo-native`
-7. `ferrugo-pdfium` when maintainer PDFium workflows are distributed
-8. `ferrugo`
+7. `ferrugo`
 
 Run the local publish-readiness gate before starting the release train:
 
@@ -261,7 +223,6 @@ cargo publish -p ferrugo-object --locked
 cargo publish -p ferrugo-content --locked
 cargo publish -p ferrugo-render --locked
 cargo publish -p ferrugo-native --locked
-cargo publish -p ferrugo-pdfium --locked
 cargo publish -p ferrugo --locked
 ```
 
@@ -302,8 +263,7 @@ Repository setup required outside Git:
    the secret is absent.
 2. In crates.io, configure Trusted Publishing for each published crate:
    `ferrugo-syntax`, `ferrugo-thumbnail`, `ferrugo-object`, `ferrugo-content`,
-   `ferrugo-simd`, `ferrugo-render`, `ferrugo-native`, `ferrugo-pdfium`, and
-   `ferrugo`.
+   `ferrugo-simd`, `ferrugo-render`, `ferrugo-native`, and `ferrugo`.
 3. Point each trusted publisher at repository `sebastian-software/ferrugo` and
    workflow `.github/workflows/publish.yml`.
 
