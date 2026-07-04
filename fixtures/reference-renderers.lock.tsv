@@ -1,0 +1,2 @@
+backend	expected_version	notes
+poppler	pdftoppm version 26.06.0	Local pinned Poppler reference used for #98 matrix validation.

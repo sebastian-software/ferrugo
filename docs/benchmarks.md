@@ -63,33 +63,38 @@ for early Phase 0 work; do not use its 8x-460x PDFium gap as the current
 reference.
 
 Memory comparison now has a dedicated path. The `benchmark-matrix`
-cold-process mode captures process peak RSS through `/usr/bin/time -l` when
-available, while hot-render mode records sampled process RSS for in-process
-backends. Ferrugo's native gates also enforce deterministic pixel,
-decoded-image, display-list, font, transparency, cache, and output-byte budgets.
+cold-process mode captures process peak RSS through BSD `/usr/bin/time -l` or
+GNU `/usr/bin/time -v` when available. Hot-render mode records Linux
+`/proc/self/status` `VmHWM` high-water RSS when available, otherwise it falls
+back to sampled process RSS. Ferrugo's native gates also enforce deterministic
+pixel, decoded-image, display-list, font, transparency, cache, and output-byte
+budgets.
 
-PDFium, Poppler, and Ghostscript are now external cold-process oracles. PDFium
-is configured through `--pdfium PATH` or `FERRUGO_PDFIUM_RENDERER`; Poppler uses
-`pdftoppm`; Ghostscript uses `gs` or `FERRUGO_GHOSTSCRIPT`. Missing tools are
-recorded as matrix data. MuPDF remains v2 backlog because setup, licensing, and
-tooling would slow the first repeatable benchmark slice. A fair MuPDF claim
-still needs the same first-page latency, output-size, and RSS fields across the
-same fixture families. Public speed or memory copy must follow the
+PDFium, Poppler, Ghostscript, and MuPDF are external cold-process oracles.
+PDFium is configured through `--pdfium PATH` or `FERRUGO_PDFIUM_RENDERER`;
+Poppler uses `pdftoppm`; Ghostscript uses `gs` or `FERRUGO_GHOSTSCRIPT`; MuPDF
+uses `mutool` or `FERRUGO_MUTOOL`. Missing tools are recorded as matrix data.
+The matrix also records the pinned oracle version lockfile status from
+`fixtures/reference-renderers.lock.tsv`; version drift appears as a reliability
+caveat and in JSON config metadata. Public speed or memory copy must follow the
 [performance claims policy](policies/performance-claims.md).
 
 ## Performance Matrix
 
 Use `benchmark-matrix` for report-first performance work. It emits one JSON
-schema for Ferrugo native, PDFium, Poppler, and Ghostscript, grouped by an
-explicit manifest. The default matrix covers both modes:
+schema for Ferrugo native, PDFium, Poppler, Ghostscript, and MuPDF, grouped by
+an explicit manifest. The default matrix covers both modes:
 
 - `cold-process`: starts a CLI/tool process per fixture and records wall time,
-  exit status, output bytes, output dimensions, and peak RSS when available.
+  startup-adjusted wall time, exit status, output bytes, output dimensions, and
+  peak RSS when available. Successful cold-process rows fail as
+  `output-dimension-mismatch` if the renderer output does not match the native
+  target dimensions, or the requested max edge when no native target exists.
 - `hot-render`: runs in-process repetitions with warmup for Ferrugo native,
   then reports sample count, mean, sample standard deviation, coefficient of
-  variation (CoV), interpolated p50/p95, and max. PDFium, Poppler, and
-  Ghostscript are recorded as `not-applicable` in this mode because they are
-  intentionally measured as external tools.
+  variation (CoV), interpolated p50/p95, and max. PDFium, Poppler,
+  Ghostscript, and MuPDF are recorded as `not-applicable` in this mode because
+  they are intentionally measured as external tools.
 
 The focused starter manifest is `fixtures/performance-matrix-manifest.tsv`.
 It maps the initial generated families plus the #97 real-world seed families:
@@ -158,17 +163,18 @@ cargo run -p ferrugo --no-default-features -- benchmark-matrix fixtures/generate
 
 Set `FERRUGO_PDFIUM_RENDERER=/path/to/pdfium-renderer` or pass
 `--pdfium /path/to/pdfium-renderer` for the external PDFium oracle. Set
-`FERRUGO_GHOSTSCRIPT=/path/to/gs` when Ghostscript is not on `PATH`. If PDFium,
-Poppler, or Ghostscript are missing, the matrix records `missing-tool` rows
-instead of failing the run.
+`FERRUGO_GHOSTSCRIPT=/path/to/gs` when Ghostscript is not on `PATH`; set
+`FERRUGO_MUTOOL=/path/to/mutool` for MuPDF. If PDFium, Poppler, Ghostscript, or
+MuPDF are missing, the matrix records `missing-tool` rows instead of failing the
+run.
 
 The Markdown report lists:
 
 - top 25 slowest Ferrugo fixtures;
 - top 25 largest cold-process gaps against the fastest reference renderer;
 - top memory high-water records;
-- family-level Ferrugo/PDFium, Ferrugo/Poppler, and Ferrugo/Ghostscript ratios
-  with p95/error counts.
+- family-level Ferrugo/PDFium, Ferrugo/Poppler, Ferrugo/Ghostscript, and
+  Ferrugo/MuPDF ratios with p95/error counts.
 
 This matrix is intentionally not a broad cross-renderer CI budget yet. First
 collect stable artifacts, profile the top 5 Ferrugo fixtures with `sample`,
