@@ -44,8 +44,9 @@ Read:
 
 - [Rust-native backend](backend/native.md)
 - [Rust-first, PDFium-guided decision](decisions/0001-rust-first-pdfium-guided-porting.md)
+- [Phase 0 product, API, and runtime defaults](decisions/0010-phase-0-product-api-runtime-defaults.md)
+- [Phase 0 report](reports/phase-0-report.md)
 - [Roadmap](roadmap.md)
-- [Phase 0 decisions](plans/phase-0-decisions.md)
 
 The short version: the public API is Rust-first, PDFium is an oracle, and the
 native renderer grows through parser, object, content, render, font, image, and
@@ -80,7 +81,7 @@ is scoped and tested; visual parity work still has known gaps.
 Read:
 
 - [Renderer benchmarks](benchmarks.md)
-- [Performance optimization working plan](plans/2026-06-29-performance-optimization-working-plan.md)
+- [Renderer performance optimization backlog](backlogs/renderer-performance-optimization-backlog.md)
 - [Serverless cold start and binary size](reports/serverless-cold-start-and-binary-size-2026-06-29.md)
 - [Server batch throughput](reports/server-batch-throughput-2026-06-25.md)
 - [Low-memory renderer profile](reports/low-memory-renderer-profile-2026-06-25.md)
@@ -109,10 +110,10 @@ a blanket PDF compatibility claim.
 | --- | --- |
 | `backend/` | Backend-specific behavior and support notes. |
 | `build/` | PDFium source-build notes for maintainers. |
+| `backlogs/` | Active follow-up work split out from reports, gates, and ADRs. |
 | `concepts/` | Earlier design sketches and API concepts. |
 | `decisions/` | Architecture decisions that should stay stable. |
 | `guides/` | User-facing migration and workflow guides. |
-| `plans/` | Planning baselines and scoped implementation plans. |
 | `policies/` | Compatibility, licensing, attribution, API, and support policy. |
 | `reports/` | Evidence from gates, benchmarks, corpus sweeps, and release checks. |
 | `research/` | Landscape and comparison research. |
