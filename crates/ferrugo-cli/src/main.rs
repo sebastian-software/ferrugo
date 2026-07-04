@@ -568,7 +568,9 @@ fn benchmark_repeat_native_command(args: &[OsString]) -> Result<(), CliError> {
 }
 
 fn benchmark_matrix_command(args: &[OsString]) -> Result<(), CliError> {
-    let config = BenchmarkMatrixConfig::parse(args)?;
+    let mut config = BenchmarkMatrixConfig::parse(args)?;
+    config.process_startup_baseline_ms = measure_process_startup_baseline();
+    config.oracle_versions = benchmark_oracle_version_statuses(&config)?;
     let output_path = config.output.clone();
     let markdown_path = config.markdown_report.clone();
     let options = ThumbnailOptions {
@@ -744,6 +746,37 @@ fn benchmark_matrix_records(
                         "Ghostscript is measured as an external process only in this matrix",
                     ));
                 }
+                (MatrixBackend::Mutool, MatrixMode::ColdProcess) => {
+                    if resolve_command_path(&config.mutool).is_some() {
+                        for fixture in fixtures {
+                            records.push(benchmark_matrix_mutool_cold(
+                                fixture, manifest, options, config,
+                            )?);
+                        }
+                    } else {
+                        records.extend(missing_tool_records(
+                            MatrixBackend::Mutool,
+                            MatrixMode::ColdProcess,
+                            fixtures,
+                            manifest,
+                            options,
+                            format!(
+                                "`{}` was not found; set --mutool or FERRUGO_MUTOOL",
+                                config.mutool.display()
+                            ),
+                        ));
+                    }
+                }
+                (MatrixBackend::Mutool, MatrixMode::HotRender) => {
+                    records.extend(not_applicable_records(
+                        MatrixBackend::Mutool,
+                        MatrixMode::HotRender,
+                        fixtures,
+                        manifest,
+                        options,
+                        "MuPDF mutool is measured as an external process only in this matrix",
+                    ));
+                }
             }
         }
     }
@@ -780,7 +813,12 @@ fn benchmark_matrix_native_cold(
         },
         artifact.as_path(),
         measurement,
-        true,
+        ColdProcessRecordOptions {
+            unsupported_is_fallback: true,
+            expected_dimensions: None,
+            max_edge: options.max_edge,
+            startup_baseline_ms: config.process_startup_baseline_ms,
+        },
     ))
 }
 
@@ -800,6 +838,7 @@ fn benchmark_matrix_pdfium_cold(
     let _ = fs::remove_file(&artifact);
     let args = external_pdfium_process_args(fixture, options, &artifact);
     let measurement = run_measured_process(&config.pdfium, &args, &[], options.timeout)?;
+    let target_dimensions = matrix_target_dimensions(fixture, options);
     Ok(cold_process_record(
         MatrixBackend::Pdfium,
         external_pdfium_backend_version(&config.pdfium),
@@ -811,7 +850,12 @@ fn benchmark_matrix_pdfium_cold(
         },
         artifact.as_path(),
         measurement,
-        false,
+        ColdProcessRecordOptions {
+            unsupported_is_fallback: false,
+            expected_dimensions: target_dimensions,
+            max_edge: options.max_edge,
+            startup_baseline_ms: config.process_startup_baseline_ms,
+        },
     ))
 }
 
@@ -832,7 +876,7 @@ fn benchmark_matrix_poppler_cold(
     artifact_prefix.set_extension("");
     let _ = fs::remove_file(&artifact);
     let page_number = options.page_index.saturating_add(1).to_string();
-    let max_edge = options.max_edge.to_string();
+    let target_dimensions = matrix_target_dimensions(fixture, options);
     let args = vec![
         OsString::from("-q"),
         OsString::from("-cropbox"),
@@ -841,11 +885,18 @@ fn benchmark_matrix_poppler_cold(
         OsString::from("-l"),
         OsString::from(page_number.as_str()),
         OsString::from("-singlefile"),
-        OsString::from("-scale-to"),
-        OsString::from(max_edge.as_str()),
+    ]
+    .into_iter()
+    .chain(poppler_scale_args(
+        options.max_edge,
+        target_dimensions,
+        PopplerScaleMode::TargetDimensions,
+    ))
+    .chain([
         fixture.as_os_str().to_os_string(),
         artifact_prefix.as_os_str().to_os_string(),
-    ];
+    ])
+    .collect::<Vec<_>>();
     let cache_dir = env::temp_dir().join(format!("ferrugo-matrix-poppler-{}", std::process::id()));
     fs::create_dir_all(&cache_dir).map_err(|source| CliError::Io {
         path: cache_dir.clone(),
@@ -876,7 +927,12 @@ fn benchmark_matrix_poppler_cold(
         },
         artifact.as_path(),
         measurement,
-        false,
+        ColdProcessRecordOptions {
+            unsupported_is_fallback: false,
+            expected_dimensions: target_dimensions,
+            max_edge: options.max_edge,
+            startup_baseline_ms: config.process_startup_baseline_ms,
+        },
     ))
 }
 
@@ -895,7 +951,8 @@ fn benchmark_matrix_ghostscript_cold(
     );
     let _ = fs::remove_file(&artifact);
     let page_number = options.page_index.saturating_add(1).to_string();
-    let args = vec![
+    let target_dimensions = matrix_target_dimensions(fixture, options);
+    let mut args = vec![
         OsString::from("-q"),
         OsString::from("-dSAFER"),
         OsString::from("-dBATCH"),
@@ -906,8 +963,15 @@ fn benchmark_matrix_ghostscript_cold(
         OsString::from(format!("-dFirstPage={page_number}")),
         OsString::from(format!("-dLastPage={page_number}")),
         OsString::from(format!("-sOutputFile={}", artifact.display())),
-        fixture.as_os_str().to_os_string(),
     ];
+    if let Some(dimensions) = target_dimensions {
+        args.push(OsString::from("-dPDFFitPage"));
+        args.push(OsString::from(format!(
+            "-g{}x{}",
+            dimensions.width, dimensions.height
+        )));
+    }
+    args.push(fixture.as_os_str().to_os_string());
     let measurement = run_measured_process(&config.ghostscript, &args, &[], options.timeout)?;
     Ok(cold_process_record(
         MatrixBackend::Ghostscript,
@@ -920,7 +984,70 @@ fn benchmark_matrix_ghostscript_cold(
         },
         artifact.as_path(),
         measurement,
-        false,
+        ColdProcessRecordOptions {
+            unsupported_is_fallback: false,
+            expected_dimensions: target_dimensions,
+            max_edge: options.max_edge,
+            startup_baseline_ms: config.process_startup_baseline_ms,
+        },
+    ))
+}
+
+fn benchmark_matrix_mutool_cold(
+    fixture: &Path,
+    manifest: Option<&CorpusManifest>,
+    options: &ThumbnailOptions,
+    config: &BenchmarkMatrixConfig,
+) -> Result<BenchmarkMatrixRecord, CliError> {
+    let artifact = matrix_artifact_path(
+        &config.artifact_dir,
+        MatrixBackend::Mutool,
+        MatrixMode::ColdProcess,
+        fixture,
+        "png",
+    );
+    let _ = fs::remove_file(&artifact);
+    let page_number = options.page_index.saturating_add(1).to_string();
+    let target_dimensions = matrix_target_dimensions(fixture, options);
+    let mut args = vec![
+        OsString::from("draw"),
+        OsString::from("-q"),
+        OsString::from("-F"),
+        OsString::from("png"),
+        OsString::from("-o"),
+        artifact.as_os_str().to_os_string(),
+    ];
+    if let Some(dimensions) = target_dimensions {
+        args.push(OsString::from("-w"));
+        args.push(OsString::from(dimensions.width.to_string()));
+        args.push(OsString::from("-h"));
+        args.push(OsString::from(dimensions.height.to_string()));
+    } else {
+        args.push(OsString::from("-w"));
+        args.push(OsString::from(options.max_edge.to_string()));
+        args.push(OsString::from("-h"));
+        args.push(OsString::from(options.max_edge.to_string()));
+    }
+    args.push(fixture.as_os_str().to_os_string());
+    args.push(OsString::from(page_number));
+    let measurement = run_measured_process(&config.mutool, &args, &[], options.timeout)?;
+    Ok(cold_process_record(
+        MatrixBackend::Mutool,
+        mutool_backend_version(&config.mutool),
+        command_line(&config.mutool, &args),
+        MatrixFixtureContext {
+            fixture,
+            manifest,
+            options,
+        },
+        artifact.as_path(),
+        measurement,
+        ColdProcessRecordOptions {
+            unsupported_is_fallback: false,
+            expected_dimensions: target_dimensions,
+            max_edge: options.max_edge,
+            startup_baseline_ms: config.process_startup_baseline_ms,
+        },
     ))
 }
 
@@ -965,6 +1092,43 @@ fn external_pdfium_process_args(
     ]
 }
 
+fn matrix_target_dimensions(
+    fixture: &Path,
+    options: &ThumbnailOptions,
+) -> Option<PopplerTargetDimensions> {
+    NativeBackend::new()
+        .render(PdfSource::from_path(fixture), options)
+        .ok()
+        .as_ref()
+        .map(PopplerTargetDimensions::from)
+}
+
+fn matrix_output_dimension_error(
+    output: &MatrixOutput,
+    expected: Option<PopplerTargetDimensions>,
+    max_edge: u32,
+) -> Option<String> {
+    let (Some(width), Some(height)) = (output.width, output.height) else {
+        return Some("renderer succeeded without readable output dimensions".to_string());
+    };
+    if let Some(expected) = expected {
+        if width != expected.width || height != expected.height {
+            return Some(format!(
+                "renderer output dimensions {}x{} did not match target {}x{}",
+                width, height, expected.width, expected.height
+            ));
+        }
+        return None;
+    }
+    let observed_edge = width.max(height);
+    if observed_edge != max_edge {
+        return Some(format!(
+            "renderer output max edge {observed_edge} did not match requested max edge {max_edge}"
+        ));
+    }
+    None
+}
+
 fn cold_process_record(
     backend: MatrixBackend,
     backend_version: String,
@@ -972,7 +1136,7 @@ fn cold_process_record(
     context: MatrixFixtureContext<'_>,
     output_path: &Path,
     measurement: ProcessMeasurement,
-    unsupported_is_fallback: bool,
+    options: ColdProcessRecordOptions,
 ) -> BenchmarkMatrixRecord {
     let output = if measurement.success {
         matrix_output_from_path(output_path)
@@ -980,11 +1144,20 @@ fn cold_process_record(
         MatrixOutput::default()
     };
     let (status, error_class, error_message, fallback_bucket) = if measurement.success {
-        (MatrixStatus::Rendered, None, None, None)
+        match matrix_output_dimension_error(&output, options.expected_dimensions, options.max_edge)
+        {
+            Some(message) => (
+                MatrixStatus::Error,
+                Some("output-dimension-mismatch".to_string()),
+                Some(message),
+                None,
+            ),
+            None => (MatrixStatus::Rendered, None, None, None),
+        }
     } else {
         matrix_process_failure_outcome(
             &measurement.stderr,
-            unsupported_is_fallback,
+            options.unsupported_is_fallback,
             measurement.exit_status,
         )
     };
@@ -1000,6 +1173,14 @@ fn cold_process_record(
         exit_status: measurement.exit_status,
         timing: MatrixTiming {
             wall_ms: Some(measurement.wall_ms),
+            startup_baseline_ms: options.startup_baseline_ms,
+            adjusted_wall_ms: options.startup_baseline_ms.map(|baseline| {
+                if measurement.wall_ms > baseline {
+                    measurement.wall_ms - baseline
+                } else {
+                    0.0
+                }
+            }),
             warmup_iterations: 0,
             measured_iterations: 1,
             sample_count: 1,
@@ -1073,6 +1254,14 @@ fn benchmark_matrix_hot_backend<B: ThumbnailBackend>(
         }
     }
     let rss_end_bytes = current_rss_kib().map(kib_to_bytes);
+    let rss_peak_sample_bytes = current_peak_rss_kib().map(kib_to_bytes);
+    let rss_peak_bytes =
+        rss_peak_sample_bytes.or_else(|| max_optional_u64(rss_start_bytes, rss_end_bytes));
+    let memory_source = if rss_peak_sample_bytes.is_some() {
+        "proc-vmhwm"
+    } else {
+        "process-rss-sample"
+    };
     let thumbnail = last_thumbnail.expect("iterations is validated as non-zero");
     let timing = matrix_timing_from_samples(config.warmup, samples, Some(config.max_cov));
     BenchmarkMatrixRecord {
@@ -1094,9 +1283,9 @@ fn benchmark_matrix_hot_backend<B: ThumbnailBackend>(
         },
         memory: MatrixMemory {
             rss_start_bytes,
-            rss_peak_bytes: max_optional_u64(rss_start_bytes, rss_end_bytes),
+            rss_peak_bytes,
             rss_end_bytes,
-            source: "process-rss-sample",
+            source: memory_source,
         },
         error_class: None,
         error_message: None,
@@ -1131,6 +1320,8 @@ fn hot_error_record(
         exit_status: None,
         timing: MatrixTiming {
             wall_ms: None,
+            startup_baseline_ms: None,
+            adjusted_wall_ms: None,
             warmup_iterations: config.warmup,
             measured_iterations: config.iterations,
             sample_count: 0,
@@ -1228,6 +1419,7 @@ fn matrix_unavailable_record(
             MatrixBackend::Pdfium => "pdfium external".to_string(),
             MatrixBackend::Poppler => "pdftoppm".to_string(),
             MatrixBackend::Ghostscript => "ghostscript".to_string(),
+            MatrixBackend::Mutool => "mutool".to_string(),
         },
         command: backend.as_str().to_string(),
         mode,
@@ -1273,6 +1465,12 @@ fn benchmark_matrix_report(
             backends: config.backends.clone(),
             modes: config.modes.clone(),
             native_profile: config.native_profile,
+            oracle_version_manifest: config
+                .oracle_version_manifest
+                .as_ref()
+                .map(|path| normalize_manifest_path(path)),
+            oracle_versions: config.oracle_versions.clone(),
+            process_startup_baseline_ms: config.process_startup_baseline_ms,
         },
         summary,
         families,
@@ -2220,6 +2418,10 @@ struct BenchmarkMatrixConfig {
     pdfium: PathBuf,
     pdftoppm: PathBuf,
     ghostscript: PathBuf,
+    mutool: PathBuf,
+    oracle_version_manifest: Option<PathBuf>,
+    oracle_versions: Vec<OracleVersionStatus>,
+    process_startup_baseline_ms: Option<f64>,
     page_index: u32,
     max_edge: u32,
     background: Rgba,
@@ -2238,10 +2440,17 @@ enum MatrixBackend {
     Pdfium,
     Poppler,
     Ghostscript,
+    Mutool,
 }
 
 impl MatrixBackend {
-    const ALL: [Self; 4] = [Self::Native, Self::Pdfium, Self::Poppler, Self::Ghostscript];
+    const ALL: [Self; 5] = [
+        Self::Native,
+        Self::Pdfium,
+        Self::Poppler,
+        Self::Ghostscript,
+        Self::Mutool,
+    ];
 
     const fn as_str(self) -> &'static str {
         match self {
@@ -2249,6 +2458,7 @@ impl MatrixBackend {
             Self::Pdfium => "pdfium",
             Self::Poppler => "poppler",
             Self::Ghostscript => "ghostscript",
+            Self::Mutool => "mutool",
         }
     }
 }
@@ -2799,6 +3009,11 @@ impl BenchmarkMatrixConfig {
         let mut ghostscript = env::var_os("FERRUGO_GHOSTSCRIPT")
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from("gs"));
+        let mut mutool = env::var_os("FERRUGO_MUTOOL")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("mutool"));
+        let mut oracle_version_manifest =
+            Some(PathBuf::from("fixtures/reference-renderers.lock.tsv"));
         let mut page_index = DEFAULT_PAGE_INDEX;
         let mut max_edge = 160;
         let mut background = Rgba::WHITE;
@@ -2839,6 +3054,18 @@ impl BenchmarkMatrixConfig {
                 "--ghostscript" => {
                     index += 1;
                     ghostscript = required_path(args, index, "--ghostscript")?;
+                }
+                "--mutool" => {
+                    index += 1;
+                    mutool = required_path(args, index, "--mutool")?;
+                }
+                "--oracle-version-manifest" => {
+                    index += 1;
+                    oracle_version_manifest =
+                        Some(required_path(args, index, "--oracle-version-manifest")?);
+                }
+                "--no-oracle-version-manifest" => {
+                    oracle_version_manifest = None;
                 }
                 "--manifest" => {
                     index += 1;
@@ -2943,6 +3170,10 @@ impl BenchmarkMatrixConfig {
             pdfium,
             pdftoppm,
             ghostscript,
+            mutool,
+            oracle_version_manifest,
+            oracle_versions: Vec::new(),
+            process_startup_baseline_ms: None,
             page_index,
             max_edge,
             background,
@@ -2963,8 +3194,9 @@ fn parse_matrix_backend(value: &str) -> Result<MatrixBackend, CliError> {
         "pdfium" => Ok(MatrixBackend::Pdfium),
         "poppler" | "pdftoppm" => Ok(MatrixBackend::Poppler),
         "ghostscript" | "gs" => Ok(MatrixBackend::Ghostscript),
+        "mutool" | "mupdf" => Ok(MatrixBackend::Mutool),
         _ => Err(CliError::Usage(format!(
-            "unknown --backend `{value}`; expected `native`, `pdfium`, `poppler`, or `ghostscript`"
+            "unknown --backend `{value}`; expected `native`, `pdfium`, `poppler`, `ghostscript`, or `mutool`"
         ))),
     }
 }
@@ -3663,6 +3895,9 @@ struct BenchmarkMatrixTimingReliability {
     poppler_available: bool,
     ghostscript_requested: bool,
     ghostscript_available: bool,
+    mutool_requested: bool,
+    mutool_available: bool,
+    oracle_version_drift: bool,
     hot_pdfium_comparison_available: bool,
     cold_reference_available: bool,
     cov_exceeded_records: usize,
@@ -3683,6 +3918,37 @@ struct BenchmarkMatrixReportConfig {
     backends: Vec<MatrixBackend>,
     modes: Vec<MatrixMode>,
     native_profile: NativeProfile,
+    oracle_version_manifest: Option<String>,
+    oracle_versions: Vec<OracleVersionStatus>,
+    process_startup_baseline_ms: Option<f64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct OracleVersionStatus {
+    backend: MatrixBackend,
+    command: String,
+    expected: Option<String>,
+    detected: Option<String>,
+    status: OracleVersionMatch,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OracleVersionMatch {
+    Match,
+    Drift,
+    MissingTool,
+    Unpinned,
+}
+
+impl OracleVersionMatch {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Match => "match",
+            Self::Drift => "drift",
+            Self::MissingTool => "missing-tool",
+            Self::Unpinned => "unpinned",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -3709,10 +3975,12 @@ struct BenchmarkMatrixFamilySummary {
     pdfium_cold_wall_ms: Option<f64>,
     poppler_cold_wall_ms: Option<f64>,
     ghostscript_cold_wall_ms: Option<f64>,
+    mutool_cold_wall_ms: Option<f64>,
     ferrugo_to_pdfium_hot_ratio: Option<f64>,
     ferrugo_to_pdfium_cold_ratio: Option<f64>,
     ferrugo_to_poppler_cold_ratio: Option<f64>,
     ferrugo_to_ghostscript_cold_ratio: Option<f64>,
+    ferrugo_to_mutool_cold_ratio: Option<f64>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -3758,6 +4026,8 @@ impl MatrixStatus {
 #[derive(Debug, Clone, Default, PartialEq)]
 struct MatrixTiming {
     wall_ms: Option<f64>,
+    startup_baseline_ms: Option<f64>,
+    adjusted_wall_ms: Option<f64>,
     warmup_iterations: usize,
     measured_iterations: usize,
     sample_count: usize,
@@ -4052,6 +4322,23 @@ fn command_stdout_path(program: &Path, args: &[&str]) -> Option<String> {
     let value = String::from_utf8(output.stdout).ok()?;
     let value = value.trim();
     (!value.is_empty()).then(|| value.to_string())
+}
+
+fn command_output_text_path(program: &Path, args: &[&str]) -> Option<String> {
+    let output = Command::new(program).args(args).output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let mut value = String::new();
+    value.push_str(&String::from_utf8_lossy(&output.stdout));
+    if !output.stderr.is_empty() {
+        if !value.is_empty() {
+            value.push('\n');
+        }
+        value.push_str(&String::from_utf8_lossy(&output.stderr));
+    }
+    let first_line = value.lines().find(|line| !line.trim().is_empty())?.trim();
+    Some(first_line.to_string())
 }
 
 fn host_cpu_brand() -> Option<String> {
@@ -5716,6 +6003,19 @@ fn current_rss_kib() -> Option<u64> {
         .ok()
 }
 
+fn current_peak_rss_kib() -> Option<u64> {
+    let status = fs::read_to_string("/proc/self/status").ok()?;
+    parse_proc_status_kib(&status, "VmHWM:")
+}
+
+fn parse_proc_status_kib(status: &str, key: &str) -> Option<u64> {
+    status.lines().find_map(|line| {
+        let rest = line.strip_prefix(key)?;
+        rest.split_whitespace()
+            .find_map(|token| token.parse::<u64>().ok())
+    })
+}
+
 fn sampled_process_memory_summary(
     rss_start_bytes: Option<u64>,
     rss_end_bytes: Option<u64>,
@@ -5766,11 +6066,34 @@ struct ProcessMeasurement {
     stderr: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TimeMeasurementMode {
+    BsdTimeL,
+    GnuTimeV,
+}
+
+impl TimeMeasurementMode {
+    const fn source(self) -> &'static str {
+        match self {
+            Self::BsdTimeL => "usr-bin-time-l",
+            Self::GnuTimeV => "usr-bin-time-v",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 struct MatrixFixtureContext<'a> {
     fixture: &'a Path,
     manifest: Option<&'a CorpusManifest>,
     options: &'a ThumbnailOptions,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ColdProcessRecordOptions {
+    unsupported_is_fallback: bool,
+    expected_dimensions: Option<PopplerTargetDimensions>,
+    max_edge: u32,
+    startup_baseline_ms: Option<f64>,
 }
 
 fn run_measured_process(
@@ -5780,32 +6103,63 @@ fn run_measured_process(
     timeout: Duration,
 ) -> Result<ProcessMeasurement, CliError> {
     let time_command = Path::new("/usr/bin/time");
-    let use_time = time_l_is_usable(time_command);
-    if use_time {
-        let measurement = run_measured_process_once(program, args, envs, timeout, true)?;
+    let time_mode = time_measurement_mode(time_command);
+    if let Some(mode) = time_mode {
+        let measurement = run_measured_process_once(program, args, envs, timeout, Some(mode))?;
         if !time_l_wrapper_blocked(&measurement.stderr) {
             return Ok(measurement);
         }
     }
-    run_measured_process_once(program, args, envs, timeout, false)
+    run_measured_process_once(program, args, envs, timeout, None)
 }
 
-fn time_l_is_usable(time_command: &Path) -> bool {
-    if !time_command.is_file() {
-        return false;
+fn measure_process_startup_baseline() -> Option<f64> {
+    let executable = env::current_exe().ok()?;
+    let args = [OsString::from("--version")];
+    let mut samples = Vec::new();
+    for _ in 0..3 {
+        let measurement =
+            run_measured_process(&executable, &args, &[], Duration::from_secs(5)).ok()?;
+        if measurement.success {
+            samples.push(measurement.wall_ms);
+        }
     }
-    let Ok(output) = Command::new(time_command)
+    (!samples.is_empty()).then(|| samples.iter().sum::<f64>() / samples.len() as f64)
+}
+
+fn time_measurement_mode(time_command: &Path) -> Option<TimeMeasurementMode> {
+    if !time_command.is_file() {
+        return None;
+    }
+    if let Ok(output) = Command::new(time_command)
         .arg("-l")
         .arg("true")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .output()
-    else {
-        return false;
-    };
-    output.status.success()
-        && parse_time_l_peak_rss_bytes(&String::from_utf8_lossy(&output.stderr)).is_some()
+    {
+        if output.status.success()
+            && parse_time_peak_rss_bytes(&String::from_utf8_lossy(&output.stderr)).is_some()
+        {
+            return Some(TimeMeasurementMode::BsdTimeL);
+        }
+    }
+    if let Ok(output) = Command::new(time_command)
+        .arg("-v")
+        .arg("true")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .output()
+    {
+        if output.status.success()
+            && parse_time_peak_rss_bytes(&String::from_utf8_lossy(&output.stderr)).is_some()
+        {
+            return Some(TimeMeasurementMode::GnuTimeV);
+        }
+    }
+    None
 }
 
 fn run_measured_process_once(
@@ -5813,12 +6167,20 @@ fn run_measured_process_once(
     args: &[OsString],
     envs: &[(OsString, OsString)],
     timeout: Duration,
-    use_time: bool,
+    time_mode: Option<TimeMeasurementMode>,
 ) -> Result<ProcessMeasurement, CliError> {
     let time_command = Path::new("/usr/bin/time");
-    let mut command = if use_time {
+    let mut command = if let Some(mode) = time_mode {
         let mut command = Command::new(time_command);
-        command.arg("-l").arg(program).args(args);
+        match mode {
+            TimeMeasurementMode::BsdTimeL => {
+                command.arg("-l");
+            }
+            TimeMeasurementMode::GnuTimeV => {
+                command.arg("-v");
+            }
+        }
+        command.arg(program).args(args);
         command
     } else {
         let mut command = Command::new(program);
@@ -5835,7 +6197,7 @@ fn run_measured_process_once(
 
     let started = Instant::now();
     let mut child = command.spawn().map_err(|source| CliError::Io {
-        path: if use_time {
+        path: if time_mode.is_some() {
             time_command.to_path_buf()
         } else {
             program.to_path_buf()
@@ -5857,11 +6219,9 @@ fn run_measured_process_once(
                 exit_status: None,
                 wall_ms: elapsed_ms(started.elapsed()),
                 peak_rss_bytes: None,
-                memory_source: if use_time {
-                    "usr-bin-time-l"
-                } else {
-                    "unavailable"
-                },
+                memory_source: time_mode
+                    .map(TimeMeasurementMode::source)
+                    .unwrap_or("unavailable"),
                 stderr: format!("process exceeded {}s timeout", timeout.as_secs()),
             });
         }
@@ -5881,14 +6241,10 @@ fn run_measured_process_once(
         success: status.success(),
         exit_status: status.code(),
         wall_ms: elapsed_ms(started.elapsed()),
-        peak_rss_bytes: use_time
-            .then(|| parse_time_l_peak_rss_bytes(&stderr))
-            .flatten(),
-        memory_source: if use_time {
-            "usr-bin-time-l"
-        } else {
-            "unavailable"
-        },
+        peak_rss_bytes: time_mode.and_then(|_| parse_time_peak_rss_bytes(&stderr)),
+        memory_source: time_mode
+            .map(TimeMeasurementMode::source)
+            .unwrap_or("unavailable"),
         stderr,
     })
 }
@@ -5900,13 +6256,20 @@ fn time_l_wrapper_blocked(stderr: &str) -> bool {
             && stderr.contains("maximum resident set size")
 }
 
-fn parse_time_l_peak_rss_bytes(stderr: &str) -> Option<u64> {
+fn parse_time_peak_rss_bytes(stderr: &str) -> Option<u64> {
     stderr.lines().find_map(|line| {
-        if !line.contains("maximum resident set size") {
-            return None;
+        if line.contains("maximum resident set size") {
+            return line
+                .split_whitespace()
+                .find_map(|token| token.parse::<u64>().ok());
         }
-        line.split_whitespace()
-            .find_map(|token| token.parse::<u64>().ok())
+        if line.contains("Maximum resident set size") {
+            return line
+                .split_whitespace()
+                .find_map(|token| token.parse::<u64>().ok())
+                .map(kib_to_bytes);
+        }
+        None
     })
 }
 
@@ -5982,6 +6345,8 @@ fn matrix_timing_from_samples(
         .is_some_and(|(cov, threshold)| cov > threshold);
     MatrixTiming {
         wall_ms: mean,
+        startup_baseline_ms: None,
+        adjusted_wall_ms: None,
         warmup_iterations,
         measured_iterations: samples_ms.len(),
         sample_count: samples_ms.len(),
@@ -6189,6 +6554,13 @@ fn benchmark_matrix_family_summaries(
                 MatrixMode::ColdProcess,
                 MatrixTimingSelector::Wall,
             );
+            summary.mutool_cold_wall_ms = matrix_family_timing(
+                records,
+                &family,
+                MatrixBackend::Mutool,
+                MatrixMode::ColdProcess,
+                MatrixTimingSelector::Wall,
+            );
             summary.ferrugo_to_pdfium_hot_ratio =
                 ratio(summary.native_hot_p95_ms, summary.pdfium_hot_p95_ms);
             summary.ferrugo_to_pdfium_cold_ratio =
@@ -6199,6 +6571,8 @@ fn benchmark_matrix_family_summaries(
                 summary.native_cold_wall_ms,
                 summary.ghostscript_cold_wall_ms,
             );
+            summary.ferrugo_to_mutool_cold_ratio =
+                ratio(summary.native_cold_wall_ms, summary.mutool_cold_wall_ms);
         }
     }
     families
@@ -6308,19 +6682,26 @@ fn native_backend_version(profile: NativeProfile) -> String {
 }
 
 fn external_pdfium_backend_version(command: &Path) -> String {
-    command_stdout_path(command, &["--version"])
+    command_output_text_path(command, &["--version"])
         .map(|version| format!("pdfium external {version}"))
         .unwrap_or_else(|| format!("pdfium external {}", command.display()))
 }
 
 fn poppler_backend_version(command: &Path) -> String {
-    format!("pdftoppm {}", command.display())
+    command_output_text_path(command, &["-v"])
+        .unwrap_or_else(|| format!("pdftoppm {}", command.display()))
 }
 
 fn ghostscript_backend_version(command: &Path) -> String {
-    command_stdout_path(command, &["--version"])
+    command_output_text_path(command, &["--version"])
         .map(|version| format!("ghostscript {version}"))
         .unwrap_or_else(|| format!("ghostscript {}", command.display()))
+}
+
+fn mutool_backend_version(command: &Path) -> String {
+    command_output_text_path(command, &["-v"])
+        .map(|version| format!("mutool {version}"))
+        .unwrap_or_else(|| format!("mutool {}", command.display()))
 }
 
 fn external_pdfium_missing_message(command: &Path) -> String {
@@ -6328,6 +6709,86 @@ fn external_pdfium_missing_message(command: &Path) -> String {
         "`{}` was not found; set --pdfium or {EXTERNAL_PDFIUM_RENDERER_ENV}",
         command.display()
     )
+}
+
+fn benchmark_oracle_version_statuses(
+    config: &BenchmarkMatrixConfig,
+) -> Result<Vec<OracleVersionStatus>, CliError> {
+    let expected = match &config.oracle_version_manifest {
+        Some(path) if path.exists() => read_oracle_version_manifest(path)?,
+        _ => BTreeMap::new(),
+    };
+    let mut statuses = Vec::new();
+    for backend in [
+        MatrixBackend::Pdfium,
+        MatrixBackend::Poppler,
+        MatrixBackend::Ghostscript,
+        MatrixBackend::Mutool,
+    ] {
+        if !config.backends.contains(&backend) {
+            continue;
+        }
+        let command = oracle_command_path(config, backend);
+        let detected =
+            resolve_command_path(command).map(|_| oracle_backend_version(config, backend));
+        let expected_version = expected.get(&backend).cloned();
+        let status = match (detected.as_ref(), expected_version.as_ref()) {
+            (None, _) => OracleVersionMatch::MissingTool,
+            (Some(_), None) => OracleVersionMatch::Unpinned,
+            (Some(detected), Some(expected)) if detected == expected => OracleVersionMatch::Match,
+            (Some(_), Some(_)) => OracleVersionMatch::Drift,
+        };
+        statuses.push(OracleVersionStatus {
+            backend,
+            command: command.display().to_string(),
+            expected: expected_version,
+            detected,
+            status,
+        });
+    }
+    Ok(statuses)
+}
+
+fn read_oracle_version_manifest(path: &Path) -> Result<BTreeMap<MatrixBackend, String>, CliError> {
+    let content = fs::read_to_string(path).map_err(|source| CliError::ReadFile {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    let mut expected = BTreeMap::new();
+    for (line_index, line) in content.lines().enumerate() {
+        if line_index == 0 || line.trim().is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let columns = line.split('\t').collect::<Vec<_>>();
+        if columns.len() < 2 {
+            return Err(CliError::Usage(format!(
+                "oracle version manifest line {} must have at least 2 tab-separated columns",
+                line_index + 1
+            )));
+        }
+        expected.insert(parse_matrix_backend(columns[0])?, columns[1].to_string());
+    }
+    Ok(expected)
+}
+
+fn oracle_command_path(config: &BenchmarkMatrixConfig, backend: MatrixBackend) -> &Path {
+    match backend {
+        MatrixBackend::Pdfium => &config.pdfium,
+        MatrixBackend::Poppler => &config.pdftoppm,
+        MatrixBackend::Ghostscript => &config.ghostscript,
+        MatrixBackend::Mutool => &config.mutool,
+        MatrixBackend::Native => Path::new("ferrugo"),
+    }
+}
+
+fn oracle_backend_version(config: &BenchmarkMatrixConfig, backend: MatrixBackend) -> String {
+    match backend {
+        MatrixBackend::Pdfium => external_pdfium_backend_version(&config.pdfium),
+        MatrixBackend::Poppler => poppler_backend_version(&config.pdftoppm),
+        MatrixBackend::Ghostscript => ghostscript_backend_version(&config.ghostscript),
+        MatrixBackend::Mutool => mutool_backend_version(&config.mutool),
+        MatrixBackend::Native => native_backend_version(config.native_profile),
+    }
 }
 
 fn benchmark_backend<B, F>(
@@ -10027,7 +10488,10 @@ fn benchmark_matrix_config_json(config: &BenchmarkMatrixReportConfig) -> String 
             "\"max_cov\":{},",
             "\"backends\":[{}],",
             "\"modes\":[{}],",
-            "\"native_profile\":{}",
+            "\"native_profile\":{},",
+            "\"oracle_version_manifest\":{},",
+            "\"oracle_versions\":{},",
+            "\"process_startup_baseline_ms\":{}",
             "}}"
         ),
         json_string(&config.input),
@@ -10041,7 +10505,38 @@ fn benchmark_matrix_config_json(config: &BenchmarkMatrixReportConfig) -> String 
         optional_json_f64(Some(config.max_cov)),
         backends,
         modes,
-        json_string(config.native_profile.as_str())
+        json_string(config.native_profile.as_str()),
+        optional_json_string(config.oracle_version_manifest.as_deref()),
+        oracle_versions_json(&config.oracle_versions),
+        optional_json_f64(config.process_startup_baseline_ms)
+    )
+}
+
+fn oracle_versions_json(statuses: &[OracleVersionStatus]) -> String {
+    let values = statuses
+        .iter()
+        .map(oracle_version_status_json)
+        .collect::<Vec<_>>()
+        .join(",");
+    format!("[{values}]")
+}
+
+fn oracle_version_status_json(status: &OracleVersionStatus) -> String {
+    format!(
+        concat!(
+            "{{",
+            "\"backend\":{},",
+            "\"command\":{},",
+            "\"expected\":{},",
+            "\"detected\":{},",
+            "\"status\":{}",
+            "}}"
+        ),
+        json_string(status.backend.as_str()),
+        json_string(&status.command),
+        optional_json_string(status.expected.as_deref()),
+        optional_json_string(status.detected.as_deref()),
+        json_string(status.status.as_str())
     )
 }
 
@@ -10072,6 +10567,7 @@ fn benchmark_matrix_timing_reliability(
     let pdfium_requested = report.config.backends.contains(&MatrixBackend::Pdfium);
     let poppler_requested = report.config.backends.contains(&MatrixBackend::Poppler);
     let ghostscript_requested = report.config.backends.contains(&MatrixBackend::Ghostscript);
+    let mutool_requested = report.config.backends.contains(&MatrixBackend::Mutool);
     let hot_requested = report.config.modes.contains(&MatrixMode::HotRender);
     let cold_requested = report.config.modes.contains(&MatrixMode::ColdProcess);
 
@@ -10101,13 +10597,28 @@ fn benchmark_matrix_timing_reliability(
                 MatrixStatus::MissingTool | MatrixStatus::NotApplicable
             )
     });
+    let mutool_available = report.records.iter().any(|record| {
+        record.backend == MatrixBackend::Mutool
+            && !matches!(
+                record.status,
+                MatrixStatus::MissingTool | MatrixStatus::NotApplicable
+            )
+    });
     let cold_reference_available = report.records.iter().any(|record| {
         matches!(
             record.backend,
-            MatrixBackend::Pdfium | MatrixBackend::Poppler | MatrixBackend::Ghostscript
+            MatrixBackend::Pdfium
+                | MatrixBackend::Poppler
+                | MatrixBackend::Ghostscript
+                | MatrixBackend::Mutool
         ) && record.mode == MatrixMode::ColdProcess
             && record.status == MatrixStatus::Rendered
     });
+    let oracle_version_drift = report
+        .config
+        .oracle_versions
+        .iter()
+        .any(|status| status.status == OracleVersionMatch::Drift);
     let cov_exceeded_records = report
         .records
         .iter()
@@ -10137,6 +10648,15 @@ fn benchmark_matrix_timing_reliability(
     if ghostscript_requested && hot_requested {
         caveats.push("ghostscript-hot-render-external-only");
     }
+    if mutool_requested && cold_requested && !mutool_available {
+        caveats.push("mutool-missing-tool");
+    }
+    if mutool_requested && hot_requested {
+        caveats.push("mutool-hot-render-external-only");
+    }
+    if oracle_version_drift {
+        caveats.push("oracle-version-drift");
+    }
     if hot_requested && !pdfium_requested {
         caveats.push("pdfium-hot-reference-not-requested");
     }
@@ -10155,6 +10675,9 @@ fn benchmark_matrix_timing_reliability(
         poppler_available,
         ghostscript_requested,
         ghostscript_available,
+        mutool_requested,
+        mutool_available,
+        oracle_version_drift,
         hot_pdfium_comparison_available,
         cold_reference_available,
         cov_exceeded_records,
@@ -10175,6 +10698,9 @@ fn benchmark_matrix_timing_reliability_json(
             "\"poppler_available\":{},",
             "\"ghostscript_requested\":{},",
             "\"ghostscript_available\":{},",
+            "\"mutool_requested\":{},",
+            "\"mutool_available\":{},",
+            "\"oracle_version_drift\":{},",
             "\"hot_pdfium_comparison_available\":{},",
             "\"cold_reference_available\":{},",
             "\"cov_exceeded_records\":{},",
@@ -10188,6 +10714,9 @@ fn benchmark_matrix_timing_reliability_json(
         reliability.poppler_available,
         reliability.ghostscript_requested,
         reliability.ghostscript_available,
+        reliability.mutool_requested,
+        reliability.mutool_available,
+        reliability.oracle_version_drift,
         reliability.hot_pdfium_comparison_available,
         reliability.cold_reference_available,
         reliability.cov_exceeded_records,
@@ -10228,10 +10757,12 @@ fn benchmark_matrix_family_json(summary: &BenchmarkMatrixFamilySummary) -> Strin
             "\"pdfium_cold_wall_ms\":{},",
             "\"poppler_cold_wall_ms\":{},",
             "\"ghostscript_cold_wall_ms\":{},",
+            "\"mutool_cold_wall_ms\":{},",
             "\"ferrugo_to_pdfium_hot_ratio\":{},",
             "\"ferrugo_to_pdfium_cold_ratio\":{},",
             "\"ferrugo_to_poppler_cold_ratio\":{},",
-            "\"ferrugo_to_ghostscript_cold_ratio\":{}",
+            "\"ferrugo_to_ghostscript_cold_ratio\":{},",
+            "\"ferrugo_to_mutool_cold_ratio\":{}",
             "}}"
         ),
         summary.total,
@@ -10246,10 +10777,12 @@ fn benchmark_matrix_family_json(summary: &BenchmarkMatrixFamilySummary) -> Strin
         optional_json_f64(summary.pdfium_cold_wall_ms),
         optional_json_f64(summary.poppler_cold_wall_ms),
         optional_json_f64(summary.ghostscript_cold_wall_ms),
+        optional_json_f64(summary.mutool_cold_wall_ms),
         optional_json_f64(summary.ferrugo_to_pdfium_hot_ratio),
         optional_json_f64(summary.ferrugo_to_pdfium_cold_ratio),
         optional_json_f64(summary.ferrugo_to_poppler_cold_ratio),
-        optional_json_f64(summary.ferrugo_to_ghostscript_cold_ratio)
+        optional_json_f64(summary.ferrugo_to_ghostscript_cold_ratio),
+        optional_json_f64(summary.ferrugo_to_mutool_cold_ratio)
     )
 }
 
@@ -10297,6 +10830,8 @@ fn matrix_timing_json(timing: &MatrixTiming) -> String {
         concat!(
             "{{",
             "\"wall_ms\":{},",
+            "\"startup_baseline_ms\":{},",
+            "\"adjusted_wall_ms\":{},",
             "\"warmup_iterations\":{},",
             "\"measured_iterations\":{},",
             "\"sample_count\":{},",
@@ -10312,6 +10847,8 @@ fn matrix_timing_json(timing: &MatrixTiming) -> String {
             "}}"
         ),
         optional_json_f64(timing.wall_ms),
+        optional_json_f64(timing.startup_baseline_ms),
+        optional_json_f64(timing.adjusted_wall_ms),
         timing.warmup_iterations,
         timing.measured_iterations,
         timing.sample_count,
@@ -10362,7 +10899,7 @@ fn benchmark_matrix_markdown_report(report: &BenchmarkMatrixReport) -> String {
     markdown.push_str("## Timing Reliability\n\n");
     markdown.push_str("| Signal | Value |\n| --- | --- |\n");
     markdown.push_str(&format!(
-        "| RSS samples available | {} |\n| PDFium requested | {} |\n| PDFium available | {} |\n| Poppler requested | {} |\n| Poppler available | {} |\n| Ghostscript requested | {} |\n| Ghostscript available | {} |\n| Hot PDFium comparison available | {} |\n| Cold reference available | {} |\n| CoV threshold | {:.3} |\n| Records over CoV threshold | {} |\n\n",
+        "| RSS samples available | {} |\n| PDFium requested | {} |\n| PDFium available | {} |\n| Poppler requested | {} |\n| Poppler available | {} |\n| Ghostscript requested | {} |\n| Ghostscript available | {} |\n| MuPDF requested | {} |\n| MuPDF available | {} |\n| Oracle version drift | {} |\n| Hot PDFium comparison available | {} |\n| Cold reference available | {} |\n| CoV threshold | {:.3} |\n| Records over CoV threshold | {} |\n\n",
         markdown_bool(timing_reliability.rss_available),
         markdown_bool(timing_reliability.pdfium_requested),
         markdown_bool(timing_reliability.pdfium_available),
@@ -10370,6 +10907,9 @@ fn benchmark_matrix_markdown_report(report: &BenchmarkMatrixReport) -> String {
         markdown_bool(timing_reliability.poppler_available),
         markdown_bool(timing_reliability.ghostscript_requested),
         markdown_bool(timing_reliability.ghostscript_available),
+        markdown_bool(timing_reliability.mutool_requested),
+        markdown_bool(timing_reliability.mutool_available),
+        markdown_bool(timing_reliability.oracle_version_drift),
         markdown_bool(timing_reliability.hot_pdfium_comparison_available),
         markdown_bool(timing_reliability.cold_reference_available),
         report.config.max_cov,
@@ -10449,10 +10989,10 @@ fn benchmark_matrix_markdown_report(report: &BenchmarkMatrixReport) -> String {
     }
 
     markdown.push_str("\n## Family Summary\n\n");
-    markdown.push_str("| Family | Native hot p95 | PDFium hot p95 | Ferrugo/PDFium hot | Native cold | PDFium cold | Poppler cold | Ghostscript cold | Errors |\n| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n");
+    markdown.push_str("| Family | Native hot p95 | PDFium hot p95 | Ferrugo/PDFium hot | Native cold | PDFium cold | Poppler cold | Ghostscript cold | MuPDF cold | Errors |\n| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n");
     for (family, summary) in &report.families {
         markdown.push_str(&format!(
-            "| `{}` | {} | {} | {} | {} | {} | {} | {} | {} |\n",
+            "| `{}` | {} | {} | {} | {} | {} | {} | {} | {} | {} |\n",
             family,
             markdown_optional_ms(summary.native_hot_p95_ms),
             markdown_optional_ms(summary.pdfium_hot_p95_ms),
@@ -10461,6 +11001,7 @@ fn benchmark_matrix_markdown_report(report: &BenchmarkMatrixReport) -> String {
             markdown_optional_ms(summary.pdfium_cold_wall_ms),
             markdown_optional_ms(summary.poppler_cold_wall_ms),
             markdown_optional_ms(summary.ghostscript_cold_wall_ms),
+            markdown_optional_ms(summary.mutool_cold_wall_ms),
             summary.errors
         ));
     }
@@ -10532,7 +11073,10 @@ fn benchmark_matrix_reference_gaps(
                     && record.mode == MatrixMode::ColdProcess
                     && matches!(
                         record.backend,
-                        MatrixBackend::Pdfium | MatrixBackend::Poppler | MatrixBackend::Ghostscript
+                        MatrixBackend::Pdfium
+                            | MatrixBackend::Poppler
+                            | MatrixBackend::Ghostscript
+                            | MatrixBackend::Mutool
                     )
                     && record.status == MatrixStatus::Rendered
             })
@@ -12282,7 +12826,7 @@ fn print_usage() {
         "Usage: ferrugo <render|render-auto|render-native|summarize-fallbacks|operator-coverage|trace-native|replay-operators|extract-corpus-metadata|producer-regression-report|classify-pdf20-usage|validate-local-corpus|compare-golden|benchmark-native|benchmark-batch-native|benchmark-repeat-native|benchmark-matrix|visual-diff|visual-diff-poppler> <input.pdf> \
          [--output PATH] [--page-index N] [--max-edge N] [--background #RRGGBB] \
          [--timeout SECONDS] [--iterations N] [--warmup N] [--max-cov N] [--repetitions N] [--pages-per-input N] [--max-events N] [--max-workers N] [--max-in-flight-pixels N] [--cancel-after-jobs N] [--max-ms N] [--max-p95-ms N] [--max-first-ms N] [--max-repeat-mean-ms N] [--max-output-bytes N] \
-         [--backend native|pdfium|poppler|ghostscript] [--mode cold-process|hot-render] [--report PATH] [--artifact-dir PATH] [--pdfium PATH] [--pdftoppm PATH] [--ghostscript PATH] [--native-only] [--manifest PATH] [--include-family FAMILY] \
+         [--backend native|pdfium|poppler|ghostscript|mutool] [--mode cold-process|hot-render] [--report PATH] [--artifact-dir PATH] [--pdfium PATH] [--pdftoppm PATH] [--ghostscript PATH] [--mutool PATH] [--oracle-version-manifest PATH] [--native-only] [--manifest PATH] [--include-family FAMILY] \
          [--diagnostics-dir PATH] [--allow-missing] [--annotation-mode screen|print] [--no-annotations] [--max-mae N] [--max-p95 N] [--max-changed-ratio N]"
     );
 }
@@ -12526,7 +13070,8 @@ mod tests {
                 MatrixBackend::Native,
                 MatrixBackend::Pdfium,
                 MatrixBackend::Poppler,
-                MatrixBackend::Ghostscript
+                MatrixBackend::Ghostscript,
+                MatrixBackend::Mutool
             ]
         );
         assert_eq!(
@@ -12537,6 +13082,48 @@ mod tests {
         assert_eq!(config.warmup, DEFAULT_BENCHMARK_MATRIX_WARMUP);
         assert_eq!(config.max_cov, DEFAULT_BENCHMARK_MATRIX_MAX_COV);
         assert_eq!(config.pdfium, PathBuf::from("pdfium_test"));
+    }
+
+    #[test]
+    fn benchmark_matrix_rss_parser_should_accept_bsd_and_gnu_time() {
+        assert_eq!(
+            parse_time_peak_rss_bytes("  123456  maximum resident set size"),
+            Some(123456)
+        );
+        assert_eq!(
+            parse_time_peak_rss_bytes("\tMaximum resident set size (kbytes): 321"),
+            Some(321 * 1024)
+        );
+    }
+
+    #[test]
+    fn benchmark_matrix_output_dimension_error_should_fail_loudly() {
+        let output = MatrixOutput {
+            width: Some(100),
+            height: Some(200),
+            bytes: Some(80_000),
+            artifact_hash: Some("abc123".to_string()),
+        };
+
+        assert!(matrix_output_dimension_error(
+            &output,
+            Some(PopplerTargetDimensions {
+                width: 100,
+                height: 200
+            }),
+            200
+        )
+        .is_none());
+        assert!(matrix_output_dimension_error(
+            &output,
+            Some(PopplerTargetDimensions {
+                width: 101,
+                height: 200
+            }),
+            200
+        )
+        .expect("mismatch should be classified")
+        .contains("did not match target"));
     }
 
     #[test]
@@ -12668,6 +13255,9 @@ mod tests {
                 backends: vec![MatrixBackend::Pdfium, MatrixBackend::Poppler],
                 modes: vec![MatrixMode::HotRender],
                 native_profile: NativeProfile::Default,
+                oracle_version_manifest: None,
+                oracle_versions: Vec::new(),
+                process_startup_baseline_ms: None,
             },
             summary: benchmark_matrix_summary(&records),
             families: benchmark_matrix_family_summaries(&records),

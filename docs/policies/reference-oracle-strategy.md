@@ -21,6 +21,12 @@ process through `--pdfium PATH` or `FERRUGO_PDFIUM_RENDERER`. The workspace has
 no PDFium binding crate or `pdfium` Cargo feature. None of these oracle paths
 are release prerequisites for the supported runtime slice.
 
+`benchmark-matrix` also supports Poppler (`pdftoppm`), Ghostscript (`gs`), and
+MuPDF (`mutool draw`) as external cold-process oracles. Use
+`fixtures/reference-renderers.lock.tsv` to pin expected oracle versions for
+claim-bearing runs. Drift is recorded in matrix JSON and reliability caveats;
+missing tools are recorded as `missing-tool` rows.
+
 ## 0215 Removal Decision
 
 Issue 116 removed the legacy PDFium binding tools: `ferrugo-pdfium`,
@@ -54,13 +60,14 @@ fallback.
 | Optional content, pattern shading, transparency, advanced color | Typed unsupported bucket until implemented | Multi-oracle comparison after native implementation work starts | Any single oracle disagrees with another or semantics depend on viewer policy. |
 | Encrypted, malformed, dynamic XFA | Typed policy outcome | Oracle only when investigating parser or security behavior | Error class is ambiguous or could hide renderable user content. |
 
-`benchmark-matrix` records PDFium and Ghostscript as provider-neutral external
-oracles without adding them to the runtime graph. Missing `pdfium_test` or `gs`
-binaries are represented as `missing-tool` data, not as hidden fallbacks or
-failed native release gates. PDFium hot-render rows are `not-applicable`
-because PDFium is now measured as an external process in the matrix.
-External-oracle records may support behavior triage, but they do not by
-themselves justify public speed or memory claims.
+`benchmark-matrix` records PDFium, Poppler, Ghostscript, and MuPDF as
+provider-neutral external oracles without adding them to the runtime graph.
+Missing `pdfium_test`, `pdftoppm`, `gs`, or `mutool` binaries are represented
+as `missing-tool` data, not as hidden fallbacks or failed native release gates.
+External hot-render rows are `not-applicable` because these oracles are measured
+as external processes in the matrix. External-oracle records may support
+behavior triage, but they do not by themselves justify public speed or memory
+claims.
 
 ## Threshold Calibration
 
