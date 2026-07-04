@@ -140,9 +140,10 @@ runtime is compact, Rust-native, and explicitly budgeted. It is not generally
 faster than PDFium today: archived same-corpus smoke runs show PDFium ahead on
 many vector, form, presentation, and report cases, while Ferrugo is competitive
 on simple text and scan-style thumbnails. The next performance work uses the
-new `benchmark-matrix` harness to compare Ferrugo, PDFium, and Poppler across
-cold-process time, hot-render distributions, output size, and RSS where the host
-can expose it. See [Renderer benchmarks](docs/benchmarks.md) for the current
+new `benchmark-matrix` harness to compare Ferrugo, PDFium, Poppler, and
+Ghostscript across cold-process time, hot-render distributions, output size,
+artifact hashes, and RSS where the host can expose it. See
+[Renderer benchmarks](docs/benchmarks.md) for the current
 comparison state, the data-first optimization loop, and the
 [performance claims policy](docs/policies/performance-claims.md) that applies
 before README or release copy strengthens speed or memory statements.
@@ -208,6 +209,7 @@ Useful project gates:
 
 ```sh
 bash scripts/check_pdfium_quarantine.sh
+bash scripts/check_multi_oracle_smoke.sh
 bash scripts/check_performance_claims.sh
 bash scripts/check_performance_matrix_smoke.sh
 bash scripts/check_plugin_free_distribution.sh

@@ -67,24 +67,26 @@ backends. Ferrugo's native gates also enforce deterministic pixel,
 decoded-image, display-list, font, transparency, cache, and output-byte budgets.
 
 Poppler is now included in the same cold-process matrix through `pdftoppm`.
-MuPDF remains v2 backlog because setup, licensing, and tooling would slow the
-first repeatable benchmark slice. A fair MuPDF claim still needs the same
-first-page latency, output-size, and RSS fields across the same fixture
-families. Public speed or memory copy must follow the
+Ghostscript is also available as an external cold-process oracle through `gs`
+or `FERRUGO_GHOSTSCRIPT`, with missing tools recorded as matrix data. MuPDF
+remains v2 backlog because setup, licensing, and tooling would slow the first
+repeatable benchmark slice. A fair MuPDF claim still needs the same first-page
+latency, output-size, and RSS fields across the same fixture families. Public
+speed or memory copy must follow the
 [performance claims policy](policies/performance-claims.md).
 
 ## Performance Matrix
 
 Use `benchmark-matrix` for report-first performance work. It emits one JSON
-schema for Ferrugo native, PDFium, and Poppler, grouped by an explicit manifest.
-The default matrix covers both modes:
+schema for Ferrugo native, PDFium, Poppler, and Ghostscript, grouped by an
+explicit manifest. The default matrix covers both modes:
 
 - `cold-process`: starts a CLI/tool process per fixture and records wall time,
   exit status, output bytes, output dimensions, and peak RSS when available.
 - `hot-render`: runs in-process repetitions with warmup for Ferrugo native and
-  PDFium, then reports mean, p50, p95, and max. Poppler is recorded as
-  `not-applicable` in this mode because it is intentionally measured as an
-  external tool.
+  PDFium, then reports mean, p50, p95, and max. Poppler and Ghostscript are
+  recorded as `not-applicable` in this mode because they are intentionally
+  measured as external tools.
 
 The focused starter manifest is `fixtures/performance-matrix-manifest.tsv`.
 It maps the initial families to real generated fixtures:
@@ -110,6 +112,13 @@ Run the budget-free native smoke gate before wiring a focused subset into CI:
 bash scripts/check_performance_matrix_smoke.sh
 ```
 
+Run the provider-neutral multi-oracle smoke when changing external oracle
+plumbing:
+
+```sh
+bash scripts/check_multi_oracle_smoke.sh
+```
+
 Or call the CLI directly:
 
 ```sh
@@ -124,15 +133,17 @@ cargo run -p ferrugo --no-default-features -- benchmark-matrix fixtures/generate
 ```
 
 If `FERRUGO_PDFIUM_LIBRARY` is set, the helper script enables the `pdfium`
-feature. If PDFium or Poppler are missing, the matrix records `missing-tool`
-rows instead of failing the run.
+feature. Set `FERRUGO_GHOSTSCRIPT=/path/to/gs` when Ghostscript is not on
+`PATH`. If PDFium, Poppler, or Ghostscript are missing, the matrix records
+`missing-tool` rows instead of failing the run.
 
 The Markdown report lists:
 
 - top 25 slowest Ferrugo fixtures;
 - top 25 largest cold-process gaps against the fastest reference renderer;
 - top memory high-water records;
-- family-level Ferrugo/PDFium and Ferrugo/Poppler ratios with p95/error counts.
+- family-level Ferrugo/PDFium, Ferrugo/Poppler, and Ferrugo/Ghostscript ratios
+  with p95/error counts.
 
 This matrix is intentionally not a hard CI budget yet. First collect stable
 artifacts, profile the top 5 Ferrugo fixtures with `sample`, Instruments, or

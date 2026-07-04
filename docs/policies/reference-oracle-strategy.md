@@ -42,7 +42,7 @@ fallback.
 | Metadata baseline | `compare-metadata` or backend-neutral baseline JSON | Local or scheduled | No, unless a native-only equivalent exists | Page count and page geometry need oracle confirmation. |
 | Pixel visual diff | `visual-diff` with an explicit maintainer oracle | Local or scheduled | No | A renderer subsystem needs triage against external output. |
 | Golden image comparison | Future committed baseline compare command | Yes after tooling lands | Yes for bounded fixture sets | A reviewed fixture has stable expected output independent from live PDFium. |
-| Multi-oracle review | PDFium, Poppler, MuPDF, PDF.js, or Ghostscript reports | Local or scheduled | No | Engines disagree or PDF semantics are underspecified for the fixture. |
+| Multi-oracle review | `benchmark-matrix` with PDFium, Poppler, Ghostscript, MuPDF, or PDF.js evidence | Local or scheduled | No | Engines disagree or PDF semantics are underspecified for the fixture. |
 | Manual review record | Human-reviewed report linked from a report, ADR, or backlog item | Yes as recorded evidence | Yes for bounded exceptions | Pixel thresholds cannot express acceptability safely. |
 
 ## Document Family Routing
@@ -55,6 +55,12 @@ fallback.
 | Presentation, chart, dashboard, map | Native supported gate for accepted subset | PDFium plus PDF.js or Poppler for viewer-facing layout disputes | Charts, legends, layers, or map labels become misleading. |
 | Optional content, pattern shading, transparency, advanced color | Typed unsupported bucket until implemented | Multi-oracle comparison after native implementation work starts | Any single oracle disagrees with another or semantics depend on viewer policy. |
 | Encrypted, malformed, dynamic XFA | Typed policy outcome | Oracle only when investigating parser or security behavior | Error class is ambiguous or could hide renderable user content. |
+
+`benchmark-matrix` records Ghostscript as a provider-neutral external oracle
+without adding it to the runtime graph. A missing `gs` binary is represented as
+`missing-tool` data, not as a hidden fallback or a failed native release gate.
+Ghostscript records may support behavior triage, but they do not by themselves
+justify public speed or memory claims.
 
 ## Threshold Calibration
 
