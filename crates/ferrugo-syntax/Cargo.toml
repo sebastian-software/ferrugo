@@ -1,6 +1,6 @@
 [package]
 name = "ferrugo-syntax"
-version = "0.3.0"
+version = "0.3.1"
 edition.workspace = true
 description = "Low-level borrowed PDF byte syntax primitives for Ferrugo."
 license.workspace = true

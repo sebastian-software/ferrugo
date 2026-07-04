@@ -1,6 +1,6 @@
 [package]
 name = "ferrugo-render"
-version = "0.3.0"
+version = "0.3.1"
 edition.workspace = true
 description = "Display-list and raster rendering primitives for Ferrugo."
 license.workspace = true
@@ -11,11 +11,11 @@ keywords = ["pdf", "rendering", "raster", "graphics"]
 include = ["src/**", "Cargo.toml", "README.md"]
 
 [dependencies]
-ferrugo-content = { version = "0.3.0", path = "../ferrugo-content" }
-ferrugo-object = { version = "0.3.0", path = "../ferrugo-object" }
-ferrugo-simd = { version = "0.3.0", path = "../ferrugo-simd" }
-ferrugo-syntax = { version = "0.3.0", path = "../ferrugo-syntax" }
-ferrugo-thumbnail = { version = "0.3.0", path = "../ferrugo-thumbnail" }
+ferrugo-content = { version = "0.3.1", path = "../ferrugo-content" }
+ferrugo-object = { version = "0.3.1", path = "../ferrugo-object" }
+ferrugo-simd = { version = "0.3.1", path = "../ferrugo-simd" }
+ferrugo-syntax = { version = "0.3.1", path = "../ferrugo-syntax" }
+ferrugo-thumbnail = { version = "0.3.1", path = "../ferrugo-thumbnail" }
 ttf-parser = { version = "0.25.1", default-features = false, features = ["std"] }
 zune-jpeg = { version = "0.5.15", default-features = false, features = ["std"] }
 
