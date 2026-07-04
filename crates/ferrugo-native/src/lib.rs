@@ -130,6 +130,7 @@ const DEFAULT_RASTER_BAND_ROWS: usize = 64;
 const DEFAULT_RASTER_BAND_MIN_PIXELS: usize = 160_000;
 const LOW_MEMORY_RASTER_BAND_ROWS: usize = 64;
 const DEFAULT_RASTER_BAND_WORKERS: usize = 1;
+const DEFAULT_PARALLEL_RASTER_BAND_WORKERS: usize = 4;
 const LOW_MEMORY_PARALLEL_RASTER_BAND_WORKERS: usize = 2;
 
 /// Rust-native thumbnail backend.
@@ -931,7 +932,7 @@ impl NativeBackend {
     /// budgets.
     #[must_use]
     pub fn new() -> Self {
-        Self::with_render_limits(NativeRenderLimits::default())
+        Self::with_render_limits(NativeRenderLimits::default_profile())
     }
 
     /// Creates a Rust-native backend using constrained low-memory render
@@ -1495,7 +1496,7 @@ impl Default for NativeRenderLimits {
             max_page_pixels: page.max_page_pixels,
             max_raster_band_rows: DEFAULT_RASTER_BAND_ROWS,
             min_raster_band_pixels: DEFAULT_RASTER_BAND_MIN_PIXELS,
-            max_raster_band_workers: DEFAULT_RASTER_BAND_WORKERS,
+            max_raster_band_workers: default_parallel_raster_band_workers(),
             max_image_bytes: display.max_image_bytes,
             max_total_image_bytes: display.max_total_image_bytes,
             max_icc_profile_bytes: display.max_icc_profile_bytes,
@@ -1527,6 +1528,25 @@ impl Default for NativeRenderLimits {
             max_spool_bytes: DEFAULT_SPOOL_BYTES_LIMIT,
             downsample_image_decode: false,
         }
+    }
+}
+
+fn default_parallel_raster_band_workers() -> usize {
+    let available = available_parallel_workers();
+    available.clamp(
+        DEFAULT_RASTER_BAND_WORKERS,
+        DEFAULT_PARALLEL_RASTER_BAND_WORKERS,
+    )
+}
+
+fn available_parallel_workers() -> usize {
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+    {
+        thread::available_parallelism().map_or(DEFAULT_RASTER_BAND_WORKERS, usize::from)
+    }
+    #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+    {
+        DEFAULT_RASTER_BAND_WORKERS
     }
 }
 
@@ -3494,7 +3514,6 @@ fn rasterize_native_page_work_to_thumbnail(
     let stream_rows = row_sink.is_some();
     let parallel_band_replay = !stream_rows
         && trace_sinks.supports_parallel_band_replay()
-        && type3_render_cache.is_none()
         && limits.max_raster_band_workers > DEFAULT_RASTER_BAND_WORKERS;
     let band_workers = band_rows.map_or(DEFAULT_RASTER_BAND_WORKERS, |band_rows| {
         raster_band_workers(
@@ -8456,6 +8475,7 @@ mod tests {
 
     #[test]
     fn default_profile_should_band_only_above_pixel_threshold() {
+        let expected_workers = default_parallel_raster_band_workers();
         let scanner = include_bytes!("../../../fixtures/generated/scanner-large-image-budget.pdf");
         let scanner_options = ThumbnailOptions {
             page_index: 0,
@@ -8490,10 +8510,12 @@ mod tests {
 
         assert_eq!(high_dpi_bands.full_page_pixels, 172_800);
         assert_eq!(high_dpi_bands.bands, 6);
-        assert_eq!(high_dpi_bands.workers, 1);
+        assert_eq!(high_dpi_bands.workers, expected_workers.min(6));
+        assert!(high_dpi_bands.workers > 1);
         assert_eq!(high_dpi_bands.max_band_rows, 64);
-        assert_eq!(high_dpi_bands.active_target_peak_bytes(), 122_880);
-        assert_eq!(high_dpi_bands.active_target_byte_reduction_per_mille(), 822);
+        assert!(high_dpi_bands.active_target_peak_bytes() > high_dpi_bands.max_band_bytes());
+        assert!(high_dpi_bands.active_target_peak_bytes() < high_dpi_bands.full_page_bytes());
+        assert!(high_dpi_bands.active_target_byte_reduction_per_mille() > 0);
     }
 
     #[test]
@@ -9114,7 +9136,10 @@ mod tests {
         assert_eq!(diagnostics.max_page_pixels, 16 * 1024 * 1024);
         assert_eq!(diagnostics.max_raster_band_rows, 64);
         assert_eq!(diagnostics.min_raster_band_pixels, 160_000);
-        assert_eq!(diagnostics.max_raster_band_workers, 1);
+        assert_eq!(
+            diagnostics.max_raster_band_workers,
+            default_parallel_raster_band_workers()
+        );
         assert_eq!(diagnostics.max_image_bytes, 32 * 1024 * 1024);
         assert_eq!(diagnostics.max_total_image_bytes, 128 * 1024 * 1024);
         assert_eq!(diagnostics.max_icc_profile_bytes, 1024 * 1024);
@@ -9163,7 +9188,11 @@ mod tests {
         assert_eq!(default.max_raster_band_rows, 64);
         assert_eq!(default.min_raster_band_pixels, 160_000);
         assert_eq!(low_memory.min_raster_band_pixels, 0);
-        assert_eq!(default.max_raster_band_workers, 1);
+        assert_eq!(
+            default.max_raster_band_workers,
+            default_parallel_raster_band_workers()
+        );
+        assert!(default.max_raster_band_workers > low_memory.max_raster_band_workers);
         assert_eq!(low_memory.max_raster_band_workers, 1);
         assert_eq!(
             low_memory_parallel.max_raster_band_rows,
