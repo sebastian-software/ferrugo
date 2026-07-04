@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.2.0](https://github.com/sebastian-software/ferrugo/compare/ferrugo-render-v0.1.0...ferrugo-render-v0.2.0) (2026-07-04)
+
+
+### Features
+
+* **render:** add SIMD row-kernel boundary ([4c4d20e](https://github.com/sebastian-software/ferrugo/commit/4c4d20e7e4cad6753da4fbbd0540a26dffd5a67d))
+
+
+### Performance Improvements
+
+* **render:** cache fill edge y-breaks per path ([8b4f404](https://github.com/sebastian-software/ferrugo/commit/8b4f40450781800ad4fce62f1128dd90ce00a1e5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * ferrugo-content bumped from 0.1.0 to 0.2.0
+    * ferrugo-object bumped from 0.1.0 to 0.2.0
+    * ferrugo-simd bumped from 0.1.0 to 0.2.0
+    * ferrugo-syntax bumped from 0.1.0 to 0.2.0
+    * ferrugo-thumbnail bumped from 0.1.0 to 0.2.0
+
 ## 0.1.0 (2026-07-03)
 
 

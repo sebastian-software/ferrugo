@@ -1,6 +1,6 @@
 [package]
 name = "ferrugo"
-version = "0.1.0"
+version = "0.2.0"
 edition.workspace = true
 description = "Rust-native PDF thumbnail CLI for bounded server-side previews."
 license.workspace = true
@@ -16,9 +16,9 @@ name = "ferrugo"
 path = "src/main.rs"
 
 [dependencies]
-ferrugo-native = { version = "0.1.0", path = "../ferrugo-native" }
-ferrugo-pdfium = { version = "0.1.0", path = "../ferrugo-pdfium", optional = true }
-ferrugo-thumbnail = { version = "0.1.0", path = "../ferrugo-thumbnail" }
+ferrugo-native = { version = "0.2.0", path = "../ferrugo-native" }
+ferrugo-pdfium = { version = "0.2.0", path = "../ferrugo-pdfium", optional = true }
+ferrugo-thumbnail = { version = "0.2.0", path = "../ferrugo-thumbnail" }
 
 [features]
 default = []

@@ -1,0 +1,16 @@
+# Changelog
+
+## [0.2.0](https://github.com/sebastian-software/ferrugo/compare/ferrugo-wasm-smoke-v0.1.0...ferrugo-wasm-smoke-v0.2.0) (2026-07-04)
+
+
+### Bug Fixes
+
+* **release:** link all workspace crate versions ([7a8dbcd](https://github.com/sebastian-software/ferrugo/commit/7a8dbcd827530ca0a0d17a9ba474ec455348438d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * ferrugo-native bumped from 0.1.0 to 0.2.0
+    * ferrugo-thumbnail bumped from 0.1.0 to 0.2.0
