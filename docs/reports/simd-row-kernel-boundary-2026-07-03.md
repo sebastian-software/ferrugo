@@ -22,6 +22,10 @@ The current renderer already has the intended integration point:
 - `blend_source_over_normal_row_span` now delegates to
   `ferrugo_simd::source_over_opaque_normal_row`, which is currently scalar and
   tested as the parity oracle for future architecture kernels.
+- The 2026-07-04 performance workstream also routes
+  `blend_normal_alpha_row_span` through `ferrugo_simd::source_over_normal_row`.
+  Both row functions are inlineable safe scalar kernels today; future
+  architecture-specific kernels can replace them behind the same API.
 
 ## Decision
 
@@ -35,14 +39,18 @@ measured win.
 
 ## Acceptance impact
 
-This does not close #50. It resolves the up-front strategy constraint from the
-issue:
+The 2026-07-04 follow-up closes the current #50 workstream under the revised
+performance bar:
 
 - unsafe stays out of `ferrugo-render` and `ferrugo-native`;
 - scalar render code remains the oracle;
-- one existing row-blitter family now calls through the safe kernel boundary;
+- normal source-over row-blitter families now call through the safe kernel
+  boundary;
 - runtime dispatch is planned below the existing row-blitter selection;
 - benchmarks can tie claims to the existing row-family counters.
+
+Architecture-specific NEON/AVX/WASM kernels remain a future slice if profiling
+shows more headroom after these safe scalar boundary improvements.
 
 ## Validation
 

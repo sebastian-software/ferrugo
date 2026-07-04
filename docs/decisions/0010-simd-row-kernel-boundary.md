@@ -36,11 +36,12 @@ The boundary is:
 - Scalar fallback remains available on every target and is the release/debug
   test oracle.
 
-The first kernel family should be full-row normal source-over for opaque source
-color with coverage, because that is already counted by
-`coverage_source_over_row_pixels` and maps directly to the current row blitter
-surface. Multiply and screen row writers should follow only after the normal
-source-over path has byte parity and measured wins.
+The first kernel family should be full-row normal source-over with constant
+coverage, because that is already counted by `coverage_source_over_row_pixels`
+and maps directly to the current row blitter surface. The safe scalar boundary
+now covers both opaque-source and non-opaque normal source-over rows. Multiply
+and screen row writers should follow only after the normal source-over path has
+byte parity and measured wins.
 
 ## Rejected Options
 

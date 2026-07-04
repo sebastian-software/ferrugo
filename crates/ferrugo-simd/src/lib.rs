@@ -8,6 +8,7 @@ pub const RGBA8_BYTES_PER_PIXEL: usize = 4;
 /// The scalar implementation is the parity oracle for future architecture
 /// kernels. It intentionally matches the renderer's truncating floating-point
 /// source-over math.
+#[inline]
 pub fn source_over_opaque_normal_row(row: &mut [u8], source: [u8; 4], coverage: f64) {
     debug_assert_eq!(source[3], 255);
     debug_assert_eq!(row.len() % RGBA8_BYTES_PER_PIXEL, 0);
@@ -15,27 +16,49 @@ pub fn source_over_opaque_normal_row(row: &mut [u8], source: [u8; 4], coverage: 
     if coverage <= f64::EPSILON {
         return;
     }
+    let inverse = 1.0 - coverage;
+    for pixel in row.chunks_exact_mut(RGBA8_BYTES_PER_PIXEL) {
+        if pixel[3] == 255 {
+            source_over_opaque_dest_pixel(pixel, source, coverage, inverse);
+        } else {
+            let dest = [pixel[0], pixel[1], pixel[2], pixel[3]];
+            let blended = source_over(source, dest, coverage);
+            pixel.copy_from_slice(&blended);
+        }
+    }
+}
+
+/// Blends one RGBA row span with a constant source color and constant coverage.
+///
+/// This is the scalar parity oracle for future architecture kernels that need
+/// to handle non-opaque source colors.
+#[inline]
+pub fn source_over_normal_row(row: &mut [u8], source: [u8; 4], coverage: f64) {
+    debug_assert_eq!(row.len() % RGBA8_BYTES_PER_PIXEL, 0);
+    if source[3] == 255 {
+        source_over_opaque_normal_row(row, source, coverage);
+        return;
+    }
+    let coverage = coverage.clamp(0.0, 1.0);
+    if coverage <= f64::EPSILON {
+        return;
+    }
     for pixel in row.chunks_exact_mut(RGBA8_BYTES_PER_PIXEL) {
         let dest = [pixel[0], pixel[1], pixel[2], pixel[3]];
-        let blended = if dest[3] == 255 {
-            source_over_opaque_dest(source, dest, coverage)
-        } else {
-            source_over(source, dest, coverage)
-        };
+        let blended = source_over(source, dest, coverage);
         pixel.copy_from_slice(&blended);
     }
 }
 
-fn source_over_opaque_dest(source: [u8; 4], dest: [u8; 4], coverage: f64) -> [u8; 4] {
-    let inverse = 1.0 - coverage;
-    [
-        source_over_opaque_channel(source[0], dest[0], coverage, inverse),
-        source_over_opaque_channel(source[1], dest[1], coverage, inverse),
-        source_over_opaque_channel(source[2], dest[2], coverage, inverse),
-        255,
-    ]
+#[inline]
+fn source_over_opaque_dest_pixel(pixel: &mut [u8], source: [u8; 4], coverage: f64, inverse: f64) {
+    pixel[0] = source_over_opaque_channel(source[0], pixel[0], coverage, inverse);
+    pixel[1] = source_over_opaque_channel(source[1], pixel[1], coverage, inverse);
+    pixel[2] = source_over_opaque_channel(source[2], pixel[2], coverage, inverse);
+    pixel[3] = 255;
 }
 
+#[inline]
 fn source_over_opaque_channel(source: u8, dest: u8, coverage: f64, inverse: f64) -> u8 {
     f64::from(source)
         .mul_add(coverage, f64::from(dest) * inverse)
@@ -43,6 +66,7 @@ fn source_over_opaque_channel(source: u8, dest: u8, coverage: f64, inverse: f64)
         .clamp(0.0, 255.0) as u8
 }
 
+#[inline]
 fn source_over(source: [u8; 4], dest: [u8; 4], coverage: f64) -> [u8; 4] {
     let source_alpha = (f64::from(source[3]) / 255.0 * coverage).clamp(0.0, 1.0);
     if source_alpha <= f64::EPSILON {
@@ -61,6 +85,7 @@ fn source_over(source: [u8; 4], dest: [u8; 4], coverage: f64) -> [u8; 4] {
     ]
 }
 
+#[inline]
 fn source_over_channel(
     source: u8,
     dest: u8,
@@ -74,6 +99,7 @@ fn source_over_channel(
         .clamp(0.0, 255.0) as u8
 }
 
+#[inline]
 fn normalized_to_u8(value: f64) -> u8 {
     (value * 255.0).round().clamp(0.0, 255.0) as u8
 }
@@ -112,5 +138,17 @@ mod tests {
         source_over_opaque_normal_row(&mut row, [100, 120, 140, 255], 2.0);
 
         assert_eq!(row, vec![100, 120, 140, 255, 100, 120, 140, 255]);
+    }
+
+    #[test]
+    fn source_over_normal_row_should_match_non_opaque_scalar_cases() {
+        let mut row = vec![10, 20, 30, 255, 40, 50, 60, 128, 200, 190, 180, 0];
+
+        source_over_normal_row(&mut row, [100, 120, 140, 128], 0.5);
+
+        assert_eq!(
+            row,
+            vec![32, 45, 57, 255, 64, 78, 92, 160, 100, 120, 140, 64]
+        );
     }
 }

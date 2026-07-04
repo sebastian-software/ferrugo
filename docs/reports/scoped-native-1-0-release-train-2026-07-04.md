@@ -71,7 +71,9 @@ server/runtime release unless the issue-specific evidence changes:
 - #65 transparency soft-mask and advanced blend boundaries, now closed as typed
   `graphics.transparency` release boundaries for luminosity soft masks and
   Overlay/advanced blend modes;
-- #49, #50, #51, and #52 performance implementation slices.
+- #49, #50, and #51 performance implementation slices, now covered by the
+  combined render performance workstream;
+- #52 streaming PNG rows from raster bands.
 
 If one of these becomes release-blocking, update this report, #58, and the
 tracking epic before changing release copy.
