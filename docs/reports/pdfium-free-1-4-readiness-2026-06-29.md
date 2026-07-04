@@ -1,5 +1,8 @@
 # PDFium-Free 1.4 Readiness 2026-06-29
 
+Historical evidence report. The current release-boundary decision is
+[Scoped Native 1.0 Release Train 2026-07-04](scoped-native-1-0-release-train-2026-07-04.md).
+
 Milestone 0220 makes the 1.4 decision from the current native-only runtime,
 server, cross-producer, low-memory, WASM, security, and consumer diagnostic
 evidence.

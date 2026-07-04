@@ -3,9 +3,9 @@
 Status: accepted for 0156.
 Date: 2026-06-26.
 
-This backlog records public API cleanup that should happen before the
-PDFium-free 1.0 release. Items are intentionally small so they can be reviewed
-as explicit SemVer decisions instead of accidental renderer churn.
+This backlog records public API cleanup that should happen before the scoped
+native stable release train. Items are intentionally small so they can be
+reviewed as explicit SemVer decisions instead of accidental renderer churn.
 
 ## Immediate Policy State
 

@@ -24,7 +24,8 @@ The native Rust path is the default development and packaging target.
   rendering.
 - Reference-renderer comparison commands remain available for maintainers behind
   explicit Cargo features.
-- The 1.4 readiness gate supports a scoped native server/runtime path.
+- The scoped native release train supports a bounded server/runtime preview
+  path.
 - A broad "drop-in PDF renderer replacement" claim is still deferred.
 
 The current renderer handles a useful slice of typical preview documents, but
@@ -233,8 +234,12 @@ Start here:
   for comparative speed, memory, and reference-renderer measurement.
 - [Native renderer conformance backlog](docs/backlogs/native-renderer-conformance-backlog.md)
   for follow-up renderer work.
+- [Scoped native 1.0 release train](docs/reports/scoped-native-1-0-release-train-2026-07-04.md)
+  for the current release boundary, blockers, non-blockers, gates, and
+  commit-driven versioning decision.
 - [PDFium-free 1.4 readiness report](docs/reports/pdfium-free-1-4-readiness-2026-06-29.md)
-  for the current release decision.
+  for the latest historical gate evidence behind the scoped server/runtime
+  claim.
 
 Historical and planning docs:
 

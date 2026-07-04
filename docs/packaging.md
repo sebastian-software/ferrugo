@@ -264,6 +264,13 @@ cargo publish -p ferrugo --locked
 Ferrugo follows the same Release Please and crates.io Trusted Publishing pattern
 used by Ferrocat.
 
+The release train is commit-driven. Do not rewrite Cargo manifests,
+`.release-please-manifest.json`, changelogs, or release notes to a placeholder
+`0.9`, `1.0`, or other planning version. Use clear Conventional Commits and let
+Release Please infer the next SemVer version from the merged change history.
+The current `0.1.x` metadata is the prepared crate state, not a statement that
+the scoped native release work is complete.
+
 - `.github/workflows/publish.yml` runs on pushes to `main` and on manual
   dispatch.
 - The first job runs `googleapis/release-please-action` with
@@ -271,6 +278,10 @@ used by Ferrocat.
 - The config uses `cargo-workspace` plus `linked-versions`, so the Ferrugo
   release train stays on one version while Release Please updates local Cargo
   dependency versions.
+- Changelogs and release notes are generated from the same Conventional Commit
+  history. Manual release prose should preserve the scoped native
+  server/runtime claim and the explicit non-claim that Ferrugo is not yet a
+  broad drop-in PDF renderer replacement.
 - When Release Please creates GitHub releases, the `publish-rust` job requests a
   temporary crates.io token through `rust-lang/crates-io-auth-action@v1` and
   runs `scripts/publish_crates.sh`.
@@ -305,3 +316,7 @@ crates.io access is available:
 ```sh
 bash scripts/check_native_only_release.sh
 ```
+
+The product release boundary, blockers, non-blockers, local gates, and current
+SemVer decision live in
+[`docs/reports/scoped-native-1-0-release-train-2026-07-04.md`](reports/scoped-native-1-0-release-train-2026-07-04.md).
