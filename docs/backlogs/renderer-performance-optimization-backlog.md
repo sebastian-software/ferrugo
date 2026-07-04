@@ -1,7 +1,7 @@
 # Renderer Performance Optimization Backlog
 
 Status: active backlog.
-Date: 2026-06-29.
+Date: 2026-07-04.
 
 ## Purpose
 
@@ -31,6 +31,10 @@ profiles, and regressions teach us where the real bottlenecks are.
   maps the measured hotspots to the reference engines' coverage-rasterizer
   architecture and proposes the adoption order (adaptive flattening, coverage
   fill, stroke-to-fill, span blitters, cache lifetimes, banding).
+- [x] Fresh post stroke-to-fill profiling exists:
+  [render profile refresh](../reports/render-profile-refresh-2026-07-04.md)
+  replaces the old row-bucket/span-covered stroke hotspot order with current
+  coverage-fill, shading/text-row, glyph-cache, and banding evidence.
 
 ## Operating Rules
 
@@ -5755,6 +5759,60 @@ Rejected Butt-cap row-bucket predicate candidate from 2026-06-30:
   the added outer branch offsets any inner-loop simplification. Do not retry
   line-cap-only predicate specialization unless a lower-level profile isolates
   the `LineCap` match itself rather than the broader row-bucket loop.
+
+## Active Hotspot Order From 2026-07-04 Profile Refresh
+
+Source report:
+[render profile refresh](../reports/render-profile-refresh-2026-07-04.md).
+
+The 2026-07-04 release profiles supersede the current-action guidance from the
+2026-06-30 vector-stress notes. Historical sections above still mention
+`rasterize_row_bucketed_stroke_ranges` and
+`rasterize_span_covered_stroke_ranges` because those were real hot symbols at
+the time. They are now retired as active backlog targets: the current
+`trace-native` evidence for `vector-stress.pdf` reports zero row-bucket and
+zero span-covered stroke sample points, and the `sample` call trees no longer
+show those functions as the live lead symbols.
+
+Current family findings:
+
+- `vector-stress.pdf`: `stroke_path` now routes mostly through `fill_path` and
+  `FillScanlineCellAccumulator::fill_run`. The trace reports `66`
+  `outline_fill_calls`, `2` coverage-span fill calls, and `1,954`
+  coverage-cell accumulator pixels. Next target: #113 partial-coverage edge
+  pixels and coverage-fill batching.
+- `report/vector`: `technical-hatch-clipping.pdf` is the largest focused
+  member in this pass, with `10.690 ms` repeat mean at `--max-edge 1024` and
+  `10.561 ms` in `raster_paths`. The sample is led by `stroke_path`,
+  `rasterize_path_item`, and `fill_path`. Next target: #113 first, then #110
+  only where the row/span kernel is measured.
+- `presentation`: `slide-title-gradient.pdf` is led by
+  `rasterize_shading_item`, with secondary `draw_text_run` and
+  `fill_device_rect` work. Next target: #110, scoped to measured shading and
+  text-row blitters rather than broad renderer SIMD.
+- text-heavy office fixture:
+  `office-report-header-footer-link.pdf` has mixed path and text cost. The
+  trace records `142` glyph bitmap cache hits and `81` misses, while the CPU
+  sample still shows `stroke_path` and `draw_text_run` as the visible work.
+  Next target: keep #111 as a measured P2 cache candidate, not a blanket cache
+  expansion.
+- banding: every requested trace reported `bands=1`; the largest actual output
+  was `480x300`, below the default band threshold. Keep #112 behind larger
+  page-family evidence and memory-bounded scheduler data.
+
+Follow-up issue order from this profile:
+
+1. #113 `perf(render): batch partial-coverage edge pixels into span operations`
+   remains the first renderer follow-up for vector/report work.
+2. #110 `perf(simd): implement real SIMD span blitters with runtime dispatch
+   and integer blend math` remains important, but should start with the
+   measured coverage/shading/text-row paths from the refresh report.
+3. #111 `perf(render): font-face parse cache and session-scoped glyph raster
+   cache` stays below the vector and row-kernel work until an office/text run
+   shows cache misses dominate more than path and rectangle-fill work.
+4. #112 `perf(native): make parallel banding the default with a memory-bounded
+   scheduler policy` stays deferred for these families because this pass did
+   not exercise banded rendering.
 
 ## Questions Closed For The Next Wave
 
