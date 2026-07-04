@@ -12741,7 +12741,7 @@ mod tests {
     fn render_auto_thumbnail_should_return_native_unsupported_without_pdfium_fallback() {
         env::remove_var("FERRUGO_PDFIUM_LIBRARY");
         let input = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../fixtures/generated/optional-content-ocmd.pdf");
+            .join("../../fixtures/generated/optional-content-usage-application.pdf");
         let output = PathBuf::from("target/unused-default-fallback.png");
         let config = RenderConfig {
             input,
@@ -13140,14 +13140,14 @@ mod tests {
         let json = producer_regression_report_json(&report);
 
         assert_eq!(report.total, 2);
-        assert_eq!(report.native_rendered, 0);
-        assert_eq!(report.fallback_required, 2);
+        assert_eq!(report.native_rendered, 1);
+        assert_eq!(report.fallback_required, 1);
         assert_eq!(
             report
                 .producer_groups
                 .get("layered-presentation-export")
-                .and_then(|group| group.fallback_categories.get("graphics.optional-content")),
-            Some(&1)
+                .map(|group| group.native_rendered),
+            Some(1)
         );
         assert_eq!(
             report
@@ -13157,7 +13157,6 @@ mod tests {
             Some(&1)
         );
         assert!(json.contains("\"report_kind\": \"producer-regression-report\""));
-        assert!(json.contains("\"0192 optional-content-ui-state\""));
         assert!(json.contains("\"0209 rust-native-image-codec\""));
         assert!(json.contains(
             "\"privacy\": \"no PDF bytes, rendered pixels, extracted text, private filenames, or document hashes\""
@@ -13435,7 +13434,7 @@ mod tests {
         let fixture_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/generated");
         let paths = vec![
             fixture_root.join("vector-paths.pdf"),
-            fixture_root.join("optional-content-ocmd.pdf"),
+            fixture_root.join("optional-content-usage-application.pdf"),
             fixture_root.join("encrypted-placeholder.pdf"),
         ];
         let options = ThumbnailOptions {
@@ -13551,7 +13550,8 @@ mod tests {
     #[test]
     fn diagnostic_bundles_should_exclude_private_bytes_and_include_typed_failure() {
         let fixture_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let paths = vec![fixture_root.join("fixtures/generated/optional-content-ocmd.pdf")];
+        let paths =
+            vec![fixture_root.join("fixtures/generated/optional-content-usage-application.pdf")];
         let manifest_path = fixture_root.join("fixtures/corpus-manifest.tsv");
         let manifest = read_corpus_manifest(&manifest_path).expect("manifest should parse");
         let output_dir = fixture_root
@@ -14134,7 +14134,7 @@ status = "candidate"
         let manifest = read_corpus_manifest(&manifest_path).expect("manifest should parse");
         let paths = vec![
             fixture_root.join("fixtures/generated/text-page.pdf"),
-            fixture_root.join("fixtures/generated/optional-content-ocmd.pdf"),
+            fixture_root.join("fixtures/generated/optional-content-usage-application.pdf"),
         ];
         let options = ThumbnailOptions {
             page_index: 0,
@@ -14389,7 +14389,7 @@ status = "candidate"
         let manifest = read_corpus_manifest(&manifest_path).expect("manifest should parse");
         let paths = vec![
             fixture_root.join("fixtures/generated/vector-paths.pdf"),
-            fixture_root.join("fixtures/generated/optional-content-ocmd.pdf"),
+            fixture_root.join("fixtures/generated/optional-content-usage-application.pdf"),
         ];
         let options = ThumbnailOptions {
             page_index: 0,

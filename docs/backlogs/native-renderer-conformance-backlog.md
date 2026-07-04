@@ -178,11 +178,12 @@ fixtures for raster-tile routes, transparent zoning overlays, and deterministic
 simple OCG layer-off policy. The supported gate is green at 7/7 rendered,
 0 fallbacks, and 0 errors; the benchmark reports 0 budget failures.
 
-The OCMD optional-content membership policy remains explicit:
+Simple OCMD optional-content membership is now part of the native supported
+slice:
 
 | Family | Total | Fallback required | Bucket |
 | --- | ---: | ---: | --- |
-| `unsupported-optional-policy` | 1 | 1 | `graphics.optional-content` |
+| `optional-membership` | 1 | 0 | `none` |
 
 The focused map visual oracle reports 2 exact rows and 5 blockers:
 
@@ -252,7 +253,7 @@ structure traversal.
 | --- | --- | --- |
 | `image.filter` | `unsupported-ccitt-image.pdf`, `unsupported-jbig2-image.pdf`, `unsupported-jpx-image.pdf` | Defer until safe codec strategy and scan corpus need justify implementation. |
 | `graphics.transparency` | `extgstate-luminosity-soft-mask.pdf`, `unsupported-blend-mode.pdf` | Keep typed unsupported until blend/soft-mask support has bounded raster tests. |
-| `graphics.optional-content` | `optional-content-ocmd.pdf` | Needs explicit layer membership and flattening policy before rendering. |
+| `graphics.optional-content` | `optional-content-usage-application.pdf`, OCMD `/VE` or unknown `/P` policies | Usage application and viewer-state policies stay typed unsupported until thumbnail flattening has an explicit viewer-state contract. |
 | `graphics.pattern-shading` | `mesh-shading-unsupported.pdf` | Keep as vector/shading follow-up rather than fallback. |
 | `form.xfa-dynamic` | `xfa-dynamic-no-static-appearance.pdf` | Dynamic XFA stays unsupported unless a separate policy decision changes scope. |
 
