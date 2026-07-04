@@ -8,7 +8,9 @@ use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+use std::time::Instant;
 
 use ferrugo_content::{tokenize_content, ContentToken};
 use ferrugo_object::{
@@ -58,6 +60,31 @@ use ferrugo_thumbnail::FormAppearanceMode;
 
 /// Stable crate role used by architecture smoke tests and documentation.
 pub const CRATE_ROLE: &str = "native-backend";
+
+struct PhaseTimer {
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+    started: Instant,
+}
+
+impl PhaseTimer {
+    fn start() -> Self {
+        Self {
+            #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+            started: Instant::now(),
+        }
+    }
+
+    fn elapsed(&self) -> Duration {
+        #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+        {
+            self.started.elapsed()
+        }
+        #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+        {
+            Duration::ZERO
+        }
+    }
+}
 
 const BUCKET_GRAPHICS_OPTIONAL_CONTENT: &str = buckets::GRAPHICS_OPTIONAL_CONTENT;
 const BUCKET_GRAPHICS_COLOR_MANAGEMENT: &str = buckets::GRAPHICS_COLOR_MANAGEMENT;
@@ -997,8 +1024,8 @@ impl NativeBackend {
         options: &ThumbnailOptions,
     ) -> Result<NativeRenderTrace, ThumbnailError> {
         reject_form_appearance_mutation(options)?;
-        let total_started = Instant::now();
-        let load_started = Instant::now();
+        let total_started = PhaseTimer::start();
+        let load_started = PhaseTimer::start();
         let bytes = load_source(source)?;
         let input = PdfBytes::new(bytes.as_ref());
         let (document, page_tree) = load_render_document(input, options.page_index)?;
@@ -1831,7 +1858,7 @@ impl<'a> NativeDocumentSession<'a> {
         timings: &mut NativeRenderPhaseTimings,
     ) -> Result<Thumbnail, ThumbnailError> {
         reject_form_appearance_mutation(options)?;
-        let started = Instant::now();
+        let started = PhaseTimer::start();
         let thumbnail = render_loaded_document_with_timings_and_session_cache(
             &self.document,
             &self.page_tree,
@@ -4354,7 +4381,7 @@ fn record_render_phase<T>(
     let Some(timings) = timings.as_deref_mut() else {
         return operation();
     };
-    let started = Instant::now();
+    let started = PhaseTimer::start();
     let result = operation();
     timings.record(phase, started.elapsed());
     result

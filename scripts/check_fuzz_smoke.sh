@@ -23,7 +23,7 @@ targets=(
 
 for target in "${targets[@]}"; do
   echo "==> fuzz smoke: ${target}"
-  cargo run --quiet --manifest-path fuzz/Cargo.toml --bin "${target}" -- --smoke \
+  cargo run --quiet --locked --manifest-path fuzz/Cargo.toml --bin "${target}" -- --smoke \
     | tee -a "${report}"
 done
 

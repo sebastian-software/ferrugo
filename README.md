@@ -217,6 +217,14 @@ bash scripts/check_native_only_release.sh
 bash scripts/check_wasm_smoke.sh
 ```
 
+Pull requests and pushes to `main` run the required CI contract in
+`.github/workflows/ci.yml`: formatting, all-features Clippy, locked
+no-default-features workspace tests, PDFium quarantine, plugin-free
+distribution, native golden images, fuzz smoke, performance-claims policy, and
+the WASM smoke gate with the `wasm32-unknown-unknown` target installed. Broader
+benchmark matrices and oracle comparisons remain maintainer or scheduled-suite
+work rather than PR-path requirements.
+
 Generated fixtures live in `fixtures/generated/`. Reports usually write JSON or
 PNG output under `target/` so normal runs do not dirty the repository.
 

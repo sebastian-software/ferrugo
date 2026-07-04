@@ -1,0 +1,74 @@
+name: CI
+
+env:
+  CARGO_TERM_COLOR: always
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  pr-validation:
+    name: PR validation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install CI tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ripgrep
+
+      - name: Check required tools
+        run: |
+          node --version
+          rg --version
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+      - name: Run Clippy
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+      - name: Run native workspace tests
+        run: cargo test --workspace --no-default-features --locked
+
+      - name: Run PDFium quarantine gate
+        run: bash scripts/check_pdfium_quarantine.sh
+
+      - name: Run plugin-free distribution gate
+        run: bash scripts/check_plugin_free_distribution.sh
+
+      - name: Run native golden image gate
+        run: bash scripts/check_native_golden_images.sh
+
+      - name: Run fuzz smoke gate
+        run: bash scripts/check_fuzz_smoke.sh
+
+      - name: Run performance claims gate
+        run: bash scripts/check_performance_claims.sh
+
+      - name: Run WASM smoke gate
+        run: bash scripts/check_wasm_smoke.sh

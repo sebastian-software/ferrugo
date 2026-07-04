@@ -7,7 +7,9 @@ use std::cell::RefCell;
 use std::fmt;
 use std::ops::Range;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+use std::time::Instant;
 
 use ferrugo_content::{
     tokenize_content, ContentErrorKind, ContentResult, ContentToken, InlineImage, OperatorName,
@@ -25,6 +27,31 @@ use zune_jpeg::{
 
 /// Stable crate role used by architecture smoke tests and documentation.
 pub const CRATE_ROLE: &str = "render";
+
+struct PhaseTimer {
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+    started: Instant,
+}
+
+impl PhaseTimer {
+    fn start() -> Self {
+        Self {
+            #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+            started: Instant::now(),
+        }
+    }
+
+    fn elapsed(&self) -> Duration {
+        #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+        {
+            self.started.elapsed()
+        }
+        #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+        {
+            Duration::ZERO
+        }
+    }
+}
 
 /// Default maximum graphics-state stack depth.
 pub const DEFAULT_GRAPHICS_STATE_STACK_LIMIT: usize = 64;
@@ -6810,7 +6837,7 @@ fn record_raster_display_phase<T>(
     work: impl FnOnce() -> RasterResult<T>,
 ) -> RasterResult<T> {
     if let Some(on_phase) = on_phase.as_deref_mut() {
-        let started = Instant::now();
+        let started = PhaseTimer::start();
         let result = work();
         on_phase(phase, started.elapsed());
         result
