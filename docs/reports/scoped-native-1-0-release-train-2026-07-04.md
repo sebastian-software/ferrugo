@@ -92,12 +92,19 @@ These are the named local release gates for the scoped native release train:
 ```sh
 bash scripts/check_native_only_release.sh
 bash scripts/check_crate_publish_ready.sh
+cargo test -p ferrugo --test cli_contract --no-default-features
 ```
 
 `check_native_only_release.sh` verifies the native-only workspace path, PDFium
-quarantine, plugin-free distribution, package file list, leaf package dry-runs,
-and all-features Clippy. Set `FERRUGO_NATIVE_RELEASE_VERIFY_REGISTRY=1` only
-when registry-backed package verification is available.
+quarantine, plugin-free distribution, CLI binary contract behavior, package file
+list, leaf package dry-runs, and all-features Clippy. Set
+`FERRUGO_NATIVE_RELEASE_VERIFY_REGISTRY=1` only when registry-backed package
+verification is available.
+
+The `cli_contract` integration test invokes the built `ferrugo` binary as a
+process and covers help/version output, successful native rendering, stable JSON
+report shapes, durable usage errors, and native-only PDFium-disabled failures
+without requiring PDFium, Poppler, or private corpus files.
 
 `check_crate_publish_ready.sh` verifies Cargo metadata, package file lists, leaf
 package archive dry-runs, and optionally registry-backed dependency-chain
