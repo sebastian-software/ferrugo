@@ -11,7 +11,7 @@ follow-up slices. Counts come from
 
 | Rank | Slice | Evidence | Recommended next action | Validation gate |
 | ---: | --- | --- | --- | --- |
-| 1 | Office text/font fidelity | `text-fonts` + `office-export`: 21 blockers. | Audit fallback text metrics, text spacing, subset font widths, Type1/CFF/CID positioning, and missing-font substitution as separate fixture groups. | Focused visual diff over office text fixtures plus `cargo test -p ferrugo-render text_display_list`. |
+| 1 | Office text/font fidelity | `text-fonts` + `office-export`: missing-font substitution split out with office family classification coverage. | Continue auditing fallback text metrics, text spacing, subset font widths, and Type1/CFF/CID positioning as separate fixture groups. | Focused visual diff over office text fixtures plus `cargo test -p ferrugo-render text_display_list fallback_font_classification`. |
 | 2 | Dense office table/grid rendering | `rendering-core` + `office-export`: 16 blockers. | Split spreadsheet/table fixtures into operator semantics, clipping, hairline/grid stroke, and cell-overflow cases. | Focused visual diff over spreadsheet and business office fixtures. |
 | 3 | Form and annotation appearance parity | `annotations-forms` + `form`: 11 remaining blockers after FreeText missing-appearance synthesis. | Compare native synthesized appearances against explicit appearance streams; isolate checkbox/radio/text-field/signature/stamp differences. | Focused visual diff over form fixtures and native form appearance tests. |
 | 4 | Report rendering-core fidelity | `rendering-core` + `report`: 12 blockers. | Triage scientific, long-report, technical, and dashboard fixtures by operator surface before broad fixes. | Focused report-family visual diff and operator snapshot coverage from 0144. |
@@ -21,6 +21,15 @@ follow-up slices. Counts come from
 | 8 | Document structure and policy boundaries | 1 hybrid-reference blocker, 1 encrypted both-error, 1 dynamic XFA native error. | Keep encryption and dynamic XFA as policy boundaries; investigate hybrid visual parity separately. | Metadata/render policy tests plus focused hybrid-reference visual diff. |
 
 ## Operator-Audit Routing
+
+## Office Text And Font Delta
+
+Issue 71 isolates one missing-font substitution reduction: subset-prefixed
+office family names are classified before deterministic fallback rasterization.
+Cambria, Constantia, Garamond, and Minion route to the serif fallback; Wingdings
+and Webdings route to the symbol fallback; Aptos and unknown families continue
+to use the sans fallback. This reduces family-level substitution drift without
+adding host font discovery or full OpenType shaping to the runtime graph.
 
 ## Static Form And Annotation Delta
 
