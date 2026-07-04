@@ -122,6 +122,11 @@ existing entry, byte, or retained-capacity limits. Native memory diagnostics
 report the default and low-memory font budgets without exposing document text,
 font names, glyph strings, or decoded program bytes.
 
+Fallback text rasterization respects active rectangular clipping paths during
+ordered display-list rendering. This covers spreadsheet-style cell-overflow
+clips for both fallback glyph rectangles and Type3 CharProc glyph paths; broader
+font metrics, shaping, and table layout parity remain separate fidelity work.
+
 ## Transparency Scratch Policy
 
 Transparency groups are rasterized through bounded intermediate surfaces clipped
