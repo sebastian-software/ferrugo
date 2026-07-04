@@ -3679,6 +3679,8 @@ fn fallback_face_for_base_font(base_font: Option<&[u8]>) -> FontFallbackFace {
     };
     if ascii_contains_ignore_case(name, b"symbol")
         || ascii_contains_ignore_case(name, b"zapfdingbats")
+        || ascii_contains_ignore_case(name, b"wingdings")
+        || ascii_contains_ignore_case(name, b"webdings")
     {
         FontFallbackFace::Symbol
     } else if ascii_contains_ignore_case(name, b"courier")
@@ -3688,7 +3690,11 @@ fn fallback_face_for_base_font(base_font: Option<&[u8]>) -> FontFallbackFace {
     {
         FontFallbackFace::Monospace
     } else if ascii_contains_ignore_case(name, b"times")
+        || ascii_contains_ignore_case(name, b"cambria")
+        || ascii_contains_ignore_case(name, b"constantia")
+        || ascii_contains_ignore_case(name, b"garamond")
         || ascii_contains_ignore_case(name, b"georgia")
+        || ascii_contains_ignore_case(name, b"minion")
         || ascii_contains_ignore_case(name, b"serif")
     {
         FontFallbackFace::Serif
@@ -29991,6 +29997,26 @@ mod tests {
                 layout: TextLayoutStatus::Simple,
             }),
             944.0
+        );
+    }
+
+    #[test]
+    fn fallback_font_classification_should_handle_subset_office_faces() {
+        assert_eq!(
+            fallback_face_for_base_font(Some(b"ABCDEE+Cambria")),
+            FontFallbackFace::Serif
+        );
+        assert_eq!(
+            fallback_face_for_base_font(Some(b"ABCDEE+Constantia-Bold")),
+            FontFallbackFace::Serif
+        );
+        assert_eq!(
+            fallback_face_for_base_font(Some(b"ABCDEE+Aptos")),
+            FontFallbackFace::Sans
+        );
+        assert_eq!(
+            fallback_face_for_base_font(Some(b"ABCDEE+Wingdings-Regular")),
+            FontFallbackFace::Symbol
         );
     }
 

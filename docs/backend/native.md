@@ -170,7 +170,10 @@ object graph. See
 Missing and substituted fonts use a deterministic built-in fallback policy
 rather than host operating-system font lookup. The current policy classifies
 font names after subset-prefix stripping and maps them to `Sans`, `Serif`,
-`Monospace`, or `Symbol` fallback faces. Type 3 fonts remain routed through
+`Monospace`, or `Symbol` fallback faces. Office-style subset names such as
+Cambria, Constantia, Garamond, Wingdings, and Webdings are classified before
+fallback rasterization so missing embedded programs do not silently collapse to
+the generic sans face. Type 3 fonts remain routed through
 their CharProc paths instead of the built-in text fallback.
 
 Fallback resolutions are cached with a bounded default limit of 128 entries and
@@ -208,6 +211,10 @@ listed in the main corpus manifest under `office-export`.
 | `cid-subset` | `subset-cid-widths.pdf` | Type0 CID font with descendant width overrides and ToUnicode. |
 | `type3-subset` | `subset-type3-repeated-charprocs.pdf` | Repeated Type3 CharProc reuse and Type3 width advancement. |
 | `missing-font-subset` | `subset-missing-font.pdf` | Subset-prefixed missing font routed through deterministic fallback. |
+
+Issue 71 extends the missing-font classifier for common office serif and symbol
+families. Full OpenType shaping, host font discovery, and visual parity for all
+proprietary Office fonts remain out of scope for the native runtime contract.
 
 The 0136 gate renders all five fixtures through the Rust-native backend with
 zero fallbacks, zero errors, and zero benchmark budget failures. The current
