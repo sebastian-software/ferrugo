@@ -882,6 +882,37 @@ fn benchmark_matrix_records(
                         "Poppler is measured as an external process only in this matrix",
                     ));
                 }
+                (MatrixBackend::Ghostscript, MatrixMode::ColdProcess) => {
+                    if resolve_command_path(&config.ghostscript).is_some() {
+                        for fixture in fixtures {
+                            records.push(benchmark_matrix_ghostscript_cold(
+                                fixture, manifest, options, config,
+                            )?);
+                        }
+                    } else {
+                        records.extend(missing_tool_records(
+                            MatrixBackend::Ghostscript,
+                            MatrixMode::ColdProcess,
+                            fixtures,
+                            manifest,
+                            options,
+                            format!(
+                                "`{}` was not found; set --ghostscript or FERRUGO_GHOSTSCRIPT",
+                                config.ghostscript.display()
+                            ),
+                        ));
+                    }
+                }
+                (MatrixBackend::Ghostscript, MatrixMode::HotRender) => {
+                    records.extend(not_applicable_records(
+                        MatrixBackend::Ghostscript,
+                        MatrixMode::HotRender,
+                        fixtures,
+                        manifest,
+                        options,
+                        "Ghostscript is measured as an external process only in this matrix",
+                    ));
+                }
             }
         }
     }
@@ -1010,6 +1041,50 @@ fn benchmark_matrix_poppler_cold(
         MatrixBackend::Poppler,
         poppler_backend_version(&config.pdftoppm),
         command_line(&config.pdftoppm, &args),
+        MatrixFixtureContext {
+            fixture,
+            manifest,
+            options,
+        },
+        artifact.as_path(),
+        measurement,
+        false,
+    ))
+}
+
+fn benchmark_matrix_ghostscript_cold(
+    fixture: &Path,
+    manifest: Option<&CorpusManifest>,
+    options: &ThumbnailOptions,
+    config: &BenchmarkMatrixConfig,
+) -> Result<BenchmarkMatrixRecord, CliError> {
+    let artifact = matrix_artifact_path(
+        &config.artifact_dir,
+        MatrixBackend::Ghostscript,
+        MatrixMode::ColdProcess,
+        fixture,
+        "png",
+    );
+    let _ = fs::remove_file(&artifact);
+    let page_number = options.page_index.saturating_add(1).to_string();
+    let args = vec![
+        OsString::from("-q"),
+        OsString::from("-dSAFER"),
+        OsString::from("-dBATCH"),
+        OsString::from("-dNOPAUSE"),
+        OsString::from("-sDEVICE=png16m"),
+        OsString::from("-dTextAlphaBits=4"),
+        OsString::from("-dGraphicsAlphaBits=4"),
+        OsString::from(format!("-dFirstPage={page_number}")),
+        OsString::from(format!("-dLastPage={page_number}")),
+        OsString::from(format!("-sOutputFile={}", artifact.display())),
+        fixture.as_os_str().to_os_string(),
+    ];
+    let measurement = run_measured_process(&config.ghostscript, &args, &[], options.timeout)?;
+    Ok(cold_process_record(
+        MatrixBackend::Ghostscript,
+        ghostscript_backend_version(&config.ghostscript),
+        command_line(&config.ghostscript, &args),
         MatrixFixtureContext {
             fixture,
             manifest,
@@ -1163,6 +1238,7 @@ fn benchmark_matrix_hot_backend<B: ThumbnailBackend>(
             width: Some(thumbnail.width),
             height: Some(thumbnail.height),
             bytes: Some(thumbnail.bytes.len() as u64),
+            artifact_hash: Some(stable_hash_hex(&thumbnail.bytes)),
         },
         memory: MatrixMemory {
             rss_start_bytes,
@@ -1348,6 +1424,7 @@ fn matrix_unavailable_record(
             MatrixBackend::Native => native_backend_version(NativeProfile::Default),
             MatrixBackend::Pdfium => pdfium_backend_version(),
             MatrixBackend::Poppler => "pdftoppm".to_string(),
+            MatrixBackend::Ghostscript => "ghostscript".to_string(),
         },
         command: backend.as_str().to_string(),
         mode,
@@ -2513,6 +2590,7 @@ struct BenchmarkMatrixConfig {
     markdown_report: Option<PathBuf>,
     artifact_dir: PathBuf,
     pdftoppm: PathBuf,
+    ghostscript: PathBuf,
     page_index: u32,
     max_edge: u32,
     background: Rgba,
@@ -2529,16 +2607,18 @@ enum MatrixBackend {
     Native,
     Pdfium,
     Poppler,
+    Ghostscript,
 }
 
 impl MatrixBackend {
-    const ALL: [Self; 3] = [Self::Native, Self::Pdfium, Self::Poppler];
+    const ALL: [Self; 4] = [Self::Native, Self::Pdfium, Self::Poppler, Self::Ghostscript];
 
     const fn as_str(self) -> &'static str {
         match self {
             Self::Native => "native",
             Self::Pdfium => "pdfium",
             Self::Poppler => "poppler",
+            Self::Ghostscript => "ghostscript",
         }
     }
 }
@@ -3082,6 +3162,9 @@ impl BenchmarkMatrixConfig {
         let mut pdftoppm = env::var_os("FERRUGO_POPPLER_PDFTOPPM")
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from("pdftoppm"));
+        let mut ghostscript = env::var_os("FERRUGO_GHOSTSCRIPT")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("gs"));
         let mut page_index = DEFAULT_PAGE_INDEX;
         let mut max_edge = 160;
         let mut background = Rgba::WHITE;
@@ -3113,6 +3196,10 @@ impl BenchmarkMatrixConfig {
                 "--pdftoppm" => {
                     index += 1;
                     pdftoppm = required_path(args, index, "--pdftoppm")?;
+                }
+                "--ghostscript" => {
+                    index += 1;
+                    ghostscript = required_path(args, index, "--ghostscript")?;
                 }
                 "--manifest" => {
                     index += 1;
@@ -3206,6 +3293,7 @@ impl BenchmarkMatrixConfig {
             markdown_report,
             artifact_dir,
             pdftoppm,
+            ghostscript,
             page_index,
             max_edge,
             background,
@@ -3224,8 +3312,9 @@ fn parse_matrix_backend(value: &str) -> Result<MatrixBackend, CliError> {
         "native" | "rust-native" | "ferrugo" => Ok(MatrixBackend::Native),
         "pdfium" => Ok(MatrixBackend::Pdfium),
         "poppler" | "pdftoppm" => Ok(MatrixBackend::Poppler),
+        "ghostscript" | "gs" => Ok(MatrixBackend::Ghostscript),
         _ => Err(CliError::Usage(format!(
-            "unknown --backend `{value}`; expected `native`, `pdfium`, or `poppler`"
+            "unknown --backend `{value}`; expected `native`, `pdfium`, `poppler`, or `ghostscript`"
         ))),
     }
 }
@@ -3960,6 +4049,8 @@ struct BenchmarkMatrixTimingReliability {
     pdfium_available: bool,
     poppler_requested: bool,
     poppler_available: bool,
+    ghostscript_requested: bool,
+    ghostscript_available: bool,
     hot_pdfium_comparison_available: bool,
     cold_reference_available: bool,
     caveats: Vec<&'static str>,
@@ -4003,9 +4094,11 @@ struct BenchmarkMatrixFamilySummary {
     pdfium_hot_p95_ms: Option<f64>,
     pdfium_cold_wall_ms: Option<f64>,
     poppler_cold_wall_ms: Option<f64>,
+    ghostscript_cold_wall_ms: Option<f64>,
     ferrugo_to_pdfium_hot_ratio: Option<f64>,
     ferrugo_to_pdfium_cold_ratio: Option<f64>,
     ferrugo_to_poppler_cold_ratio: Option<f64>,
+    ferrugo_to_ghostscript_cold_ratio: Option<f64>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -4060,11 +4153,12 @@ struct MatrixTiming {
     max_ms: Option<f64>,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct MatrixOutput {
     width: Option<u32>,
     height: Option<u32>,
     bytes: Option<u64>,
+    artifact_hash: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -4329,6 +4423,10 @@ impl PlatformMetadata {
 }
 
 fn command_stdout(program: &str, args: &[&str]) -> Option<String> {
+    command_stdout_path(Path::new(program), args)
+}
+
+fn command_stdout_path(program: &Path, args: &[&str]) -> Option<String> {
     let output = Command::new(program).args(args).output().ok()?;
     if !output.status.success() {
         return None;
@@ -6334,6 +6432,7 @@ fn matrix_timing_from_samples(warmup_iterations: usize, samples_ms: Vec<f64>) ->
 
 fn matrix_output_from_path(path: &Path) -> MatrixOutput {
     let bytes = fs::metadata(path).ok().map(|metadata| metadata.len());
+    let artifact_hash = fs::read(path).ok().map(|bytes| stable_hash_hex(&bytes));
     let dimensions = match path.extension().and_then(|extension| extension.to_str()) {
         Some("png") => read_png_dimensions(path).ok().flatten(),
         Some("ppm") => read_ppm_dimensions(path).ok().flatten(),
@@ -6343,6 +6442,7 @@ fn matrix_output_from_path(path: &Path) -> MatrixOutput {
         width: dimensions.map(|(width, _)| width),
         height: dimensions.map(|(_, height)| height),
         bytes,
+        artifact_hash,
     }
 }
 
@@ -6482,12 +6582,23 @@ fn benchmark_matrix_family_summaries(
                 MatrixMode::ColdProcess,
                 MatrixTimingSelector::Wall,
             );
+            summary.ghostscript_cold_wall_ms = matrix_family_timing(
+                records,
+                &family,
+                MatrixBackend::Ghostscript,
+                MatrixMode::ColdProcess,
+                MatrixTimingSelector::Wall,
+            );
             summary.ferrugo_to_pdfium_hot_ratio =
                 ratio(summary.native_hot_p95_ms, summary.pdfium_hot_p95_ms);
             summary.ferrugo_to_pdfium_cold_ratio =
                 ratio(summary.native_cold_wall_ms, summary.pdfium_cold_wall_ms);
             summary.ferrugo_to_poppler_cold_ratio =
                 ratio(summary.native_cold_wall_ms, summary.poppler_cold_wall_ms);
+            summary.ferrugo_to_ghostscript_cold_ratio = ratio(
+                summary.native_cold_wall_ms,
+                summary.ghostscript_cold_wall_ms,
+            );
         }
     }
     families
@@ -6611,6 +6722,12 @@ fn pdfium_backend_version() -> String {
 
 fn poppler_backend_version(command: &Path) -> String {
     format!("pdftoppm {}", command.display())
+}
+
+fn ghostscript_backend_version(command: &Path) -> String {
+    command_stdout_path(command, &["--version"])
+        .map(|version| format!("ghostscript {version}"))
+        .unwrap_or_else(|| format!("ghostscript {}", command.display()))
 }
 
 #[cfg(feature = "pdfium")]
@@ -10383,6 +10500,7 @@ fn benchmark_matrix_timing_reliability(
 ) -> BenchmarkMatrixTimingReliability {
     let pdfium_requested = report.config.backends.contains(&MatrixBackend::Pdfium);
     let poppler_requested = report.config.backends.contains(&MatrixBackend::Poppler);
+    let ghostscript_requested = report.config.backends.contains(&MatrixBackend::Ghostscript);
     let hot_requested = report.config.modes.contains(&MatrixMode::HotRender);
     let cold_requested = report.config.modes.contains(&MatrixMode::ColdProcess);
 
@@ -10405,6 +10523,13 @@ fn benchmark_matrix_timing_reliability(
                 MatrixStatus::MissingTool | MatrixStatus::NotApplicable
             )
     });
+    let ghostscript_available = report.records.iter().any(|record| {
+        record.backend == MatrixBackend::Ghostscript
+            && !matches!(
+                record.status,
+                MatrixStatus::MissingTool | MatrixStatus::NotApplicable
+            )
+    });
     let native_hot_available = report.records.iter().any(|record| {
         record.backend == MatrixBackend::Native
             && record.mode == MatrixMode::HotRender
@@ -10418,7 +10543,7 @@ fn benchmark_matrix_timing_reliability(
     let cold_reference_available = report.records.iter().any(|record| {
         matches!(
             record.backend,
-            MatrixBackend::Pdfium | MatrixBackend::Poppler
+            MatrixBackend::Pdfium | MatrixBackend::Poppler | MatrixBackend::Ghostscript
         ) && record.mode == MatrixMode::ColdProcess
             && record.status == MatrixStatus::Rendered
     });
@@ -10437,6 +10562,12 @@ fn benchmark_matrix_timing_reliability(
     if poppler_requested && hot_requested {
         caveats.push("poppler-hot-render-external-only");
     }
+    if ghostscript_requested && cold_requested && !ghostscript_available {
+        caveats.push("ghostscript-missing-tool");
+    }
+    if ghostscript_requested && hot_requested {
+        caveats.push("ghostscript-hot-render-external-only");
+    }
     if hot_requested && pdfium_requested && !hot_pdfium_comparison_available {
         caveats.push("pdfium-hot-reference-unavailable");
     } else if hot_requested && !pdfium_requested {
@@ -10452,6 +10583,8 @@ fn benchmark_matrix_timing_reliability(
         pdfium_available,
         poppler_requested,
         poppler_available,
+        ghostscript_requested,
+        ghostscript_available,
         hot_pdfium_comparison_available,
         cold_reference_available,
         caveats,
@@ -10469,6 +10602,8 @@ fn benchmark_matrix_timing_reliability_json(
             "\"pdfium_available\":{},",
             "\"poppler_requested\":{},",
             "\"poppler_available\":{},",
+            "\"ghostscript_requested\":{},",
+            "\"ghostscript_available\":{},",
             "\"hot_pdfium_comparison_available\":{},",
             "\"cold_reference_available\":{},",
             "\"caveats\":{}",
@@ -10479,6 +10614,8 @@ fn benchmark_matrix_timing_reliability_json(
         reliability.pdfium_available,
         reliability.poppler_requested,
         reliability.poppler_available,
+        reliability.ghostscript_requested,
+        reliability.ghostscript_available,
         reliability.hot_pdfium_comparison_available,
         reliability.cold_reference_available,
         json_str_array(&reliability.caveats)
@@ -10517,9 +10654,11 @@ fn benchmark_matrix_family_json(summary: &BenchmarkMatrixFamilySummary) -> Strin
             "\"pdfium_hot_p95_ms\":{},",
             "\"pdfium_cold_wall_ms\":{},",
             "\"poppler_cold_wall_ms\":{},",
+            "\"ghostscript_cold_wall_ms\":{},",
             "\"ferrugo_to_pdfium_hot_ratio\":{},",
             "\"ferrugo_to_pdfium_cold_ratio\":{},",
-            "\"ferrugo_to_poppler_cold_ratio\":{}",
+            "\"ferrugo_to_poppler_cold_ratio\":{},",
+            "\"ferrugo_to_ghostscript_cold_ratio\":{}",
             "}}"
         ),
         summary.total,
@@ -10533,9 +10672,11 @@ fn benchmark_matrix_family_json(summary: &BenchmarkMatrixFamilySummary) -> Strin
         optional_json_f64(summary.pdfium_hot_p95_ms),
         optional_json_f64(summary.pdfium_cold_wall_ms),
         optional_json_f64(summary.poppler_cold_wall_ms),
+        optional_json_f64(summary.ghostscript_cold_wall_ms),
         optional_json_f64(summary.ferrugo_to_pdfium_hot_ratio),
         optional_json_f64(summary.ferrugo_to_pdfium_cold_ratio),
-        optional_json_f64(summary.ferrugo_to_poppler_cold_ratio)
+        optional_json_f64(summary.ferrugo_to_poppler_cold_ratio),
+        optional_json_f64(summary.ferrugo_to_ghostscript_cold_ratio)
     )
 }
 
@@ -10605,10 +10746,11 @@ fn matrix_timing_json(timing: &MatrixTiming) -> String {
 
 fn matrix_output_json(output: &MatrixOutput) -> String {
     format!(
-        "{{\"width\":{},\"height\":{},\"bytes\":{}}}",
+        "{{\"width\":{},\"height\":{},\"bytes\":{},\"artifact_hash\":{}}}",
         optional_json_u32(output.width),
         optional_json_u32(output.height),
-        optional_json_u64(output.bytes)
+        optional_json_u64(output.bytes),
+        optional_json_string(output.artifact_hash.as_deref())
     )
 }
 
@@ -10637,12 +10779,14 @@ fn benchmark_matrix_markdown_report(report: &BenchmarkMatrixReport) -> String {
     markdown.push_str("## Timing Reliability\n\n");
     markdown.push_str("| Signal | Value |\n| --- | --- |\n");
     markdown.push_str(&format!(
-        "| RSS samples available | {} |\n| PDFium requested | {} |\n| PDFium available | {} |\n| Poppler requested | {} |\n| Poppler available | {} |\n| Hot PDFium comparison available | {} |\n| Cold reference available | {} |\n\n",
+        "| RSS samples available | {} |\n| PDFium requested | {} |\n| PDFium available | {} |\n| Poppler requested | {} |\n| Poppler available | {} |\n| Ghostscript requested | {} |\n| Ghostscript available | {} |\n| Hot PDFium comparison available | {} |\n| Cold reference available | {} |\n\n",
         markdown_bool(timing_reliability.rss_available),
         markdown_bool(timing_reliability.pdfium_requested),
         markdown_bool(timing_reliability.pdfium_available),
         markdown_bool(timing_reliability.poppler_requested),
         markdown_bool(timing_reliability.poppler_available),
+        markdown_bool(timing_reliability.ghostscript_requested),
+        markdown_bool(timing_reliability.ghostscript_available),
         markdown_bool(timing_reliability.hot_pdfium_comparison_available),
         markdown_bool(timing_reliability.cold_reference_available)
     ));
@@ -10719,10 +10863,10 @@ fn benchmark_matrix_markdown_report(report: &BenchmarkMatrixReport) -> String {
     }
 
     markdown.push_str("\n## Family Summary\n\n");
-    markdown.push_str("| Family | Native hot p95 | PDFium hot p95 | Ferrugo/PDFium hot | Native cold | PDFium cold | Poppler cold | Errors |\n| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n");
+    markdown.push_str("| Family | Native hot p95 | PDFium hot p95 | Ferrugo/PDFium hot | Native cold | PDFium cold | Poppler cold | Ghostscript cold | Errors |\n| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n");
     for (family, summary) in &report.families {
         markdown.push_str(&format!(
-            "| `{}` | {} | {} | {} | {} | {} | {} | {} |\n",
+            "| `{}` | {} | {} | {} | {} | {} | {} | {} | {} |\n",
             family,
             markdown_optional_ms(summary.native_hot_p95_ms),
             markdown_optional_ms(summary.pdfium_hot_p95_ms),
@@ -10730,6 +10874,7 @@ fn benchmark_matrix_markdown_report(report: &BenchmarkMatrixReport) -> String {
             markdown_optional_ms(summary.native_cold_wall_ms),
             markdown_optional_ms(summary.pdfium_cold_wall_ms),
             markdown_optional_ms(summary.poppler_cold_wall_ms),
+            markdown_optional_ms(summary.ghostscript_cold_wall_ms),
             summary.errors
         ));
     }
@@ -10801,7 +10946,7 @@ fn benchmark_matrix_reference_gaps(
                     && record.mode == MatrixMode::ColdProcess
                     && matches!(
                         record.backend,
-                        MatrixBackend::Pdfium | MatrixBackend::Poppler
+                        MatrixBackend::Pdfium | MatrixBackend::Poppler | MatrixBackend::Ghostscript
                     )
                     && record.status == MatrixStatus::Rendered
             })
@@ -12438,7 +12583,7 @@ fn print_usage() {
         "Usage: ferrugo <render|render-auto|render-native|render-pdfium|render-isolated|compare-metadata|summarize-fallbacks|operator-coverage|trace-native|replay-operators|extract-corpus-metadata|producer-regression-report|classify-pdf20-usage|validate-local-corpus|compare-golden|benchmark-native|benchmark-batch-native|benchmark-repeat-native|benchmark-pdfium|benchmark-matrix|visual-diff|visual-diff-poppler> <input.pdf> \
          [--output PATH] [--page-index N] [--max-edge N] [--background #RRGGBB] \
          [--timeout SECONDS] [--iterations N] [--warmup N] [--repetitions N] [--pages-per-input N] [--max-events N] [--max-workers N] [--max-in-flight-pixels N] [--cancel-after-jobs N] [--max-ms N] [--max-p95-ms N] [--max-first-ms N] [--max-repeat-mean-ms N] [--max-output-bytes N] \
-         [--backend native|pdfium|poppler] [--mode cold-process|hot-render] [--report PATH] [--artifact-dir PATH] [--pdftoppm PATH] [--native-only] [--manifest PATH] [--include-family FAMILY] \
+         [--backend native|pdfium|poppler|ghostscript] [--mode cold-process|hot-render] [--report PATH] [--artifact-dir PATH] [--pdftoppm PATH] [--ghostscript PATH] [--native-only] [--manifest PATH] [--include-family FAMILY] \
          [--diagnostics-dir PATH] [--allow-missing] [--annotation-mode screen|print] [--no-annotations] [--max-mae N] [--max-p95 N] [--max-changed-ratio N]"
     );
 }
@@ -12717,7 +12862,8 @@ mod tests {
             vec![
                 MatrixBackend::Native,
                 MatrixBackend::Pdfium,
-                MatrixBackend::Poppler
+                MatrixBackend::Poppler,
+                MatrixBackend::Ghostscript
             ]
         );
         assert_eq!(
@@ -12753,6 +12899,8 @@ mod tests {
             OsString::from("--backend"),
             OsString::from("poppler"),
             OsString::from("--backend"),
+            OsString::from("gs"),
+            OsString::from("--backend"),
             OsString::from("native"),
             OsString::from("--mode"),
             OsString::from("hot-render"),
@@ -12771,7 +12919,11 @@ mod tests {
 
         assert_eq!(
             config.backends,
-            vec![MatrixBackend::Native, MatrixBackend::Poppler]
+            vec![
+                MatrixBackend::Native,
+                MatrixBackend::Poppler,
+                MatrixBackend::Ghostscript
+            ]
         );
         assert_eq!(
             config.modes,
@@ -12854,6 +13006,8 @@ mod tests {
         assert!(!reliability.pdfium_available);
         assert!(reliability.poppler_requested);
         assert!(!reliability.poppler_available);
+        assert!(!reliability.ghostscript_requested);
+        assert!(!reliability.ghostscript_available);
         assert!(!reliability.hot_pdfium_comparison_available);
         assert_eq!(
             reliability.caveats,
