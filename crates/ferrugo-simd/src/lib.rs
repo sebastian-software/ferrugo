@@ -50,6 +50,50 @@ pub fn source_over_normal_row(row: &mut [u8], source: [u8; 4], coverage: f64) {
     }
 }
 
+/// Blends one RGBA row span with a constant source color and per-pixel alpha coverage.
+///
+/// This scalar implementation is the parity oracle for future SIMD coverage
+/// kernels. `coverage_alphas` stores 0-255 pixel coverage and is multiplied by
+/// `alpha` before source-over compositing.
+#[inline]
+pub fn source_over_normal_row_with_coverage(
+    row: &mut [u8],
+    source: [u8; 4],
+    alpha: f64,
+    coverage_alphas: &[u8],
+) {
+    debug_assert_eq!(row.len(), coverage_alphas.len() * RGBA8_BYTES_PER_PIXEL);
+    if alpha <= f64::EPSILON {
+        return;
+    }
+    let alpha = alpha.clamp(0.0, 1.0);
+    for (coverage_alpha, pixel) in coverage_alphas
+        .iter()
+        .copied()
+        .zip(row.chunks_exact_mut(RGBA8_BYTES_PER_PIXEL))
+    {
+        if coverage_alpha == 0 {
+            continue;
+        }
+        let coverage = (alpha * f64::from(coverage_alpha) / 255.0).clamp(0.0, 1.0);
+        if coverage <= f64::EPSILON {
+            continue;
+        }
+        if coverage >= 1.0 && source[3] == 255 {
+            pixel.copy_from_slice(&source);
+            continue;
+        }
+        if source[3] == 255 && pixel[3] == 255 {
+            let inverse = 1.0 - coverage;
+            source_over_opaque_dest_pixel(pixel, source, coverage, inverse);
+        } else {
+            let dest = [pixel[0], pixel[1], pixel[2], pixel[3]];
+            let blended = source_over(source, dest, coverage);
+            pixel.copy_from_slice(&blended);
+        }
+    }
+}
+
 #[inline]
 fn source_over_opaque_dest_pixel(pixel: &mut [u8], source: [u8; 4], coverage: f64, inverse: f64) {
     pixel[0] = source_over_opaque_channel(source[0], pixel[0], coverage, inverse);
@@ -150,5 +194,28 @@ mod tests {
             row,
             vec![32, 45, 57, 255, 64, 78, 92, 160, 100, 120, 140, 64]
         );
+    }
+
+    #[test]
+    fn source_over_normal_row_with_coverage_should_match_constant_row_cases() {
+        let mut actual = vec![
+            10, 20, 30, 255, 40, 50, 60, 128, 200, 190, 180, 0, 1, 2, 3, 255,
+        ];
+        let mut expected = actual.clone();
+        let source = [100, 120, 140, 128];
+        let coverage = [0, 64, 128, 255];
+
+        source_over_normal_row_with_coverage(&mut actual, source, 0.75, &coverage);
+        for (coverage_alpha, pixel) in coverage
+            .iter()
+            .copied()
+            .zip(expected.chunks_exact_mut(RGBA8_BYTES_PER_PIXEL))
+        {
+            let effective_coverage = 0.75 * f64::from(coverage_alpha) / 255.0;
+            let dest = [pixel[0], pixel[1], pixel[2], pixel[3]];
+            pixel.copy_from_slice(&source_over(source, dest, effective_coverage));
+        }
+
+        assert_eq!(actual, expected);
     }
 }
