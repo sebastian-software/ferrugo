@@ -6766,6 +6766,11 @@ fn rasterize_display_list_into_with_scratch(
             }
             DisplayItem::Text(text) => {
                 record_raster_display_phase(&mut on_phase, RasterDisplayPhase::Text, || {
+                    truncate_clips_to_scope(
+                        &mut active_clips,
+                        text.state.graphics_state_depth,
+                        text.state.graphics_state_scope_id,
+                    );
                     let mut glyph_cache = glyph_cache.borrow_mut();
                     let mut type3_cache = type3_cache.borrow_mut();
                     if let Some(type3_render_cache) = type3_render_cache {
@@ -6775,6 +6780,7 @@ fn rasterize_display_list_into_with_scratch(
                             text,
                             transform,
                             options,
+                            &active_clips,
                             &mut glyph_cache,
                             &mut type3_cache,
                             Some(&mut type3_render_cache),
@@ -6785,6 +6791,7 @@ fn rasterize_display_list_into_with_scratch(
                             text,
                             transform,
                             options,
+                            &active_clips,
                             &mut glyph_cache,
                             &mut type3_cache,
                             None,
@@ -7575,6 +7582,7 @@ pub fn rasterize_text_with_caches_and_type3_render_cache(
             text,
             transform,
             PathRasterOptions::default(),
+            &[],
             glyph_cache,
             type3_cache,
             type3_render_cache.as_deref_mut(),
@@ -18728,6 +18736,7 @@ fn draw_text_run(
     text: &TextDisplayItem,
     page_transform: PageTransform,
     options: PathRasterOptions,
+    clips: &[ActiveClip],
     glyph_cache: &mut GlyphBitmapCache,
     type3_cache: &mut Type3CharProcTemplateCache,
     type3_render_cache: Option<&mut Type3GlyphRenderCache>,
@@ -18748,6 +18757,7 @@ fn draw_text_run(
             text,
             page_transform,
             options,
+            clips,
             type3_cache,
             type3_render_cache,
         );
@@ -18762,12 +18772,30 @@ fn draw_text_run(
         let mut last_base_x = origin.x;
         for character in glyph.unicode.chars() {
             if is_combining_mark(character) {
-                draw_combining_mark(device, page_transform, last_base_x, origin.y, cell, color)?;
+                draw_combining_mark(
+                    device,
+                    page_transform,
+                    options,
+                    clips,
+                    last_base_x,
+                    origin.y,
+                    cell,
+                    color,
+                )?;
                 continue;
             }
             if character != ' ' && character != '\u{00a0}' {
                 let bitmap = glyph_cache.bitmap_for(fallback, character, cell);
-                draw_ascii_glyph(device, page_transform, bitmap, pen_x, origin.y, color)?;
+                draw_ascii_glyph(
+                    device,
+                    page_transform,
+                    options,
+                    clips,
+                    bitmap,
+                    pen_x,
+                    origin.y,
+                    color,
+                )?;
             }
             last_base_x = pen_x;
             pen_x += fallback_glyph_advance(cell);
@@ -18781,6 +18809,7 @@ fn draw_type3_text_run(
     text: &TextDisplayItem,
     page_transform: PageTransform,
     options: PathRasterOptions,
+    clips: &[ActiveClip],
     char_proc_cache: &mut Type3CharProcTemplateCache,
     mut type3_render_cache: Option<&mut Type3GlyphRenderCache>,
 ) -> RasterResult<()> {
@@ -18821,7 +18850,7 @@ fn draw_type3_text_run(
                                     PathRasterContext {
                                         transform: page_transform,
                                         options,
-                                        clips: &[],
+                                        clips,
                                         fill_routes: None,
                                         stroke_routes: None,
                                     },
@@ -18844,7 +18873,7 @@ fn draw_type3_text_run(
                 PathRasterContext {
                     transform: page_transform,
                     options,
-                    clips: &[],
+                    clips,
                     fill_routes: None,
                     stroke_routes: None,
                 },
@@ -19821,6 +19850,8 @@ fn raster_type3_error(error: GraphicsError) -> RasterError {
 fn draw_ascii_glyph(
     device: &mut RasterDevice,
     page_transform: PageTransform,
+    options: PathRasterOptions,
+    clips: &[ActiveClip],
     bitmap: &GlyphBitmap,
     x: f64,
     baseline_y: f64,
@@ -19835,6 +19866,8 @@ fn draw_ascii_glyph(
             page_transform
                 .matrix
                 .transform_point(x + rect.right, baseline_y + rect.bottom),
+            options,
+            clips,
             color,
         )?;
     }
@@ -19844,6 +19877,8 @@ fn draw_ascii_glyph(
 fn draw_combining_mark(
     device: &mut RasterDevice,
     page_transform: PageTransform,
+    options: PathRasterOptions,
+    clips: &[ActiveClip],
     x: f64,
     baseline_y: f64,
     cell: f64,
@@ -19859,6 +19894,8 @@ fn draw_combining_mark(
         page_transform
             .matrix
             .transform_point(mark_right, mark_bottom),
+        options,
+        clips,
         color,
     )
 }
@@ -19867,6 +19904,8 @@ fn fill_device_rect(
     device: &mut RasterDevice,
     p0: Point,
     p1: Point,
+    options: PathRasterOptions,
+    clips: &[ActiveClip],
     color: Rgba,
 ) -> RasterResult<()> {
     let dimensions = device.dimensions();
@@ -19878,14 +19917,30 @@ fn fill_device_rect(
     let max_x = right.ceil().min(f64::from(dimensions.width)) as u32;
     let min_y = top.floor().max(0.0) as u32;
     let max_y = bottom.ceil().min(f64::from(dimensions.height)) as u32;
-    for y in min_y..max_y {
+    if min_x >= max_x || min_y >= max_y {
+        return Ok(());
+    }
+    let bounds = PixelBounds {
+        min_x,
+        min_y,
+        max_x,
+        max_y,
+    };
+    let Some(bounds) = intersect_active_clip_pixel_bounds(bounds, clips, dimensions, None) else {
+        return Ok(());
+    };
+    let skip_clip_checks = can_skip_active_clip_checks(clips);
+    for y in bounds.min_y..bounds.max_y {
         let y_coverage = pixel_coverage_1d(y, top, bottom);
         if y_coverage <= f64::EPSILON {
             continue;
         }
         let row = device.row_mut(y)?;
-        for x in min_x..max_x {
-            let coverage = pixel_coverage_1d(x, left, right) * y_coverage;
+        for x in bounds.min_x..bounds.max_x {
+            let mut coverage = pixel_coverage_1d(x, left, right) * y_coverage;
+            if !skip_clip_checks {
+                coverage *= clip_coverage_for_pixel(x, y, clips, options);
+            }
             if coverage >= 1.0 - f64::EPSILON && color.a == 255 {
                 write_opaque_image_pixel_in_row(row, x, color);
             } else if coverage > f64::EPSILON {
@@ -27165,6 +27220,8 @@ mod tests {
             &mut device,
             Point { x: 0.25, y: 0.25 },
             Point { x: 1.75, y: 1.75 },
+            PathRasterOptions::default(),
+            &[],
             Rgba {
                 r: 0,
                 g: 0,
@@ -28403,6 +28460,168 @@ mod tests {
     }
 
     #[test]
+    fn rasterize_display_list_should_apply_rect_clip_to_fallback_text() {
+        let clip_list = build_path_display_list(
+            tokenize_content(PdfBytes::new(b"0 0 12 60 re W n")),
+            DisplayListOptions::default(),
+        )
+        .expect("valid clip stream");
+        let text = fallback_text_item(
+            vec![TextGlyph {
+                character_code: u32::from('M'),
+                unicode: "M".to_string(),
+                layout: TextLayoutStatus::Simple,
+            }],
+            vec![Point { x: 0.0, y: 20.0 }],
+        );
+        let list = DisplayList::from_items(vec![
+            clip_list.items()[0].clone(),
+            DisplayItem::Text(TextDisplayItem {
+                font_size: 24.0,
+                ..text
+            }),
+        ]);
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 60.0,
+                    max_y: 60.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            60,
+        )
+        .expect("text clip transform");
+        let mut device = transform.create_device(Rgba::WHITE).expect("raster device");
+
+        rasterize_display_list_into(&list, &mut device, transform, PathRasterOptions::default())
+            .expect("clipped text should rasterize");
+
+        let mut inside_pixels = 0;
+        let mut outside_pixels = 0;
+        for y in 0..60 {
+            for x in 0..60 {
+                let pixel = device.pixel(x, y).expect("text clip pixel");
+                if x < 12 {
+                    inside_pixels += usize::from(pixel != Rgba::WHITE);
+                } else {
+                    outside_pixels += usize::from(pixel != Rgba::WHITE);
+                }
+            }
+        }
+        assert!(
+            inside_pixels > 0,
+            "text should remain visible inside the clip"
+        );
+        assert_eq!(outside_pixels, 0, "text should not leak outside the clip");
+    }
+
+    #[test]
+    fn rasterize_display_list_should_apply_rect_clip_to_type3_text() {
+        let document = load_type3_text_pdf(
+            b"BT /F1 20 Tf 0 10 Td (A) Tj ET",
+            b"0 0 1000 700 re f",
+            b"<< /Type /Font /Subtype /Type3 /FontMatrix [0.001 0 0 0.001 0 0] /FirstChar 65 /LastChar 65 /Widths [1000] /Encoding << /Differences [65 /A] >> /CharProcs << /A 6 0 R >> >>",
+        );
+        let resources =
+            font_resources_from_document(&document, &[("F1", 4)]).expect("valid Type3 font");
+        let content = content_stream_from_document(&document);
+        let text_list = build_text_display_list(
+            tokenize_content(PdfBytes::new(&content)),
+            &resources,
+            DisplayListOptions::default(),
+        )
+        .expect("Type3 text should decode");
+        let clip_list = build_path_display_list(
+            tokenize_content(PdfBytes::new(b"0 0 8 60 re W n")),
+            DisplayListOptions::default(),
+        )
+        .expect("valid Type3 clip stream");
+        let list = DisplayList::from_items(vec![
+            clip_list.items()[0].clone(),
+            text_list.items()[0].clone(),
+        ]);
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 40.0,
+                    max_y: 40.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            40,
+        )
+        .expect("Type3 clip transform");
+        let mut device = transform.create_device(Rgba::WHITE).expect("raster device");
+
+        rasterize_display_list_into(&list, &mut device, transform, PathRasterOptions::default())
+            .expect("clipped Type3 text should rasterize");
+
+        assert!(
+            device.pixel(4, 20).expect("inside Type3 clip") != Rgba::WHITE,
+            "Type3 glyph should remain visible inside the clip"
+        );
+        assert_eq!(
+            device.pixel(14, 20).expect("outside Type3 clip"),
+            Rgba::WHITE
+        );
+    }
+
+    #[test]
+    fn rasterize_display_list_should_restore_clip_scope_before_text() {
+        let clip_list = build_path_display_list(
+            tokenize_content(PdfBytes::new(b"q 0 0 8 60 re W n Q")),
+            DisplayListOptions::default(),
+        )
+        .expect("valid scoped clip stream");
+        let text = fallback_text_item(
+            vec![TextGlyph {
+                character_code: u32::from('M'),
+                unicode: "M".to_string(),
+                layout: TextLayoutStatus::Simple,
+            }],
+            vec![Point { x: 0.0, y: 20.0 }],
+        );
+        let list = DisplayList::from_items(vec![
+            clip_list.items()[0].clone(),
+            DisplayItem::Text(TextDisplayItem {
+                font_size: 24.0,
+                ..text
+            }),
+        ]);
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 60.0,
+                    max_y: 60.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            60,
+        )
+        .expect("text clip scope transform");
+        let mut device = transform.create_device(Rgba::WHITE).expect("raster device");
+
+        rasterize_display_list_into(&list, &mut device, transform, PathRasterOptions::default())
+            .expect("scope-restored text should rasterize");
+
+        assert!(
+            (8..60)
+                .any(|x| (0..60).any(|y| device.pixel(x, y).expect("scope pixel") != Rgba::WHITE)),
+            "text should render outside the restored clip scope"
+        );
+    }
+
+    #[test]
     fn rasterize_paths_should_restore_clip_with_graphics_state() {
         let raster = rasterize_clip_stream(
             b"q 4 4 4 12 re W n 0 0 0 rg 0 0 20 20 re f Q \
@@ -29526,6 +29745,7 @@ mod tests {
                     text,
                     transform,
                     options,
+                    &[],
                     &mut direct_template_cache,
                     None,
                 )
@@ -29535,6 +29755,7 @@ mod tests {
                     text,
                     transform,
                     options,
+                    &[],
                     &mut cached_template_cache,
                     Some(&mut render_cache),
                 )

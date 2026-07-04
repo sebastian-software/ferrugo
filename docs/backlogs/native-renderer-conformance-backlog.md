@@ -12,7 +12,7 @@ follow-up slices. Counts come from
 | Rank | Slice | Evidence | Recommended next action | Validation gate |
 | ---: | --- | --- | --- | --- |
 | 1 | Office text/font fidelity | `text-fonts` + `office-export`: missing-font substitution split out with office family classification coverage. | Continue auditing fallback text metrics, text spacing, subset font widths, and Type1/CFF/CID positioning as separate fixture groups. | Focused visual diff over office text fixtures plus `cargo test -p ferrugo-render text_display_list fallback_font_classification`. |
-| 2 | Dense office table/grid rendering | `rendering-core` + `office-export`: 16 blockers. | Split spreadsheet/table fixtures into operator semantics, clipping, hairline/grid stroke, and cell-overflow cases. | Focused visual diff over spreadsheet and business office fixtures. |
+| 2 | Dense office table/grid rendering | `rendering-core` + `office-export`: rectangular text clipping reduced for spreadsheet cell overflow. | Continue splitting spreadsheet/table fixtures into remaining operator semantics, hairline/grid stroke, dense layout, and broad visual parity cases. | Focused visual diff and native benchmark over spreadsheet-grid fixtures plus clipped text regression tests. |
 | 3 | Form and annotation appearance parity | `annotations-forms` + `form`: 11 remaining blockers after FreeText missing-appearance synthesis. | Compare native synthesized appearances against explicit appearance streams; isolate checkbox/radio/text-field/signature/stamp differences. | Focused visual diff over form fixtures and native form appearance tests. |
 | 4 | Report rendering-core fidelity | `rendering-core` + `report`: 12 blockers. | Triage scientific, long-report, technical, and dashboard fixtures by operator surface before broad fixes. | Focused report-family visual diff and operator snapshot coverage from 0144. |
 | 5 | Scan image/color parity | `images-color` + `scan`: 5 blockers plus 3 typed codec errors. | Separate resampling/color-conversion drift from unsupported CCITT/JBIG2/JPX codec policy. | Image visual diff subset plus typed unsupported checks for deferred codecs. |
@@ -30,6 +30,16 @@ Cambria, Constantia, Garamond, and Minion route to the serif fallback; Wingdings
 and Webdings route to the symbol fallback; Aptos and unknown families continue
 to use the sans fallback. This reduces family-level substitution drift without
 adding host font discovery or full OpenType shaping to the runtime graph.
+
+## Dense Table And Report Delta
+
+Issue 72 reduces one rendering-core blocker group for dense tables: active
+rectangular clips now apply to fallback text glyph rectangles and Type3 CharProc
+glyph paths during ordered display-list rasterization. This targets spreadsheet
+cell-overflow reductions such as `spreadsheet-clipped-cells.pdf`, where `W n`
+clips precede clipped cell text. Remaining dense table/report work still covers
+hairline/grid stroke parity, table operator semantics, chart/report layout
+drift, and broad visual threshold tightening.
 
 ## Static Form And Annotation Delta
 
