@@ -4224,6 +4224,7 @@ enum BatchBenchmarkOutcome {
         width: u32,
         height: u32,
         output_bytes: usize,
+        session_stats: Option<Box<NativeDocumentSessionStats>>,
     },
     FallbackRequired {
         reason: FallbackReason,
@@ -5356,6 +5357,15 @@ struct BatchJob {
     page_index: u32,
 }
 
+#[derive(Debug, Clone)]
+struct BatchJobGroup {
+    path: PathBuf,
+    path_key: String,
+    family: String,
+    repetition: usize,
+    page_indices: Vec<u32>,
+}
+
 fn benchmark_native_batch(
     paths: &[PathBuf],
     options: &ThumbnailOptions,
@@ -5378,6 +5388,8 @@ fn benchmark_native_batch(
     });
     let skipped_jobs = requested_jobs.saturating_sub(scheduled_jobs);
     let cancelled = skipped_jobs > 0;
+    let groups = batch_job_groups(&jobs);
+    let uses_session_groups = groups.iter().any(|group| group.page_indices.len() > 1);
     let mut records = Vec::with_capacity(jobs.len());
     let mut memory = BatchMemorySummary {
         rss_start_kib: current_rss_kib(),
@@ -5389,13 +5401,13 @@ fn benchmark_native_batch(
     memory.rss_high_water_kib = memory.rss_start_kib;
     let started = Instant::now();
 
-    for chunk in jobs.chunks(workers) {
+    for chunk in groups.chunks(workers) {
         let batch = thread::scope(|scope| {
             chunk
                 .iter()
-                .map(|job| {
+                .map(|group| {
                     scope.spawn(move || {
-                        benchmark_batch_job(config.native_profile.backend(), job, options)
+                        benchmark_batch_group(config.native_profile.backend(), group, options)
                     })
                 })
                 .collect::<Vec<_>>()
@@ -5407,11 +5419,14 @@ fn benchmark_native_batch(
                 })
                 .collect::<Result<Vec<_>, CliError>>()
         })?;
-        for record in batch {
-            if let BatchBenchmarkOutcome::NativeRendered { output_bytes, .. } = &record.outcome {
-                memory.max_output_bytes = memory.max_output_bytes.max(*output_bytes);
+        for group_records in batch {
+            for record in group_records {
+                if let BatchBenchmarkOutcome::NativeRendered { output_bytes, .. } = &record.outcome
+                {
+                    memory.max_output_bytes = memory.max_output_bytes.max(*output_bytes);
+                }
+                records.push(record);
             }
-            records.push(record);
         }
         memory.rss_high_water_kib = max_optional_u64(memory.rss_high_water_kib, current_rss_kib());
     }
@@ -5425,13 +5440,21 @@ fn benchmark_native_batch(
         records,
         memory,
         BatchIsolationSummary {
-            cache_policy: NativePageCachePolicy::IsolatedRender,
+            cache_policy: if uses_session_groups {
+                NativePageCachePolicy::DocumentSession
+            } else {
+                NativePageCachePolicy::IsolatedRender
+            },
             cancel_after_jobs: config.cancel_after_jobs,
             scheduled_jobs,
             skipped_jobs,
             cancelled,
-            backend_scope: "per-job",
-            shared_document_state: false,
+            backend_scope: if uses_session_groups {
+                "per-input-session"
+            } else {
+                "per-job"
+            },
+            shared_document_state: uses_session_groups,
             timeout_ms: options.timeout.as_millis(),
         },
         elapsed_ms(started.elapsed()),
@@ -5507,6 +5530,124 @@ fn batch_page_indices(
     start_page_index..requested_end.min(page_count)
 }
 
+fn batch_job_groups(jobs: &[BatchJob]) -> Vec<BatchJobGroup> {
+    let mut groups: Vec<BatchJobGroup> = Vec::new();
+    for job in jobs {
+        if let Some(group) = groups.last_mut().filter(|group| {
+            group.path == job.path
+                && group.path_key == job.path_key
+                && group.family == job.family
+                && group.repetition == job.repetition
+        }) {
+            group.page_indices.push(job.page_index);
+            continue;
+        }
+        groups.push(BatchJobGroup {
+            path: job.path.clone(),
+            path_key: job.path_key.clone(),
+            family: job.family.clone(),
+            repetition: job.repetition,
+            page_indices: vec![job.page_index],
+        });
+    }
+    groups
+}
+
+fn benchmark_batch_group(
+    native: NativeBackend,
+    group: &BatchJobGroup,
+    options: &ThumbnailOptions,
+) -> Vec<BatchBenchmarkRecord> {
+    if group.page_indices.len() <= 1 {
+        return group
+            .page_indices
+            .iter()
+            .map(|page_index| BatchJob {
+                path: group.path.clone(),
+                path_key: group.path_key.clone(),
+                family: group.family.clone(),
+                repetition: group.repetition,
+                page_index: *page_index,
+            })
+            .map(|job| benchmark_batch_job(native, &job, options))
+            .collect();
+    }
+
+    let mut records = Vec::with_capacity(group.page_indices.len());
+    let group_started = Instant::now();
+    let bytes = match fs::read(&group.path) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            return group
+                .page_indices
+                .iter()
+                .map(|page_index| {
+                    batch_error_record(
+                        group,
+                        *page_index,
+                        elapsed_ms(group_started.elapsed()),
+                        "io",
+                        error.to_string(),
+                    )
+                })
+                .collect();
+        }
+    };
+    let session = match native.document_session(&bytes, &group.page_indices) {
+        Ok(session) => session,
+        Err(error) => {
+            return group
+                .page_indices
+                .iter()
+                .map(|page_index| {
+                    batch_error_outcome_record(
+                        group,
+                        *page_index,
+                        elapsed_ms(group_started.elapsed()),
+                        error.clone(),
+                    )
+                })
+                .collect();
+        }
+    };
+    for (index, page_index) in group.page_indices.iter().copied().enumerate() {
+        let started = if index == 0 {
+            group_started
+        } else {
+            Instant::now()
+        };
+        let mut options = *options;
+        options.page_index = page_index;
+        let outcome = match session.render_page(&options) {
+            Ok(thumbnail) => BatchBenchmarkOutcome::NativeRendered {
+                width: thumbnail.width,
+                height: thumbnail.height,
+                output_bytes: thumbnail.bytes.len(),
+                session_stats: Some(Box::new(session.stats())),
+            },
+            Err(error) if error.class() == ferrugo_thumbnail::ThumbnailErrorClass::Unsupported => {
+                BatchBenchmarkOutcome::FallbackRequired {
+                    reason: FallbackReason::from_native_error(&error),
+                    message: error.to_string(),
+                }
+            }
+            Err(error) => BatchBenchmarkOutcome::Error {
+                class: error.class().as_str(),
+                message: error.to_string(),
+            },
+        };
+        records.push(BatchBenchmarkRecord {
+            path: group.path_key.clone(),
+            family: group.family.clone(),
+            repetition: group.repetition,
+            page_index,
+            elapsed_ms: elapsed_ms(started.elapsed()),
+            outcome,
+        });
+    }
+    records
+}
+
 fn benchmark_batch_job(
     native: NativeBackend,
     job: &BatchJob,
@@ -5520,6 +5661,7 @@ fn benchmark_batch_job(
             width: thumbnail.width,
             height: thumbnail.height,
             output_bytes: thumbnail.bytes.len(),
+            session_stats: None,
         },
         Err(error) if error.class() == ferrugo_thumbnail::ThumbnailErrorClass::Unsupported => {
             BatchBenchmarkOutcome::FallbackRequired {
@@ -5540,6 +5682,52 @@ fn benchmark_batch_job(
         page_index: job.page_index,
         elapsed_ms: elapsed_ms(started.elapsed()),
         outcome,
+    }
+}
+
+fn batch_error_outcome_record(
+    group: &BatchJobGroup,
+    page_index: u32,
+    elapsed_ms: f64,
+    error: ferrugo_thumbnail::ThumbnailError,
+) -> BatchBenchmarkRecord {
+    if error.class() == ferrugo_thumbnail::ThumbnailErrorClass::Unsupported {
+        BatchBenchmarkRecord {
+            path: group.path_key.clone(),
+            family: group.family.clone(),
+            repetition: group.repetition,
+            page_index,
+            elapsed_ms,
+            outcome: BatchBenchmarkOutcome::FallbackRequired {
+                reason: FallbackReason::from_native_error(&error),
+                message: error.to_string(),
+            },
+        }
+    } else {
+        batch_error_record(
+            group,
+            page_index,
+            elapsed_ms,
+            error.class().as_str(),
+            error.to_string(),
+        )
+    }
+}
+
+fn batch_error_record(
+    group: &BatchJobGroup,
+    page_index: u32,
+    elapsed_ms: f64,
+    class: &'static str,
+    message: String,
+) -> BatchBenchmarkRecord {
+    BatchBenchmarkRecord {
+        path: group.path_key.clone(),
+        family: group.family.clone(),
+        repetition: group.repetition,
+        page_index,
+        elapsed_ms,
+        outcome: BatchBenchmarkOutcome::Error { class, message },
     }
 }
 
@@ -11351,16 +11539,21 @@ fn batch_benchmark_outcome_json(outcome: &BatchBenchmarkOutcome) -> String {
             width,
             height,
             output_bytes,
+            session_stats,
         } => format!(
             concat!(
                 "{{",
                 "\"status\":\"native_rendered\",",
                 "\"width\":{},",
                 "\"height\":{},",
-                "\"output_bytes\":{}",
+                "\"output_bytes\":{},",
+                "\"session\":{}",
                 "}}"
             ),
-            width, height, output_bytes
+            width,
+            height,
+            output_bytes,
+            native_document_session_stats_json(session_stats.as_deref().copied())
         ),
         BatchBenchmarkOutcome::FallbackRequired { reason, message } => format!(
             concat!(
@@ -14443,6 +14636,41 @@ status = "candidate"
     }
 
     #[test]
+    fn batch_job_groups_should_group_contiguous_pages_by_input_and_repetition() {
+        let jobs = vec![
+            BatchJob {
+                path: PathBuf::from("a.pdf"),
+                path_key: "a.pdf".to_string(),
+                family: "report".to_string(),
+                repetition: 0,
+                page_index: 0,
+            },
+            BatchJob {
+                path: PathBuf::from("a.pdf"),
+                path_key: "a.pdf".to_string(),
+                family: "report".to_string(),
+                repetition: 0,
+                page_index: 1,
+            },
+            BatchJob {
+                path: PathBuf::from("a.pdf"),
+                path_key: "a.pdf".to_string(),
+                family: "report".to_string(),
+                repetition: 1,
+                page_index: 0,
+            },
+        ];
+
+        let groups = batch_job_groups(&jobs);
+
+        assert_eq!(groups.len(), 2);
+        assert_eq!(groups[0].page_indices, vec![0, 1]);
+        assert_eq!(groups[1].page_indices, vec![0]);
+        assert_eq!(groups[0].repetition, 0);
+        assert_eq!(groups[1].repetition, 1);
+    }
+
+    #[test]
     fn batch_benchmark_should_report_throughput_latency_memory_and_typed_errors() {
         let fixture_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let manifest_path = fixture_root.join("fixtures/corpus-manifest.tsv");
@@ -14562,6 +14790,12 @@ status = "candidate"
         assert!(report.isolation.cancelled);
         assert_eq!(report.isolation.cancel_after_jobs, Some(3));
         assert_eq!(
+            report.isolation.cache_policy,
+            NativePageCachePolicy::DocumentSession
+        );
+        assert_eq!(report.isolation.backend_scope, "per-input-session");
+        assert!(report.isolation.shared_document_state);
+        assert_eq!(
             report
                 .records
                 .iter()
@@ -14569,10 +14803,22 @@ status = "candidate"
                 .collect::<Vec<_>>(),
             vec![(0, 0), (0, 1), (0, 2)]
         );
+        let BatchBenchmarkOutcome::NativeRendered {
+            session_stats: Some(stats),
+            ..
+        } = &report.records[2].outcome
+        else {
+            panic!("multi-page batch records should expose session stats");
+        };
+        assert_eq!(stats.cache_policy, NativePageCachePolicy::DocumentSession);
+        assert!(stats.cached_glyph_bitmap_hits > 0);
+        assert!(stats.cached_glyph_bitmap_misses > 0);
         assert!(json.contains("\"cancel_after_jobs\":3"));
         assert!(json.contains("\"skipped_jobs\":3"));
         assert!(json.contains("\"cancelled\":true"));
-        assert!(json.contains("\"shared_document_state\":false"));
+        assert!(json.contains("\"shared_document_state\":true"));
+        assert!(json.contains("\"backend_scope\":\"per-input-session\""));
+        assert!(json.contains("\"cached_glyph_bitmap_hits\""));
     }
 
     #[test]
