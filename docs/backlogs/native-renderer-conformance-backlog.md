@@ -13,7 +13,7 @@ follow-up slices. Counts come from
 | ---: | --- | --- | --- | --- |
 | 1 | Office text/font fidelity | `text-fonts` + `office-export`: 21 blockers. | Audit fallback text metrics, text spacing, subset font widths, Type1/CFF/CID positioning, and missing-font substitution as separate fixture groups. | Focused visual diff over office text fixtures plus `cargo test -p ferrugo-render text_display_list`. |
 | 2 | Dense office table/grid rendering | `rendering-core` + `office-export`: 16 blockers. | Split spreadsheet/table fixtures into operator semantics, clipping, hairline/grid stroke, and cell-overflow cases. | Focused visual diff over spreadsheet and business office fixtures. |
-| 3 | Form and annotation appearance parity | `annotations-forms` + `form`: 12 blockers. | Compare native synthesized appearances against explicit appearance streams; isolate checkbox/radio/text-field/signature/stamp differences. | Focused visual diff over form fixtures and native form appearance tests. |
+| 3 | Form and annotation appearance parity | `annotations-forms` + `form`: 11 remaining blockers after FreeText missing-appearance synthesis. | Compare native synthesized appearances against explicit appearance streams; isolate checkbox/radio/text-field/signature/stamp differences. | Focused visual diff over form fixtures and native form appearance tests. |
 | 4 | Report rendering-core fidelity | `rendering-core` + `report`: 12 blockers. | Triage scientific, long-report, technical, and dashboard fixtures by operator surface before broad fixes. | Focused report-family visual diff and operator snapshot coverage from 0144. |
 | 5 | Scan image/color parity | `images-color` + `scan`: 5 blockers plus 3 typed codec errors. | Separate resampling/color-conversion drift from unsupported CCITT/JBIG2/JPX codec policy. | Image visual diff subset plus typed unsupported checks for deferred codecs. |
 | 6 | Page geometry drift | `page-geometry`: 9 blockers across office, scan, presentation, report, and browser-print. | Audit rotation, user-unit, crop-box, and linearized first-page transform parity by fixture. | Page geometry visual subset and `page_transform` unit tests. |
@@ -21,6 +21,15 @@ follow-up slices. Counts come from
 | 8 | Document structure and policy boundaries | 1 hybrid-reference blocker, 1 encrypted both-error, 1 dynamic XFA native error. | Keep encryption and dynamic XFA as policy boundaries; investigate hybrid visual parity separately. | Metadata/render policy tests plus focused hybrid-reference visual diff. |
 
 ## Operator-Audit Routing
+
+## Static Form And Annotation Delta
+
+Issue 69 adds bounded native synthesis for appearance-free FreeText annotations.
+Existing explicit appearance streams remain authoritative, and dynamic XFA plus
+viewer-side annotation mutation stay out of scope. Current focused annotation
+manifests now classify `freetext-annotation-without-appearance.pdf` as
+`expected:native`; remaining parity work is visual fidelity for synthesized
+static forms, stamps, signatures, and explicit appearance stream matching.
 
 Milestone 0144 found no fully unsupported content-stream operators in the
 scanned generated corpus. The next fidelity work should therefore focus on

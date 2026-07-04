@@ -64,7 +64,6 @@ const BUCKET_GRAPHICS_COLOR_MANAGEMENT: &str = buckets::GRAPHICS_COLOR_MANAGEMEN
 const BUCKET_GRAPHICS_PATTERN_SHADING: &str = buckets::GRAPHICS_PATTERN_SHADING;
 const BUCKET_GRAPHICS_STROKE_CLIP: &str = buckets::GRAPHICS_STROKE_CLIP;
 const BUCKET_GRAPHICS_TRANSPARENCY: &str = buckets::GRAPHICS_TRANSPARENCY;
-const BUCKET_ANNOTATION_APPEARANCE: &str = buckets::ANNOTATION_APPEARANCE;
 const BUCKET_IMAGE_COLOR_SPACE: &str = buckets::IMAGE_COLOR_SPACE;
 const BUCKET_IMAGE_FILTER: &str = buckets::IMAGE_FILTER;
 const BUCKET_FORM_XFA_DYNAMIC: &str = buckets::FORM_XFA_DYNAMIC;
@@ -5853,7 +5852,7 @@ fn append_annotation_fallback(
         b"Circle" => append_circle_annotation_fallback(content, annotation, rect),
         b"Text" => append_text_note_annotation_fallback(content, annotation, rect),
         b"Widget" => append_widget_annotation_fallback(content, annotation, rect),
-        b"FreeText" => return Err(unsupported_feature(BUCKET_ANNOTATION_APPEARANCE)),
+        b"FreeText" => append_free_text_annotation_fallback(content, annotation, rect),
         b"Link" => {}
         _ => {}
     }
@@ -5983,6 +5982,40 @@ fn append_widget_annotation_fallback(
         }
         b"Btn" => append_checkbox_widget_fallback(content, annotation, rect),
         _ => {}
+    }
+}
+
+fn append_free_text_annotation_fallback(
+    content: &mut Vec<u8>,
+    annotation: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    rect: PathBounds,
+) {
+    append_annotation_graphics_state(
+        content,
+        ANNOTATION_OPAQUE_GRAPHICS_STATE,
+        [1.0, 1.0, 0.88],
+        true,
+    );
+    append_fill_rect(content, rect);
+    content.extend_from_slice(b"Q\n");
+    append_annotation_graphics_state(
+        content,
+        ANNOTATION_OPAQUE_GRAPHICS_STATE,
+        [0.15, 0.15, 0.15],
+        false,
+    );
+    content.extend_from_slice(
+        format!(
+            "1 w {} {} {} {} re S Q\n",
+            format_pdf_number(rect.min_x),
+            format_pdf_number(rect.min_y),
+            format_pdf_number(rect.max_x - rect.min_x),
+            format_pdf_number(rect.max_y - rect.min_y)
+        )
+        .as_bytes(),
+    );
+    if let Some(value) = annotation_text_contents(annotation) {
+        append_widget_text_value(content, rect, value);
     }
 }
 
@@ -6254,6 +6287,17 @@ fn widget_text_value<'a>(annotation: &'a [(PdfName<'a>, PdfPrimitive<'a>)]) -> O
             PdfString::Literal(bytes) | PdfString::Hex(bytes) => *bytes,
         }),
         PdfPrimitive::Name(value) => Some(value.as_bytes()),
+        _ => None,
+    }
+}
+
+fn annotation_text_contents<'a>(
+    annotation: &'a [(PdfName<'a>, PdfPrimitive<'a>)],
+) -> Option<&'a [u8]> {
+    match dictionary_value(annotation, b"Contents")? {
+        PdfPrimitive::String(value) => Some(match value {
+            PdfString::Literal(bytes) | PdfString::Hex(bytes) => *bytes,
+        }),
         _ => None,
     }
 }
@@ -11501,11 +11545,11 @@ mod tests {
     }
 
     #[test]
-    fn native_backend_should_report_unsupported_freetext_synthesis() {
+    fn native_backend_should_synthesize_freetext_annotation_without_appearance() {
         let bytes = include_bytes!(
             "../../../fixtures/generated/freetext-annotation-without-appearance.pdf"
         );
-        let error = ThumbnailBackend::render(
+        let thumbnail = ThumbnailBackend::render(
             &NativeBackend::new(),
             PdfSource::from_bytes(bytes),
             &ThumbnailOptions {
@@ -11513,16 +11557,11 @@ mod tests {
                 ..ThumbnailOptions::default()
             },
         )
-        .expect_err("FreeText without appearance should be a typed unsupported boundary");
+        .expect("FreeText without appearance should render through bounded synthesis");
 
-        assert_eq!(
-            error.class(),
-            ferrugo_thumbnail::ThumbnailErrorClass::Unsupported
-        );
-        assert_eq!(
-            error.unsupported_feature_bucket(),
-            Some(BUCKET_ANNOTATION_APPEARANCE)
-        );
+        assert_eq!(thumbnail.width, 120);
+        assert_eq!(thumbnail.height, 80);
+        assert_eq!(rgba_at(&thumbnail, 50, 40), [255, 255, 224, 255]);
     }
 
     #[test]
