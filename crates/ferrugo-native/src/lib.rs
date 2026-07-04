@@ -3060,30 +3060,47 @@ fn direct_scanned_page_thumbnail(
                 .checked_mul(dimensions.height as usize)
                 .ok_or_else(|| ThumbnailError::internal("direct image buffer overflow"))?
         ];
-    let sample_x_by_column: Vec<u32> = (0..dimensions.width)
+    let sample_x_by_column: Vec<usize> = (0..dimensions.width)
         .map(|x| {
             let sample_x = inverse
                 .a
                 .mul_add(f64::from(x) + 0.5, inverse.e)
                 .clamp(0.0, 1.0);
-            direct_image_sample_x(image.image.width, sample_x)
+            direct_image_sample_x(image.image.width, sample_x) as usize
+        })
+        .collect();
+    let sample_y_by_row: Vec<u32> = (0..dimensions.height)
+        .map(|y| {
+            direct_image_sample_y(
+                image.image.height,
+                inverse
+                    .d
+                    .mul_add(f64::from(y) + 0.5, inverse.f)
+                    .clamp(0.0, 1.0),
+            )
         })
         .collect();
     match image.image.color_space {
         ImageColorSpace::DeviceGray => write_direct_gray_image_rows(
             image,
-            inverse,
             dimensions,
             &sample_x_by_column,
+            &sample_y_by_row,
             &mut pixels,
         ),
-        ImageColorSpace::DeviceRgb => write_direct_rgb_image_rows(
-            image,
-            inverse,
-            dimensions,
-            &sample_x_by_column,
-            &mut pixels,
-        ),
+        ImageColorSpace::DeviceRgb => {
+            let sample_x_byte_by_column: Vec<usize> = sample_x_by_column
+                .iter()
+                .map(|sample_x| sample_x * 3)
+                .collect();
+            write_direct_rgb_image_rows(
+                image,
+                dimensions,
+                &sample_x_byte_by_column,
+                &sample_y_by_row,
+                &mut pixels,
+            )
+        }
         ImageColorSpace::DeviceCmyk
         | ImageColorSpace::IndexedGray
         | ImageColorSpace::IndexedRgb => {
@@ -3097,21 +3114,15 @@ fn direct_scanned_page_thumbnail(
 
 fn write_direct_gray_image_rows(
     image: &ImageDisplayItem,
-    inverse: ferrugo_render::Matrix,
     dimensions: RasterDimensions,
-    sample_x_by_column: &[u32],
+    sample_x_by_column: &[usize],
+    sample_y_by_row: &[u32],
     pixels: &mut [u8],
 ) {
+    let repeated_columns = has_repeated_adjacent_samples(sample_x_by_column);
     let mut previous_row: Option<(u32, usize)> = None;
-    for y in 0..dimensions.height {
-        let row_start = y as usize * dimensions.stride;
-        let sample_y = direct_image_sample_y(
-            image.image.height,
-            inverse
-                .d
-                .mul_add(f64::from(y) + 0.5, inverse.f)
-                .clamp(0.0, 1.0),
-        );
+    for (y, sample_y) in sample_y_by_row.iter().copied().enumerate() {
+        let row_start = y * dimensions.stride;
         if let Some((previous_sample_y, previous_row_start)) = previous_row {
             if previous_sample_y == sample_y {
                 pixels.copy_within(
@@ -3121,20 +3132,29 @@ fn write_direct_gray_image_rows(
                 continue;
             }
         }
-        let mut previous_pixel: Option<(u32, usize)> = None;
-        for x in 0..dimensions.width {
-            let sample_x = sample_x_by_column[x as usize];
-            let offset = row_start + x as usize * 4;
-            if let Some((previous_sample_x, previous_offset)) = previous_pixel {
-                if previous_sample_x == sample_x {
-                    pixels.copy_within(previous_offset..previous_offset + 4, offset);
-                    continue;
+        let source_row_start = sample_y as usize * image.image.width as usize;
+        if repeated_columns {
+            let mut previous_pixel: Option<(usize, usize)> = None;
+            for (x, sample_x) in sample_x_by_column.iter().copied().enumerate() {
+                let offset = row_start + x * 4;
+                if let Some((previous_sample_x, previous_offset)) = previous_pixel {
+                    if previous_sample_x == sample_x {
+                        pixels.copy_within(previous_offset..previous_offset + 4, offset);
+                        continue;
+                    }
                 }
+                let channel = image.image.samples[source_row_start + sample_x];
+                pixels[offset..offset + 4].copy_from_slice(&[channel, channel, channel, 255]);
+                previous_pixel = Some((sample_x, offset));
             }
-            let index = sample_y as usize * image.image.width as usize + sample_x as usize;
-            let channel = image.image.samples[index];
-            pixels[offset..offset + 4].copy_from_slice(&[channel, channel, channel, 255]);
-            previous_pixel = Some((sample_x, offset));
+        } else {
+            for (chunk, sample_x) in pixels[row_start..row_start + dimensions.stride]
+                .chunks_exact_mut(4)
+                .zip(sample_x_by_column.iter().copied())
+            {
+                let channel = image.image.samples[source_row_start + sample_x];
+                chunk.copy_from_slice(&[channel, channel, channel, 255]);
+            }
         }
         previous_row = Some((sample_y, row_start));
     }
@@ -3142,21 +3162,15 @@ fn write_direct_gray_image_rows(
 
 fn write_direct_rgb_image_rows(
     image: &ImageDisplayItem,
-    inverse: ferrugo_render::Matrix,
     dimensions: RasterDimensions,
-    sample_x_by_column: &[u32],
+    sample_x_byte_by_column: &[usize],
+    sample_y_by_row: &[u32],
     pixels: &mut [u8],
 ) {
+    let repeated_columns = has_repeated_adjacent_samples(sample_x_byte_by_column);
     let mut previous_row: Option<(u32, usize)> = None;
-    for y in 0..dimensions.height {
-        let row_start = y as usize * dimensions.stride;
-        let sample_y = direct_image_sample_y(
-            image.image.height,
-            inverse
-                .d
-                .mul_add(f64::from(y) + 0.5, inverse.f)
-                .clamp(0.0, 1.0),
-        );
+    for (y, sample_y) in sample_y_by_row.iter().copied().enumerate() {
+        let row_start = y * dimensions.stride;
         if let Some((previous_sample_y, previous_row_start)) = previous_row {
             if previous_sample_y == sample_y {
                 pixels.copy_within(
@@ -3166,27 +3180,46 @@ fn write_direct_rgb_image_rows(
                 continue;
             }
         }
-        let mut previous_pixel: Option<(u32, usize)> = None;
-        for x in 0..dimensions.width {
-            let sample_x = sample_x_by_column[x as usize];
-            let offset = row_start + x as usize * 4;
-            if let Some((previous_sample_x, previous_offset)) = previous_pixel {
-                if previous_sample_x == sample_x {
-                    pixels.copy_within(previous_offset..previous_offset + 4, offset);
-                    continue;
+        let source_row_start = sample_y as usize * image.image.width as usize * 3;
+        if repeated_columns {
+            let mut previous_pixel: Option<(usize, usize)> = None;
+            for (x, sample_x_byte_offset) in sample_x_byte_by_column.iter().copied().enumerate() {
+                let offset = row_start + x * 4;
+                if let Some((previous_sample_x_byte_offset, previous_offset)) = previous_pixel {
+                    if previous_sample_x_byte_offset == sample_x_byte_offset {
+                        pixels.copy_within(previous_offset..previous_offset + 4, offset);
+                        continue;
+                    }
                 }
+                let index = source_row_start + sample_x_byte_offset;
+                pixels[offset..offset + 4].copy_from_slice(&[
+                    image.image.samples[index],
+                    image.image.samples[index + 1],
+                    image.image.samples[index + 2],
+                    255,
+                ]);
+                previous_pixel = Some((sample_x_byte_offset, offset));
             }
-            let index = (sample_y as usize * image.image.width as usize + sample_x as usize) * 3;
-            pixels[offset..offset + 4].copy_from_slice(&[
-                image.image.samples[index],
-                image.image.samples[index + 1],
-                image.image.samples[index + 2],
-                255,
-            ]);
-            previous_pixel = Some((sample_x, offset));
+        } else {
+            for (chunk, sample_x_byte_offset) in pixels[row_start..row_start + dimensions.stride]
+                .chunks_exact_mut(4)
+                .zip(sample_x_byte_by_column.iter().copied())
+            {
+                let index = source_row_start + sample_x_byte_offset;
+                chunk.copy_from_slice(&[
+                    image.image.samples[index],
+                    image.image.samples[index + 1],
+                    image.image.samples[index + 2],
+                    255,
+                ]);
+            }
         }
         previous_row = Some((sample_y, row_start));
     }
+}
+
+fn has_repeated_adjacent_samples<T: Eq>(samples: &[T]) -> bool {
+    samples.windows(2).any(|window| window[0] == window[1])
 }
 
 fn direct_image_sample_x(width: u32, x: f64) -> u32 {

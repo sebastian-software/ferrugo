@@ -12538,7 +12538,7 @@ impl FillEdgeCoverage {
 
     fn coverage_for_pixel(&mut self, path: &FlattenedPath, x: u32, y: u32) -> u8 {
         let rule = self.rule();
-        let intersection_y_breaks = self.intersection_y_breaks.y_breaks_for_path(path);
+        let path_y_breaks = self.intersection_y_breaks.y_breaks_for_path(path);
         self.cell_accumulator.fill_run(
             path,
             rule,
@@ -12547,7 +12547,7 @@ impl FillEdgeCoverage {
                 base_x: x,
                 run: 0..1,
             },
-            intersection_y_breaks,
+            path_y_breaks,
             &mut self.pixel_coverage,
         );
         self.pixel_coverage.first().copied().unwrap_or_default()
@@ -12563,12 +12563,12 @@ impl FillEdgeCoverage {
         stats: &mut FillCoverageSpanStats,
     ) -> bool {
         let rule = self.rule();
-        let intersection_y_breaks = self.intersection_y_breaks.y_breaks_for_path(path);
+        let path_y_breaks = self.intersection_y_breaks.y_breaks_for_path(path);
         self.cell_accumulator.fill_run(
             path,
             rule,
             FillScanlineCellRun { y, base_x, run },
-            intersection_y_breaks,
+            path_y_breaks,
             coverage,
         );
         stats.record_cell_accumulator_coverage(coverage);
@@ -12594,6 +12594,7 @@ struct FillEdgeIntersectionYBreakCache {
     state: FillEdgeIntersectionYBreakCacheState,
     known_empty: bool,
     edges: Vec<LineSegment>,
+    vertex_y_breaks: Vec<f64>,
     y_breaks: Vec<f64>,
 }
 
@@ -12610,12 +12611,19 @@ enum FillEdgeIntersectionYBreaks<'a> {
     RowScanFallback(&'a [LineSegment]),
 }
 
+#[derive(Debug, Clone, Copy)]
+struct FillEdgePathYBreaks<'a> {
+    vertex_y_breaks: &'a [f64],
+    intersection_y_breaks: FillEdgeIntersectionYBreaks<'a>,
+}
+
 impl FillEdgeIntersectionYBreakCache {
     fn for_path(path: &FlattenedPath) -> Self {
         Self {
             state: FillEdgeIntersectionYBreakCacheState::Uncomputed,
             known_empty: path.stats.edge_intersection_y_breaks_known_empty,
             edges: Vec::new(),
+            vertex_y_breaks: Vec::new(),
             y_breaks: Vec::new(),
         }
     }
@@ -12626,15 +12634,16 @@ impl FillEdgeIntersectionYBreakCache {
             state: FillEdgeIntersectionYBreakCacheState::Uncomputed,
             known_empty: false,
             edges: Vec::new(),
+            vertex_y_breaks: Vec::new(),
             y_breaks: Vec::new(),
         }
     }
 
-    fn y_breaks_for_path(&mut self, path: &FlattenedPath) -> FillEdgeIntersectionYBreaks<'_> {
+    fn y_breaks_for_path(&mut self, path: &FlattenedPath) -> FillEdgePathYBreaks<'_> {
         if matches!(self.state, FillEdgeIntersectionYBreakCacheState::Uncomputed) {
             self.compute(path);
         }
-        match self.state {
+        let intersection_y_breaks = match self.state {
             FillEdgeIntersectionYBreakCacheState::Cached => {
                 FillEdgeIntersectionYBreaks::Cached(&self.y_breaks)
             }
@@ -12642,12 +12651,22 @@ impl FillEdgeIntersectionYBreakCache {
                 FillEdgeIntersectionYBreaks::RowScanFallback(&self.edges)
             }
             FillEdgeIntersectionYBreakCacheState::Uncomputed => unreachable!(),
+        };
+        FillEdgePathYBreaks {
+            vertex_y_breaks: &self.vertex_y_breaks,
+            intersection_y_breaks,
         }
     }
 
     fn compute(&mut self, path: &FlattenedPath) {
         self.edges.clear();
+        self.vertex_y_breaks.clear();
         self.y_breaks.clear();
+        self.vertex_y_breaks
+            .extend(path.subpaths.iter().flatten().map(|point| point.y));
+        self.vertex_y_breaks.sort_by(f64::total_cmp);
+        self.vertex_y_breaks
+            .dedup_by(|left, right| (*left - *right).abs() <= 1e-9);
         if self.known_empty {
             self.state = FillEdgeIntersectionYBreakCacheState::Cached;
             return;
@@ -12713,7 +12732,7 @@ impl FillScanlineCellAccumulator {
         path: &FlattenedPath,
         rule: FillRule,
         request: FillScanlineCellRun,
-        intersection_y_breaks: FillEdgeIntersectionYBreaks<'_>,
+        path_y_breaks: FillEdgePathYBreaks<'_>,
         coverage: &mut Vec<u8>,
     ) {
         let run_len = request.run.end.saturating_sub(request.run.start);
@@ -12731,7 +12750,7 @@ impl FillScanlineCellAccumulator {
                 base_x: request.base_x,
                 run: request.run,
             },
-            intersection_y_breaks,
+            path_y_breaks,
         );
 
         coverage.extend(
@@ -12746,23 +12765,18 @@ impl FillScanlineCellAccumulator {
         path: &FlattenedPath,
         rule: FillRule,
         request: FillScanlineCellAreaRun,
-        intersection_y_breaks: FillEdgeIntersectionYBreaks<'_>,
+        path_y_breaks: FillEdgePathYBreaks<'_>,
     ) {
         self.y_breaks.clear();
         self.y_breaks.push(request.row_min_y);
         self.y_breaks.push(request.row_max_y);
-        self.y_breaks
-            .extend(
-                path.subpaths
-                    .iter()
-                    .flatten()
-                    .map(|point| point.y)
-                    .filter(|point_y| {
-                        *point_y > request.row_min_y + 1e-9 && *point_y < request.row_max_y - 1e-9
-                    }),
-            );
+        self.append_cached_y_breaks(
+            path_y_breaks.vertex_y_breaks,
+            request.row_min_y,
+            request.row_max_y,
+        );
         self.append_edge_intersection_y_breaks(
-            intersection_y_breaks,
+            path_y_breaks.intersection_y_breaks,
             request.row_min_y,
             request.row_max_y,
         );
@@ -12798,14 +12812,18 @@ impl FillScanlineCellAccumulator {
     ) {
         match intersection_y_breaks {
             FillEdgeIntersectionYBreaks::Cached(y_breaks) => {
-                let start = y_breaks.partition_point(|point_y| *point_y <= row_min_y + 1e-9);
-                let end = y_breaks.partition_point(|point_y| *point_y < row_max_y - 1e-9);
-                self.y_breaks.extend_from_slice(&y_breaks[start..end]);
+                self.append_cached_y_breaks(y_breaks, row_min_y, row_max_y);
             }
             FillEdgeIntersectionYBreaks::RowScanFallback(edges) => {
                 self.append_row_edge_intersection_y_breaks(edges, row_min_y, row_max_y);
             }
         }
+    }
+
+    fn append_cached_y_breaks(&mut self, y_breaks: &[f64], row_min_y: f64, row_max_y: f64) {
+        let start = y_breaks.partition_point(|point_y| *point_y <= row_min_y + 1e-9);
+        let end = y_breaks.partition_point(|point_y| *point_y < row_max_y - 1e-9);
+        self.y_breaks.extend_from_slice(&y_breaks[start..end]);
     }
 
     fn append_row_edge_intersection_y_breaks(
@@ -13791,18 +13809,11 @@ fn blend_normal_alpha_row_span(
     }
     let start = min_x as usize * PixelFormat::Rgba8.bytes_per_pixel();
     let end = max_x as usize * PixelFormat::Rgba8.bytes_per_pixel();
-    for chunk in
-        device.row_mut(y)?[start..end].chunks_exact_mut(PixelFormat::Rgba8.bytes_per_pixel())
-    {
-        let dest = Rgba {
-            r: chunk[0],
-            g: chunk[1],
-            b: chunk[2],
-            a: chunk[3],
-        };
-        let blended = source_over(source, dest, coverage);
-        chunk.copy_from_slice(&[blended.r, blended.g, blended.b, blended.a]);
-    }
+    ferrugo_simd::source_over_normal_row(
+        &mut device.row_mut(y)?[start..end],
+        [source.r, source.g, source.b, source.a],
+        coverage,
+    );
     Ok(())
 }
 
@@ -18731,6 +18742,10 @@ fn subtractive_channel_to_rgb(channel: u8, key: u8) -> u8 {
     255u8.saturating_sub(channel.saturating_add(key))
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "text rendering keeps device, transform, caches, and resource state explicit"
+)]
 fn draw_text_run(
     device: &mut RasterDevice,
     text: &TextDisplayItem,
@@ -19847,6 +19862,10 @@ fn raster_type3_error(error: GraphicsError) -> RasterError {
     })
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "ASCII glyph drawing threads cache, transform, font, and color state explicitly"
+)]
 fn draw_ascii_glyph(
     device: &mut RasterDevice,
     page_transform: PageTransform,
@@ -19874,6 +19893,10 @@ fn draw_ascii_glyph(
     Ok(())
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "combining mark drawing mirrors ASCII glyph state to preserve placement parity"
+)]
 fn draw_combining_mark(
     device: &mut RasterDevice,
     page_transform: PageTransform,
@@ -22733,13 +22756,15 @@ mod tests {
         };
         let mut cache = FillEdgeIntersectionYBreakCache::new_for_test();
 
-        let y_breaks = match cache.y_breaks_for_path(&path) {
+        let path_y_breaks = cache.y_breaks_for_path(&path);
+        let y_breaks = match path_y_breaks.intersection_y_breaks {
             FillEdgeIntersectionYBreaks::Cached(y_breaks) => y_breaks,
             FillEdgeIntersectionYBreaks::RowScanFallback(_) => {
                 panic!("small path should use cached y-breaks")
             }
         };
 
+        assert_eq!(path_y_breaks.vertex_y_breaks, &[0.0, 2.0]);
         assert_eq!(y_breaks, &[1.0]);
     }
 
@@ -22760,13 +22785,15 @@ mod tests {
         };
         let mut cache = FillEdgeIntersectionYBreakCache::new_for_test();
 
-        let edges = match cache.y_breaks_for_path(&path) {
+        let path_y_breaks = cache.y_breaks_for_path(&path);
+        let edges = match path_y_breaks.intersection_y_breaks {
             FillEdgeIntersectionYBreaks::Cached(_) => {
                 panic!("large path should preserve row-scan fallback")
             }
             FillEdgeIntersectionYBreaks::RowScanFallback(edges) => edges,
         };
 
+        assert_eq!(path_y_breaks.vertex_y_breaks, &[0.0, 1.0]);
         assert_eq!(
             edges.len(),
             FILL_EDGE_INTERSECTION_Y_BREAK_CACHE_MAX_EDGES + 1
