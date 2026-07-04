@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.3.0](https://github.com/sebastian-software/ferrugo/compare/ferrugo-v0.2.0...ferrugo-v0.3.0) (2026-07-04)
+
+
+### Features
+
+* **native:** render simple optional content memberships ([9034c64](https://github.com/sebastian-software/ferrugo/commit/9034c64bcb78954ea0e70441e48dcf390573511f))
+* **oracle:** add ghostscript matrix provider ([656d2a7](https://github.com/sebastian-software/ferrugo/commit/656d2a792f26c55a78c8ed67ae96244f44ac25da))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * ferrugo-native bumped from 0.2.0 to 0.3.0
+    * ferrugo-pdfium bumped from 0.2.0 to 0.3.0
+    * ferrugo-thumbnail bumped from 0.2.0 to 0.3.0
+
 ## [0.2.0](https://github.com/sebastian-software/ferrugo/compare/ferrugo-v0.1.0...ferrugo-v0.2.0) (2026-07-04)
 
 
