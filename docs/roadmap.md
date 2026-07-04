@@ -13,7 +13,9 @@ durable documentation.
 Goal: make thumbnail generation measurable before implementation choices become
 expensive.
 
-- Use `docs/plans/phase-0-decisions.md` as the decision baseline.
+- Use `docs/decisions/0010-phase-0-product-api-runtime-defaults.md` as the
+  current decision baseline and `docs/reports/phase-0-report.md` as the
+  evidence summary.
 - Document MIT/Apache-2.0 as the license intent and attribution policy.
 - Build PDFium from source with V8 and XFA disabled, AGG enabled, and Skia
   disabled.

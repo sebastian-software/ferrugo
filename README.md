@@ -235,7 +235,8 @@ Historical and planning docs:
 
 - [Rendering landscape](docs/research/2026-06-24-rendering-landscape.md)
 - [Rust-first, PDFium-guided decision](docs/decisions/0001-rust-first-pdfium-guided-porting.md)
-- [Phase 0 decisions](docs/plans/phase-0-decisions.md)
+- [Phase 0 product, API, and runtime defaults](docs/decisions/0010-phase-0-product-api-runtime-defaults.md)
+- [Phase 0 report](docs/reports/phase-0-report.md)
 - [Roadmap](docs/roadmap.md)
 - [Attribution policy](docs/policies/attribution.md)
 
