@@ -198,6 +198,7 @@ Each tier has a different review purpose and failure policy.
 | Smoke | `bash scripts/check_benchmark_suite.sh` | Rust toolchain only | Fails on missing schema/platform/timing fields, native errors, native fallbacks, or missing tools. Does not fail on broad timing comparisons. | `target/benchmark-suite/performance-matrix-smoke.json`, `target/benchmark-suite/performance-matrix-smoke.md`, `target/benchmark-suite/benchmark-suite-summary.txt` |
 | Release candidate | `bash scripts/check_native_only_release.sh` | Rust toolchain only | Includes the smoke tier and the native-only release gates. Stable budget failures are allowed only for bounded native release checks, not PDFium/Poppler availability or noisy cross-renderer ratios. | Native release artifacts plus the smoke tier artifacts. |
 | Local deep | `bash scripts/generate_performance_matrix.sh`; use `INPUT=fixtures/real-world MAX_EDGE=1024` for the committed real-world seed tier | Rust toolchain; optional PDFium, Poppler, and Ghostscript | Does not block release by itself. Use it to collect repeated artifacts, inspect `timing_reliability`, and guide optimization issues. | `target/performance-matrix.json`, `target/performance-matrix.md`, `target/performance-matrix-artifacts/` |
+| Scheduled trends | `.github/workflows/scheduled-benchmarks.yml` or `bash scripts/generate_scheduled_benchmark_artifacts.sh` | Rust toolchain; Poppler, Ghostscript, and MuPDF on the runner | Runs weekly and on demand. Fails only when the generated trend summary has at least five samples and the small-text native hot p95 CoV exceeds the configured trend threshold. Shared-runner results characterize variance, not claim-ready hardware performance. | `target/scheduled-benchmarks/performance-matrix.json`, `real-world-performance-matrix.json`, `native-golden-comparison.json`, `poppler-visual-diff.json`, `benchmark-trend.jsonl`, `benchmark-trend-summary.md` |
 | Maintainer oracle comparison | `FERRUGO_PDFIUM_RENDERER=/path/to/pdfium-renderer bash scripts/generate_performance_matrix.sh` plus Poppler when available | PDFium and/or Poppler | Missing reference tools must be recorded as `missing-tool`, not hidden. Public claims need two stable runs and the performance-claims checklist. | Dated JSON/Markdown reports under `target/` or `docs/reports/` when promoted. |
 
 The smoke and release-candidate tiers run from a clean checkout with only
@@ -207,6 +208,16 @@ family in native `hot-render` mode at `max_edge=120`; that subset is deliberatel
 small enough to be stable while still proving the durable `benchmark-matrix`
 JSON, Markdown, platform, timing, sample-count, stddev, CoV, family, and record
 fields.
+
+The scheduled tier installs Poppler, Ghostscript, and MuPDF on `ubuntu-24.04`,
+runs generated and real-world matrices, runs the native golden comparison, and
+runs a Poppler visual-diff suite over the cross-producer fusion manifest. It
+uploads all JSON/Markdown artifacts instead of committing generated reports.
+The trend JSONL is built from the current run plus an optional prior
+`TREND_HISTORY` file; after five samples it reports mean, sample standard
+deviation, and CoV for the `small-text` native hot p95 record and can fail the
+job when the CoV exceeds the trend threshold. Use these artifacts to decide
+whether a dedicated-hardware claim run is warranted.
 
 ## Release Candidate Artifact Policy
 
