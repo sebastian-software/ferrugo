@@ -66,6 +66,13 @@ availability and variance are understood on CI. Focused fixture subsets may
 become CI gates only after their variance is measured and their budgets are
 documented.
 
+The current scoped native release gate uses
+`bash scripts/check_benchmark_suite.sh`. That script exercises the durable
+`benchmark-matrix` JSON/Markdown contract on the committed `small-text` fixture
+family with the native backend only. It may fail on missing fields, native
+errors, native fallbacks, or missing native timing data; it must not fail on
+PDFium, Poppler, or cross-renderer timing ratios.
+
 ## Update Workflow
 
 Before changing README or other public copy:
