@@ -3819,9 +3819,10 @@ fn ascii_contains_ignore_case(haystack: &[u8], needle: &[u8]) -> bool {
 }
 
 /// Small glyph outline cache keyed by font program identity and glyph code.
-#[derive(Debug, Default, Clone, PartialEq)]
+#[derive(Debug, Default)]
 pub struct GlyphOutlineCache {
     outlines: Vec<CachedGlyphOutline>,
+    primed_programs: Vec<FontProgramKey>,
 }
 
 impl GlyphOutlineCache {
@@ -3844,18 +3845,26 @@ impl GlyphOutlineCache {
         {
             return Ok(entry.outline.clone());
         }
+        if options.max_cache_entries > 0 && program.key.kind == FontProgramKind::TrueType {
+            self.prime_truetype_outlines(program, glyph_code, options)?;
+            if let Some(entry) = self
+                .outlines
+                .iter()
+                .find(|entry| entry.key == program.key && entry.glyph_code == glyph_code)
+            {
+                return Ok(entry.outline.clone());
+            }
+        }
         let outline = extract_glyph_outline(program, glyph_code, options)?;
         if options.max_cache_entries == 0 {
             return Ok(outline);
         }
-        if self.outlines.len() >= options.max_cache_entries {
-            self.outlines.remove(0);
-        }
-        self.outlines.push(CachedGlyphOutline {
-            key: program.key,
+        self.push_outline_entry(
+            program.key,
             glyph_code,
-            outline: outline.clone(),
-        });
+            outline.clone(),
+            options.max_cache_entries,
+        );
         Ok(outline)
     }
 
@@ -3869,6 +3878,83 @@ impl GlyphOutlineCache {
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.outlines.is_empty()
+    }
+
+    fn prime_truetype_outlines(
+        &mut self,
+        program: &FontProgram,
+        requested_glyph_code: u32,
+        options: GlyphOutlineOptions,
+    ) -> GraphicsResult<()> {
+        if self.primed_programs.contains(&program.key) {
+            return Ok(());
+        }
+        let face =
+            ttf_parser::Face::parse(&program.bytes, 0).map_err(|_| invalid_glyph_outline())?;
+        let glyph_count = u32::from(face.number_of_glyphs());
+        let prefetch_count = glyph_count.min(options.max_cache_entries as u32);
+        for glyph_code in 0..prefetch_count {
+            let outline = extract_ttf_face_glyph_outline(&face, glyph_code, options)?;
+            self.push_outline_entry(program.key, glyph_code, outline, options.max_cache_entries);
+        }
+        if requested_glyph_code >= prefetch_count && requested_glyph_code < glyph_count {
+            let outline = extract_ttf_face_glyph_outline(&face, requested_glyph_code, options)?;
+            self.push_outline_entry(
+                program.key,
+                requested_glyph_code,
+                outline,
+                options.max_cache_entries,
+            );
+        }
+        if self.primed_programs.len() >= options.max_cache_entries {
+            self.primed_programs.remove(0);
+        }
+        self.primed_programs.push(program.key);
+        Ok(())
+    }
+
+    fn push_outline_entry(
+        &mut self,
+        key: FontProgramKey,
+        glyph_code: u32,
+        outline: Option<GlyphOutline>,
+        max_cache_entries: usize,
+    ) {
+        if self
+            .outlines
+            .iter()
+            .any(|entry| entry.key == key && entry.glyph_code == glyph_code)
+        {
+            return;
+        }
+        if self.outlines.len() >= max_cache_entries {
+            self.outlines.remove(0);
+        }
+        self.outlines.push(CachedGlyphOutline {
+            key,
+            glyph_code,
+            outline,
+        });
+    }
+
+    #[cfg(test)]
+    fn primed_program_len(&self) -> usize {
+        self.primed_programs.len()
+    }
+}
+
+impl Clone for GlyphOutlineCache {
+    fn clone(&self) -> Self {
+        Self {
+            outlines: self.outlines.clone(),
+            primed_programs: self.primed_programs.clone(),
+        }
+    }
+}
+
+impl PartialEq for GlyphOutlineCache {
+    fn eq(&self, other: &Self) -> bool {
+        self.outlines == other.outlines
     }
 }
 
@@ -4969,32 +5055,8 @@ fn extract_truetype_glyph_outline(
     glyph_code: u32,
     options: GlyphOutlineOptions,
 ) -> GraphicsResult<Option<GlyphOutline>> {
-    let glyph_id =
-        ttf_parser::GlyphId(u16::try_from(glyph_code).map_err(|_| invalid_glyph_outline())?);
     let face = ttf_parser::Face::parse(&program.bytes, 0).map_err(|_| invalid_glyph_outline())?;
-    let mut builder = TtfOutlineBuilder {
-        segments: Vec::new(),
-        current: None,
-        max_segments: options.max_segments,
-        overflowed: false,
-    };
-    let Some(_) = face.outline_glyph(glyph_id, &mut builder) else {
-        return Ok(None);
-    };
-    if builder.overflowed {
-        return Err(GraphicsError::new(
-            None,
-            GraphicsErrorKind::GlyphOutlineSegmentOverflow {
-                limit: options.max_segments,
-            },
-        ));
-    }
-    Ok(Some(GlyphOutline {
-        glyph_code,
-        advance_width: f64::from(face.glyph_hor_advance(glyph_id).unwrap_or(0)),
-        left_side_bearing: f64::from(face.glyph_hor_side_bearing(glyph_id).unwrap_or(0)),
-        segments: builder.segments,
-    }))
+    extract_ttf_face_glyph_outline(&face, glyph_code, options)
 }
 
 const SYNTHETIC_CFF_MAX_GLYPHS: u16 = u16::MAX;
@@ -5004,8 +5066,6 @@ fn extract_cff_glyph_outline(
     glyph_code: u32,
     options: GlyphOutlineOptions,
 ) -> GraphicsResult<Option<GlyphOutline>> {
-    let glyph_id =
-        ttf_parser::GlyphId(u16::try_from(glyph_code).map_err(|_| invalid_glyph_outline())?);
     let head = synthetic_cff_head_table();
     let hhea = synthetic_cff_hhea_table();
     let maxp = synthetic_cff_maxp_table();
@@ -5017,6 +5077,16 @@ fn extract_cff_glyph_outline(
         ..ttf_parser::RawFaceTables::default()
     })
     .map_err(|_| invalid_glyph_outline())?;
+    extract_ttf_face_glyph_outline(&face, glyph_code, options)
+}
+
+fn extract_ttf_face_glyph_outline(
+    face: &ttf_parser::Face<'_>,
+    glyph_code: u32,
+    options: GlyphOutlineOptions,
+) -> GraphicsResult<Option<GlyphOutline>> {
+    let glyph_id =
+        ttf_parser::GlyphId(u16::try_from(glyph_code).map_err(|_| invalid_glyph_outline())?);
     let mut builder = TtfOutlineBuilder {
         segments: Vec::new(),
         current: None,
@@ -30853,7 +30923,24 @@ mod tests {
             .expect("glyph should exist");
 
         assert_eq!(first, second);
-        assert_eq!(cache.len(), 1);
+        assert_eq!(cache.len(), 2);
+        assert_eq!(cache.primed_program_len(), 1);
+    }
+
+    #[test]
+    fn glyph_outline_cache_should_prime_truetype_program_across_distinct_glyphs() {
+        let program = test_truetype_program();
+        let mut cache = GlyphOutlineCache::default();
+
+        cache
+            .outline_for(&program, 1, GlyphOutlineOptions::default())
+            .expect("first glyph lookup should prime the font program");
+        cache
+            .outline_for(&program, 0, GlyphOutlineOptions::default())
+            .expect("second glyph lookup should use the primed program");
+
+        assert_eq!(cache.primed_program_len(), 1);
+        assert_eq!(cache.len(), 2);
     }
 
     #[test]
@@ -30891,6 +30978,7 @@ mod tests {
 
         assert_eq!(outline.glyph_code, 1);
         assert!(cache.is_empty());
+        assert_eq!(cache.primed_program_len(), 0);
     }
 
     #[test]
