@@ -5091,10 +5091,22 @@ struct OptionalContentProperty {
     policy: OptionalContentPolicy,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum OptionalContentPolicy {
     Group(PdfReference),
+    Membership {
+        groups: Vec<PdfReference>,
+        policy: OptionalContentMembershipPolicy,
+    },
     Unsupported,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OptionalContentMembershipPolicy {
+    AnyOn,
+    AllOn,
+    AnyOff,
+    AllOff,
 }
 
 fn document_optional_content_state(
@@ -5243,20 +5255,21 @@ fn classify_optional_content_property(
                 .get(reference_id.id)
                 .ok_or(ThumbnailError::Malformed)?;
             let dictionary = object_dictionary(&object.value)?;
-            classify_optional_content_dictionary(dictionary, metadata)
+            classify_optional_content_dictionary(document, dictionary, metadata)
         }
         PdfPrimitive::Dictionary(dictionary) => {
             if dictionary_name_is(dictionary, b"Type", b"OCG") {
                 metadata.has_direct_group_dictionary = true;
                 return Ok(());
             }
-            classify_optional_content_dictionary(dictionary, metadata)
+            classify_optional_content_dictionary(document, dictionary, metadata)
         }
         _ => Err(ThumbnailError::Malformed),
     }
 }
 
 fn classify_optional_content_dictionary(
+    document: &ClassicDocument<'_>,
     dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
     metadata: &mut OptionalContentMetadata,
 ) -> Result<(), ThumbnailError> {
@@ -5264,7 +5277,12 @@ fn classify_optional_content_dictionary(
         return Ok(());
     }
     if dictionary_name_is(dictionary, b"Type", b"OCMD") {
-        metadata.has_unsupported_membership_policy = true;
+        if matches!(
+            optional_content_membership_policy(document, dictionary)?,
+            OptionalContentPolicy::Unsupported
+        ) {
+            metadata.has_unsupported_membership_policy = true;
+        }
         return Ok(());
     }
     Err(ThumbnailError::Malformed)
@@ -5390,20 +5408,93 @@ fn optional_content_policy(
                 return Ok(OptionalContentPolicy::Group(*reference));
             }
             if dictionary_name_is(dictionary, b"Type", b"OCMD") {
-                return Ok(OptionalContentPolicy::Unsupported);
+                return optional_content_membership_policy(document, dictionary);
             }
             Err(ThumbnailError::Malformed)
         }
         PdfPrimitive::Dictionary(dictionary)
             if dictionary_name_is(dictionary, b"Type", b"OCMD") =>
         {
-            Ok(OptionalContentPolicy::Unsupported)
+            optional_content_membership_policy(document, dictionary)
         }
         PdfPrimitive::Dictionary(dictionary) if dictionary_name_is(dictionary, b"Type", b"OCG") => {
             Err(unsupported_feature(BUCKET_GRAPHICS_OPTIONAL_CONTENT))
         }
         _ => Err(ThumbnailError::Malformed),
     }
+}
+
+fn optional_content_membership_policy(
+    document: &ClassicDocument<'_>,
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+) -> Result<OptionalContentPolicy, ThumbnailError> {
+    if dictionary_value(dictionary, b"VE").is_some() {
+        return Ok(OptionalContentPolicy::Unsupported);
+    }
+    let groups = optional_content_membership_groups(document, dictionary)?;
+    if groups.is_empty() {
+        return Ok(OptionalContentPolicy::Unsupported);
+    }
+    let policy = match dictionary_value(dictionary, b"P") {
+        Some(PdfPrimitive::Name(name)) if name.as_bytes() == b"AnyOn" => {
+            OptionalContentMembershipPolicy::AnyOn
+        }
+        Some(PdfPrimitive::Name(name)) if name.as_bytes() == b"AllOn" => {
+            OptionalContentMembershipPolicy::AllOn
+        }
+        Some(PdfPrimitive::Name(name)) if name.as_bytes() == b"AnyOff" => {
+            OptionalContentMembershipPolicy::AnyOff
+        }
+        Some(PdfPrimitive::Name(name)) if name.as_bytes() == b"AllOff" => {
+            OptionalContentMembershipPolicy::AllOff
+        }
+        Some(PdfPrimitive::Name(_)) => return Ok(OptionalContentPolicy::Unsupported),
+        Some(_) => return Err(ThumbnailError::Malformed),
+        None => OptionalContentMembershipPolicy::AnyOn,
+    };
+    Ok(OptionalContentPolicy::Membership { groups, policy })
+}
+
+fn optional_content_membership_groups(
+    document: &ClassicDocument<'_>,
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+) -> Result<Vec<PdfReference>, ThumbnailError> {
+    let Some(value) = dictionary_value(dictionary, b"OCGs") else {
+        return Err(ThumbnailError::Malformed);
+    };
+    match value {
+        PdfPrimitive::Reference(reference) => {
+            optional_content_group_reference(document, *reference).map(|reference| vec![reference])
+        }
+        PdfPrimitive::Array(items) => {
+            let mut groups = Vec::new();
+            for item in items {
+                let PdfPrimitive::Reference(reference) = item else {
+                    return Ok(Vec::new());
+                };
+                groups.push(optional_content_group_reference(document, *reference)?);
+            }
+            Ok(groups)
+        }
+        PdfPrimitive::Dictionary(_) => Ok(Vec::new()),
+        _ => Err(ThumbnailError::Malformed),
+    }
+}
+
+fn optional_content_group_reference(
+    document: &ClassicDocument<'_>,
+    reference: PdfReference,
+) -> Result<PdfReference, ThumbnailError> {
+    let reference_id = object_reference(reference)?;
+    let object = document
+        .objects
+        .get(reference_id.id)
+        .ok_or(ThumbnailError::Malformed)?;
+    let dictionary = object_dictionary(&object.value)?;
+    if !dictionary_name_is(dictionary, b"Type", b"OCG") {
+        return Err(ThumbnailError::Malformed);
+    }
+    Ok(reference)
 }
 
 fn filter_optional_content(
@@ -5524,10 +5615,34 @@ fn optional_content_marker_visible(
         .iter()
         .find(|property| property.name.as_slice() == property_name.as_bytes())
         .ok_or_else(|| unsupported_feature(BUCKET_GRAPHICS_OPTIONAL_CONTENT))?;
-    match property.policy {
-        OptionalContentPolicy::Group(reference) => Ok(state.visible(reference)),
+    match &property.policy {
+        OptionalContentPolicy::Group(reference) => Ok(state.visible(*reference)),
+        OptionalContentPolicy::Membership { groups, policy } => {
+            Ok(optional_content_membership_visible(groups, *policy, state))
+        }
         OptionalContentPolicy::Unsupported => {
             Err(unsupported_feature(BUCKET_GRAPHICS_OPTIONAL_CONTENT))
+        }
+    }
+}
+
+fn optional_content_membership_visible(
+    groups: &[PdfReference],
+    policy: OptionalContentMembershipPolicy,
+    state: &OptionalContentState,
+) -> bool {
+    match policy {
+        OptionalContentMembershipPolicy::AnyOn => {
+            groups.iter().any(|reference| state.visible(*reference))
+        }
+        OptionalContentMembershipPolicy::AllOn => {
+            groups.iter().all(|reference| state.visible(*reference))
+        }
+        OptionalContentMembershipPolicy::AnyOff => {
+            groups.iter().any(|reference| !state.visible(*reference))
+        }
+        OptionalContentMembershipPolicy::AllOff => {
+            groups.iter().all(|reference| !state.visible(*reference))
         }
     }
 }
@@ -10304,9 +10419,10 @@ mod tests {
                 "unsupported CCITT image filter",
             ),
             (
-                include_bytes!("../../../fixtures/generated/optional-content-ocmd.pdf") as &[u8],
+                include_bytes!("../../../fixtures/generated/optional-content-usage-application.pdf")
+                    as &[u8],
                 buckets::GRAPHICS_OPTIONAL_CONTENT,
-                "unsupported optional-content membership policy",
+                "unsupported optional-content usage application",
             ),
             (
                 include_bytes!("../../../fixtures/generated/xfa-dynamic-no-static-appearance.pdf")
@@ -12206,9 +12322,9 @@ mod tests {
     }
 
     #[test]
-    fn native_backend_should_report_unsupported_optional_content_membership_policy() {
+    fn native_backend_should_render_optional_content_membership_policy() {
         let bytes = include_bytes!("../../../fixtures/generated/optional-content-ocmd.pdf");
-        let error = ThumbnailBackend::render(
+        let thumbnail = ThumbnailBackend::render(
             &NativeBackend::new(),
             PdfSource::from_bytes(bytes),
             &ThumbnailOptions {
@@ -12216,16 +12332,11 @@ mod tests {
                 ..ThumbnailOptions::default()
             },
         )
-        .expect_err("OCMD policy should not render silently");
+        .expect("simple OCMD membership policy should render");
 
-        assert_eq!(
-            error.class(),
-            ferrugo_thumbnail::ThumbnailErrorClass::Unsupported
-        );
-        assert_eq!(
-            error.unsupported_feature_bucket(),
-            Some(BUCKET_GRAPHICS_OPTIONAL_CONTENT)
-        );
+        assert_eq!(thumbnail.width, 100);
+        assert_eq!(thumbnail.height, 80);
+        assert_eq!(rgba_at(&thumbnail, 30, 50), [229, 0, 0, 255]);
     }
 
     #[test]
@@ -15132,11 +15243,11 @@ mod tests {
         assert_eq!(ocmd_metadata.optional_content.group_count, 1);
         assert!(!ocmd_metadata.optional_content.has_usage_application);
         assert!(
-            ocmd_metadata
+            !ocmd_metadata
                 .optional_content
                 .has_unsupported_membership_policy
         );
-        assert!(ocmd_metadata.optional_content.has_unsupported_behavior);
+        assert!(!ocmd_metadata.optional_content.has_unsupported_behavior);
     }
 
     #[test]

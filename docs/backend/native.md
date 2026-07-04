@@ -272,15 +272,19 @@ the visual boundary and avoids unnecessary raster work. See
 The native renderer applies catalog default optional-content state when
 flattening thumbnails. `/OCG` resources referenced from marked content respect
 `/OCProperties /D /BaseState`, `/ON`, and `/OFF`; nested marked-content scopes
-are hidden when any enclosing optional-content group is hidden.
+are hidden when any enclosing optional-content group is hidden. Simple `/OCMD`
+membership dictionaries with `/OCGs` references and `/P` values `AnyOn`,
+`AllOn`, `AnyOff`, or `AllOff` are evaluated against the same flattened default
+state. Missing `/P` defaults to `AnyOn`.
 
 `DocumentMetadata.optional_content` exposes bounded layer policy signals:
 catalog OCG count, default base state, default-on/default-off counts, and flags
 for unsupported usage applications, membership dictionaries, and direct OCG
-dictionaries. Rendering still rejects `/D /AS` usage application arrays and
-`/OCMD` policies with `graphics.optional-content`, but metadata inspection
-classifies those boundaries so consumers can route fallback or flattening
-decisions deterministically. See
+dictionaries. Rendering still rejects `/D /AS` usage application arrays, OCMD
+visibility expressions (`/VE`), unknown OCMD `/P` policies, and direct OCG
+dictionaries with `graphics.optional-content`, but metadata inspection classifies
+those boundaries so consumers can route fallback or flattening decisions
+deterministically. See
 `docs/policies/optional-content.md` and
 `docs/reports/optional-content-ui-state-2026-06-29.md`.
 
