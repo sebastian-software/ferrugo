@@ -11935,7 +11935,11 @@ fn decode_ccitt_fax_image(
     } else {
         expected_image_len(width, height, ImageColorSpace::DeviceGray)?
     };
-    enforce_image_byte_budget(output_len, max_image_bytes)?;
+    // The row decoder holds one byte per pixel before packing, so the budget
+    // must cover width * height even when the packed mask output is ~8x
+    // smaller. Otherwise a mask input could allocate far past the ceiling.
+    let intermediate_len = expected_image_len(width, height, ImageColorSpace::DeviceGray)?;
+    enforce_image_byte_budget(intermediate_len.max(output_len), max_image_bytes)?;
     let mut reader = CcittBitReader::new(encoded);
     let pixels = decode_ccitt_rows(&mut reader, params)?;
     Ok(ccitt_pixels_to_samples(
@@ -32006,6 +32010,32 @@ mod tests {
         assert_eq!(
             error.kind(),
             &GraphicsErrorKind::ImageBytesOverflow { limit: 0 }
+        );
+    }
+
+    #[test]
+    fn image_resources_should_budget_ccitt_mask_intermediate_pixels() {
+        // Packed mask output is ceil(32/8) * 8 = 32 bytes and fits the budget,
+        // but the row decoder holds 32 * 8 = 256 intermediate bytes. The
+        // budget must bound the intermediate allocation, not just the packed
+        // output.
+        let document = load_image_xobject_pdf(
+            b"q 32 0 0 8 0 0 cm /Im1 Do Q",
+            b"<< /Type /XObject /Subtype /Image /Width 32 /Height 8 /ImageMask true /Filter /CCITTFaxDecode /DecodeParms << /K 0 /Columns 32 /Rows 8 >> /Length 4 >>",
+            &[0u8; 4],
+        );
+        let error = image_resources_from_document_with_options(
+            &document,
+            DisplayListOptions {
+                max_image_bytes: 64,
+                ..DisplayListOptions::default()
+            },
+        )
+        .expect_err("CCITT mask intermediate pixels should exceed configured budget");
+
+        assert_eq!(
+            error.kind(),
+            &GraphicsErrorKind::ImageBytesOverflow { limit: 64 }
         );
     }
 
