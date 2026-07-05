@@ -9217,6 +9217,7 @@ fn error_stage_hint(error: &ThumbnailError) -> &'static str {
             }
         }
         ferrugo_thumbnail::ThumbnailErrorClass::Timeout => "timeout",
+        ferrugo_thumbnail::ThumbnailErrorClass::Cancelled => "cancelled",
         ferrugo_thumbnail::ThumbnailErrorClass::Internal => "internal",
     }
 }

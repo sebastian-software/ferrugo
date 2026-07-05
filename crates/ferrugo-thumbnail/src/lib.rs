@@ -613,6 +613,8 @@ pub enum ThumbnailError {
     UnsupportedFeature(&'static str),
     /// Rendering exceeded the configured timeout.
     Timeout,
+    /// Rendering was cooperatively cancelled by the caller.
+    Cancelled,
     /// Backend failure not covered by a more specific stable class.
     Internal(String),
 }
@@ -707,6 +709,7 @@ impl ThumbnailError {
             Self::Malformed => ThumbnailErrorClass::Malformed,
             Self::Unsupported | Self::UnsupportedFeature(_) => ThumbnailErrorClass::Unsupported,
             Self::Timeout => ThumbnailErrorClass::Timeout,
+            Self::Cancelled => ThumbnailErrorClass::Cancelled,
             Self::Internal(_) => ThumbnailErrorClass::Internal,
         }
     }
@@ -723,6 +726,8 @@ pub enum ThumbnailErrorClass {
     Unsupported,
     /// Rendering exceeded the configured timeout.
     Timeout,
+    /// Rendering was cooperatively cancelled by the caller.
+    Cancelled,
     /// Backend failure not covered by a more specific stable class.
     Internal,
 }
@@ -736,6 +741,7 @@ impl ThumbnailErrorClass {
             Self::Malformed => "malformed",
             Self::Unsupported => "unsupported",
             Self::Timeout => "timeout",
+            Self::Cancelled => "cancelled",
             Self::Internal => "internal",
         }
     }
@@ -757,6 +763,7 @@ impl fmt::Display for ThumbnailError {
                 write!(f, "PDF feature is unsupported ({bucket})")
             }
             Self::Timeout => f.write_str("thumbnail rendering timed out"),
+            Self::Cancelled => f.write_str("thumbnail rendering was cancelled"),
             Self::Internal(message) => write!(f, "internal thumbnail error: {message}"),
         }
     }
@@ -1183,6 +1190,7 @@ mod tests {
     #[test]
     fn error_class_should_be_stable() {
         assert_eq!(ThumbnailError::Timeout.class().as_str(), "timeout");
+        assert_eq!(ThumbnailError::Cancelled.class().as_str(), "cancelled");
     }
 
     #[test]
@@ -1216,6 +1224,7 @@ mod tests {
                 ThumbnailErrorClass::Encrypted => "request-password-policy",
                 ThumbnailErrorClass::Malformed => "reject-or-repair-input",
                 ThumbnailErrorClass::Timeout => "retry-with-explicit-timeout-policy",
+                ThumbnailErrorClass::Cancelled => "stop-work",
                 ThumbnailErrorClass::Internal => "renderer-defect",
             }
         }

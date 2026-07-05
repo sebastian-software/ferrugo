@@ -50,6 +50,7 @@ fn route_render_error(error: &ThumbnailError) -> &'static str {
         ThumbnailErrorClass::Encrypted => "request-password-policy",
         ThumbnailErrorClass::Malformed => "reject-or-repair-input",
         ThumbnailErrorClass::Timeout => "retry-with-explicit-timeout-policy",
+        ThumbnailErrorClass::Cancelled => "stop-work",
         ThumbnailErrorClass::Internal => "renderer-defect",
     }
 }
