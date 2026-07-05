@@ -6,9 +6,10 @@ This policy covers the PDFium-free golden image gate run by:
 bash scripts/check_native_golden_images.sh
 ```
 
-The gate renders a tiny reviewed fixture set with the Rust native backend only,
-then compares dimensions, decoded RGBA pixels, and the deterministic PNG artifact
-bytes against `fixtures/native-golden-manifest.tsv`.
+The gate renders a reviewed fixture set with the Rust native backend only, then
+compares dimensions, decoded RGBA pixels, and the deterministic PNG artifact
+bytes against `fixtures/native-golden-manifest.tsv`. The gate derives the
+expected sample count from the manifest instead of hard-coding a release count.
 
 ## Manifest Schema
 
@@ -16,7 +17,7 @@ The manifest is TSV with one reviewed baseline per fixture:
 
 | Column | Meaning |
 | --- | --- |
-| `fixture` | Public generated fixture path under `fixtures/generated/*.pdf`. |
+| `fixture` | Public fixture path under `fixtures/generated/*.pdf` or `fixtures/real-world/*.pdf`. |
 | `family` | Corpus family represented by the fixture. |
 | `backend` | Must be `rust-native`. |
 | `platform_os` | Target platform or `any` for platform-neutral generated fixtures. |
@@ -40,25 +41,31 @@ hash drift, render error, missing fixture, or manifest/platform mismatch.
 
 Committed golden evidence stays hash-only:
 
-- keep the release manifest to five samples unless a release blocker requires a
-  targeted addition;
+- keep the release manifest to reviewed public fixtures that render natively;
 - keep `max_edge` at 160 for committed release samples;
 - do not commit rendered PNGs, diff images, or private corpus documents;
 - store local reports and any temporary rendered artifacts under
   `target/native-golden/`;
-- use only public generated fixtures from `fixtures/generated/`;
+- use only public fixtures from `fixtures/generated/` and `fixtures/real-world/`;
 - update baselines in the same PR as the renderer change that intentionally
   changes output, with reviewer and date fields refreshed.
 
 Larger visual artifacts belong in local maintainer evidence or separately
 retained release notes, not in the repository.
 
-## Initial Release Set
+## Current Release Set
 
-The first committed manifest covers:
+The committed manifest covers 33 samples:
 
-- `browser-print`: `browser-print-clipped-backgrounds.pdf`;
-- `office-export`: `office-table.pdf`;
-- static `form`: `flattened-form-export.pdf`;
-- `scan`: `scanner-skewed-mailroom-page.pdf`;
-- PDF 2.0 accepted basics: `pdf20-basic-office.pdf`.
+- four generated `browser-print` samples;
+- four generated `email-web-archive` samples;
+- four generated `form` samples;
+- four generated `mixed-layout` samples;
+- four generated `office-export` samples;
+- four generated `presentation` samples;
+- four generated `report` samples;
+- four generated `scan` samples;
+- one public real-world `real-scan` sample.
+
+Other public real-world samples remain in oracle reports when they currently
+produce native errors rather than exact native image evidence.
