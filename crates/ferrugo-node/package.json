@@ -1,0 +1,45 @@
+{
+  "name": "ferrugo",
+  "version": "0.3.1",
+  "description": "Rust-native PDF thumbnail rendering for Node.js",
+  "license": "MIT OR Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sebastian-software/ferrugo.git",
+    "directory": "crates/ferrugo-node"
+  },
+  "type": "commonjs",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "*.node",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "napi build --platform --release",
+    "build:debug": "napi build --platform",
+    "artifacts": "napi artifacts",
+    "test": "node test/node-integration.mjs",
+    "prepack": "napi pre-publish -t npm"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "3.7.2"
+  },
+  "napi": {
+    "binaryName": "ferrugo",
+    "targets": [
+      "x86_64-apple-darwin",
+      "aarch64-apple-darwin",
+      "x86_64-pc-windows-msvc",
+      "x86_64-unknown-linux-gnu",
+      "aarch64-unknown-linux-gnu",
+      "x86_64-unknown-linux-musl",
+      "aarch64-unknown-linux-musl"
+    ]
+  }
+}
