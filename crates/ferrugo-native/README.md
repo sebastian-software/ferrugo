@@ -8,6 +8,12 @@
 - Extracting privacy-safe document metadata and text through backend-neutral traits.
 - Surfacing unsupported PDF features as typed error classes and buckets.
 
+## Features
+
+- `diagnostics`: exposes maintainer-facing renderer telemetry, trace summaries,
+  operator coverage scans, and row-stream diagnostics. This feature is off by
+  default so normal consumers see the facade-oriented API surface.
+
 ## Release Notes
 
 This crate is part of the Ferrugo release train. Publish lower-level crates in

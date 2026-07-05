@@ -1,6 +1,10 @@
 //! Raster rendering primitives for the Rust-native renderer.
 
 #![forbid(unsafe_code)]
+#![cfg_attr(
+    not(test),
+    deny(clippy::expect_used, clippy::panic, clippy::unwrap_used)
+)]
 
 use std::borrow::Cow;
 use std::cell::RefCell;
@@ -3457,6 +3461,7 @@ impl GlyphBitmapCache {
             self.resident_bytes = self.resident_bytes.saturating_sub(evicted.resident_bytes);
             self.evictions = self.evictions.saturating_add(1);
         }
+        let inserted_index = self.entries.len();
         self.entries.push(CachedGlyphBitmap {
             key,
             bitmap,
@@ -3464,7 +3469,7 @@ impl GlyphBitmapCache {
         });
         self.resident_bytes = self.resident_bytes.saturating_add(resident_bytes);
         self.inserts = self.inserts.saturating_add(1);
-        &self.entries.last().expect("entry was just inserted").bitmap
+        &self.entries[inserted_index].bitmap
     }
 
     /// Returns observable fallback glyph bitmap cache state.
@@ -7564,16 +7569,21 @@ impl TransparencyGroupScratch {
         height: u32,
         background: Rgba,
     ) -> RasterResult<&mut RasterDevice> {
-        if self.device.as_ref().is_some_and(|device| {
+        let can_reuse = self.device.as_ref().is_some_and(|device| {
             device.dimensions().width == width && device.dimensions().height == height
-        }) {
-            let device = self.device.as_mut().expect("device presence was checked");
+        });
+        if can_reuse {
+            let Some(device) = self.device.as_mut() else {
+                return Err(RasterError::new(RasterErrorKind::BufferOverflow));
+            };
             clear_raster_device(device, background);
             return Ok(device);
         }
         self.device = Some(RasterDevice::new(width, height, background)?);
         self.allocations += 1;
-        Ok(self.device.as_mut().expect("device was just allocated"))
+        self.device
+            .as_mut()
+            .ok_or_else(|| RasterError::new(RasterErrorKind::BufferOverflow))
     }
 
     #[cfg(test)]
@@ -13282,8 +13292,7 @@ impl<'a> FillCoverageClipMask<'a> {
                 Some(rect) => rect_coverage_for_pixel(rect, x, y),
                 None => self.clip_coverages[index]
                     .as_mut()
-                    .expect("non-rectangular clip should have edge coverage")
-                    .coverage_for_pixel(&clip.path, x, y),
+                    .map_or(0, |coverage| coverage.coverage_for_pixel(&clip.path, x, y)),
             };
             coverage = multiply_alpha(coverage, clip_coverage);
             if coverage == 0 {
@@ -14925,13 +14934,9 @@ impl PatternCellCache {
         if self.entries.len() >= self.max_entries {
             self.entries.remove(0);
         }
+        let inserted_index = self.entries.len();
         self.entries.push(CachedPatternCell { key, samples });
-        Ok(self
-            .entries
-            .last()
-            .expect("pattern cache entry was just inserted")
-            .samples
-            .as_slice())
+        Ok(self.entries[inserted_index].samples.as_slice())
     }
 
     #[cfg(test)]

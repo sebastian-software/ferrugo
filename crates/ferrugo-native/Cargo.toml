@@ -10,12 +10,20 @@ readme = "README.md"
 keywords = ["pdf", "thumbnail", "renderer", "rust"]
 include = ["src/**", "Cargo.toml", "README.md"]
 
+[features]
+default = []
+diagnostics = []
+
 [dependencies]
 ferrugo-content = { version = "0.3.1", path = "../ferrugo-content" }
 ferrugo-object = { version = "0.3.1", path = "../ferrugo-object" }
 ferrugo-render = { version = "0.3.1", path = "../ferrugo-render" }
 ferrugo-syntax = { version = "0.3.1", path = "../ferrugo-syntax" }
 ferrugo-thumbnail = { version = "0.3.1", path = "../ferrugo-thumbnail" }
+
+[package.metadata.docs.rs]
+no-default-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [lints]
 workspace = true

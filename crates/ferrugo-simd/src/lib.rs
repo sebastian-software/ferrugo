@@ -1,5 +1,10 @@
 //! Safe row-kernel boundary for raster compositing.
 
+#![cfg_attr(
+    not(test),
+    deny(clippy::expect_used, clippy::panic, clippy::unwrap_used)
+)]
+
 /// RGBA pixel width in bytes.
 pub const RGBA8_BYTES_PER_PIXEL: usize = 4;
 const SIMD_COVERAGE_MIN_PIXELS: usize = 16;

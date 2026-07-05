@@ -1,4 +1,10 @@
+//! Command-line entry point for Ferrugo thumbnail and renderer diagnostics.
+
 #![forbid(unsafe_code)]
+#![cfg_attr(
+    not(test),
+    deny(clippy::expect_used, clippy::panic, clippy::unwrap_used)
+)]
 
 use std::collections::BTreeMap;
 use std::env;
@@ -1263,7 +1269,16 @@ fn benchmark_matrix_hot_backend<B: ThumbnailBackend>(
     } else {
         "process-rss-sample"
     };
-    let thumbnail = last_thumbnail.expect("iterations is validated as non-zero");
+    let Some(thumbnail) = last_thumbnail else {
+        return hot_error_record(
+            matrix_backend,
+            backend_version,
+            context,
+            config,
+            ThumbnailError::internal("benchmark produced no successful thumbnail"),
+            unsupported_is_fallback,
+        );
+    };
     let timing = matrix_timing_from_samples(config.warmup, samples, Some(config.max_cov));
     BenchmarkMatrixRecord {
         backend: matrix_backend,
@@ -5959,17 +5974,32 @@ fn benchmark_repeat_fixture(
 
     let first_ms = timings_ms[0];
     let repeat_values = &timings_ms[1..];
+    if repeat_values.is_empty() {
+        let outcome = RepeatBenchmarkOutcome::Error {
+            class: "internal",
+            message: "repeat benchmark produced no repeated samples".to_string(),
+        };
+        return repeat_error_record_with_session(
+            path_key,
+            family,
+            options.page_index,
+            cache_key,
+            Some(session.stats()),
+            timings_ms,
+            outcome,
+        );
+    }
     let repeat_mean_ms = repeat_values.iter().sum::<f64>() / repeat_values.len() as f64;
     let repeat_min_ms = repeat_values
         .iter()
         .copied()
         .min_by(f64::total_cmp)
-        .expect("repeat values are non-empty");
+        .unwrap_or_default();
     let repeat_max_ms = repeat_values
         .iter()
         .copied()
         .max_by(f64::total_cmp)
-        .expect("repeat values are non-empty");
+        .unwrap_or_default();
     let repeat_to_first_ratio = repeat_mean_ms / first_ms.max(f64::EPSILON);
     let repeat_phase_timings = RepeatPhaseTimings {
         first: phase_timings[0],
@@ -6227,7 +6257,7 @@ fn batch_latency_summary(records: &[BatchBenchmarkRecord]) -> BatchLatencySummar
         mean_ms: total / values.len() as f64,
         p50_ms: percentile(&values, 0.50),
         p95_ms: percentile(&values, 0.95),
-        max_ms: *values.last().expect("values is non-empty"),
+        max_ms: values.last().copied().unwrap_or_default(),
     }
 }
 
@@ -7154,7 +7184,21 @@ where
         }
     }
 
-    let thumbnail = last_success.expect("iterations is validated as non-zero");
+    let Some(thumbnail) = last_success else {
+        let mean_ms = elapsed_mean_ms(started.elapsed(), config.iterations);
+        let (outcome, mut budget_violations) = benchmark_error_outcome(
+            ThumbnailError::internal("benchmark produced no successful thumbnail"),
+            mean_ms,
+            policy.unsupported_is_fallback,
+        );
+        budget_violations.push("render_error");
+        return BenchmarkRecord {
+            path: path_key,
+            family,
+            budget_violations,
+            outcome,
+        };
+    };
     let mean_ms = elapsed_mean_ms(started.elapsed(), config.iterations);
     let output_bytes = thumbnail.bytes.len();
     let mut budget_violations = Vec::new();
