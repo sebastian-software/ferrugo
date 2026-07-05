@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.4.0](https://github.com/sebastian-software/ferrugo/compare/ferrugo-native-v0.3.1...ferrugo-native-v0.4.0) (2026-07-05)
+
+
+### Features
+
+* **api:** enforce native render timeout ([0e24038](https://github.com/sebastian-software/ferrugo/commit/0e24038a5083381c7b5f96968d5821abaeb24f12))
+* **api:** gate native diagnostics surface ([c7ba2e4](https://github.com/sebastian-software/ferrugo/commit/c7ba2e4f8928dd9f821e5548af5f663675cde1a0))
+* **api:** honor PNG thumbnail output ([3dbb623](https://github.com/sebastian-software/ferrugo/commit/3dbb6238c6d13e587c689a5798ab6a50541cfcf2))
+* **render:** decode CCITT fax images natively ([3d56173](https://github.com/sebastian-software/ferrugo/commit/3d56173c3faca2457d256643fb68159e11b83bb9))
+
+
+### Performance Improvements
+
+* **native:** default to bounded parallel banding ([61f9e77](https://github.com/sebastian-software/ferrugo/commit/61f9e7727a637203a20542775863165d3111860f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * ferrugo-content bumped from 0.3.1 to 0.4.0
+    * ferrugo-object bumped from 0.3.1 to 0.4.0
+    * ferrugo-render bumped from 0.3.1 to 0.4.0
+    * ferrugo-syntax bumped from 0.3.1 to 0.4.0
+    * ferrugo-thumbnail bumped from 0.3.1 to 0.4.0
+
 ## [0.3.1](https://github.com/sebastian-software/ferrugo/compare/ferrugo-native-v0.3.0...ferrugo-native-v0.3.1) (2026-07-04)
 
 

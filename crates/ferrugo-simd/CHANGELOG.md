@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.4.0](https://github.com/sebastian-software/ferrugo/compare/ferrugo-simd-v0.3.1...ferrugo-simd-v0.4.0) (2026-07-05)
+
+
+### Features
+
+* **api:** gate native diagnostics surface ([c7ba2e4](https://github.com/sebastian-software/ferrugo/commit/c7ba2e4f8928dd9f821e5548af5f663675cde1a0))
+
+
+### Performance Improvements
+
+* **render:** batch partial coverage spans ([44daf3a](https://github.com/sebastian-software/ferrugo/commit/44daf3aff5280c9d84313e37406a8e93afbe7619))
+* **simd:** dispatch coverage span kernels ([0570e01](https://github.com/sebastian-software/ferrugo/commit/0570e01c94abbf416e0b646da21901ae4213810e))
+
 ## [0.3.1](https://github.com/sebastian-software/ferrugo/compare/ferrugo-simd-v0.3.0...ferrugo-simd-v0.3.1) (2026-07-04)
 
 

@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.4.0](https://github.com/sebastian-software/ferrugo/compare/ferrugo-render-v0.3.1...ferrugo-render-v0.4.0) (2026-07-05)
+
+
+### Features
+
+* **api:** gate native diagnostics surface ([c7ba2e4](https://github.com/sebastian-software/ferrugo/commit/c7ba2e4f8928dd9f821e5548af5f663675cde1a0))
+* **object:** decode lzw and runlength filters ([a08beb1](https://github.com/sebastian-software/ferrugo/commit/a08beb1e4b1ae5a8526350ad9628ff7f3f1852c6))
+* **render:** decode CCITT fax images natively ([3d56173](https://github.com/sebastian-software/ferrugo/commit/3d56173c3faca2457d256643fb68159e11b83bb9))
+
+
+### Performance Improvements
+
+* **render:** batch partial coverage spans ([44daf3a](https://github.com/sebastian-software/ferrugo/commit/44daf3aff5280c9d84313e37406a8e93afbe7619))
+* **render:** reuse font glyph caches in batch sessions ([48a782e](https://github.com/sebastian-software/ferrugo/commit/48a782e1c2b4dcffcab9206cd00a6673d11cc843))
+* **simd:** dispatch coverage span kernels ([0570e01](https://github.com/sebastian-software/ferrugo/commit/0570e01c94abbf416e0b646da21901ae4213810e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * ferrugo-content bumped from 0.3.1 to 0.4.0
+    * ferrugo-object bumped from 0.3.1 to 0.4.0
+    * ferrugo-simd bumped from 0.3.1 to 0.4.0
+    * ferrugo-syntax bumped from 0.3.1 to 0.4.0
+    * ferrugo-thumbnail bumped from 0.3.1 to 0.4.0
+
 ## [0.3.1](https://github.com/sebastian-software/ferrugo/compare/ferrugo-render-v0.3.0...ferrugo-render-v0.3.1) (2026-07-04)
 
 

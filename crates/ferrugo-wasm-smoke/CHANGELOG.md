@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.4.0](https://github.com/sebastian-software/ferrugo/compare/ferrugo-wasm-smoke-v0.3.1...ferrugo-wasm-smoke-v0.4.0) (2026-07-05)
+
+
+### Miscellaneous Chores
+
+* **ferrugo-wasm-smoke:** Synchronize ferrugo versions
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * ferrugo-native bumped from 0.3.1 to 0.4.0
+    * ferrugo-thumbnail bumped from 0.3.1 to 0.4.0
+
 ## [0.3.1](https://github.com/sebastian-software/ferrugo/compare/ferrugo-wasm-smoke-v0.3.0...ferrugo-wasm-smoke-v0.3.1) (2026-07-04)
 
 
