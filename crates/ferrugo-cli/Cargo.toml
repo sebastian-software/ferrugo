@@ -16,8 +16,12 @@ name = "ferrugo"
 path = "src/main.rs"
 
 [dependencies]
-ferrugo-native = { version = "0.3.1", path = "../ferrugo-native" }
+ferrugo-native = { version = "0.3.1", path = "../ferrugo-native", features = ["diagnostics"] }
 ferrugo-thumbnail = { version = "0.3.1", path = "../ferrugo-thumbnail" }
+
+[package.metadata.docs.rs]
+no-default-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [lints]
 workspace = true

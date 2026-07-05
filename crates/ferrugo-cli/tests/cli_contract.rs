@@ -1,3 +1,5 @@
+//! CLI contract tests for published ferrugo commands.
+
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};

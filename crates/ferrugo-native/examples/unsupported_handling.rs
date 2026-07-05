@@ -1,3 +1,5 @@
+//! Example that handles native unsupported-feature errors.
+
 use std::env;
 use std::path::PathBuf;
 

@@ -1,6 +1,10 @@
 //! Safe PDF object model for the Rust-native renderer.
 
 #![forbid(unsafe_code)]
+#![cfg_attr(
+    not(test),
+    deny(clippy::expect_used, clippy::panic, clippy::unwrap_used)
+)]
 
 use std::collections::HashSet;
 use std::fmt;

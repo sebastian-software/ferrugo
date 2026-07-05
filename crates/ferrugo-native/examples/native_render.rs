@@ -1,3 +1,5 @@
+//! Example that renders a PDF page with the native backend.
+
 use std::env;
 use std::path::PathBuf;
 

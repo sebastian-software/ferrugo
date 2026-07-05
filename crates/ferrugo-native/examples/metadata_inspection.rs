@@ -1,3 +1,5 @@
+//! Example that inspects document metadata through the native backend.
+
 use std::env;
 use std::path::PathBuf;
 

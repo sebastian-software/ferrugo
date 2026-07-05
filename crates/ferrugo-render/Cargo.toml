@@ -21,5 +21,9 @@ zune-jpeg = { version = "0.5.15", default-features = false, features = ["std"] }
 
 [dev-dependencies]
 
+[package.metadata.docs.rs]
+no-default-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
 [lints]
 workspace = true

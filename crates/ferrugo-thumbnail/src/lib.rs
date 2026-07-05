@@ -1,5 +1,10 @@
 //! Backend-neutral thumbnail generation facade.
 
+#![cfg_attr(
+    not(test),
+    deny(clippy::expect_used, clippy::panic, clippy::unwrap_used)
+)]
+
 use std::fmt;
 use std::path::Path;
 use std::time::Duration;

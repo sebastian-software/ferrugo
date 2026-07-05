@@ -30,6 +30,7 @@ repository = "https://github.com/sebastian-software/ferrugo"
 rust-version = "1.81"
 
 [workspace.lints.rust]
+missing_docs = "deny"
 unsafe_op_in_unsafe_fn = "deny"
 
 [workspace.lints.clippy]

@@ -1,10 +1,16 @@
 //! Rust-native backend adapter for the thumbnail facade.
 
 #![forbid(unsafe_code)]
+#![cfg_attr(
+    not(test),
+    deny(clippy::expect_used, clippy::panic, clippy::unwrap_used)
+)]
 
 use std::borrow::Cow;
 use std::cell::RefCell;
-use std::collections::{BTreeMap, HashSet};
+#[cfg(any(feature = "diagnostics", test))]
+use std::collections::BTreeMap;
+use std::collections::HashSet;
 use std::fs;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
@@ -38,6 +44,13 @@ use ferrugo_render::{
     ShadingResources, TextDisplayItem, TextRenderingMode, TextWritingMode, TilingPatternResources,
     Type3CharProcTemplateCache, Type3GlyphRenderCache,
 };
+#[cfg(not(any(feature = "diagnostics", test)))]
+use ferrugo_render::{
+    FillRasterRouteSummary, GlyphBitmapCacheSummary, ImagePlacementSummary, ImageResourceSummary,
+    PathFlatteningSummary, StrokeRasterRouteSummary, StrokeShapeSummary,
+    Type3CharProcTemplateCacheSummary,
+};
+#[cfg(any(feature = "diagnostics", test))]
 pub use ferrugo_render::{
     FillRasterRouteSummary, GlyphBitmapCacheSummary, ImagePlacementSummary, ImageResourceSummary,
     PathFlatteningSummary, StrokeRasterRouteSummary, StrokeShapeSummary,
@@ -141,43 +154,53 @@ pub struct NativeBackend {
     limits: NativeRenderLimits,
 }
 
-/// Native renderer timing attribution for one render request.
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
-pub struct NativeRenderPhaseTimings {
-    /// PDF input loading, xref/object parsing, and page-tree resolution.
-    pub load_xref_object: Duration,
-    /// Decoded page, optional-content, and annotation content stream loading.
-    pub stream_decode: Duration,
-    /// Explicit content-token scans outside display-list construction.
-    pub content_tokenize: Duration,
-    /// Display-list construction for paths, forms, images, text, and annotations.
-    pub display_list_build: Duration,
-    /// Page resources, XObjects, fonts, images, shadings, patterns, and color spaces.
-    pub resource_decode: Duration,
-    /// Graphics-state, shading, tiling-pattern, and page color-space resources.
-    pub resource_graphics: Duration,
-    /// Form XObject resource resolution.
-    pub resource_forms: Duration,
-    /// Image XObject resource decoding.
-    pub resource_images: Duration,
-    /// Font and font-program resource decoding.
-    pub resource_fonts: Duration,
-    /// Annotation-specific synthetic resource decoding.
-    pub resource_annotations: Duration,
-    /// Path-like raster work, including ordered mixed display-list rasterization.
-    pub raster_paths: Duration,
-    /// Text raster work.
-    pub raster_text: Duration,
-    /// Image raster work.
-    pub raster_images: Duration,
-    /// Output assembly inside the native backend.
-    pub output: Duration,
-    /// End-to-end native backend render time for this request.
-    pub total: Duration,
+macro_rules! define_native_render_phase_timings {
+    ($vis:vis) => {
+        /// Native renderer timing attribution for one render request.
+        #[derive(Debug, Clone, Copy, Default, PartialEq)]
+        $vis struct NativeRenderPhaseTimings {
+            /// PDF input loading, xref/object parsing, and page-tree resolution.
+            pub load_xref_object: Duration,
+            /// Decoded page, optional-content, and annotation content stream loading.
+            pub stream_decode: Duration,
+            /// Explicit content-token scans outside display-list construction.
+            pub content_tokenize: Duration,
+            /// Display-list construction for paths, forms, images, text, and annotations.
+            pub display_list_build: Duration,
+            /// Page resources, XObjects, fonts, images, shadings, patterns, and color spaces.
+            pub resource_decode: Duration,
+            /// Graphics-state, shading, tiling-pattern, and page color-space resources.
+            pub resource_graphics: Duration,
+            /// Form XObject resource resolution.
+            pub resource_forms: Duration,
+            /// Image XObject resource decoding.
+            pub resource_images: Duration,
+            /// Font and font-program resource decoding.
+            pub resource_fonts: Duration,
+            /// Annotation-specific synthetic resource decoding.
+            pub resource_annotations: Duration,
+            /// Path-like raster work, including ordered mixed display-list rasterization.
+            pub raster_paths: Duration,
+            /// Text raster work.
+            pub raster_text: Duration,
+            /// Image raster work.
+            pub raster_images: Duration,
+            /// Output assembly inside the native backend.
+            pub output: Duration,
+            /// End-to-end native backend render time for this request.
+            pub total: Duration,
+        }
+    };
 }
+
+#[cfg(any(feature = "diagnostics", test))]
+define_native_render_phase_timings!(pub);
+#[cfg(not(any(feature = "diagnostics", test)))]
+define_native_render_phase_timings!(pub(crate));
 
 /// Native renderer output plus timing attribution.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg(any(feature = "diagnostics", test))]
 pub struct NativeRenderTrace {
     /// Rendered thumbnail.
     pub thumbnail: Thumbnail,
@@ -205,38 +228,66 @@ pub struct NativeRenderTrace {
     pub raster_bands: RasterBandSummary,
 }
 
-/// Dimensions for a streamed RGBA native render.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct NativeRgbaRowsDimensions {
-    /// Output width in pixels.
-    pub width: u32,
-    /// Output height in pixels.
-    pub height: u32,
-    /// Number of RGBA bytes in one row.
-    pub stride: usize,
+macro_rules! define_native_rgba_rows_dimensions {
+    ($vis:vis) => {
+        /// Dimensions for a streamed RGBA native render.
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        $vis struct NativeRgbaRowsDimensions {
+            /// Output width in pixels.
+            pub width: u32,
+            /// Output height in pixels.
+            pub height: u32,
+            /// Number of RGBA bytes in one row.
+            pub stride: usize,
+        }
+    };
 }
 
-/// Completed native row-stream render diagnostics.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct NativeRgbaRowsOutput {
-    /// Streamed RGBA output dimensions.
-    pub dimensions: NativeRgbaRowsDimensions,
-    /// Raster banding used by the native renderer.
-    pub raster_bands: RasterBandSummary,
+#[cfg(any(feature = "diagnostics", test))]
+define_native_rgba_rows_dimensions!(pub);
+#[cfg(not(any(feature = "diagnostics", test)))]
+define_native_rgba_rows_dimensions!(pub(crate));
+
+macro_rules! define_native_rgba_rows_output {
+    ($vis:vis) => {
+        /// Completed native row-stream render diagnostics.
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        $vis struct NativeRgbaRowsOutput {
+            /// Streamed RGBA output dimensions.
+            pub dimensions: NativeRgbaRowsDimensions,
+            /// Raster banding used by the native renderer.
+            pub raster_bands: RasterBandSummary,
+        }
+    };
 }
 
-/// Receives native RGBA rows in top-to-bottom order.
-pub trait NativeRgbaRowSink {
-    /// Starts a streamed RGBA render.
-    fn begin(&mut self, dimensions: NativeRgbaRowsDimensions) -> Result<(), ThumbnailError>;
+#[cfg(any(feature = "diagnostics", test))]
+define_native_rgba_rows_output!(pub);
+#[cfg(not(any(feature = "diagnostics", test)))]
+define_native_rgba_rows_output!(pub(crate));
 
-    /// Writes one completed output row.
-    fn write_row(&mut self, y: u32, row: &[u8]) -> Result<(), ThumbnailError>;
+macro_rules! define_native_rgba_row_sink {
+    ($vis:vis) => {
+        /// Receives native RGBA rows in top-to-bottom order.
+        $vis trait NativeRgbaRowSink {
+            /// Starts a streamed RGBA render.
+            fn begin(&mut self, dimensions: NativeRgbaRowsDimensions) -> Result<(), ThumbnailError>;
 
-    /// Finishes the stream after the last row has been written.
-    fn finish(&mut self) -> Result<(), ThumbnailError>;
+            /// Writes one completed output row.
+            fn write_row(&mut self, y: u32, row: &[u8]) -> Result<(), ThumbnailError>;
+
+            /// Finishes the stream after the last row has been written.
+            fn finish(&mut self) -> Result<(), ThumbnailError>;
+        }
+    };
 }
 
+#[cfg(any(feature = "diagnostics", test))]
+define_native_rgba_row_sink!(pub);
+#[cfg(not(any(feature = "diagnostics", test)))]
+define_native_rgba_row_sink!(pub(crate));
+
+#[cfg_attr(not(any(feature = "diagnostics", test)), allow(dead_code))]
 enum NativeRenderOutput {
     Thumbnail(Thumbnail),
     Rows(NativeRgbaRowsOutput),
@@ -252,6 +303,7 @@ impl NativeRenderOutput {
         }
     }
 
+    #[cfg(any(feature = "diagnostics", test))]
     fn into_rows(self) -> Result<NativeRgbaRowsOutput, ThumbnailError> {
         match self {
             Self::Rows(output) => Ok(output),
@@ -262,52 +314,71 @@ impl NativeRenderOutput {
     }
 }
 
-/// Native renderer counters for the scanned-page direct-image route.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct ScannedPageFastPathSummary {
-    /// Pages inspected by the scanned-page classifier.
-    pub classifier_calls: usize,
-    /// Pages that matched the conservative scanned-page shape.
-    pub candidate_pages: usize,
-    /// Pages rendered through the direct-image route.
-    pub direct_image_calls: usize,
-    /// Candidate pages rejected because annotations would need compositing.
-    pub fallback_annotations: usize,
-    /// Candidate pages rejected because content order must be replayed generically.
-    pub fallback_ordered_content: usize,
-    /// Candidate pages rejected because forms or transparency groups are present.
-    pub fallback_forms_or_transparency: usize,
-    /// Candidate pages rejected because non-background path content is present.
-    pub fallback_path_content: usize,
-    /// Candidate pages rejected because visible or clipping text is present.
-    pub fallback_visible_text: usize,
-    /// Candidate pages rejected because image count is not exactly one.
-    pub fallback_image_count: usize,
-    /// Candidate pages rejected because the image has masks or non-opaque samples.
-    pub fallback_mask_or_non_opaque: usize,
-    /// Candidate pages rejected because the image transform is rotated or skewed.
-    pub fallback_transformed_image: usize,
-    /// Candidate pages rejected because the image does not cover the raster page.
-    pub fallback_not_full_page: usize,
-    /// Candidate pages rejected because the direct route could not allocate or sample safely.
-    pub fallback_direct_error: usize,
+macro_rules! define_scanned_page_fast_path_summary {
+    ($vis:vis) => {
+        /// Native renderer counters for the scanned-page direct-image route.
+        #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+        $vis struct ScannedPageFastPathSummary {
+            /// Pages inspected by the scanned-page classifier.
+            pub classifier_calls: usize,
+            /// Pages that matched the conservative scanned-page shape.
+            pub candidate_pages: usize,
+            /// Pages rendered through the direct-image route.
+            pub direct_image_calls: usize,
+            /// Candidate pages rejected because annotations would need compositing.
+            pub fallback_annotations: usize,
+            /// Candidate pages rejected because content order must be replayed generically.
+            pub fallback_ordered_content: usize,
+            /// Candidate pages rejected because forms or transparency groups are present.
+            pub fallback_forms_or_transparency: usize,
+            /// Candidate pages rejected because non-background path content is present.
+            pub fallback_path_content: usize,
+            /// Candidate pages rejected because visible or clipping text is present.
+            pub fallback_visible_text: usize,
+            /// Candidate pages rejected because image count is not exactly one.
+            pub fallback_image_count: usize,
+            /// Candidate pages rejected because the image has masks or non-opaque samples.
+            pub fallback_mask_or_non_opaque: usize,
+            /// Candidate pages rejected because the image transform is rotated or skewed.
+            pub fallback_transformed_image: usize,
+            /// Candidate pages rejected because the image does not cover the raster page.
+            pub fallback_not_full_page: usize,
+            /// Candidate pages rejected because the direct route could not allocate or sample safely.
+            pub fallback_direct_error: usize,
+        }
+    };
 }
 
-/// Native renderer raster banding summary for one page render.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct RasterBandSummary {
-    /// Full output page pixels.
-    pub full_page_pixels: usize,
-    /// Number of raster bands replayed for this page.
-    pub bands: usize,
-    /// Maximum band workers scheduled concurrently for this page.
-    pub workers: usize,
-    /// Maximum rows in one raster band.
-    pub max_band_rows: u32,
-    /// Maximum pixels in one raster band target.
-    pub max_band_pixels: usize,
+#[cfg(any(feature = "diagnostics", test))]
+define_scanned_page_fast_path_summary!(pub);
+#[cfg(not(any(feature = "diagnostics", test)))]
+define_scanned_page_fast_path_summary!(pub(crate));
+
+macro_rules! define_raster_band_summary {
+    ($vis:vis) => {
+        /// Native renderer raster banding summary for one page render.
+        #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+        $vis struct RasterBandSummary {
+            /// Full output page pixels.
+            pub full_page_pixels: usize,
+            /// Number of raster bands replayed for this page.
+            pub bands: usize,
+            /// Maximum band workers scheduled concurrently for this page.
+            pub workers: usize,
+            /// Maximum rows in one raster band.
+            pub max_band_rows: u32,
+            /// Maximum pixels in one raster band target.
+            pub max_band_pixels: usize,
+        }
+    };
 }
 
+#[cfg(any(feature = "diagnostics", test))]
+define_raster_band_summary!(pub);
+#[cfg(not(any(feature = "diagnostics", test)))]
+define_raster_band_summary!(pub(crate));
+
+#[cfg_attr(not(any(feature = "diagnostics", test)), allow(dead_code))]
 impl RasterBandSummary {
     /// Full output page RGBA bytes.
     #[must_use]
@@ -417,6 +488,7 @@ impl<'a> RenderTraceSinks<'a> {
         }
     }
 
+    #[cfg(any(feature = "diagnostics", test))]
     fn with_timings(timings: &'a mut NativeRenderPhaseTimings) -> Self {
         Self {
             timings: Some(timings),
@@ -437,6 +509,7 @@ impl<'a> RenderTraceSinks<'a> {
         clippy::too_many_arguments,
         reason = "keeps independent trace summary sinks explicit for diagnostic rendering"
     )]
+    #[cfg(any(feature = "diagnostics", test))]
     fn with_trace(
         timings: &'a mut NativeRenderPhaseTimings,
         path_flattening: &'a mut PathFlatteningSummary,
@@ -855,6 +928,7 @@ impl NativeRenderPhaseTimings {
 
 /// Native operator coverage scan options.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg(any(feature = "diagnostics", test))]
 pub struct OperatorCoverageOptions {
     /// Zero-based page index to scan.
     pub page_index: u32,
@@ -863,6 +937,7 @@ pub struct OperatorCoverageOptions {
     pub include_annotations: bool,
 }
 
+#[cfg(any(feature = "diagnostics", test))]
 impl Default for OperatorCoverageOptions {
     fn default() -> Self {
         Self {
@@ -874,6 +949,7 @@ impl Default for OperatorCoverageOptions {
 
 /// Native support classification for a PDF content-stream operator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg(any(feature = "diagnostics", test))]
 pub enum OperatorSupportStatus {
     /// Native rendering currently implements the operator for common cases.
     Implemented,
@@ -886,6 +962,7 @@ pub enum OperatorSupportStatus {
     Ignored,
 }
 
+#[cfg(any(feature = "diagnostics", test))]
 impl OperatorSupportStatus {
     /// Stable JSON/report string for the status.
     #[must_use]
@@ -901,6 +978,7 @@ impl OperatorSupportStatus {
 
 /// One operator row in a native coverage scan.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg(any(feature = "diagnostics", test))]
 pub struct OperatorCoverageEntry {
     /// PDF operator name. Inline images are reported as `BI`.
     pub operator: String,
@@ -914,6 +992,7 @@ pub struct OperatorCoverageEntry {
 
 /// Native operator coverage scan result for one document page.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg(any(feature = "diagnostics", test))]
 pub struct OperatorCoverageReport {
     /// Scanned zero-based page index.
     pub page_index: u32,
@@ -1025,6 +1104,7 @@ impl NativeBackend {
     /// # Errors
     ///
     /// Returns [`ThumbnailError`] when the source cannot be read or rendered.
+    #[cfg(any(feature = "diagnostics", test))]
     pub fn render_with_trace(
         &self,
         source: PdfSource<'_>,
@@ -1098,6 +1178,7 @@ impl NativeBackend {
     ///
     /// Returns [`ThumbnailError`] when the source cannot be read, rendered, or
     /// accepted by the row sink.
+    #[cfg(any(feature = "diagnostics", test))]
     pub fn render_rgba_rows(
         &self,
         source: PdfSource<'_>,
@@ -1150,6 +1231,7 @@ impl NativeBackend {
     /// # Errors
     ///
     /// Returns [`ThumbnailError`] when the source cannot be read or rendered.
+    #[cfg(any(feature = "diagnostics", test))]
     pub fn render_raster_band_summary(
         &self,
         source: PdfSource<'_>,
@@ -1942,6 +2024,7 @@ impl<'a> NativeDocumentSession<'a> {
     /// # Errors
     ///
     /// Returns [`ThumbnailError`] when the requested page cannot be rendered.
+    #[cfg(any(feature = "diagnostics", test))]
     pub fn render_page_with_timings(
         &self,
         options: &ThumbnailOptions,
@@ -1974,6 +2057,7 @@ impl<'a> NativeDocumentSession<'a> {
     /// # Errors
     ///
     /// Returns [`ThumbnailError`] when the requested page cannot be rendered.
+    #[cfg(any(feature = "diagnostics", test))]
     pub fn render_page_fill_route_summary(
         &self,
         options: &ThumbnailOptions,
@@ -2629,6 +2713,7 @@ fn render_loaded_document(
     .and_then(|thumbnail| encode_thumbnail_if_requested(thumbnail, options))
 }
 
+#[cfg(any(feature = "diagnostics", test))]
 fn render_loaded_document_to_rgba_rows(
     document: &ClassicDocument<'_>,
     page_tree: &PageTree,
@@ -2695,6 +2780,7 @@ fn render_loaded_document_with_session_cache(
     clippy::too_many_arguments,
     reason = "session rendering keeps timing sink and retained caches explicit"
 )]
+#[cfg(any(feature = "diagnostics", test))]
 fn render_loaded_document_with_timings_and_session_cache(
     document: &ClassicDocument<'_>,
     page_tree: &PageTree,
@@ -2728,6 +2814,7 @@ fn render_loaded_document_with_timings_and_session_cache(
     .and_then(|thumbnail| encode_thumbnail_if_requested(thumbnail, options))
 }
 
+#[cfg(any(feature = "diagnostics", test))]
 fn render_loaded_document_with_trace(
     document: &ClassicDocument<'_>,
     page_tree: &PageTree,
@@ -4563,10 +4650,12 @@ fn stream_band_rows(
     Ok(())
 }
 
+#[cfg_attr(not(any(feature = "diagnostics", test)), allow(dead_code))]
 fn raster_pixels_to_bytes(pixels: usize) -> usize {
     pixels.saturating_mul(ferrugo_render::facade_rgba_bytes_per_pixel())
 }
 
+#[cfg_attr(not(any(feature = "diagnostics", test)), allow(dead_code))]
 fn reduction_per_mille(full: usize, peak: usize) -> usize {
     if full == 0 || peak >= full {
         return 0;
@@ -4884,6 +4973,7 @@ const fn native_render_phase_from_raster_phase(phase: RasterDisplayPhase) -> Nat
 ///
 /// Returns [`ThumbnailError`] when the document cannot be loaded, the page is
 /// unavailable, or a scanned content stream is malformed.
+#[cfg(any(feature = "diagnostics", test))]
 pub fn scan_operator_coverage(
     bytes: &[u8],
     options: OperatorCoverageOptions,
@@ -4914,6 +5004,7 @@ pub fn scan_operator_coverage(
 }
 
 #[derive(Default)]
+#[cfg(any(feature = "diagnostics", test))]
 struct OperatorCoverageScanner {
     streams_scanned: usize,
     total_operators: usize,
@@ -4922,12 +5013,14 @@ struct OperatorCoverageScanner {
 }
 
 #[derive(Debug, Clone, Copy)]
+#[cfg(any(feature = "diagnostics", test))]
 struct OperatorCoverageAccumulator {
     count: usize,
     status: OperatorSupportStatus,
     fallback_bucket: Option<&'static str>,
 }
 
+#[cfg(any(feature = "diagnostics", test))]
 impl OperatorCoverageScanner {
     fn scan_stream(&mut self, content: &[u8]) -> Result<(), ThumbnailError> {
         self.streams_scanned += 1;
@@ -4981,10 +5074,12 @@ impl OperatorCoverageScanner {
     }
 }
 
+#[cfg(any(feature = "diagnostics", test))]
 fn operator_name_string(operator: &[u8]) -> String {
     String::from_utf8_lossy(operator).into_owned()
 }
 
+#[cfg(any(feature = "diagnostics", test))]
 fn classify_operator_support(operator: &[u8]) -> (OperatorSupportStatus, Option<&'static str>) {
     match operator {
         b"q" | b"Q" | b"cm" | b"w" | b"J" | b"j" | b"M" | b"d" | b"g" | b"G" | b"rg" | b"RG"
