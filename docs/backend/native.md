@@ -615,7 +615,8 @@ or wait for the relevant native support path instead of retrying through an
 implicit PDFium path.
 
 Do not retry native `encrypted` or `malformed` errors through a silent repair
-path. Encrypted documents need explicit password/security policy, and malformed
+path. Empty-user-password standard-security PDFs open natively; remaining
+`encrypted` outcomes need explicit password/security policy. Malformed
 documents should stay diagnosable.
 
 ## Local Checks

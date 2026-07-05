@@ -197,7 +197,7 @@ Recommended service behavior:
 
 | Error class | Typical response |
 | --- | --- |
-| `encrypted` | Ask for an unlocked PDF or skip preview generation. |
+| `encrypted` | Ask for an unlocked PDF or skip preview generation; permissions-only empty-user-password PDFs open natively. |
 | `malformed` | Reject the upload or quarantine it for manual review. |
 | `unsupported` | Store the bucket and show a generic preview-unavailable state. |
 | `timeout` | Retry with a smaller `max_edge` or mark the preview as budget-exceeded. |
