@@ -111,7 +111,7 @@ dependencies = [
 
 [[package]]
 name = "ferrugo-content"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "ferrugo-object",
  "ferrugo-syntax",
@@ -131,7 +131,7 @@ dependencies = [
 
 [[package]]
 name = "ferrugo-native"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "ferrugo-content",
  "ferrugo-object",
@@ -142,7 +142,7 @@ dependencies = [
 
 [[package]]
 name = "ferrugo-object"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "aes",
  "cbc",
@@ -155,7 +155,7 @@ dependencies = [
 
 [[package]]
 name = "ferrugo-render"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "ferrugo-content",
  "ferrugo-object",
@@ -168,15 +168,15 @@ dependencies = [
 
 [[package]]
 name = "ferrugo-simd"
-version = "0.3.1"
+version = "0.4.0"
 
 [[package]]
 name = "ferrugo-syntax"
-version = "0.3.1"
+version = "0.4.0"
 
 [[package]]
 name = "ferrugo-thumbnail"
-version = "0.3.1"
+version = "0.4.0"
 
 [[package]]
 name = "find-msvc-tools"
