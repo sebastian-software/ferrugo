@@ -281,9 +281,10 @@ the scoped native release work is complete.
 - The config uses `cargo-workspace` plus `linked-versions`, so the Ferrugo
   release train stays on one version while Release Please updates local Cargo
   dependency versions.
-- `crates/ferrugo-node` is part of the same linked-version group with the
-  `node` release type, so Release Please updates the npm `package.json`,
-  `package-lock.json`, and the binding crate's Cargo metadata together.
+- `crates/ferrugo-node` is part of the same linked-version group as the Cargo
+  workspace, with npm `package.json` and `package-lock.json` listed as
+  Release Please extra files. This keeps the Rust crate metadata and npm package
+  version on the same release number.
 - Changelogs and release notes are generated from the same Conventional Commit
   history. Manual release prose should preserve the scoped native
   server/runtime claim and the explicit non-claim that Ferrugo is not yet a
