@@ -27334,12 +27334,14 @@ mod tests {
             FillRasterRoute::ScanlineCells,
         ] {
             let device = rasterize_test_fill(&path, fill_route, 16, 16);
+            // Exact integer source-over: floor((0*238 + 255*17) / 255) = 17.
+            // The retired float path landed one below at exact boundaries.
             assert_eq!(
                 device.pixel(8, 3).expect("circle-apex pixel"),
                 Rgba {
-                    r: 16,
-                    g: 16,
-                    b: 16,
+                    r: 17,
+                    g: 17,
+                    b: 17,
                     a: 255,
                 },
                 "{fill_route:?} should keep the circle apex partially covered"
