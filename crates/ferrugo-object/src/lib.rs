@@ -6,11 +6,18 @@ use std::collections::HashSet;
 use std::fmt;
 use std::io::Read;
 
+use aes::cipher::{block_padding::NoPadding, block_padding::Pkcs7, BlockDecryptMut, KeyIvInit};
 use ferrugo_syntax::{
     parse_primitive, parse_primitive_prefix, ByteCursor, ByteOffset, PdfBytes, PdfName, PdfNumber,
-    PdfPrimitive, SyntaxError,
+    PdfPrimitive, PdfString, SyntaxError,
 };
 use flate2::read::ZlibDecoder;
+use md5::{Digest, Md5};
+use rc4::{
+    consts::{U10, U11, U12, U13, U14, U15, U16, U5, U6, U7, U8, U9},
+    KeyInit as Rc4KeyInit, Rc4, StreamCipher,
+};
+use sha2::Sha256;
 
 /// Stable crate role used by architecture smoke tests and documentation.
 pub const CRATE_ROLE: &str = "object";
@@ -20,6 +27,8 @@ pub const DEFAULT_XREF_OFFSET_RECOVERY_SCAN_BYTES: usize = 64;
 
 /// Result alias for object-model operations.
 pub type ObjectResult<T> = Result<T, ObjectError>;
+
+type DictionaryEntries<'a> = [(PdfName<'a>, PdfPrimitive<'a>)];
 
 /// Returns the stable role for this crate.
 #[must_use]
@@ -132,7 +141,7 @@ pub enum ObjectValue<'a> {
 #[derive(Debug, Clone, PartialEq)]
 pub struct StreamObject<'a> {
     dictionary: Vec<(PdfName<'a>, PdfPrimitive<'a>)>,
-    raw: &'a [u8],
+    raw: StreamBytes<'a>,
     raw_offset: ByteOffset,
 }
 
@@ -145,8 +154,8 @@ impl<'a> StreamObject<'a> {
 
     /// Returns the borrowed encoded stream bytes.
     #[must_use]
-    pub const fn raw(&self) -> &'a [u8] {
-        self.raw
+    pub fn raw(&self) -> &[u8] {
+        self.raw.as_bytes()
     }
 
     /// Returns the byte offset where the raw stream data starts.
@@ -173,7 +182,22 @@ impl<'a> StreamObject<'a> {
     /// malformed, or exceeds the configured expansion limit.
     pub fn decode_with_options(&self, options: StreamDecodeOptions) -> ObjectResult<Vec<u8>> {
         let filters = stream_filters(&self.dictionary)?;
-        decode_stream_bytes(self.raw, &filters, options)
+        decode_stream_bytes(self.raw(), &filters, options)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum StreamBytes<'a> {
+    Borrowed(&'a [u8]),
+    Owned(Vec<u8>),
+}
+
+impl StreamBytes<'_> {
+    fn as_bytes(&self) -> &[u8] {
+        match self {
+            Self::Borrowed(bytes) => bytes,
+            Self::Owned(bytes) => bytes,
+        }
     }
 }
 
@@ -200,6 +224,84 @@ pub const DEFAULT_MAX_DECODED_LEN: usize = 16 * 1024 * 1024;
 
 /// Default maximum number of classic trailer revisions followed through `/Prev`.
 pub const DEFAULT_INCREMENTAL_UPDATE_DEPTH_LIMIT: usize = 16;
+
+const PASSWORD_PADDING: [u8; 32] = [
+    0x28, 0xbf, 0x4e, 0x5e, 0x4e, 0x75, 0x8a, 0x41, 0x64, 0x00, 0x4e, 0x56, 0xff, 0xfa, 0x01, 0x08,
+    0x2e, 0x2e, 0x00, 0xb6, 0xd0, 0x68, 0x3e, 0x80, 0x2f, 0x0c, 0xa9, 0xfe, 0x64, 0x53, 0x69, 0x7a,
+];
+
+const AES_OBJECT_KEY_SALT: &[u8; 4] = b"sAlT";
+const AES_BLOCK_BYTES: usize = 16;
+const PDF_AES256_KEY_BYTES: usize = 32;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DocumentSecurity {
+    file_key: Vec<u8>,
+    stream_filter: CryptFilter,
+    string_filter: CryptFilter,
+    encrypt_metadata: bool,
+    encryption_dictionary_id: Option<ObjectId>,
+}
+
+impl DocumentSecurity {
+    fn decrypt_stream(
+        &self,
+        id: ObjectId,
+        stream: &StreamObject<'_>,
+    ) -> ObjectResult<Option<Vec<u8>>> {
+        if self.encryption_dictionary_id == Some(id)
+            || (!self.encrypt_metadata
+                && dictionary_name_is(stream.dictionary(), b"Type", b"Metadata"))
+        {
+            return Ok(None);
+        }
+        self.stream_filter.decrypt(self, id, stream.raw()).map(Some)
+    }
+
+    fn decrypt_string(&self, id: ObjectId, raw: &[u8]) -> ObjectResult<Vec<u8>> {
+        if self.encryption_dictionary_id == Some(id) {
+            return Ok(raw.to_vec());
+        }
+        self.string_filter.decrypt(self, id, raw)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CryptFilter {
+    Identity,
+    Standard(CryptAlgorithm),
+}
+
+impl CryptFilter {
+    fn decrypt(
+        self,
+        security: &DocumentSecurity,
+        id: ObjectId,
+        encrypted: &[u8],
+    ) -> ObjectResult<Vec<u8>> {
+        match self {
+            Self::Identity => Ok(encrypted.to_vec()),
+            Self::Standard(CryptAlgorithm::Rc4) => {
+                let key = object_crypt_key(&security.file_key, id, CryptAlgorithm::Rc4);
+                rc4_crypt(&key, encrypted)
+            }
+            Self::Standard(CryptAlgorithm::AesV2) => {
+                let key = object_crypt_key(&security.file_key, id, CryptAlgorithm::AesV2);
+                aes_cbc_decrypt_pkcs7(&key, encrypted)
+            }
+            Self::Standard(CryptAlgorithm::AesV3) => {
+                aes_cbc_decrypt_pkcs7(&security.file_key, encrypted)
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CryptAlgorithm {
+    Rc4,
+    AesV2,
+    AesV3,
+}
 
 /// Object table with duplicate detection.
 #[derive(Debug, Default, Clone, PartialEq)]
@@ -239,6 +341,10 @@ impl<'a> ObjectTable<'a> {
     /// Returns all objects in insertion order.
     pub fn iter(&self) -> impl Iterator<Item = &IndirectObject<'a>> {
         self.objects.iter()
+    }
+
+    fn iter_mut(&mut self) -> impl Iterator<Item = &mut IndirectObject<'a>> {
+        self.objects.iter_mut()
     }
 
     /// Returns the number of objects in the table.
@@ -398,6 +504,7 @@ pub struct ClassicDocument<'a> {
     pub linearization: Option<LinearizationDictionary>,
     /// Object loader metrics for diagnostics and benchmarks.
     pub load_metrics: DocumentLoadMetrics,
+    security: Option<DocumentSecurity>,
 }
 
 impl ClassicDocument<'_> {
@@ -409,6 +516,20 @@ impl ClassicDocument<'_> {
     /// inherited page metadata is malformed.
     pub fn page_tree(&self) -> ObjectResult<PageTree> {
         resolve_page_tree(self)
+    }
+
+    /// Decodes and decrypts a string that belongs to `id`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ObjectError`] when the string syntax is malformed or the
+    /// document encryption policy cannot decrypt it.
+    pub fn decode_string(&self, id: ObjectId, string: PdfString<'_>) -> ObjectResult<Vec<u8>> {
+        let bytes = decode_pdf_string_bytes(string, DEFAULT_MAX_DECODED_LEN)?;
+        match &self.security {
+            Some(security) => security.decrypt_string(id, &bytes),
+            None => Ok(bytes),
+        }
     }
 
     /// Resolves the linearized first page without traversing every page node.
@@ -455,6 +576,7 @@ pub struct ModernDocument<'a> {
     pub objects: ObjectTable<'a>,
     object_streams: Vec<LoadedObjectStream>,
     compressed_object_index: Vec<CompressedObjectIndexEntry>,
+    security: Option<DocumentSecurity>,
 }
 
 impl<'a> ModernDocument<'a> {
@@ -477,6 +599,20 @@ impl<'a> ModernDocument<'a> {
             return Ok(Some(object));
         }
         Ok(None)
+    }
+
+    /// Decodes and decrypts a string that belongs to `id`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ObjectError`] when the string syntax is malformed or the
+    /// document encryption policy cannot decrypt it.
+    pub fn decode_string(&self, id: ObjectId, string: PdfString<'_>) -> ObjectResult<Vec<u8>> {
+        let bytes = decode_pdf_string_bytes(string, DEFAULT_MAX_DECODED_LEN)?;
+        match &self.security {
+            Some(security) => security.decrypt_string(id, &bytes),
+            None => Ok(bytes),
+        }
     }
 
     /// Resolves the document catalog and page tree.
@@ -688,7 +824,7 @@ impl<'a> ObjectParser<'a> {
 
         Ok(ObjectValue::Stream(StreamObject {
             dictionary,
-            raw,
+            raw: StreamBytes::Borrowed(raw),
             raw_offset,
         }))
     }
@@ -739,7 +875,6 @@ pub fn load_classic_document(input: PdfBytes<'_>) -> ObjectResult<ClassicDocumen
     let startxref = locate_startxref(bytes)?;
     let (mut xref, trailer) = parse_classic_xref_chain(bytes, startxref)?;
     extend_classic_xref_with_hybrid_stream(bytes, &mut xref, &trailer)?;
-    reject_encrypted_trailer(&trailer)?;
     let mut objects = ObjectTable::new();
     let mut loaded_object_bytes = 0usize;
 
@@ -749,6 +884,8 @@ pub fn load_classic_document(input: PdfBytes<'_>) -> ObjectResult<ClassicDocumen
         objects.insert(object)?;
     }
     let loaded_objects = objects.len();
+    let security = document_security_from_trailer(&trailer, &objects)?;
+    decrypt_object_table(&mut objects, security.as_ref())?;
 
     let document = ClassicDocument {
         xref,
@@ -763,6 +900,7 @@ pub fn load_classic_document(input: PdfBytes<'_>) -> ObjectResult<ClassicDocumen
             first_page_only: false,
             first_page_end: linearization.map(|dictionary| dictionary.first_page_end),
         },
+        security,
     };
     reject_encrypted_catalog(&document)?;
     Ok(document)
@@ -784,7 +922,6 @@ pub fn load_linearized_first_page_document(
     validate_linearization_dictionary(bytes, linearization)?;
     let startxref = locate_startxref(bytes)?;
     let (xref, trailer) = parse_classic_xref_chain(bytes, startxref)?;
-    reject_encrypted_trailer(&trailer)?;
     let mut objects = ObjectTable::new();
     let mut loaded_object_bytes = 0usize;
 
@@ -805,6 +942,8 @@ pub fn load_linearized_first_page_document(
         objects.insert(object)?;
     }
     let loaded_objects = objects.len();
+    let security = document_security_from_trailer(&trailer, &objects)?;
+    decrypt_object_table(&mut objects, security.as_ref())?;
 
     if objects
         .get(ObjectId::new(
@@ -831,6 +970,7 @@ pub fn load_linearized_first_page_document(
             first_page_only: true,
             first_page_end: Some(linearization.first_page_end),
         },
+        security,
     };
     reject_encrypted_catalog(&document)?;
     Ok(document)
@@ -846,7 +986,6 @@ pub fn load_modern_document(input: PdfBytes<'_>) -> ObjectResult<ModernDocument<
     let bytes = input.as_bytes();
     let startxref = locate_startxref(bytes)?;
     let (xref, trailer) = parse_xref_stream_and_trailer(bytes, startxref)?;
-    reject_encrypted_trailer(&trailer)?;
     let mut objects = ObjectTable::new();
 
     for entry in xref.entries() {
@@ -856,6 +995,8 @@ pub fn load_modern_document(input: PdfBytes<'_>) -> ObjectResult<ModernDocument<
         }
     }
 
+    let security = document_security_from_trailer(&trailer, &objects)?;
+    decrypt_object_table(&mut objects, security.as_ref())?;
     let object_streams = load_referenced_object_streams(&objects, xref.entries())?;
     validate_compressed_entries(&object_streams, xref.entries())?;
     let compressed_object_index = compressed_object_index(&object_streams, xref.entries())?;
@@ -866,6 +1007,7 @@ pub fn load_modern_document(input: PdfBytes<'_>) -> ObjectResult<ModernDocument<
         objects,
         object_streams,
         compressed_object_index,
+        security,
     };
     reject_encrypted_catalog(&document)?;
     Ok(document)
@@ -937,13 +1079,6 @@ fn resolve_page_tree(document: &impl DocumentObjects) -> ObjectResult<PageTree> 
     Ok(PageTree { pages })
 }
 
-fn reject_encrypted_trailer(trailer: &Trailer<'_>) -> ObjectResult<()> {
-    if dictionary_value(trailer.entries(), b"Encrypt").is_some() {
-        return Err(ObjectError::Encrypted);
-    }
-    Ok(())
-}
-
 fn reject_encrypted_catalog(document: &impl DocumentObjects) -> ObjectResult<()> {
     let Some(PdfPrimitive::Reference(reference)) =
         dictionary_value(document.trailer().entries(), b"Root")
@@ -962,6 +1097,132 @@ fn reject_encrypted_catalog(document: &impl DocumentObjects) -> ObjectResult<()>
     };
     if dictionary_value(dictionary, b"Encrypt").is_some() {
         return Err(ObjectError::Encrypted);
+    }
+    Ok(())
+}
+
+fn document_security_from_trailer(
+    trailer: &Trailer<'_>,
+    objects: &ObjectTable<'_>,
+) -> ObjectResult<Option<DocumentSecurity>> {
+    let Some(encrypt) = dictionary_value(trailer.entries(), b"Encrypt") else {
+        return Ok(None);
+    };
+    let (dictionary, encryption_dictionary_id) = encryption_dictionary(encrypt, objects)?;
+    if !dictionary_name_is(dictionary, b"Filter", b"Standard") {
+        return Err(ObjectError::Encrypted);
+    }
+    let file_id = trailer_file_id(trailer)?;
+    let security =
+        standard_security_from_dictionary(dictionary, file_id, encryption_dictionary_id)?;
+    Ok(Some(security))
+}
+
+fn encryption_dictionary<'a>(
+    encrypt: &'a PdfPrimitive<'a>,
+    objects: &'a ObjectTable<'a>,
+) -> ObjectResult<(&'a DictionaryEntries<'a>, Option<ObjectId>)> {
+    match encrypt {
+        PdfPrimitive::Dictionary(dictionary) => Ok((dictionary, None)),
+        PdfPrimitive::Reference(reference) => {
+            let id = ObjectId::new(
+                ObjectNumber::new(reference.object)?,
+                GenerationNumber::new(reference.generation),
+            );
+            let object = objects.get(id).ok_or(ObjectError::Encrypted)?;
+            let ObjectValue::Primitive(PdfPrimitive::Dictionary(dictionary)) = &object.value else {
+                return Err(ObjectError::Encrypted);
+            };
+            Ok((dictionary, Some(id)))
+        }
+        _ => Err(ObjectError::Encrypted),
+    }
+}
+
+fn trailer_file_id(trailer: &Trailer<'_>) -> ObjectResult<Vec<u8>> {
+    let Some(PdfPrimitive::Array(ids)) = dictionary_value(trailer.entries(), b"ID") else {
+        return Err(ObjectError::Encrypted);
+    };
+    let Some(PdfPrimitive::String(first_id)) = ids.first() else {
+        return Err(ObjectError::Encrypted);
+    };
+    decode_pdf_string_bytes(*first_id, DEFAULT_MAX_DECODED_LEN).map_err(|_| ObjectError::Encrypted)
+}
+
+fn standard_security_from_dictionary(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    file_id: Vec<u8>,
+    encryption_dictionary_id: Option<ObjectId>,
+) -> ObjectResult<DocumentSecurity> {
+    let version = required_i64(dictionary, b"V").map_err(|_| ObjectError::Encrypted)?;
+    let revision = required_i64(dictionary, b"R").map_err(|_| ObjectError::Encrypted)?;
+    let permissions = required_i64(dictionary, b"P").map_err(|_| ObjectError::Encrypted)?;
+    let encrypt_metadata = optional_bool(dictionary, b"EncryptMetadata").unwrap_or(true);
+    let file_key = match revision {
+        2 => {
+            let owner = required_string_bytes(dictionary, b"O")?;
+            let user = required_string_bytes(dictionary, b"U")?;
+            let file_key = standard_v2_file_key(&owner, permissions, &file_id);
+            let expected_user = rc4_crypt(&file_key, &PASSWORD_PADDING)?;
+            if user.get(..expected_user.len()) != Some(expected_user.as_slice()) {
+                return Err(ObjectError::Encrypted);
+            }
+            file_key
+        }
+        3 | 4 => {
+            let owner = required_string_bytes(dictionary, b"O")?;
+            let user = required_string_bytes(dictionary, b"U")?;
+            let key_bits = optional_i64(dictionary, b"Length")
+                .unwrap_or(40)
+                .try_into()
+                .map_err(|_| ObjectError::Encrypted)?;
+            let file_key =
+                standard_v4_file_key(&owner, permissions, &file_id, key_bits, encrypt_metadata)?;
+            let expected_user = standard_v4_user_key(&file_key, &file_id)?;
+            if user.get(..16) != expected_user.get(..16) {
+                return Err(ObjectError::Encrypted);
+            }
+            file_key
+        }
+        5 => {
+            let user = required_string_bytes(dictionary, b"U")?;
+            let user_encryption_key = required_string_bytes(dictionary, b"UE")?;
+            let file_key = standard_v5_file_key(&user, &user_encryption_key)?;
+            validate_standard_v5_permissions(dictionary, &file_key)?;
+            file_key
+        }
+        _ => return Err(ObjectError::Encrypted),
+    };
+    let fallback_algorithm = match (version, revision) {
+        (1 | 2, _) | (_, 2 | 3) => CryptAlgorithm::Rc4,
+        (_, 4) => CryptAlgorithm::Rc4,
+        (_, 5) => CryptAlgorithm::AesV3,
+        _ => return Err(ObjectError::Encrypted),
+    };
+    let stream_filter = crypt_filter(dictionary, b"StmF", fallback_algorithm)?;
+    let string_filter = crypt_filter(dictionary, b"StrF", fallback_algorithm)?;
+    Ok(DocumentSecurity {
+        file_key,
+        stream_filter,
+        string_filter,
+        encrypt_metadata,
+        encryption_dictionary_id,
+    })
+}
+
+fn decrypt_object_table(
+    objects: &mut ObjectTable<'_>,
+    security: Option<&DocumentSecurity>,
+) -> ObjectResult<()> {
+    let Some(security) = security else {
+        return Ok(());
+    };
+    for object in objects.iter_mut() {
+        if let ObjectValue::Stream(stream) = &mut object.value {
+            if let Some(decrypted) = security.decrypt_stream(object.id, stream)? {
+                stream.raw = StreamBytes::Owned(decrypted);
+            }
+        }
     }
     Ok(())
 }
@@ -1818,6 +2079,327 @@ fn required_usize(
         ObjectError::malformed(ByteOffset::new(0), "required dictionary number is missing")
     })?;
     primitive_usize(value)
+}
+
+fn required_i64(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    key: &'static [u8],
+) -> ObjectResult<i64> {
+    let value = dictionary_value(dictionary, key).ok_or_else(|| {
+        ObjectError::malformed(ByteOffset::new(0), "required dictionary number is missing")
+    })?;
+    let PdfPrimitive::Number(PdfNumber::Integer(value)) = value else {
+        return Err(ObjectError::malformed(
+            ByteOffset::new(0),
+            "expected integer number",
+        ));
+    };
+    Ok(*value)
+}
+
+fn optional_i64(dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)], key: &'static [u8]) -> Option<i64> {
+    let PdfPrimitive::Number(PdfNumber::Integer(value)) = dictionary_value(dictionary, key)? else {
+        return None;
+    };
+    Some(*value)
+}
+
+fn optional_bool(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    key: &'static [u8],
+) -> Option<bool> {
+    let PdfPrimitive::Boolean(value) = dictionary_value(dictionary, key)? else {
+        return None;
+    };
+    Some(*value)
+}
+
+fn required_string_bytes(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    key: &'static [u8],
+) -> ObjectResult<Vec<u8>> {
+    let Some(PdfPrimitive::String(string)) = dictionary_value(dictionary, key) else {
+        return Err(ObjectError::Encrypted);
+    };
+    decode_pdf_string_bytes(*string, DEFAULT_MAX_DECODED_LEN).map_err(|_| ObjectError::Encrypted)
+}
+
+fn decode_pdf_string_bytes(string: PdfString<'_>, limit: usize) -> ObjectResult<Vec<u8>> {
+    match string {
+        PdfString::Literal(bytes) => decode_literal_string_bytes(bytes, limit),
+        PdfString::Hex(bytes) => decode_hex_string_bytes(bytes, limit),
+    }
+}
+
+fn decode_literal_string_bytes(raw: &[u8], limit: usize) -> ObjectResult<Vec<u8>> {
+    let mut decoded = Vec::new();
+    let mut index = 0_usize;
+    while index < raw.len() {
+        let byte = raw[index];
+        index += 1;
+        if byte != b'\\' {
+            push_limited(&mut decoded, byte, limit)?;
+            continue;
+        }
+        let Some(escaped) = raw.get(index).copied() else {
+            break;
+        };
+        index += 1;
+        match escaped {
+            b'n' => push_limited(&mut decoded, b'\n', limit)?,
+            b'r' => push_limited(&mut decoded, b'\r', limit)?,
+            b't' => push_limited(&mut decoded, b'\t', limit)?,
+            b'b' => push_limited(&mut decoded, 0x08, limit)?,
+            b'f' => push_limited(&mut decoded, 0x0c, limit)?,
+            b'(' | b')' | b'\\' => push_limited(&mut decoded, escaped, limit)?,
+            b'\r' => {
+                if raw.get(index) == Some(&b'\n') {
+                    index += 1;
+                }
+            }
+            b'\n' => {}
+            b'0'..=b'7' => {
+                let mut value = escaped - b'0';
+                for _ in 0..2 {
+                    let Some(next @ b'0'..=b'7') = raw.get(index).copied() else {
+                        break;
+                    };
+                    index += 1;
+                    value = value.saturating_mul(8).saturating_add(next - b'0');
+                }
+                push_limited(&mut decoded, value, limit)?;
+            }
+            _ => push_limited(&mut decoded, escaped, limit)?,
+        }
+    }
+    Ok(decoded)
+}
+
+fn decode_hex_string_bytes(raw: &[u8], limit: usize) -> ObjectResult<Vec<u8>> {
+    let mut decoded = Vec::new();
+    let mut high_nibble = None;
+    for byte in raw.iter().copied() {
+        if is_whitespace(byte) {
+            continue;
+        }
+        let nibble = hex_nibble(byte).ok_or(ObjectError::Encrypted)?;
+        if let Some(high) = high_nibble.take() {
+            push_limited(&mut decoded, (high << 4) | nibble, limit)?;
+        } else {
+            high_nibble = Some(nibble);
+        }
+    }
+    if let Some(high) = high_nibble {
+        push_limited(&mut decoded, high << 4, limit)?;
+    }
+    Ok(decoded)
+}
+
+fn standard_v2_file_key(owner: &[u8], permissions: i64, file_id: &[u8]) -> Vec<u8> {
+    let mut hasher = Md5::new();
+    hasher.update(padded_empty_password());
+    hasher.update(owner);
+    hasher.update(permission_bytes(permissions));
+    hasher.update(file_id);
+    hasher.finalize()[..5].to_vec()
+}
+
+fn standard_v4_file_key(
+    owner: &[u8],
+    permissions: i64,
+    file_id: &[u8],
+    key_bits: usize,
+    encrypt_metadata: bool,
+) -> ObjectResult<Vec<u8>> {
+    if key_bits == 0 || key_bits % 8 != 0 || key_bits > 128 {
+        return Err(ObjectError::Encrypted);
+    }
+    let key_bytes = key_bits / 8;
+    let mut hasher = Md5::new();
+    hasher.update(padded_empty_password());
+    hasher.update(owner);
+    hasher.update(permission_bytes(permissions));
+    hasher.update(file_id);
+    if !encrypt_metadata {
+        hasher.update([0xff, 0xff, 0xff, 0xff]);
+    }
+    let mut digest = hasher.finalize().to_vec();
+    for _ in 0..50 {
+        let mut hasher = Md5::new();
+        hasher.update(&digest[..key_bytes]);
+        digest = hasher.finalize().to_vec();
+    }
+    Ok(digest[..key_bytes].to_vec())
+}
+
+fn standard_v4_user_key(file_key: &[u8], file_id: &[u8]) -> ObjectResult<Vec<u8>> {
+    let mut hasher = Md5::new();
+    hasher.update(PASSWORD_PADDING);
+    hasher.update(file_id);
+    let mut value = hasher.finalize().to_vec();
+    value = rc4_crypt(file_key, &value)?;
+    for round in 1_u8..=19 {
+        let round_key: Vec<u8> = file_key.iter().map(|byte| byte ^ round).collect();
+        value = rc4_crypt(&round_key, &value)?;
+    }
+    value.extend_from_slice(&[0; 16]);
+    Ok(value)
+}
+
+fn standard_v5_file_key(user: &[u8], user_encryption_key: &[u8]) -> ObjectResult<Vec<u8>> {
+    if user.len() < 48 || user_encryption_key.len() != PDF_AES256_KEY_BYTES {
+        return Err(ObjectError::Encrypted);
+    }
+    let validation_salt = &user[32..40];
+    let key_salt = &user[40..48];
+    let mut hasher = Sha256::new();
+    hasher.update([]);
+    hasher.update(validation_salt);
+    let validation_hash = hasher.finalize();
+    if user.get(..32) != Some(&validation_hash[..]) {
+        return Err(ObjectError::Encrypted);
+    }
+    let mut hasher = Sha256::new();
+    hasher.update([]);
+    hasher.update(key_salt);
+    let intermediate_key = hasher.finalize();
+    aes_cbc_decrypt_no_padding(&intermediate_key, user_encryption_key)
+}
+
+fn validate_standard_v5_permissions(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    file_key: &[u8],
+) -> ObjectResult<()> {
+    let Some(PdfPrimitive::String(perms)) = dictionary_value(dictionary, b"Perms") else {
+        return Ok(());
+    };
+    let encrypted = decode_pdf_string_bytes(*perms, DEFAULT_MAX_DECODED_LEN)
+        .map_err(|_| ObjectError::Encrypted)?;
+    if encrypted.len() != AES_BLOCK_BYTES {
+        return Err(ObjectError::Encrypted);
+    }
+    let decrypted = aes_cbc_decrypt_no_padding(file_key, &encrypted)?;
+    if decrypted.get(9..12) != Some(b"adb") {
+        return Err(ObjectError::Encrypted);
+    }
+    Ok(())
+}
+
+fn padded_empty_password() -> &'static [u8] {
+    &PASSWORD_PADDING
+}
+
+fn permission_bytes(permissions: i64) -> [u8; 4] {
+    let raw = permissions as i32;
+    raw.to_le_bytes()
+}
+
+fn crypt_filter(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    key: &'static [u8],
+    fallback: CryptAlgorithm,
+) -> ObjectResult<CryptFilter> {
+    let Some(PdfPrimitive::Name(name)) = dictionary_value(dictionary, key) else {
+        return Ok(CryptFilter::Standard(fallback));
+    };
+    if name.as_bytes() == b"Identity" {
+        return Ok(CryptFilter::Identity);
+    }
+    let Some(PdfPrimitive::Dictionary(filters)) = dictionary_value(dictionary, b"CF") else {
+        return Err(ObjectError::Encrypted);
+    };
+    let Some(PdfPrimitive::Dictionary(filter_dictionary)) =
+        dictionary_value(filters, name.as_bytes())
+    else {
+        return Err(ObjectError::Encrypted);
+    };
+    let Some(PdfPrimitive::Name(method)) = dictionary_value(filter_dictionary, b"CFM") else {
+        return Ok(CryptFilter::Standard(fallback));
+    };
+    match method.as_bytes() {
+        b"None" => Ok(CryptFilter::Identity),
+        b"V2" => Ok(CryptFilter::Standard(CryptAlgorithm::Rc4)),
+        b"AESV2" => Ok(CryptFilter::Standard(CryptAlgorithm::AesV2)),
+        b"AESV3" => Ok(CryptFilter::Standard(CryptAlgorithm::AesV3)),
+        _ => Err(ObjectError::Encrypted),
+    }
+}
+
+fn object_crypt_key(file_key: &[u8], id: ObjectId, algorithm: CryptAlgorithm) -> Vec<u8> {
+    if algorithm == CryptAlgorithm::AesV3 {
+        return file_key.to_vec();
+    }
+    let mut material = Vec::with_capacity(file_key.len() + 9);
+    material.extend_from_slice(file_key);
+    let object_number = id.number.get();
+    material.push((object_number & 0xff) as u8);
+    material.push(((object_number >> 8) & 0xff) as u8);
+    material.push(((object_number >> 16) & 0xff) as u8);
+    let generation = id.generation.get();
+    material.push((generation & 0xff) as u8);
+    material.push(((generation >> 8) & 0xff) as u8);
+    if algorithm == CryptAlgorithm::AesV2 {
+        material.extend_from_slice(AES_OBJECT_KEY_SALT);
+    }
+    let digest = Md5::digest(material);
+    let key_len = file_key.len().saturating_add(5).min(16);
+    digest[..key_len].to_vec()
+}
+
+fn rc4_crypt(key: &[u8], data: &[u8]) -> ObjectResult<Vec<u8>> {
+    macro_rules! rc4_with_key_len {
+        ($key_len:ty) => {{
+            let mut output = data.to_vec();
+            let key = rc4::Key::<$key_len>::from_slice(key);
+            let mut cipher = Rc4::<$key_len>::new(key);
+            cipher.apply_keystream(&mut output);
+            Ok(output)
+        }};
+    }
+    match key.len() {
+        5 => rc4_with_key_len!(U5),
+        6 => rc4_with_key_len!(U6),
+        7 => rc4_with_key_len!(U7),
+        8 => rc4_with_key_len!(U8),
+        9 => rc4_with_key_len!(U9),
+        10 => rc4_with_key_len!(U10),
+        11 => rc4_with_key_len!(U11),
+        12 => rc4_with_key_len!(U12),
+        13 => rc4_with_key_len!(U13),
+        14 => rc4_with_key_len!(U14),
+        15 => rc4_with_key_len!(U15),
+        16 => rc4_with_key_len!(U16),
+        _ => Err(ObjectError::Encrypted),
+    }
+}
+
+fn aes_cbc_decrypt_pkcs7(key: &[u8], encrypted: &[u8]) -> ObjectResult<Vec<u8>> {
+    if encrypted.len() < AES_BLOCK_BYTES {
+        return Err(ObjectError::Encrypted);
+    }
+    let (iv, ciphertext) = encrypted.split_at(AES_BLOCK_BYTES);
+    match key.len() {
+        16 => cbc::Decryptor::<aes::Aes128>::new(key.into(), iv.into())
+            .decrypt_padded_vec_mut::<Pkcs7>(ciphertext)
+            .map_err(|_| ObjectError::Encrypted),
+        32 => cbc::Decryptor::<aes::Aes256>::new(key.into(), iv.into())
+            .decrypt_padded_vec_mut::<Pkcs7>(ciphertext)
+            .map_err(|_| ObjectError::Encrypted),
+        _ => Err(ObjectError::Encrypted),
+    }
+}
+
+fn aes_cbc_decrypt_no_padding(key: &[u8], encrypted: &[u8]) -> ObjectResult<Vec<u8>> {
+    if encrypted.len() % AES_BLOCK_BYTES != 0 {
+        return Err(ObjectError::Encrypted);
+    }
+    let iv = [0_u8; AES_BLOCK_BYTES];
+    match key.len() {
+        32 => cbc::Decryptor::<aes::Aes256>::new(key.into(), (&iv).into())
+            .decrypt_padded_vec_mut::<NoPadding>(encrypted)
+            .map_err(|_| ObjectError::Encrypted),
+        _ => Err(ObjectError::Encrypted),
+    }
 }
 
 fn optional_usize(
@@ -2693,8 +3275,10 @@ impl std::error::Error for ObjectError {}
 mod tests {
     use super::*;
 
+    use aes::cipher::{BlockEncryptMut, KeyIvInit};
     use std::io::Write;
 
+    use aes::cipher::block_padding::{NoPadding, Pkcs7};
     use flate2::write::ZlibEncoder;
     use flate2::Compression;
 
@@ -3077,6 +3661,69 @@ mod tests {
         let error = load_classic_document(PdfBytes::new(&pdf)).expect_err("encrypted trailer");
 
         assert_eq!(error, ObjectError::Encrypted);
+    }
+
+    #[test]
+    fn load_classic_document_should_open_empty_password_rc4_permissions_pdf() {
+        let expected = b"0.9 0 0 rg 10 10 40 40 re f";
+        let pdf = build_permissions_encrypted_pdf(TestEncryption::Rc4R2, expected);
+
+        let document = load_classic_document(PdfBytes::new(&pdf)).expect("encrypted document");
+        let content = document
+            .objects
+            .get(ObjectId::new(
+                ObjectNumber::new(4).expect("object number"),
+                GenerationNumber::new(0),
+            ))
+            .expect("content object");
+        let ObjectValue::Stream(stream) = &content.value else {
+            panic!("content should be a stream");
+        };
+
+        assert_eq!(stream.decode().expect("decrypted stream"), expected);
+        assert_eq!(document.page_tree().expect("page tree").page_count(), 1);
+    }
+
+    #[test]
+    fn load_classic_document_should_open_empty_password_aes128_permissions_pdf() {
+        let expected = b"BT /F1 12 Tf 20 40 Td (AES permissions) Tj ET";
+        let pdf = build_permissions_encrypted_pdf(TestEncryption::AesV2R4, expected);
+
+        let document = load_classic_document(PdfBytes::new(&pdf)).expect("encrypted document");
+        let content = document
+            .objects
+            .get(ObjectId::new(
+                ObjectNumber::new(4).expect("object number"),
+                GenerationNumber::new(0),
+            ))
+            .expect("content object");
+        let ObjectValue::Stream(stream) = &content.value else {
+            panic!("content should be a stream");
+        };
+
+        assert_eq!(stream.decode().expect("decrypted stream"), expected);
+        assert_eq!(document.page_tree().expect("page tree").page_count(), 1);
+    }
+
+    #[test]
+    fn load_classic_document_should_open_empty_password_aes256_permissions_pdf() {
+        let expected = b"BT /F1 12 Tf 20 40 Td (AES256 permissions) Tj ET";
+        let pdf = build_permissions_encrypted_pdf(TestEncryption::AesV3R5, expected);
+
+        let document = load_classic_document(PdfBytes::new(&pdf)).expect("encrypted document");
+        let content = document
+            .objects
+            .get(ObjectId::new(
+                ObjectNumber::new(4).expect("object number"),
+                GenerationNumber::new(0),
+            ))
+            .expect("content object");
+        let ObjectValue::Stream(stream) = &content.value else {
+            panic!("content should be a stream");
+        };
+
+        assert_eq!(stream.decode().expect("decrypted stream"), expected);
+        assert_eq!(document.page_tree().expect("page tree").page_count(), 1);
     }
 
     #[test]
@@ -3463,6 +4110,228 @@ mod tests {
             .as_bytes(),
         );
         pdf
+    }
+
+    #[derive(Debug, Clone, Copy)]
+    enum TestEncryption {
+        Rc4R2,
+        AesV2R4,
+        AesV3R5,
+    }
+
+    fn build_permissions_encrypted_pdf(encryption: TestEncryption, content: &[u8]) -> Vec<u8> {
+        let file_id = *b"ferrugo-empty-id";
+        let encrypted_content = match encryption {
+            TestEncryption::Rc4R2 => test_rc4_encrypt(
+                &object_crypt_key(
+                    &standard_v2_file_key(&test_owner_key_r2(), -4, &file_id),
+                    ObjectId::new(
+                        ObjectNumber::new(4).expect("object number"),
+                        GenerationNumber::new(0),
+                    ),
+                    CryptAlgorithm::Rc4,
+                ),
+                content,
+            ),
+            TestEncryption::AesV2R4 => {
+                let owner = test_owner_key_r4(128);
+                let file_key =
+                    standard_v4_file_key(&owner, -4, &file_id, 128, true).expect("file key");
+                test_aes128_object_encrypt(
+                    &object_crypt_key(
+                        &file_key,
+                        ObjectId::new(
+                            ObjectNumber::new(4).expect("object number"),
+                            GenerationNumber::new(0),
+                        ),
+                        CryptAlgorithm::AesV2,
+                    ),
+                    content,
+                )
+            }
+            TestEncryption::AesV3R5 => {
+                let file_key = test_aes256_file_key();
+                test_aes256_stream_encrypt(&file_key, content)
+            }
+        };
+        let encryption_dictionary = test_encryption_dictionary(encryption, &file_id);
+        let mut pdf = bytearray_pdf_header();
+        let mut offsets: Vec<usize> = vec![0];
+        add_pdf_object(
+            &mut pdf,
+            &mut offsets,
+            1,
+            b"<< /Type /Catalog /Pages 2 0 R >>",
+        );
+        add_pdf_object(
+            &mut pdf,
+            &mut offsets,
+            2,
+            b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        );
+        add_pdf_object(
+            &mut pdf,
+            &mut offsets,
+            3,
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 120 80] /Contents 4 0 R >>",
+        );
+        let mut content_object =
+            format!("<< /Length {} >>\nstream\n", encrypted_content.len()).into_bytes();
+        content_object.extend_from_slice(&encrypted_content);
+        content_object.extend_from_slice(b"\nendstream");
+        add_pdf_object(&mut pdf, &mut offsets, 4, &content_object);
+        add_pdf_object(&mut pdf, &mut offsets, 5, encryption_dictionary.as_bytes());
+        let xref_offset = pdf.len();
+        pdf.extend_from_slice(format!("xref\n0 {}\n", offsets.len()).as_bytes());
+        pdf.extend_from_slice(b"0000000000 65535 f \n");
+        for offset in offsets.iter().skip(1) {
+            pdf.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
+        }
+        pdf.extend_from_slice(
+            format!(
+                "trailer\n<< /Size {} /Root 1 0 R /Encrypt 5 0 R /ID [<{}> <{}>] >>\nstartxref\n{xref_offset}\n%%EOF\n",
+                offsets.len(),
+                test_hex(&file_id),
+                test_hex(&file_id)
+            )
+            .as_bytes(),
+        );
+        pdf
+    }
+
+    fn bytearray_pdf_header() -> Vec<u8> {
+        b"%PDF-1.7\n%\xe2\xe3\xcf\xd3\n".to_vec()
+    }
+
+    fn add_pdf_object(pdf: &mut Vec<u8>, offsets: &mut Vec<usize>, number: u32, body: &[u8]) {
+        offsets.push(pdf.len());
+        pdf.extend_from_slice(format!("{number} 0 obj\n").as_bytes());
+        pdf.extend_from_slice(body);
+        pdf.extend_from_slice(b"\nendobj\n");
+    }
+
+    fn test_encryption_dictionary(encryption: TestEncryption, file_id: &[u8]) -> String {
+        match encryption {
+            TestEncryption::Rc4R2 => {
+                let owner = test_owner_key_r2();
+                let file_key = standard_v2_file_key(&owner, -4, file_id);
+                let user = test_rc4_encrypt(&file_key, &PASSWORD_PADDING);
+                format!(
+                    "<< /Filter /Standard /V 1 /R 2 /O <{}> /U <{}> /P -4 >>",
+                    test_hex(&owner),
+                    test_hex(&user)
+                )
+            }
+            TestEncryption::AesV2R4 => {
+                let owner = test_owner_key_r4(128);
+                let file_key =
+                    standard_v4_file_key(&owner, -4, file_id, 128, true).expect("file key");
+                let user = standard_v4_user_key(&file_key, file_id).expect("user key");
+                format!(
+                    "<< /Filter /Standard /V 4 /R 4 /Length 128 /O <{}> /U <{}> /P -4 /EncryptMetadata true /CF << /StdCF << /CFM /AESV2 /Length 16 /AuthEvent /DocOpen >> >> /StmF /StdCF /StrF /StdCF >>",
+                    test_hex(&owner),
+                    test_hex(&user)
+                )
+            }
+            TestEncryption::AesV3R5 => {
+                let file_key = test_aes256_file_key();
+                let (user, ue) = test_aes256_user_entries(&file_key);
+                let perms = test_aes256_permissions(&file_key);
+                format!(
+                    "<< /Filter /Standard /V 5 /R 5 /Length 256 /O <{}> /U <{}> /OE <{}> /UE <{}> /Perms <{}> /P -4 /EncryptMetadata true /CF << /StdCF << /CFM /AESV3 /Length 32 /AuthEvent /DocOpen >> >> /StmF /StdCF /StrF /StdCF >>",
+                    test_hex(&[0x33; 48]),
+                    test_hex(&user),
+                    test_hex(&[0x44; 32]),
+                    test_hex(&ue),
+                    test_hex(&perms)
+                )
+            }
+        }
+    }
+
+    fn test_owner_key_r2() -> Vec<u8> {
+        let owner_hash = Md5::digest(PASSWORD_PADDING);
+        test_rc4_encrypt(&owner_hash[..5], &PASSWORD_PADDING)
+    }
+
+    fn test_owner_key_r4(key_bits: usize) -> Vec<u8> {
+        let key_bytes = key_bits / 8;
+        let mut digest = Md5::digest(PASSWORD_PADDING).to_vec();
+        for _ in 0..50 {
+            digest = Md5::digest(&digest[..key_bytes]).to_vec();
+        }
+        let mut value = test_rc4_encrypt(&digest[..key_bytes], &PASSWORD_PADDING);
+        for round in 1_u8..=19 {
+            let round_key: Vec<u8> = digest[..key_bytes]
+                .iter()
+                .map(|byte| byte ^ round)
+                .collect();
+            value = test_rc4_encrypt(&round_key, &value);
+        }
+        value
+    }
+
+    fn test_rc4_encrypt(key: &[u8], data: &[u8]) -> Vec<u8> {
+        rc4_crypt(key, data).expect("test rc4")
+    }
+
+    fn test_aes128_object_encrypt(key: &[u8], plaintext: &[u8]) -> Vec<u8> {
+        let iv = [0x12_u8; AES_BLOCK_BYTES];
+        let mut output = iv.to_vec();
+        output.extend(
+            cbc::Encryptor::<aes::Aes128>::new(key.into(), (&iv).into())
+                .encrypt_padded_vec_mut::<Pkcs7>(plaintext),
+        );
+        output
+    }
+
+    fn test_aes256_stream_encrypt(key: &[u8], plaintext: &[u8]) -> Vec<u8> {
+        let iv = [0x24_u8; AES_BLOCK_BYTES];
+        let mut output = iv.to_vec();
+        output.extend(
+            cbc::Encryptor::<aes::Aes256>::new(key.into(), (&iv).into())
+                .encrypt_padded_vec_mut::<Pkcs7>(plaintext),
+        );
+        output
+    }
+
+    fn test_aes256_file_key() -> Vec<u8> {
+        (0..PDF_AES256_KEY_BYTES).map(|value| value as u8).collect()
+    }
+
+    fn test_aes256_user_entries(file_key: &[u8]) -> (Vec<u8>, Vec<u8>) {
+        let validation_salt = [1_u8, 2, 3, 4, 5, 6, 7, 8];
+        let key_salt = [9_u8, 10, 11, 12, 13, 14, 15, 16];
+        let mut user = Sha256::digest(validation_salt).to_vec();
+        user.extend_from_slice(&validation_salt);
+        user.extend_from_slice(&key_salt);
+        let key = Sha256::digest(key_salt);
+        let iv = [0_u8; AES_BLOCK_BYTES];
+        let ue = cbc::Encryptor::<aes::Aes256>::new((&key[..]).into(), (&iv).into())
+            .encrypt_padded_vec_mut::<NoPadding>(file_key);
+        (user, ue)
+    }
+
+    fn test_aes256_permissions(file_key: &[u8]) -> Vec<u8> {
+        let mut perms = Vec::new();
+        perms.extend_from_slice(&permission_bytes(-4));
+        perms.extend_from_slice(&[0xff; 4]);
+        perms.push(b'T');
+        perms.extend_from_slice(b"adb");
+        perms.extend_from_slice(&[0x55; 4]);
+        let iv = [0_u8; AES_BLOCK_BYTES];
+        cbc::Encryptor::<aes::Aes256>::new(file_key.into(), (&iv).into())
+            .encrypt_padded_vec_mut::<NoPadding>(&perms)
+    }
+
+    fn test_hex(bytes: &[u8]) -> String {
+        const HEX: &[u8; 16] = b"0123456789abcdef";
+        let mut output = String::with_capacity(bytes.len() * 2);
+        for byte in bytes {
+            output.push(HEX[usize::from(byte >> 4)] as char);
+            output.push(HEX[usize::from(byte & 0x0f)] as char);
+        }
+        output
     }
 
     fn build_cyclic_incremental_xref_pdf() -> Vec<u8> {

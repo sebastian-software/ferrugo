@@ -8,7 +8,7 @@ for these classes is documented in `docs/policies/unsupported-feature-sla.md`.
 
 | Class | Meaning | PDFium mapping |
 | --- | --- | --- |
-| `encrypted` | Password-protected or security-restricted PDF. | `FPDF_ERR_PASSWORD`, `FPDF_ERR_SECURITY` |
+| `encrypted` | Password-protected PDF or unsupported security handler. Empty-user-password standard-security PDFs are opened natively. | `FPDF_ERR_PASSWORD`, `FPDF_ERR_SECURITY` |
 | `malformed` | File cannot be read as a valid PDF. | `FPDF_ERR_FILE`, `FPDF_ERR_FORMAT`, local file-read failure |
 | `unsupported` | Valid input or request cannot be handled by the current backend. | `FPDF_ERR_PAGE` for unavailable page operations; native unsupported feature probes |
 | `timeout` | Rendering exceeded the configured timeout. | Enforced by the isolated render parent; direct in-process PDFium calls cannot provide hard cancellation |
@@ -75,7 +75,7 @@ Recommended application behavior:
 | `unsupported` with bucket | Treat as a valid PDF that needs an unsupported renderer feature. Use the bucket for telemetry, support copy, or an alternate renderer path. |
 | `unsupported` without bucket | Treat as valid but unsupported; avoid parsing the display message for control flow. |
 | `malformed` | Treat as invalid or unrecoverable within the parser recovery budget. Do not retry as an unsupported feature. |
-| `encrypted` | Ask for password/decryption policy; do not treat as malformed or unsupported. |
+| `encrypted` | Ask for an unlocked PDF or a future password API; do not treat as malformed or unsupported. |
 | `timeout` | Retry only under an explicit timeout or isolation policy. |
 | `internal` | Treat as a bug or environment failure; diagnostic text is not stable. |
 

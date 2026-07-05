@@ -17,7 +17,7 @@ Consumers must route first by `ThumbnailError::class()`:
 | --- | --- | --- |
 | `unsupported` | Valid input or request outside the supported native feature set. | Do not retry through hidden PDFium fallback. Use the bucket for support, telemetry, alternate processing, or backlog routing. |
 | `malformed` | Invalid or unrecoverable PDF within the parser recovery budget. | Do not classify as unsupported. Ask the producer for a repaired file or run an explicit repair workflow outside the renderer. |
-| `encrypted` | Password-protected or security-restricted input. | Ask for an explicit password/decryption policy. |
+| `encrypted` | Password-protected input or unsupported security handler. Empty-user-password standard-security PDFs are opened natively. | Ask for an unlocked PDF or a future password API. |
 | `timeout` | Rendering exceeded caller policy. | Retry only under a deliberate timeout/isolation policy. |
 | `internal` | Renderer bug or environment failure. | Treat as a defect; message text is diagnostic and not a stable API. |
 
