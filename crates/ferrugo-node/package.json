@@ -14,13 +14,14 @@
   "files": [
     "index.js",
     "index.d.ts",
-    "*.node",
     "README.md"
   ],
   "scripts": {
     "build": "napi build --platform --release",
     "build:debug": "napi build --platform",
-    "test": "node test/node-integration.mjs"
+    "test": "node test/node-integration.mjs",
+    "artifacts": "napi artifacts",
+    "create-npm-dirs": "napi create-npm-dirs"
   },
   "engines": {
     "node": ">=18"

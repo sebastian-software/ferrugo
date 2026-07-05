@@ -40,8 +40,11 @@ validation failures use `code: "invalid-argument"`.
 
 ## Distribution
 
-The published npm package is self-contained: it bundles the prebuilt
-`ferrugo.<platform>.node` binaries for all supported targets and loads the
-matching one at require time. There are no per-platform sub-packages and no
-postinstall build step. The generated `index.js`/`index.d.ts` are regenerated
-during the release workflow so they always match the released version.
+The npm package follows the standard napi-rs layout: the main `ferrugo`
+package carries only the JS loader and type definitions, and the prebuilt
+binaries ship as per-platform packages (`ferrugo-linux-x64-gnu`,
+`ferrugo-darwin-arm64`, ...) referenced through `optionalDependencies`. npm
+installs exactly the binary matching the host `os`/`cpu`/`libc`; there is no
+postinstall build step. The platform package sources live under `npm/` and
+the generated `index.js`/`index.d.ts` are regenerated during the release
+workflow so they always match the released version.
