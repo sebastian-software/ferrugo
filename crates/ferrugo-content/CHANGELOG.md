@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.5.0](https://github.com/sebastian-software/ferrugo/compare/ferrugo-content-v0.4.0...ferrugo-content-v0.5.0) (2026-07-05)
+
+
+### Miscellaneous Chores
+
+* **ferrugo-content:** Synchronize ferrugo versions
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * ferrugo-object bumped from 0.4.0 to 0.5.0
+    * ferrugo-syntax bumped from 0.4.0 to 0.5.0
+
 ## [0.4.0](https://github.com/sebastian-software/ferrugo/compare/ferrugo-content-v0.3.1...ferrugo-content-v0.4.0) (2026-07-05)
 
 

@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.5.0](https://github.com/sebastian-software/ferrugo/compare/ferrugo-render-v0.4.0...ferrugo-render-v0.5.0) (2026-07-05)
+
+
+### Features
+
+* **api:** enforce the render deadline inside display-list replay ([c75e5c2](https://github.com/sebastian-software/ferrugo/commit/c75e5c23c2782a61a53e0dd222539dff05eb8282)), closes [#153](https://github.com/sebastian-software/ferrugo/issues/153)
+
+
+### Bug Fixes
+
+* **render:** bound CCITT mask decode by intermediate pixel bytes ([35bcd35](https://github.com/sebastian-software/ferrugo/commit/35bcd35cbad69a125a2981cbf3a08dee0147406b)), closes [#149](https://github.com/sebastian-software/ferrugo/issues/149)
+* **render:** harden TrueType outline priming ([35177fa](https://github.com/sebastian-software/ferrugo/commit/35177fa73fe304e05c4ef3609886b53172f71262)), closes [#152](https://github.com/sebastian-software/ferrugo/issues/152)
+* **render:** make exact integer blend the canonical opaque source-over math ([6b999f9](https://github.com/sebastian-software/ferrugo/commit/6b999f9e9b90afa802f0033480545d56c8fbab6b)), closes [#150](https://github.com/sebastian-software/ferrugo/issues/150)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * ferrugo-content bumped from 0.4.0 to 0.5.0
+    * ferrugo-object bumped from 0.4.0 to 0.5.0
+    * ferrugo-simd bumped from 0.4.0 to 0.5.0
+    * ferrugo-syntax bumped from 0.4.0 to 0.5.0
+    * ferrugo-thumbnail bumped from 0.4.0 to 0.5.0
+
 ## [0.4.0](https://github.com/sebastian-software/ferrugo/compare/ferrugo-render-v0.3.1...ferrugo-render-v0.4.0) (2026-07-05)
 
 

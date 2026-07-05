@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.5.0](https://github.com/sebastian-software/ferrugo/compare/ferrugo-native-v0.4.0...ferrugo-native-v0.5.0) (2026-07-05)
+
+
+### Features
+
+* **api:** enforce the render deadline inside display-list replay ([c75e5c2](https://github.com/sebastian-software/ferrugo/commit/c75e5c23c2782a61a53e0dd222539dff05eb8282)), closes [#153](https://github.com/sebastian-software/ferrugo/issues/153)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * ferrugo-content bumped from 0.4.0 to 0.5.0
+    * ferrugo-object bumped from 0.4.0 to 0.5.0
+    * ferrugo-render bumped from 0.4.0 to 0.5.0
+    * ferrugo-syntax bumped from 0.4.0 to 0.5.0
+    * ferrugo-thumbnail bumped from 0.4.0 to 0.5.0
+
 ## [0.4.0](https://github.com/sebastian-software/ferrugo/compare/ferrugo-native-v0.3.1...ferrugo-native-v0.4.0) (2026-07-05)
 
 

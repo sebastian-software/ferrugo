@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/sebastian-software/ferrugo/compare/ferrugo-simd-v0.4.0...ferrugo-simd-v0.5.0) (2026-07-05)
+
+
+### Bug Fixes
+
+* **render:** make exact integer blend the canonical opaque source-over math ([6b999f9](https://github.com/sebastian-software/ferrugo/commit/6b999f9e9b90afa802f0033480545d56c8fbab6b)), closes [#150](https://github.com/sebastian-software/ferrugo/issues/150)
+
 ## [0.4.0](https://github.com/sebastian-software/ferrugo/compare/ferrugo-simd-v0.3.1...ferrugo-simd-v0.4.0) (2026-07-05)
 
 
