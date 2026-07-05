@@ -3827,6 +3827,10 @@ fn ascii_contains_ignore_case(haystack: &[u8], needle: &[u8]) -> bool {
             .any(|window| ascii_eq_ignore_case(window, needle))
 }
 
+/// Fonts with more glyphs than this are never eagerly primed on first
+/// lookup; they use lazy per-glyph extraction instead.
+const MAX_EAGER_PRIME_GLYPHS: u32 = 512;
+
 /// Small glyph outline cache keyed by font program identity and glyph code.
 #[derive(Debug, Default)]
 pub struct GlyphOutlineCache {
@@ -3901,12 +3905,28 @@ impl GlyphOutlineCache {
         let face =
             ttf_parser::Face::parse(&program.bytes, 0).map_err(|_| invalid_glyph_outline())?;
         let glyph_count = u32::from(face.number_of_glyphs());
-        let prefetch_count = glyph_count.min(options.max_cache_entries as u32);
+        // Large (for example CJK or broad-subset) fonts stay on lazy
+        // per-glyph extraction: bulk tessellation on first lookup costs more
+        // than the shared face parse saves and floods the cache with unused
+        // outlines.
+        let prefetch_count = if glyph_count > MAX_EAGER_PRIME_GLYPHS {
+            0
+        } else {
+            glyph_count.min(options.max_cache_entries as u32)
+        };
         for glyph_code in 0..prefetch_count {
-            let outline = extract_ttf_face_glyph_outline(&face, glyph_code, options)?;
+            // One malformed glyph must not poison every other lookup in the
+            // font: skip it here so a direct request for that glyph surfaces
+            // its typed error through the lazy path instead.
+            let Ok(outline) = extract_ttf_face_glyph_outline(&face, glyph_code, options) else {
+                continue;
+            };
             self.push_outline_entry(program.key, glyph_code, outline, options.max_cache_entries);
         }
-        if requested_glyph_code >= prefetch_count && requested_glyph_code < glyph_count {
+        if prefetch_count > 0
+            && requested_glyph_code >= prefetch_count
+            && requested_glyph_code < glyph_count
+        {
             let outline = extract_ttf_face_glyph_outline(&face, requested_glyph_code, options)?;
             self.push_outline_entry(
                 program.key,
@@ -31666,6 +31686,32 @@ mod tests {
         )
         .expect_err("rectangle glyph should exceed segment budget");
 
+        assert_eq!(
+            error.kind(),
+            &GraphicsErrorKind::GlyphOutlineSegmentOverflow { limit: 2 }
+        );
+    }
+
+    #[test]
+    fn glyph_outline_priming_should_skip_malformed_glyphs() {
+        let program = test_truetype_program();
+        let mut cache = GlyphOutlineCache::default();
+        // Glyph 1 (the rectangle) exceeds this segment budget; priming must
+        // not let it poison lookups for the rest of the font.
+        let options = GlyphOutlineOptions {
+            max_segments: 2,
+            ..GlyphOutlineOptions::default()
+        };
+
+        cache
+            .outline_for(&program, 0, options)
+            .expect("well-formed glyph lookup should survive a malformed sibling");
+
+        // Requesting the malformed glyph directly still surfaces its typed
+        // error through the lazy path.
+        let error = cache
+            .outline_for(&program, 1, options)
+            .expect_err("malformed glyph should keep its typed error");
         assert_eq!(
             error.kind(),
             &GraphicsErrorKind::GlyphOutlineSegmentOverflow { limit: 2 }
