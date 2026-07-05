@@ -6543,6 +6543,74 @@ fn is_axis_aligned_line(line: LineSegment) -> bool {
 ///
 /// # Errors
 ///
+/// Cooperative interrupt checked between display-list items during replay.
+///
+/// Long replays (huge display lists, image-heavy pages) poll this handle at a
+/// coarse item interval so an expired deadline or a cancellation flag aborts
+/// the render with a typed error instead of running unbounded.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct RasterInterrupt<'a> {
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+    deadline: Option<Instant>,
+    cancelled: Option<&'a std::sync::atomic::AtomicBool>,
+}
+
+const RASTER_INTERRUPT_ITEM_INTERVAL: usize = 16;
+
+impl<'a> RasterInterrupt<'a> {
+    /// Interrupt handle that never triggers.
+    #[must_use]
+    pub const fn none() -> Self {
+        Self {
+            #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+            deadline: None,
+            cancelled: None,
+        }
+    }
+
+    /// Adds an absolute deadline; replay fails with
+    /// [`RasterErrorKind::DeadlineExceeded`] once it has passed.
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+    #[must_use]
+    pub const fn with_deadline(mut self, deadline: Instant) -> Self {
+        self.deadline = Some(deadline);
+        self
+    }
+
+    /// Adds a cancellation flag; replay fails with
+    /// [`RasterErrorKind::Cancelled`] once it is set.
+    #[must_use]
+    pub const fn with_cancel_flag(mut self, cancelled: &'a std::sync::atomic::AtomicBool) -> Self {
+        self.cancelled = Some(cancelled);
+        self
+    }
+
+    fn check(&self) -> RasterResult<()> {
+        if self
+            .cancelled
+            .is_some_and(|flag| flag.load(std::sync::atomic::Ordering::Acquire))
+        {
+            return Err(RasterError::new(RasterErrorKind::Cancelled));
+        }
+        #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+        if self
+            .deadline
+            .is_some_and(|deadline| Instant::now() >= deadline)
+        {
+            return Err(RasterError::new(RasterErrorKind::DeadlineExceeded));
+        }
+        Ok(())
+    }
+
+    fn check_every(&self, index: usize) -> RasterResult<()> {
+        if index % RASTER_INTERRUPT_ITEM_INTERVAL == 0 {
+            self.check()
+        } else {
+            Ok(())
+        }
+    }
+}
+
 /// Returns [`RasterError`] when path, image, or text rasterization fails.
 pub fn rasterize_display_list_into(
     display_list: &DisplayList,
@@ -6564,6 +6632,7 @@ pub fn rasterize_display_list_into(
         None,
         None,
         None,
+        RasterInterrupt::none(),
         None::<&mut fn(RasterDisplayPhase, Duration)>,
     )
 }
@@ -6654,6 +6723,7 @@ pub fn rasterize_display_list_into_with_phase_timings_and_caches(
         None,
         None,
         None,
+        RasterInterrupt::none(),
         Some(&mut on_phase),
     )
 }
@@ -6689,6 +6759,7 @@ pub fn rasterize_display_list_into_with_phase_timings_and_stroke_routes(
         None,
         None,
         Some(stroke_routes),
+        RasterInterrupt::none(),
         Some(&mut on_phase),
     )
 }
@@ -6793,6 +6864,7 @@ pub fn rasterize_display_list_into_with_phase_timings_route_summaries_and_caches
         None,
         Some(fill_routes),
         Some(stroke_routes),
+        RasterInterrupt::none(),
         Some(&mut on_phase),
     )
 }
@@ -6834,6 +6906,51 @@ pub fn rasterize_display_list_into_with_phase_timings_route_summaries_and_type3_
         Some(type3_render_cache),
         Some(fill_routes),
         Some(stroke_routes),
+        RasterInterrupt::none(),
+        Some(&mut on_phase),
+    )
+}
+
+/// Rasterizes all supported display-list items with cooperative interruption.
+///
+/// Identical to the other ordered replay entry points, but polls `interrupt`
+/// at a coarse item interval so an expired deadline or cancellation flag
+/// aborts with [`RasterErrorKind::DeadlineExceeded`] or
+/// [`RasterErrorKind::Cancelled`] instead of replaying unbounded work.
+///
+/// # Errors
+///
+/// Returns [`RasterError`] when rasterization fails or the interrupt fires.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "mirrors the explicit ordered replay surface plus the interrupt handle"
+)]
+pub fn rasterize_display_list_into_interruptible(
+    display_list: &DisplayList,
+    device: &mut RasterDevice,
+    transform: PageTransform,
+    options: PathRasterOptions,
+    fill_routes: &RefCell<FillRasterRouteSummary>,
+    stroke_routes: &RefCell<StrokeRasterRouteSummary>,
+    glyph_cache: &RefCell<GlyphBitmapCache>,
+    type3_cache: &RefCell<Type3CharProcTemplateCache>,
+    type3_render_cache: Option<&RefCell<Type3GlyphRenderCache>>,
+    interrupt: RasterInterrupt<'_>,
+    mut on_phase: impl FnMut(RasterDisplayPhase, Duration),
+) -> RasterResult<()> {
+    let mut transparency_scratch = TransparencyGroupScratch::default();
+    rasterize_display_list_into_with_scratch(
+        display_list,
+        device,
+        transform,
+        options,
+        &mut transparency_scratch,
+        glyph_cache,
+        type3_cache,
+        type3_render_cache,
+        Some(fill_routes),
+        Some(stroke_routes),
+        interrupt,
         Some(&mut on_phase),
     )
 }
@@ -6853,6 +6970,7 @@ fn rasterize_display_list_into_with_scratch(
     type3_render_cache: Option<&RefCell<Type3GlyphRenderCache>>,
     fill_routes: Option<&RefCell<FillRasterRouteSummary>>,
     stroke_routes: Option<&RefCell<StrokeRasterRouteSummary>>,
+    interrupt: RasterInterrupt<'_>,
     mut on_phase: Option<&mut impl FnMut(RasterDisplayPhase, Duration)>,
 ) -> RasterResult<()> {
     if options.supersample == 0 {
@@ -6860,7 +6978,8 @@ fn rasterize_display_list_into_with_scratch(
     }
     let mut active_clips = Vec::new();
     let mut pattern_cache = PatternCellCache::new(options.max_pattern_cell_cache_entries);
-    for item in display_list.items() {
+    for (item_index, item) in display_list.items().iter().enumerate() {
+        interrupt.check_every(item_index)?;
         match item {
             DisplayItem::Path(path) => {
                 record_raster_display_phase(&mut on_phase, RasterDisplayPhase::Paths, || {
@@ -7555,6 +7674,7 @@ fn rasterize_transparency_group(
         type3_render_cache,
         None,
         None,
+        RasterInterrupt::none(),
         None::<&mut fn(RasterDisplayPhase, Duration)>,
     )?;
     let blitter = VariableSourcePixelBlitter::new(group.state.blend_mode, group.state.fill_alpha);
@@ -7661,10 +7781,31 @@ pub fn rasterize_images(
     device: &mut RasterDevice,
     transform: PageTransform,
 ) -> RasterResult<()> {
+    rasterize_images_interruptible(display_list, device, transform, RasterInterrupt::none())
+}
+
+/// Rasterizes image display-list items with cooperative interruption between
+/// images.
+///
+/// # Errors
+///
+/// Returns [`RasterError`] when image drawing fails or the interrupt fires.
+pub fn rasterize_images_interruptible(
+    display_list: &DisplayList,
+    device: &mut RasterDevice,
+    transform: PageTransform,
+    interrupt: RasterInterrupt<'_>,
+) -> RasterResult<()> {
+    let mut image_index = 0_usize;
     for item in display_list.items() {
         let DisplayItem::Image(image) = item else {
             continue;
         };
+        // Per-image granularity: single-image work is already bounded by the
+        // image byte budgets, so the deadline check between images bounds the
+        // total overrun.
+        interrupt.check_every(image_index)?;
+        image_index += 1;
         draw_image(device, image, transform)?;
     }
     Ok(())
@@ -22632,6 +22773,10 @@ pub enum RasterErrorKind {
     },
     /// Row or pixel coordinate was outside the raster.
     OutOfBounds,
+    /// Cooperative deadline expired during display-list replay.
+    DeadlineExceeded,
+    /// Cooperative cancellation was requested during display-list replay.
+    Cancelled,
 }
 
 impl fmt::Display for RasterErrorKind {
@@ -22659,6 +22804,8 @@ impl fmt::Display for RasterErrorKind {
             Self::SingularImageTransform => f.write_str("image transform is singular"),
             Self::Type3Glyph { message } => write!(f, "Type3 glyph render error: {message}"),
             Self::OutOfBounds => f.write_str("raster coordinate is out of bounds"),
+            Self::DeadlineExceeded => f.write_str("render deadline exceeded during replay"),
+            Self::Cancelled => f.write_str("render cancelled during replay"),
         }
     }
 }
@@ -23913,6 +24060,83 @@ mod tests {
             summary.max_flattened_edges_per_item,
             summary.flattened_edges
         );
+    }
+
+    fn interrupt_test_list_and_transform() -> (DisplayList, PageTransform) {
+        let list = DisplayList::from_items(vec![DisplayItem::Path(PathDisplayItem {
+            segments: vec![
+                PathSegment::MoveTo(Point { x: 0.0, y: 0.0 }),
+                PathSegment::LineTo(Point { x: 4.0, y: 0.0 }),
+                PathSegment::LineTo(Point { x: 4.0, y: 4.0 }),
+            ],
+            paint: PaintMode::Fill {
+                rule: FillRule::Nonzero,
+            },
+            state: GraphicsState::default(),
+            fill_pattern: None,
+        })]);
+        let transform = PageTransform::new(
+            PageGeometry {
+                media_box: PathBounds {
+                    min_x: 0.0,
+                    min_y: 0.0,
+                    max_x: 4.0,
+                    max_y: 4.0,
+                },
+                crop_box: None,
+                rotation: PageRotation::Deg0,
+            },
+            16,
+        )
+        .expect("valid transform");
+        (list, transform)
+    }
+
+    fn run_interruptible_replay(interrupt: RasterInterrupt<'_>) -> RasterResult<()> {
+        let (list, transform) = interrupt_test_list_and_transform();
+        let mut device = transform.create_device(Rgba::WHITE).expect("raster device");
+        let fill_cell = RefCell::new(FillRasterRouteSummary::default());
+        let stroke_cell = RefCell::new(StrokeRasterRouteSummary::default());
+        let glyph_cache = RefCell::new(GlyphBitmapCache::default());
+        let type3_cache = RefCell::new(Type3CharProcTemplateCache::default());
+        rasterize_display_list_into_interruptible(
+            &list,
+            &mut device,
+            transform,
+            PathRasterOptions::default(),
+            &fill_cell,
+            &stroke_cell,
+            &glyph_cache,
+            &type3_cache,
+            None,
+            interrupt,
+            |_phase, _duration| {},
+        )
+    }
+
+    #[test]
+    fn display_list_replay_should_stop_at_expired_deadline() {
+        // The deadline is already reached, so the in-loop check must abort
+        // before the first item rasterizes -- this exercises the loop check
+        // itself, independent of any caller-side entry check.
+        let error = run_interruptible_replay(RasterInterrupt::none().with_deadline(Instant::now()))
+            .expect_err("expired deadline should interrupt replay");
+        assert_eq!(error.kind(), &RasterErrorKind::DeadlineExceeded);
+    }
+
+    #[test]
+    fn display_list_replay_should_stop_when_cancelled() {
+        let cancelled = std::sync::atomic::AtomicBool::new(true);
+        let error = run_interruptible_replay(RasterInterrupt::none().with_cancel_flag(&cancelled))
+            .expect_err("cancellation flag should interrupt replay");
+        assert_eq!(error.kind(), &RasterErrorKind::Cancelled);
+    }
+
+    #[test]
+    fn display_list_replay_should_finish_with_inactive_interrupt() {
+        let cancelled = std::sync::atomic::AtomicBool::new(false);
+        run_interruptible_replay(RasterInterrupt::none().with_cancel_flag(&cancelled))
+            .expect("inactive interrupt should not affect replay");
     }
 
     #[test]
@@ -33442,6 +33666,7 @@ mod tests {
             None,
             None,
             None,
+            RasterInterrupt::none(),
             None::<&mut fn(RasterDisplayPhase, Duration)>,
         )
         .expect("transparency groups should rasterize");

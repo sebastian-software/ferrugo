@@ -30,19 +30,15 @@ use ferrugo_render::{
     build_path_display_list_with_graphics_resources, build_text_display_list,
     collect_image_decode_hints, decode_tiling_pattern, display_list_image_placement_summary,
     display_list_path_flattening_summary, display_list_stroke_shape_summary,
-    rasterize_display_list_into_with_phase_timings_and_caches,
-    rasterize_display_list_into_with_phase_timings_and_route_summaries,
-    rasterize_display_list_into_with_phase_timings_route_summaries_and_caches,
-    rasterize_display_list_into_with_phase_timings_route_summaries_and_type3_render_cache,
-    rasterize_images, rasterize_paths_into, rasterize_text_with_caches_and_type3_render_cache,
-    BlendMode, ColorSpaceResources, DeviceColor, DisplayItem, DisplayList, DisplayListOptions,
-    ExtGraphicsStateResources, FontResources, FormResources, GlyphBitmapCache, GraphicsError,
-    GraphicsErrorKind, IccTransformCache, ImageColorSpace, ImageDecodeHints, ImageDisplayItem,
-    ImageKind, ImageResources, PageGeometry, PageRotation, PageTransform, PageTransformOptions,
-    PaintMode, PathBounds, PathDisplayItem, PathRasterOptions, PathSegment, Point,
-    RasterDimensions, RasterDisplayPhase, RasterError, RasterErrorKind, RasterScissor,
-    ShadingResources, TextDisplayItem, TextRenderingMode, TextWritingMode, TilingPatternResources,
-    Type3CharProcTemplateCache, Type3GlyphRenderCache,
+    rasterize_display_list_into_with_phase_timings_and_route_summaries, rasterize_paths_into,
+    rasterize_text_with_caches_and_type3_render_cache, BlendMode, ColorSpaceResources, DeviceColor,
+    DisplayItem, DisplayList, DisplayListOptions, ExtGraphicsStateResources, FontResources,
+    FormResources, GlyphBitmapCache, GraphicsError, GraphicsErrorKind, IccTransformCache,
+    ImageColorSpace, ImageDecodeHints, ImageDisplayItem, ImageKind, ImageResources, PageGeometry,
+    PageRotation, PageTransform, PageTransformOptions, PaintMode, PathBounds, PathDisplayItem,
+    PathRasterOptions, PathSegment, Point, RasterDimensions, RasterDisplayPhase, RasterError,
+    RasterErrorKind, RasterScissor, ShadingResources, TextDisplayItem, TextRenderingMode,
+    TextWritingMode, TilingPatternResources, Type3CharProcTemplateCache, Type3GlyphRenderCache,
 };
 #[cfg(not(any(feature = "diagnostics", test)))]
 use ferrugo_render::{
@@ -2253,6 +2249,21 @@ impl<'a> RenderControl<'a> {
             Ok(())
         }
     }
+
+    /// Bridges this control into the render crate's cooperative interrupt so
+    /// long display-list replays poll the same deadline and cancellation flag
+    /// between items instead of only between phases.
+    fn raster_interrupt(&self) -> ferrugo_render::RasterInterrupt<'a> {
+        let mut interrupt = ferrugo_render::RasterInterrupt::none();
+        if let Some(cancellation) = self.cancellation {
+            interrupt = interrupt.with_cancel_flag(&cancellation.cancelled);
+        }
+        #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+        if let Some(deadline) = self.deadline {
+            interrupt = interrupt.with_deadline(deadline);
+        }
+        interrupt
+    }
 }
 
 const RENDER_CONTROL_TOKEN_CHECK_INTERVAL: usize = 64;
@@ -4146,6 +4157,7 @@ fn rasterize_native_page_work_into(
             glyph_bitmap_cache,
             type3_template_cache,
             type3_render_cache,
+            control,
         )?;
         control.check()?;
     } else {
@@ -4182,7 +4194,15 @@ fn rasterize_native_page_work_into(
         record_render_phase(
             &mut trace_sinks.timings,
             NativeRenderPhase::RasterImages,
-            || rasterize_images(work.image_list, raster, transform).map_err(map_raster_error),
+            || {
+                ferrugo_render::rasterize_images_interruptible(
+                    work.image_list,
+                    raster,
+                    transform,
+                    control.raster_interrupt(),
+                )
+                .map_err(map_raster_error)
+            },
         )?;
         control.check()?;
         record_render_phase(
@@ -4858,101 +4878,35 @@ fn rasterize_ordered_display_list_with_phase_timings(
     glyph_bitmap_cache: &RefCell<GlyphBitmapCache>,
     type3_template_cache: &RefCell<Type3CharProcTemplateCache>,
     type3_render_cache: Option<&RefCell<Type3GlyphRenderCache>>,
+    control: RenderControl<'_>,
 ) -> Result<(), ThumbnailError> {
-    if fill_routes.is_some() || stroke_routes.is_some() {
-        let fill_initial = fill_routes
-            .as_deref()
-            .copied()
-            .unwrap_or_else(FillRasterRouteSummary::default);
-        let stroke_initial = stroke_routes
-            .as_deref()
-            .copied()
-            .unwrap_or_else(StrokeRasterRouteSummary::default);
-        let fill_cell = RefCell::new(fill_initial);
-        let stroke_cell = RefCell::new(stroke_initial);
-        if let Some(type3_render_cache) = type3_render_cache {
-            rasterize_display_list_into_with_phase_timings_route_summaries_and_type3_render_cache(
-                display_list,
-                raster,
-                transform,
-                path_options,
-                &fill_cell,
-                &stroke_cell,
-                glyph_bitmap_cache,
-                type3_template_cache,
-                type3_render_cache,
-                |phase, duration| {
-                    if let Some(timings) = timings.as_deref_mut() {
-                        timings.record(native_render_phase_from_raster_phase(phase), duration);
-                    }
-                },
-            )
-            .map_err(map_raster_error)?;
-        } else {
-            rasterize_display_list_into_with_phase_timings_route_summaries_and_caches(
-                display_list,
-                raster,
-                transform,
-                path_options,
-                &fill_cell,
-                &stroke_cell,
-                glyph_bitmap_cache,
-                type3_template_cache,
-                |phase, duration| {
-                    if let Some(timings) = timings.as_deref_mut() {
-                        timings.record(native_render_phase_from_raster_phase(phase), duration);
-                    }
-                },
-            )
-            .map_err(map_raster_error)?;
-        }
-        let fill_result = fill_cell.into_inner();
-        let stroke_result = stroke_cell.into_inner();
-        if let Some(fill_routes) = fill_routes.as_deref_mut() {
-            *fill_routes = fill_result;
-        }
-        if let Some(stroke_routes) = stroke_routes.as_deref_mut() {
-            *stroke_routes = stroke_result;
-        }
-        return Ok(());
-    }
-
-    if let Some(type3_render_cache) = type3_render_cache {
-        let fill_cell = RefCell::new(FillRasterRouteSummary::default());
-        let stroke_cell = RefCell::new(StrokeRasterRouteSummary::default());
-        return rasterize_display_list_into_with_phase_timings_route_summaries_and_type3_render_cache(
-            display_list,
-            raster,
-            transform,
-            path_options,
-            &fill_cell,
-            &stroke_cell,
-            glyph_bitmap_cache,
-            type3_template_cache,
-            type3_render_cache,
-            |phase, duration| {
-                if let Some(timings) = timings.as_deref_mut() {
-                    timings.record(native_render_phase_from_raster_phase(phase), duration);
-                }
-            },
-        )
-        .map_err(map_raster_error);
-    }
-
-    rasterize_display_list_into_with_phase_timings_and_caches(
+    let fill_cell = RefCell::new(fill_routes.as_deref().copied().unwrap_or_default());
+    let stroke_cell = RefCell::new(stroke_routes.as_deref().copied().unwrap_or_default());
+    ferrugo_render::rasterize_display_list_into_interruptible(
         display_list,
         raster,
         transform,
         path_options,
+        &fill_cell,
+        &stroke_cell,
         glyph_bitmap_cache,
         type3_template_cache,
+        type3_render_cache,
+        control.raster_interrupt(),
         |phase, duration| {
             if let Some(timings) = timings.as_deref_mut() {
                 timings.record(native_render_phase_from_raster_phase(phase), duration);
             }
         },
     )
-    .map_err(map_raster_error)
+    .map_err(map_raster_error)?;
+    if let Some(fill_routes) = fill_routes.as_deref_mut() {
+        *fill_routes = fill_cell.into_inner();
+    }
+    if let Some(stroke_routes) = stroke_routes.as_deref_mut() {
+        *stroke_routes = stroke_cell.into_inner();
+    }
+    Ok(())
 }
 
 const fn native_render_phase_from_raster_phase(phase: RasterDisplayPhase) -> NativeRenderPhase {
@@ -7507,6 +7461,8 @@ fn map_raster_error(error: RasterError) -> ThumbnailError {
         RasterErrorKind::PatternTileOverflow { .. } => {
             unsupported_feature(BUCKET_GRAPHICS_PATTERN_SHADING)
         }
+        RasterErrorKind::DeadlineExceeded => ThumbnailError::Timeout,
+        RasterErrorKind::Cancelled => ThumbnailError::Cancelled,
         _ => ThumbnailError::internal(error.to_string()),
     }
 }
@@ -8836,6 +8792,32 @@ mod tests {
             .expect_err("zero timeout should abort before rendering");
 
         assert_eq!(error, ThumbnailError::Timeout);
+    }
+
+    #[test]
+    fn native_backend_should_enforce_nonzero_render_timeout_during_raster() {
+        // Large vector page: at max_edge 1024 the raster work takes well over
+        // the configured deadline on any host, so the abort comes from the
+        // cooperative in-raster checks, not from the entry check alone.
+        let bytes =
+            include_bytes!("../../../fixtures/generated/technical-large-coordinate-plan.pdf");
+        let options = ThumbnailOptions {
+            max_edge: 1024,
+            timeout: std::time::Duration::from_millis(5),
+            ..ThumbnailOptions::default()
+        };
+
+        let started = std::time::Instant::now();
+        let error = NativeBackend::new()
+            .render(PdfSource::from_bytes(bytes), &options)
+            .expect_err("tiny timeout should abort during rendering");
+
+        assert_eq!(error, ThumbnailError::Timeout);
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(10),
+            "timeout abort must be bounded, took {:?}",
+            started.elapsed()
+        );
     }
 
     #[test]
