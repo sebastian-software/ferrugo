@@ -13590,7 +13590,7 @@ mod tests {
         let manifest = read_corpus_manifest(&manifest_path).expect("manifest should parse");
         let paths = vec![
             fixture_root.join("fixtures/generated/optional-content-ocmd.pdf"),
-            fixture_root.join("fixtures/generated/unsupported-ccitt-image.pdf"),
+            fixture_root.join("fixtures/generated/unsupported-jbig2-image.pdf"),
         ];
         let options = ThumbnailOptions {
             page_index: 0,

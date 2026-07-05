@@ -10889,9 +10889,28 @@ mod tests {
     }
 
     #[test]
-    fn native_backend_should_report_generated_unsupported_ccitt_fixture() {
-        let bytes = include_bytes!("../../../fixtures/generated/unsupported-ccitt-image.pdf");
-        assert_unsupported_image_filter_fixture(bytes);
+    fn native_backend_should_render_generated_ccitt_fixture() {
+        let bytes = include_bytes!("../../../fixtures/generated/ccitt-g3-1d-image-mask.pdf");
+        let thumbnail = ThumbnailBackend::render(
+            &NativeBackend::new(),
+            PdfSource::from_bytes(bytes),
+            &ThumbnailOptions {
+                max_edge: 120,
+                ..ThumbnailOptions::default()
+            },
+        )
+        .expect("generated CCITT fixture should render through native backend");
+
+        assert_eq!(thumbnail.width, 103);
+        assert_eq!(thumbnail.height, 120);
+        assert!(
+            thumbnail
+                .bytes
+                .chunks_exact(4)
+                .filter(|pixel| *pixel != [255, 255, 255, 255])
+                .count()
+                > 1_000
+        );
     }
 
     #[test]
@@ -10951,6 +10970,29 @@ mod tests {
                 "large scanner image budget",
                 10_000,
             ),
+            (
+                include_bytes!("../../../fixtures/generated/ccitt-g3-1d-image-mask.pdf") as &[u8],
+                "ccitt group3 image mask",
+                1_000,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/ccitt-g3-mixed-image-mask.pdf")
+                    as &[u8],
+                "ccitt mixed group3 image mask",
+                1_000,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/ccitt-g4-devicegray-blackis1.pdf")
+                    as &[u8],
+                "ccitt group4 devicegray",
+                1_000,
+            ),
+            (
+                include_bytes!("../../../fixtures/generated/ccitt-g3-1d-eol-aligned.pdf")
+                    as &[u8],
+                "ccitt group3 eol aligned",
+                1_000,
+            ),
         ];
 
         for &(bytes, label, min_visible_pixels) in supported_fixtures {
@@ -10976,7 +11018,6 @@ mod tests {
         }
 
         for bytes in [
-            include_bytes!("../../../fixtures/generated/unsupported-ccitt-image.pdf") as &[u8],
             include_bytes!("../../../fixtures/generated/unsupported-jbig2-image.pdf") as &[u8],
             include_bytes!("../../../fixtures/generated/unsupported-jpx-image.pdf") as &[u8],
         ] {
@@ -10988,10 +11029,10 @@ mod tests {
     fn native_backend_should_freeze_typed_unsupported_boundary_buckets() {
         let fixtures: &[(&[u8], &'static str, &str)] = &[
             (
-                include_bytes!("../../../fixtures/generated/unsupported-ccitt-image.pdf")
+                include_bytes!("../../../fixtures/generated/unsupported-jbig2-image.pdf")
                     as &[u8],
                 buckets::IMAGE_FILTER,
-                "unsupported CCITT image filter",
+                "unsupported JBIG2 image filter",
             ),
             (
                 include_bytes!("../../../fixtures/generated/optional-content-usage-application.pdf")

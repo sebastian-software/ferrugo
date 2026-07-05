@@ -123,6 +123,94 @@ def run_length_encode(data: bytes) -> bytes:
     return bytes(encoded)
 
 
+CCITT_WHITE_TERMINATING = {
+    0: (0b00110101, 8),
+    1: (0b000111, 6),
+    2: (0b0111, 4),
+    3: (0b1000, 4),
+    4: (0b1011, 4),
+    5: (0b1100, 4),
+    6: (0b1110, 4),
+    7: (0b1111, 4),
+    8: (0b10011, 5),
+}
+
+CCITT_BLACK_TERMINATING = {
+    0: (0b0000110111, 10),
+    1: (0b010, 3),
+    2: (0b11, 2),
+    3: (0b10, 2),
+    4: (0b011, 3),
+    5: (0b0011, 4),
+    6: (0b0010, 4),
+    7: (0b00011, 5),
+    8: (0b000101, 6),
+}
+
+
+def append_bits(bits: list[int], value: int, length: int) -> None:
+    for shift in range(length - 1, -1, -1):
+        bits.append((value >> shift) & 1)
+
+
+def pack_bits(bits: list[int]) -> bytes:
+    packed = bytearray((len(bits) + 7) // 8)
+    for index, bit in enumerate(bits):
+        if bit:
+            packed[index // 8] |= 1 << (7 - (index % 8))
+    return bytes(packed)
+
+
+def ccitt_encode_run(bits: list[int], run: int, black: bool) -> None:
+    table = CCITT_BLACK_TERMINATING if black else CCITT_WHITE_TERMINATING
+    code, length = table[run]
+    append_bits(bits, code, length)
+
+
+def ccitt_encode_1d_row(bits: list[int], runs: list[int]) -> None:
+    black = False
+    for run in runs:
+        ccitt_encode_run(bits, run, black)
+        black = not black
+
+
+def ccitt_group3_1d_encode(rows: list[list[int]]) -> bytes:
+    bits: list[int] = []
+    for row in rows:
+        ccitt_encode_1d_row(bits, row)
+    return pack_bits(bits)
+
+
+def ccitt_group3_1d_eol_aligned_encode(rows: list[list[int]]) -> bytes:
+    bits: list[int] = []
+    for row in rows:
+        append_bits(bits, 0b000000000001, 12)
+        while len(bits) % 8:
+            bits.append(0)
+        ccitt_encode_1d_row(bits, row)
+    return pack_bits(bits)
+
+
+def ccitt_group4_encode(row: list[int]) -> bytes:
+    bits: list[int] = []
+    append_bits(bits, 0b001, 3)
+    ccitt_encode_run(bits, row[0], False)
+    ccitt_encode_run(bits, row[1], True)
+    append_bits(bits, 0b1, 1)
+    return pack_bits(bits)
+
+
+def ccitt_group3_mixed_encode(row: list[int]) -> bytes:
+    bits: list[int] = []
+    append_bits(bits, 0b1, 1)
+    ccitt_encode_1d_row(bits, row)
+    append_bits(bits, 0b0, 1)
+    append_bits(bits, 0b1, 1)
+    append_bits(bits, 0b1, 1)
+    append_bits(bits, 0b1, 1)
+    return pack_bits(bits)
+
+
 def filtered_content_pdf(filter_name: str, encoded: bytes, decode_parms: str = "") -> bytes:
     pdf = Pdf()
     filter_entries = f"/Filter /{filter_name} "
@@ -1353,6 +1441,77 @@ def runlength_image_xobject_pdf() -> bytes:
     catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
     assert image_object == 4
     return pdf.render(catalog)
+
+
+def ccitt_image_pdf(name: str, image_dictionary: bytes, image: bytes, height: int = 1) -> bytes:
+    pdf = Pdf()
+    content = f"q 80 0 0 {80 if height == 1 else 100} 20 20 cm /Im1 Do Q".encode("ascii")
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 120 140] "
+        "/Resources << /XObject << /Im1 4 0 R >> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    image_object = pdf.add(
+        image_dictionary
+        + b" /Length "
+        + str(len(image)).encode("ascii")
+        + b" >>\nstream\n"
+        + image
+        + b"\nendstream"
+    )
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert image_object == 4, name
+    return pdf.render(catalog)
+
+
+def ccitt_g3_1d_image_mask_pdf() -> bytes:
+    image = ccitt_group3_1d_encode([[2, 3, 3]])
+    return ccitt_image_pdf(
+        "ccitt-g3-1d-image-mask",
+        b"<< /Type /XObject /Subtype /Image /Width 8 /Height 1 /ImageMask true "
+        b"/Filter /CCITTFaxDecode /DecodeParms << /K 0 /Columns 8 /Rows 1 >>",
+        image,
+    )
+
+
+def ccitt_g3_mixed_image_mask_pdf() -> bytes:
+    image = ccitt_group3_mixed_encode([2, 3, 3])
+    return ccitt_image_pdf(
+        "ccitt-g3-mixed-image-mask",
+        b"<< /Type /XObject /Subtype /Image /Width 8 /Height 2 /ImageMask true "
+        b"/Filter /CCITTFaxDecode /DecodeParms << /K 2 /Columns 8 /Rows 2 >>",
+        image,
+        height=2,
+    )
+
+
+def ccitt_g4_devicegray_blackis1_pdf() -> bytes:
+    image = ccitt_group4_encode([2, 3, 3])
+    return ccitt_image_pdf(
+        "ccitt-g4-devicegray-blackis1",
+        b"<< /Type /XObject /Subtype /Image /Width 8 /Height 1 "
+        b"/ColorSpace /DeviceGray /BitsPerComponent 1 /Decode [1 0] "
+        b"/Filter /CCITTFaxDecode /DecodeParms << /K -1 /Columns 8 /Rows 1 /BlackIs1 true >>",
+        image,
+    )
+
+
+def ccitt_g3_1d_eol_aligned_pdf() -> bytes:
+    image = ccitt_group3_1d_eol_aligned_encode([[2, 3, 3]])
+    return ccitt_image_pdf(
+        "ccitt-g3-1d-eol-aligned",
+        b"<< /Type /XObject /Subtype /Image /Width 8 /Height 1 /ImageMask true "
+        b"/Filter /CCITTFaxDecode "
+        b"/DecodeParms << /K 0 /Columns 8 /Rows 1 /EndOfLine true "
+        b"/EncodedByteAlign true /EndOfBlock false >>",
+        image,
+    )
 
 
 def soft_mask_image_pdf() -> bytes:
@@ -7973,11 +8132,15 @@ def main() -> None:
     write("predictor-image.pdf", predictor_image_pdf())
     write("lzw-image-xobject.pdf", lzw_image_xobject_pdf())
     write("runlength-image-xobject.pdf", runlength_image_xobject_pdf())
+    write("ccitt-g3-1d-image-mask.pdf", ccitt_g3_1d_image_mask_pdf())
+    write("ccitt-g3-mixed-image-mask.pdf", ccitt_g3_mixed_image_mask_pdf())
+    write("ccitt-g4-devicegray-blackis1.pdf", ccitt_g4_devicegray_blackis1_pdf())
+    write("ccitt-g3-1d-eol-aligned.pdf", ccitt_g3_1d_eol_aligned_pdf())
     write("soft-mask-image.pdf", soft_mask_image_pdf())
     write("image-mask-signature.pdf", image_mask_signature_pdf())
     write("image-mask-monochrome-icon.pdf", image_mask_monochrome_icon_pdf())
     write("image-mask-logo.pdf", image_mask_logo_pdf())
-    write("unsupported-ccitt-image.pdf", unsupported_image_codec_pdf("CCITTFaxDecode"))
+    write("unsupported-ccitt-image.pdf", ccitt_g3_1d_image_mask_pdf())
     write("unsupported-jbig2-image.pdf", unsupported_image_codec_pdf("JBIG2Decode"))
     write("unsupported-jpx-image.pdf", unsupported_image_codec_pdf("JPXDecode"))
     write("scanned-page.pdf", scanned_page_pdf())

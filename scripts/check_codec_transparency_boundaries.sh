@@ -46,6 +46,7 @@ cargo run -p ferrugo --no-default-features -- summarize-fallbacks fixtures/gener
   --include-family jpeg \
   --include-family mask-alpha \
   --include-family image-heavy \
+  --include-family ccitt \
   --fail-on-fallback \
   --max-edge 180 \
   --output "${out_dir}/image-codec-supported.json"
@@ -67,10 +68,10 @@ const family = summary.families?.["unsupported-specialized"];
 if (!family) {
   throw new Error("missing unsupported-specialized family in image codec summary");
 }
-if (summary.total !== 3 || summary.native_rendered !== 0 || summary.fallback_required !== 3) {
+if (summary.total !== 2 || summary.native_rendered !== 0 || summary.fallback_required !== 2) {
   throw new Error(`unexpected image codec boundary totals in ${path}`);
 }
-if (summary.fallback_categories?.["image.filter"] !== 3) {
+if (summary.fallback_categories?.["image.filter"] !== 2) {
   throw new Error("deferred image codecs must remain typed as image.filter");
 }
 if (Object.keys(summary.errors ?? {}).length !== 0 || Object.keys(family.errors ?? {}).length !== 0) {
@@ -142,6 +143,7 @@ cargo run -p ferrugo --no-default-features -- benchmark-native fixtures/generate
   --include-family jpeg \
   --include-family mask-alpha \
   --include-family image-heavy \
+  --include-family ccitt \
   --max-edge 180 \
   --iterations 2 \
   --max-ms 1000 \

@@ -2381,6 +2381,8 @@ pub struct ImageResourceSummary {
     pub flate_images: usize,
     /// DCT/JPEG-decoded image streams.
     pub dct_images: usize,
+    /// CCITTFax-decoded monochrome image streams.
+    pub ccitt_images: usize,
     /// Flate image streams with PNG predictor parameters.
     pub predictor_images: usize,
     /// Color images decoded into sampled image resources.
@@ -2456,6 +2458,7 @@ impl ImageResourceSummary {
         raw_images: 0,
         flate_images: 0,
         dct_images: 0,
+        ccitt_images: 0,
         predictor_images: 0,
         color_images: 0,
         stencil_masks: 0,
@@ -2489,6 +2492,7 @@ impl ImageResourceSummary {
                 }
             }
             ImageFilter::DctDecode => self.dct_images += 1,
+            ImageFilter::CcittFax => self.ccitt_images += 1,
         }
         self.encoded_bytes = self.encoded_bytes.saturating_add(stream.raw().len());
         Ok(())
@@ -11073,10 +11077,8 @@ where
             .or_else(|_| required_u8(stream.dictionary(), b"BPC"))
             .map_err(|_| invalid_image_resource(resource_name.as_bytes()))?
     };
+    let image_filter = image_filter(stream.dictionary())?;
     if image_mask && bits_per_component != 1 {
-        return Err(invalid_image_resource(resource_name.as_bytes()));
-    }
-    if !image_mask && bits_per_component != 8 {
         return Err(invalid_image_resource(resource_name.as_bytes()));
     }
     let color_space = if image_mask {
@@ -11090,21 +11092,31 @@ where
             icc_cache,
         )?
     };
+    if !image_mask
+        && bits_per_component != 8
+        && !(bits_per_component == 1
+            && image_filter == ImageFilter::CcittFax
+            && color_space.kind == ImageColorSpace::DeviceGray)
+    {
+        return Err(invalid_image_resource(resource_name.as_bytes()));
+    }
     let expected_len = if image_mask {
         expected_image_mask_len(width, height)?
     } else {
         expected_image_len(width, height, color_space.kind)?
     };
     enforce_image_byte_budget(expected_len, limits.max_image_bytes)?;
-    let image_filter = image_filter(stream.dictionary())?;
     let decoded = decode_image_samples(
         stream,
-        image_filter,
-        width,
-        height,
-        color_space.kind,
-        bits_per_component,
-        limits.max_image_bytes,
+        ImageDecodeInput {
+            filter: image_filter,
+            width,
+            height,
+            color_space: color_space.kind,
+            bits_per_component,
+            image_mask,
+            max_image_bytes: limits.max_image_bytes,
+        },
     )?;
     enforce_image_byte_budget(decoded.len(), limits.max_image_bytes)?;
     if decoded.len() != expected_len {
@@ -11344,22 +11356,28 @@ fn decode_inline_image(
     })
 }
 
-fn decode_image_samples(
-    stream: &StreamObject<'_>,
-    image_filter: ImageFilter,
+#[derive(Clone, Copy)]
+struct ImageDecodeInput {
+    filter: ImageFilter,
     width: u32,
     height: u32,
     color_space: ImageColorSpace,
     bits_per_component: u8,
+    image_mask: bool,
     max_image_bytes: usize,
+}
+
+fn decode_image_samples(
+    stream: &StreamObject<'_>,
+    input: ImageDecodeInput,
 ) -> GraphicsResult<Vec<u8>> {
-    match image_filter {
+    match input.filter {
         ImageFilter::Raw => {
-            if stream.raw().len() > max_image_bytes {
+            if stream.raw().len() > input.max_image_bytes {
                 return Err(GraphicsError::new(
                     None,
                     GraphicsErrorKind::ImageBytesOverflow {
-                        limit: max_image_bytes,
+                        limit: input.max_image_bytes,
                     },
                 ));
             }
@@ -11368,26 +11386,26 @@ fn decode_image_samples(
         ImageFilter::StreamDecoded => {
             let predictor = image_predictor(
                 stream.dictionary(),
-                width,
-                height,
-                color_space,
-                bits_per_component,
+                input.width,
+                input.height,
+                input.color_space,
+                input.bits_per_component,
             )?;
             let max_decoded_len = predictor
                 .map(|predictor| predictor.encoded_len())
-                .unwrap_or(max_image_bytes)
+                .unwrap_or(input.max_image_bytes)
                 .max(if predictor.is_some() {
                     stream.raw().len()
                 } else {
-                    max_image_bytes
+                    input.max_image_bytes
                 });
             let initial_capacity = image_stream_decoded_capacity(
-                width,
-                height,
-                color_space,
-                bits_per_component,
+                input.width,
+                input.height,
+                input.color_space,
+                input.bits_per_component,
                 predictor,
-                max_image_bytes,
+                input.max_image_bytes,
             )?;
             let decoded = stream
                 .decode_with_options(StreamDecodeOptions {
@@ -11405,19 +11423,31 @@ fn decode_image_samples(
             let Some(predictor) = predictor else {
                 return Ok(decoded);
             };
-            if predictor.decoded_len() > max_image_bytes {
+            if predictor.decoded_len() > input.max_image_bytes {
                 return Err(GraphicsError::new(
                     None,
                     GraphicsErrorKind::ImageBytesOverflow {
-                        limit: max_image_bytes,
+                        limit: input.max_image_bytes,
                     },
                 ));
             }
             apply_png_predictor(decoded, predictor)
         }
-        ImageFilter::DctDecode => {
-            decode_dct_image(stream.raw(), width, height, color_space, max_image_bytes)
-        }
+        ImageFilter::DctDecode => decode_dct_image(
+            stream.raw(),
+            input.width,
+            input.height,
+            input.color_space,
+            input.max_image_bytes,
+        ),
+        ImageFilter::CcittFax => decode_ccitt_fax_image(
+            stream.raw(),
+            stream.dictionary(),
+            input.width,
+            input.height,
+            input.image_mask,
+            input.max_image_bytes,
+        ),
     }
 }
 
@@ -11869,6 +11899,628 @@ fn decode_dct_image(
         )
     })
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct CcittDecodeParams {
+    k: i32,
+    columns: u32,
+    rows: u32,
+    black_is_1: bool,
+    encoded_byte_align: bool,
+    end_of_line: bool,
+    end_of_block: bool,
+}
+
+fn decode_ccitt_fax_image(
+    encoded: &[u8],
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    width: u32,
+    height: u32,
+    image_mask: bool,
+    max_image_bytes: usize,
+) -> GraphicsResult<Vec<u8>> {
+    let params = ccitt_decode_params(dictionary, width, height)?;
+    let output_len = if image_mask {
+        expected_image_mask_len(width, height)?
+    } else {
+        expected_image_len(width, height, ImageColorSpace::DeviceGray)?
+    };
+    enforce_image_byte_budget(output_len, max_image_bytes)?;
+    let mut reader = CcittBitReader::new(encoded);
+    let pixels = decode_ccitt_rows(&mut reader, params)?;
+    Ok(ccitt_pixels_to_samples(
+        &pixels, params, image_mask, output_len,
+    ))
+}
+
+fn ccitt_decode_params(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    width: u32,
+    height: u32,
+) -> GraphicsResult<CcittDecodeParams> {
+    let params = image_decode_parms(dictionary)?.unwrap_or(&[]);
+    let columns = decode_parms_u32(params, b"Columns")?.unwrap_or(1728);
+    let rows = decode_parms_u32(params, b"Rows")?.unwrap_or(height);
+    if columns != width || rows != height {
+        return Err(invalid_image_resource(b"DecodeParms"));
+    }
+    Ok(CcittDecodeParams {
+        k: decode_parms_i32(params, b"K")?.unwrap_or(0),
+        columns,
+        rows,
+        black_is_1: decode_parms_bool(params, b"BlackIs1")?.unwrap_or(false),
+        encoded_byte_align: decode_parms_bool(params, b"EncodedByteAlign")?.unwrap_or(false),
+        end_of_line: decode_parms_bool(params, b"EndOfLine")?.unwrap_or(false),
+        end_of_block: decode_parms_bool(params, b"EndOfBlock")?.unwrap_or(true),
+    })
+}
+
+fn decode_parms_i32(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    key: &[u8],
+) -> GraphicsResult<Option<i32>> {
+    let Some(value) = dictionary_value(dictionary, key) else {
+        return Ok(None);
+    };
+    let PdfPrimitive::Number(PdfNumber::Integer(value)) = value else {
+        return Err(invalid_image_resource(b"DecodeParms"));
+    };
+    i32::try_from(*value)
+        .map(Some)
+        .map_err(|_| invalid_image_resource(b"DecodeParms"))
+}
+
+fn decode_parms_bool(
+    dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
+    key: &[u8],
+) -> GraphicsResult<Option<bool>> {
+    let Some(value) = dictionary_value(dictionary, key) else {
+        return Ok(None);
+    };
+    let PdfPrimitive::Boolean(value) = value else {
+        return Err(invalid_image_resource(b"DecodeParms"));
+    };
+    Ok(Some(*value))
+}
+
+fn decode_ccitt_rows(
+    reader: &mut CcittBitReader<'_>,
+    params: CcittDecodeParams,
+) -> GraphicsResult<Vec<bool>> {
+    let columns = params.columns as usize;
+    let rows = params.rows as usize;
+    let mut pixels = Vec::with_capacity(columns.saturating_mul(rows));
+    let mut reference = vec![false; columns];
+    for row_index in 0..rows {
+        if params.end_of_line {
+            reader.consume_eol()?;
+            if params.encoded_byte_align {
+                reader.align_to_byte();
+            }
+        }
+        let row = if params.k < 0 {
+            decode_ccitt_2d_row(reader, &reference, columns)?
+        } else if params.k == 0 {
+            decode_ccitt_1d_row(reader, columns)?
+        } else {
+            let is_1d = reader.read_bit()?.ok_or_else(invalid_ccitt_data)?;
+            if is_1d {
+                decode_ccitt_1d_row(reader, columns)?
+            } else {
+                decode_ccitt_2d_row(reader, &reference, columns)?
+            }
+        };
+        if params.encoded_byte_align && !params.end_of_line {
+            reader.align_to_byte();
+        }
+        pixels.extend_from_slice(&row);
+        reference = row;
+        if params.end_of_block && row_index + 1 == rows {
+            break;
+        }
+    }
+    Ok(pixels)
+}
+
+fn decode_ccitt_1d_row(
+    reader: &mut CcittBitReader<'_>,
+    columns: usize,
+) -> GraphicsResult<Vec<bool>> {
+    let mut row = Vec::with_capacity(columns);
+    let mut black = false;
+    while row.len() < columns {
+        let run = decode_ccitt_run(reader, black)?;
+        append_ccitt_run(&mut row, run, black, columns)?;
+        black = !black;
+    }
+    Ok(row)
+}
+
+fn decode_ccitt_2d_row(
+    reader: &mut CcittBitReader<'_>,
+    reference: &[bool],
+    columns: usize,
+) -> GraphicsResult<Vec<bool>> {
+    let reference_changes = ccitt_changes(reference);
+    let mut row = Vec::with_capacity(columns);
+    let mut black = false;
+    let mut a0 = 0_usize;
+    while a0 < columns {
+        match decode_ccitt_2d_mode(reader)? {
+            Ccitt2dMode::Pass => {
+                let (_, b2) = ccitt_b1_b2(&reference_changes, a0, black, columns);
+                append_ccitt_run(&mut row, b2.saturating_sub(a0), black, columns)?;
+                a0 = b2;
+            }
+            Ccitt2dMode::Horizontal => {
+                let first = decode_ccitt_run(reader, black)?;
+                append_ccitt_run(&mut row, first, black, columns)?;
+                a0 = a0.checked_add(first).ok_or_else(invalid_ccitt_data)?;
+                black = !black;
+                let second = decode_ccitt_run(reader, black)?;
+                append_ccitt_run(&mut row, second, black, columns)?;
+                a0 = a0.checked_add(second).ok_or_else(invalid_ccitt_data)?;
+                black = !black;
+            }
+            Ccitt2dMode::Vertical(delta) => {
+                let (b1, _) = ccitt_b1_b2(&reference_changes, a0, black, columns);
+                let a1 = b1
+                    .checked_add_signed(delta)
+                    .ok_or_else(invalid_ccitt_data)?;
+                if a1 < a0 || a1 > columns {
+                    return Err(invalid_ccitt_data());
+                }
+                append_ccitt_run(&mut row, a1 - a0, black, columns)?;
+                a0 = a1;
+                black = !black;
+            }
+        }
+    }
+    Ok(row)
+}
+
+fn append_ccitt_run(
+    row: &mut Vec<bool>,
+    run: usize,
+    black: bool,
+    columns: usize,
+) -> GraphicsResult<()> {
+    if row.len().saturating_add(run) > columns {
+        return Err(invalid_ccitt_data());
+    }
+    row.extend(std::iter::repeat(black).take(run));
+    Ok(())
+}
+
+fn decode_ccitt_run(reader: &mut CcittBitReader<'_>, black: bool) -> GraphicsResult<usize> {
+    let mut run = 0_usize;
+    loop {
+        let code = decode_ccitt_huffman_code(reader, black)?;
+        run = run.checked_add(code.run).ok_or_else(invalid_ccitt_data)?;
+        if code.terminating {
+            return Ok(run);
+        }
+    }
+}
+
+fn decode_ccitt_huffman_code(
+    reader: &mut CcittBitReader<'_>,
+    black: bool,
+) -> GraphicsResult<CcittCode> {
+    let mut bits = 0_u16;
+    for len in 1..=13_u8 {
+        let bit = reader.read_bit()?.ok_or_else(invalid_ccitt_data)?;
+        bits = (bits << 1) | u16::from(bit);
+        let table = if black {
+            CCITT_BLACK_CODES
+        } else {
+            CCITT_WHITE_CODES
+        };
+        if let Some(code) = table
+            .iter()
+            .find(|code| code.len == len && code.bits == bits)
+            .copied()
+        {
+            return Ok(code);
+        }
+    }
+    Err(invalid_ccitt_data())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Ccitt2dMode {
+    Pass,
+    Horizontal,
+    Vertical(isize),
+}
+
+fn decode_ccitt_2d_mode(reader: &mut CcittBitReader<'_>) -> GraphicsResult<Ccitt2dMode> {
+    let mut bits = 0_u16;
+    for len in 1..=7_u8 {
+        let bit = reader.read_bit()?.ok_or_else(invalid_ccitt_data)?;
+        bits = (bits << 1) | u16::from(bit);
+        let mode = match (len, bits) {
+            (1, 0b1) => Some(Ccitt2dMode::Vertical(0)),
+            (3, 0b001) => Some(Ccitt2dMode::Horizontal),
+            (3, 0b010) => Some(Ccitt2dMode::Vertical(-1)),
+            (3, 0b011) => Some(Ccitt2dMode::Vertical(1)),
+            (4, 0b0001) => Some(Ccitt2dMode::Pass),
+            (6, 0b000010) => Some(Ccitt2dMode::Vertical(-2)),
+            (6, 0b000011) => Some(Ccitt2dMode::Vertical(2)),
+            (7, 0b0000010) => Some(Ccitt2dMode::Vertical(-3)),
+            (7, 0b0000011) => Some(Ccitt2dMode::Vertical(3)),
+            _ => None,
+        };
+        if let Some(mode) = mode {
+            return Ok(mode);
+        }
+    }
+    Err(invalid_ccitt_data())
+}
+
+fn ccitt_changes(row: &[bool]) -> Vec<usize> {
+    let mut changes = Vec::new();
+    let mut previous = false;
+    for (index, value) in row.iter().copied().enumerate() {
+        if value != previous {
+            changes.push(index);
+            previous = value;
+        }
+    }
+    changes.push(row.len());
+    changes
+}
+
+fn ccitt_b1_b2(changes: &[usize], a0: usize, black: bool, columns: usize) -> (usize, usize) {
+    let b1_index = changes
+        .iter()
+        .enumerate()
+        .find_map(|(index, change)| {
+            let color_after_change_is_black = index % 2 == 0;
+            (*change > a0 && color_after_change_is_black != black).then_some(index)
+        })
+        .unwrap_or(changes.len().saturating_sub(1));
+    let b1 = changes
+        .get(b1_index)
+        .copied()
+        .unwrap_or(columns)
+        .min(columns);
+    let b2 = changes
+        .get(b1_index + 1)
+        .copied()
+        .unwrap_or(columns)
+        .min(columns);
+    (b1, b2)
+}
+
+fn ccitt_pixels_to_samples(
+    pixels: &[bool],
+    params: CcittDecodeParams,
+    image_mask: bool,
+    output_len: usize,
+) -> Vec<u8> {
+    let columns = params.columns as usize;
+    if image_mask {
+        let row_bytes = columns.div_ceil(8);
+        let mut samples = vec![0_u8; output_len];
+        for row in 0..params.rows as usize {
+            for column in 0..columns {
+                let black = pixels[row * columns + column];
+                let sample_bit = if params.black_is_1 { black } else { !black };
+                if sample_bit {
+                    let index = row * row_bytes + column / 8;
+                    samples[index] |= 1 << (7 - (column % 8));
+                }
+            }
+        }
+        samples
+    } else {
+        pixels
+            .iter()
+            .map(|black| {
+                let sample_bit = if params.black_is_1 { *black } else { !*black };
+                if sample_bit {
+                    255
+                } else {
+                    0
+                }
+            })
+            .collect()
+    }
+}
+
+fn invalid_ccitt_data() -> GraphicsError {
+    GraphicsError::new(
+        None,
+        GraphicsErrorKind::ObjectModel {
+            message: "CCITTFaxDecode data error".to_string(),
+        },
+    )
+}
+
+#[derive(Debug, Clone, Copy)]
+struct CcittCode {
+    bits: u16,
+    len: u8,
+    run: usize,
+    terminating: bool,
+}
+
+struct CcittBitReader<'a> {
+    encoded: &'a [u8],
+    bit_index: usize,
+}
+
+impl<'a> CcittBitReader<'a> {
+    const fn new(encoded: &'a [u8]) -> Self {
+        Self {
+            encoded,
+            bit_index: 0,
+        }
+    }
+
+    fn read_bit(&mut self) -> GraphicsResult<Option<bool>> {
+        let Some(byte) = self.encoded.get(self.bit_index / 8).copied() else {
+            return Ok(None);
+        };
+        let bit = (byte & (1 << (7 - (self.bit_index % 8)))) != 0;
+        self.bit_index += 1;
+        Ok(Some(bit))
+    }
+
+    fn align_to_byte(&mut self) {
+        let remainder = self.bit_index % 8;
+        if remainder != 0 {
+            self.bit_index += 8 - remainder;
+        }
+    }
+
+    fn consume_eol(&mut self) -> GraphicsResult<()> {
+        let mut zeros = 0_usize;
+        loop {
+            let bit = self.read_bit()?.ok_or_else(invalid_ccitt_data)?;
+            if bit {
+                if zeros >= 11 {
+                    return Ok(());
+                }
+                return Err(invalid_ccitt_data());
+            }
+            zeros += 1;
+        }
+    }
+}
+
+const fn ccitt_t(bits: u16, len: u8, run: usize) -> CcittCode {
+    CcittCode {
+        bits,
+        len,
+        run,
+        terminating: true,
+    }
+}
+
+const fn ccitt_m(bits: u16, len: u8, run: usize) -> CcittCode {
+    CcittCode {
+        bits,
+        len,
+        run,
+        terminating: false,
+    }
+}
+
+const CCITT_WHITE_CODES: &[CcittCode] = &[
+    ccitt_t(0b00110101, 8, 0),
+    ccitt_t(0b000111, 6, 1),
+    ccitt_t(0b0111, 4, 2),
+    ccitt_t(0b1000, 4, 3),
+    ccitt_t(0b1011, 4, 4),
+    ccitt_t(0b1100, 4, 5),
+    ccitt_t(0b1110, 4, 6),
+    ccitt_t(0b1111, 4, 7),
+    ccitt_t(0b10011, 5, 8),
+    ccitt_t(0b10100, 5, 9),
+    ccitt_t(0b00111, 5, 10),
+    ccitt_t(0b01000, 5, 11),
+    ccitt_t(0b001000, 6, 12),
+    ccitt_t(0b000011, 6, 13),
+    ccitt_t(0b110100, 6, 14),
+    ccitt_t(0b110101, 6, 15),
+    ccitt_t(0b101010, 6, 16),
+    ccitt_t(0b101011, 6, 17),
+    ccitt_t(0b0100111, 7, 18),
+    ccitt_t(0b0001100, 7, 19),
+    ccitt_t(0b0001000, 7, 20),
+    ccitt_t(0b0010111, 7, 21),
+    ccitt_t(0b0000011, 7, 22),
+    ccitt_t(0b0000100, 7, 23),
+    ccitt_t(0b0101000, 7, 24),
+    ccitt_t(0b0101011, 7, 25),
+    ccitt_t(0b0010011, 7, 26),
+    ccitt_t(0b0100100, 7, 27),
+    ccitt_t(0b0011000, 7, 28),
+    ccitt_t(0b00000010, 8, 29),
+    ccitt_t(0b00000011, 8, 30),
+    ccitt_t(0b00011010, 8, 31),
+    ccitt_t(0b00011011, 8, 32),
+    ccitt_t(0b00010010, 8, 33),
+    ccitt_t(0b00010011, 8, 34),
+    ccitt_t(0b00010100, 8, 35),
+    ccitt_t(0b00010101, 8, 36),
+    ccitt_t(0b00010110, 8, 37),
+    ccitt_t(0b00010111, 8, 38),
+    ccitt_t(0b00101000, 8, 39),
+    ccitt_t(0b00101001, 8, 40),
+    ccitt_t(0b00101010, 8, 41),
+    ccitt_t(0b00101011, 8, 42),
+    ccitt_t(0b00101100, 8, 43),
+    ccitt_t(0b00101101, 8, 44),
+    ccitt_t(0b00000100, 8, 45),
+    ccitt_t(0b00000101, 8, 46),
+    ccitt_t(0b00001010, 8, 47),
+    ccitt_t(0b00001011, 8, 48),
+    ccitt_t(0b01010010, 8, 49),
+    ccitt_t(0b01010011, 8, 50),
+    ccitt_t(0b01010100, 8, 51),
+    ccitt_t(0b01010101, 8, 52),
+    ccitt_t(0b00100100, 8, 53),
+    ccitt_t(0b00100101, 8, 54),
+    ccitt_t(0b01011000, 8, 55),
+    ccitt_t(0b01011001, 8, 56),
+    ccitt_t(0b01011010, 8, 57),
+    ccitt_t(0b01011011, 8, 58),
+    ccitt_t(0b01001010, 8, 59),
+    ccitt_t(0b01001011, 8, 60),
+    ccitt_t(0b00110010, 8, 61),
+    ccitt_t(0b00110011, 8, 62),
+    ccitt_t(0b00110100, 8, 63),
+    ccitt_m(0b11011, 5, 64),
+    ccitt_m(0b10010, 5, 128),
+    ccitt_m(0b010111, 6, 192),
+    ccitt_m(0b0110111, 7, 256),
+    ccitt_m(0b00110110, 8, 320),
+    ccitt_m(0b00110111, 8, 384),
+    ccitt_m(0b01100100, 8, 448),
+    ccitt_m(0b01100101, 8, 512),
+    ccitt_m(0b01101000, 8, 576),
+    ccitt_m(0b01100111, 8, 640),
+    ccitt_m(0b011001100, 9, 704),
+    ccitt_m(0b011001101, 9, 768),
+    ccitt_m(0b011010010, 9, 832),
+    ccitt_m(0b011010011, 9, 896),
+    ccitt_m(0b011010100, 9, 960),
+    ccitt_m(0b011010101, 9, 1024),
+    ccitt_m(0b011010110, 9, 1088),
+    ccitt_m(0b011010111, 9, 1152),
+    ccitt_m(0b011011000, 9, 1216),
+    ccitt_m(0b011011001, 9, 1280),
+    ccitt_m(0b011011010, 9, 1344),
+    ccitt_m(0b011011011, 9, 1408),
+    ccitt_m(0b010011000, 9, 1472),
+    ccitt_m(0b010011001, 9, 1536),
+    ccitt_m(0b010011010, 9, 1600),
+    ccitt_m(0b011000, 6, 1664),
+    ccitt_m(0b010011011, 9, 1728),
+    ccitt_m(0b00000001000, 11, 1792),
+    ccitt_m(0b00000001100, 11, 1856),
+    ccitt_m(0b00000001101, 11, 1920),
+    ccitt_m(0b000000010010, 12, 1984),
+    ccitt_m(0b000000010011, 12, 2048),
+    ccitt_m(0b000000010100, 12, 2112),
+    ccitt_m(0b000000010101, 12, 2176),
+    ccitt_m(0b000000010110, 12, 2240),
+    ccitt_m(0b000000010111, 12, 2304),
+    ccitt_m(0b000000011100, 12, 2368),
+    ccitt_m(0b000000011101, 12, 2432),
+    ccitt_m(0b000000011110, 12, 2496),
+    ccitt_m(0b000000011111, 12, 2560),
+];
+
+const CCITT_BLACK_CODES: &[CcittCode] = &[
+    ccitt_t(0b0000110111, 10, 0),
+    ccitt_t(0b010, 3, 1),
+    ccitt_t(0b11, 2, 2),
+    ccitt_t(0b10, 2, 3),
+    ccitt_t(0b011, 3, 4),
+    ccitt_t(0b0011, 4, 5),
+    ccitt_t(0b0010, 4, 6),
+    ccitt_t(0b00011, 5, 7),
+    ccitt_t(0b000101, 6, 8),
+    ccitt_t(0b000100, 6, 9),
+    ccitt_t(0b0000100, 7, 10),
+    ccitt_t(0b0000101, 7, 11),
+    ccitt_t(0b0000111, 7, 12),
+    ccitt_t(0b00000100, 8, 13),
+    ccitt_t(0b00000111, 8, 14),
+    ccitt_t(0b000011000, 9, 15),
+    ccitt_t(0b0000010111, 10, 16),
+    ccitt_t(0b0000011000, 10, 17),
+    ccitt_t(0b0000001000, 10, 18),
+    ccitt_t(0b00001100111, 11, 19),
+    ccitt_t(0b00001101000, 11, 20),
+    ccitt_t(0b00001101100, 11, 21),
+    ccitt_t(0b00000110111, 11, 22),
+    ccitt_t(0b00000101000, 11, 23),
+    ccitt_t(0b00000010111, 11, 24),
+    ccitt_t(0b00000011000, 11, 25),
+    ccitt_t(0b000011001010, 12, 26),
+    ccitt_t(0b000011001011, 12, 27),
+    ccitt_t(0b000011001100, 12, 28),
+    ccitt_t(0b000011001101, 12, 29),
+    ccitt_t(0b000001101000, 12, 30),
+    ccitt_t(0b000001101001, 12, 31),
+    ccitt_t(0b000001101010, 12, 32),
+    ccitt_t(0b000001101011, 12, 33),
+    ccitt_t(0b000011010010, 12, 34),
+    ccitt_t(0b000011010011, 12, 35),
+    ccitt_t(0b000011010100, 12, 36),
+    ccitt_t(0b000011010101, 12, 37),
+    ccitt_t(0b000011010110, 12, 38),
+    ccitt_t(0b000011010111, 12, 39),
+    ccitt_t(0b000001101100, 12, 40),
+    ccitt_t(0b000001101101, 12, 41),
+    ccitt_t(0b000011011010, 12, 42),
+    ccitt_t(0b000011011011, 12, 43),
+    ccitt_t(0b000001010100, 12, 44),
+    ccitt_t(0b000001010101, 12, 45),
+    ccitt_t(0b000001010110, 12, 46),
+    ccitt_t(0b000001010111, 12, 47),
+    ccitt_t(0b000001100100, 12, 48),
+    ccitt_t(0b000001100101, 12, 49),
+    ccitt_t(0b000001010010, 12, 50),
+    ccitt_t(0b000001010011, 12, 51),
+    ccitt_t(0b000000100100, 12, 52),
+    ccitt_t(0b000000110111, 12, 53),
+    ccitt_t(0b000000111000, 12, 54),
+    ccitt_t(0b000000100111, 12, 55),
+    ccitt_t(0b000000101000, 12, 56),
+    ccitt_t(0b000001011000, 12, 57),
+    ccitt_t(0b000001011001, 12, 58),
+    ccitt_t(0b000000101011, 12, 59),
+    ccitt_t(0b000000101100, 12, 60),
+    ccitt_t(0b000001011010, 12, 61),
+    ccitt_t(0b000001100110, 12, 62),
+    ccitt_t(0b000001100111, 12, 63),
+    ccitt_m(0b0000001111, 10, 64),
+    ccitt_m(0b000011001000, 12, 128),
+    ccitt_m(0b000011001001, 12, 192),
+    ccitt_m(0b000001011011, 12, 256),
+    ccitt_m(0b000000110011, 12, 320),
+    ccitt_m(0b000000110100, 12, 384),
+    ccitt_m(0b000000110101, 12, 448),
+    ccitt_m(0b0000001101100, 13, 512),
+    ccitt_m(0b0000001101101, 13, 576),
+    ccitt_m(0b0000001001010, 13, 640),
+    ccitt_m(0b0000001001011, 13, 704),
+    ccitt_m(0b0000001001100, 13, 768),
+    ccitt_m(0b0000001001101, 13, 832),
+    ccitt_m(0b0000001110010, 13, 896),
+    ccitt_m(0b0000001110011, 13, 960),
+    ccitt_m(0b0000001110100, 13, 1024),
+    ccitt_m(0b0000001110101, 13, 1088),
+    ccitt_m(0b0000001110110, 13, 1152),
+    ccitt_m(0b0000001110111, 13, 1216),
+    ccitt_m(0b0000001010010, 13, 1280),
+    ccitt_m(0b0000001010011, 13, 1344),
+    ccitt_m(0b0000001010100, 13, 1408),
+    ccitt_m(0b0000001010101, 13, 1472),
+    ccitt_m(0b0000001011010, 13, 1536),
+    ccitt_m(0b0000001011011, 13, 1600),
+    ccitt_m(0b0000001100100, 13, 1664),
+    ccitt_m(0b0000001100101, 13, 1728),
+    ccitt_m(0b00000001000, 11, 1792),
+    ccitt_m(0b00000001100, 11, 1856),
+    ccitt_m(0b00000001101, 11, 1920),
+    ccitt_m(0b000000010010, 12, 1984),
+    ccitt_m(0b000000010011, 12, 2048),
+    ccitt_m(0b000000010100, 12, 2112),
+    ccitt_m(0b000000010101, 12, 2176),
+    ccitt_m(0b000000010110, 12, 2240),
+    ccitt_m(0b000000010111, 12, 2304),
+    ccitt_m(0b000000011100, 12, 2368),
+    ccitt_m(0b000000011101, 12, 2432),
+    ccitt_m(0b000000011110, 12, 2496),
+    ccitt_m(0b000000011111, 12, 2560),
+];
 
 fn expected_image_len(
     width: u32,
@@ -20515,6 +21167,7 @@ enum ImageFilter {
     Raw,
     StreamDecoded,
     DctDecode,
+    CcittFax,
 }
 
 fn image_filter(dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)]) -> GraphicsResult<ImageFilter> {
@@ -20529,6 +21182,9 @@ fn image_filter(dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)]) -> GraphicsResul
         }
         PdfPrimitive::Name(name) if is_dct_image_filter(name.as_bytes()) => {
             Ok(ImageFilter::DctDecode)
+        }
+        PdfPrimitive::Name(name) if is_ccitt_image_filter(name.as_bytes()) => {
+            Ok(ImageFilter::CcittFax)
         }
         PdfPrimitive::Name(name) if is_deferred_image_codec(name.as_bytes()) => {
             Err(unsupported_image_filter(name.as_bytes()))
@@ -20547,6 +21203,9 @@ fn image_filter(dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)]) -> GraphicsResul
                     }
                     if is_dct_image_filter(name.as_bytes()) {
                         return Ok(ImageFilter::DctDecode);
+                    }
+                    if is_ccitt_image_filter(name.as_bytes()) {
+                        return Ok(ImageFilter::CcittFax);
                     }
                     if is_deferred_image_codec(name.as_bytes()) {
                         return Err(unsupported_image_filter(name.as_bytes()));
@@ -20586,11 +21245,12 @@ fn is_dct_image_filter(filter: &[u8]) -> bool {
     matches!(filter, b"DCTDecode" | b"DCT")
 }
 
+fn is_ccitt_image_filter(filter: &[u8]) -> bool {
+    matches!(filter, b"CCITTFaxDecode" | b"CCF")
+}
+
 fn is_deferred_image_codec(filter: &[u8]) -> bool {
-    matches!(
-        filter,
-        b"CCITTFaxDecode" | b"CCF" | b"JPXDecode" | b"JBIG2Decode"
-    )
+    matches!(filter, b"JPXDecode" | b"JBIG2Decode")
 }
 
 fn require_unfiltered_inline_image(
@@ -31276,6 +31936,100 @@ mod tests {
     }
 
     #[test]
+    fn image_resources_should_decode_ccitt_group3_1d_image_mask() {
+        let encoded = ccitt_encode_group3_1d(&[&[2, 3, 3]]);
+        let document = load_image_xobject_pdf(
+            b"q 8 0 0 1 0 0 cm /Im1 Do Q",
+            b"<< /Type /XObject /Subtype /Image /Width 8 /Height 1 /ImageMask true /Filter /CCITTFaxDecode /DecodeParms << /K 0 /Columns 8 /Rows 1 >> /Length 2 >>",
+            &encoded,
+        );
+        let resources = image_resources_from_document(&document).expect("CCITT image mask");
+        let image = resources.get(PdfName::new(b"Im1")).expect("image mask");
+
+        assert_eq!(image.bits_per_component, 1);
+        assert_eq!(image.samples.as_slice(), &[0b1100_0111]);
+        assert_eq!(resources.resource_summary().ccitt_images, 1);
+    }
+
+    #[test]
+    fn image_resources_should_decode_ccitt_group4_device_gray() {
+        let encoded = ccitt_encode_group4_horizontal(&[2, 3, 3]);
+        let document = load_image_xobject_pdf(
+            b"q 8 0 0 1 0 0 cm /Im1 Do Q",
+            b"<< /Type /XObject /Subtype /Image /Width 8 /Height 1 /ColorSpace /DeviceGray /BitsPerComponent 1 /Filter /CCITTFaxDecode /DecodeParms << /K -1 /Columns 8 /Rows 1 >> /Length 2 >>",
+            &encoded,
+        );
+        let resources = image_resources_from_document(&document).expect("CCITT DeviceGray image");
+        let image = resources.get(PdfName::new(b"Im1")).expect("image resource");
+
+        assert_eq!(image.color_space, ImageColorSpace::DeviceGray);
+        assert_eq!(&*image.samples, &[255, 255, 0, 0, 0, 255, 255, 255]);
+        assert_eq!(resources.resource_summary().ccitt_images, 1);
+    }
+
+    #[test]
+    fn image_resources_should_decode_ccitt_mixed_group3_2d() {
+        let encoded = ccitt_encode_group3_mixed(&[2, 3, 3]);
+        let document = load_image_xobject_pdf(
+            b"q 8 0 0 2 0 0 cm /Im1 Do Q",
+            b"<< /Type /XObject /Subtype /Image /Width 8 /Height 2 /ImageMask true /Filter /CCITTFaxDecode /DecodeParms << /K 2 /Columns 8 /Rows 2 >> /Length 3 >>",
+            &encoded,
+        );
+        let resources = image_resources_from_document(&document).expect("CCITT mixed image mask");
+        let image = resources.get(PdfName::new(b"Im1")).expect("image mask");
+
+        assert_eq!(image.samples.as_slice(), &[0b1100_0111, 0b1100_0111]);
+    }
+
+    #[test]
+    fn image_resources_should_enforce_ccitt_image_byte_budget() {
+        let encoded = ccitt_encode_group3_1d(&[&[2, 3, 3]]);
+        let document = load_image_xobject_pdf(
+            b"q 8 0 0 1 0 0 cm /Im1 Do Q",
+            b"<< /Type /XObject /Subtype /Image /Width 8 /Height 1 /ImageMask true /Filter /CCITTFaxDecode /DecodeParms << /K 0 /Columns 8 /Rows 1 >> /Length 2 >>",
+            &encoded,
+        );
+        let error = image_resources_from_document_with_options(
+            &document,
+            DisplayListOptions {
+                max_image_bytes: 0,
+                ..DisplayListOptions::default()
+            },
+        )
+        .expect_err("CCITT output should exceed configured budget");
+
+        assert_eq!(
+            error.kind(),
+            &GraphicsErrorKind::ImageBytesOverflow { limit: 0 }
+        );
+    }
+
+    #[test]
+    fn image_resources_should_decode_generated_ccitt_fixtures() {
+        for fixture in [
+            "ccitt-g3-1d-image-mask.pdf",
+            "ccitt-g3-mixed-image-mask.pdf",
+            "ccitt-g3-1d-eol-aligned.pdf",
+        ] {
+            let document = generated_fixture_document(fixture);
+            let resources =
+                image_resources_from_document(&document).expect("generated CCITT image mask");
+            let image = resources.get(PdfName::new(b"Im1")).expect("image mask");
+
+            assert_eq!(image.samples[0], 0b1100_0111);
+            assert_eq!(resources.resource_summary().ccitt_images, 1);
+        }
+
+        let document = generated_fixture_document("ccitt-g4-devicegray-blackis1.pdf");
+        let resources =
+            image_resources_from_document(&document).expect("generated CCITT DeviceGray image");
+        let image = resources.get(PdfName::new(b"Im1")).expect("image resource");
+
+        assert_eq!(&*image.samples, &[255, 255, 0, 0, 0, 255, 255, 255]);
+        assert_eq!(resources.resource_summary().ccitt_images, 1);
+    }
+
+    #[test]
     fn image_resources_should_decode_device_gray_xobject() {
         let document = load_image_xobject_pdf(
             b"q 10 0 0 10 0 0 cm /Im1 Do Q",
@@ -32308,12 +33062,7 @@ mod tests {
 
     #[test]
     fn image_resources_should_report_unsupported_deferred_image_codecs() {
-        for filter in [
-            b"CCITTFaxDecode".as_slice(),
-            b"CCF",
-            b"JPXDecode",
-            b"JBIG2Decode",
-        ] {
+        for filter in [b"JPXDecode".as_slice(), b"JBIG2Decode"] {
             let dictionary = format!(
                 "<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /{} /Length 1 >>",
                 String::from_utf8_lossy(filter)
@@ -32957,6 +33706,71 @@ mod tests {
             PdfPrimitive::Reference(ferrugo_syntax::PdfReference::new(4, 0)),
         )];
         ImageResources::from_xobject_dictionary(&xobjects, document, options)
+    }
+
+    fn ccitt_encode_group3_1d(rows: &[&[usize]]) -> Vec<u8> {
+        let mut bits = Vec::new();
+        for row in rows {
+            ccitt_encode_1d_row(&mut bits, row);
+        }
+        pack_test_bits(&bits)
+    }
+
+    fn ccitt_encode_group4_horizontal(row: &[usize]) -> Vec<u8> {
+        let mut bits = Vec::new();
+        push_test_bits(&mut bits, 0b001, 3);
+        ccitt_encode_run(&mut bits, row[0], false);
+        ccitt_encode_run(&mut bits, row[1], true);
+        push_test_bits(&mut bits, 0b1, 1);
+        pack_test_bits(&bits)
+    }
+
+    fn ccitt_encode_group3_mixed(row: &[usize]) -> Vec<u8> {
+        let mut bits = Vec::new();
+        push_test_bits(&mut bits, 0b1, 1);
+        ccitt_encode_1d_row(&mut bits, row);
+        push_test_bits(&mut bits, 0b0, 1);
+        push_test_bits(&mut bits, 0b1, 1);
+        push_test_bits(&mut bits, 0b1, 1);
+        push_test_bits(&mut bits, 0b1, 1);
+        pack_test_bits(&bits)
+    }
+
+    fn ccitt_encode_1d_row(bits: &mut Vec<bool>, runs: &[usize]) {
+        let mut black = false;
+        for run in runs {
+            ccitt_encode_run(bits, *run, black);
+            black = !black;
+        }
+    }
+
+    fn ccitt_encode_run(bits: &mut Vec<bool>, run: usize, black: bool) {
+        let table = if black {
+            CCITT_BLACK_CODES
+        } else {
+            CCITT_WHITE_CODES
+        };
+        let code = table
+            .iter()
+            .find(|code| code.run == run && code.terminating)
+            .expect("small terminating CCITT code");
+        push_test_bits(bits, code.bits, code.len);
+    }
+
+    fn push_test_bits(bits: &mut Vec<bool>, value: u16, len: u8) {
+        for shift in (0..len).rev() {
+            bits.push((value & (1 << shift)) != 0);
+        }
+    }
+
+    fn pack_test_bits(bits: &[bool]) -> Vec<u8> {
+        let mut packed = vec![0_u8; bits.len().div_ceil(8)];
+        for (index, bit) in bits.iter().copied().enumerate() {
+            if bit {
+                packed[index / 8] |= 1 << (7 - (index % 8));
+            }
+        }
+        packed
     }
 
     fn form_resources_from_document(
