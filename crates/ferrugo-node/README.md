@@ -42,8 +42,9 @@ validation failures use `code: "invalid-argument"`.
 
 The npm package follows the standard napi-rs layout: the main `ferrugo`
 package carries only the JS loader and type definitions, and the prebuilt
-binaries ship as per-platform packages (`ferrugo-linux-x64-gnu`,
-`ferrugo-darwin-arm64`, ...) referenced through `optionalDependencies`. npm
+binaries ship as scoped per-platform packages
+(`@ferrugo/binding-linux-x64-gnu`, `@ferrugo/binding-darwin-arm64`, ...)
+referenced through `optionalDependencies`. npm
 installs exactly the binary matching the host `os`/`cpu`/`libc`; there is no
 postinstall build step. The platform package sources live under `npm/` and
 the generated `index.js`/`index.d.ts` are regenerated during the release
