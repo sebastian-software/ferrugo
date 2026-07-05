@@ -21,7 +21,7 @@
         "ferrugo-simd",
         "ferrugo-render",
         "ferrugo-native",
-        "ferrugo-pdfium",
+        "ferrugo-node",
         "ferrugo-wasm-smoke",
         "ferrugo"
       ]
@@ -49,8 +49,26 @@
     "crates/ferrugo-native": {
       "component": "ferrugo-native"
     },
-    "crates/ferrugo-pdfium": {
-      "component": "ferrugo-pdfium"
+    "crates/ferrugo-node": {
+      "component": "ferrugo-node",
+      "release-type": "node",
+      "extra-files": [
+        {
+          "type": "toml",
+          "path": "Cargo.toml",
+          "jsonpath": "$.package.version"
+        },
+        {
+          "type": "toml",
+          "path": "Cargo.toml",
+          "jsonpath": "$['dependencies']['ferrugo-native']['version']"
+        },
+        {
+          "type": "toml",
+          "path": "Cargo.toml",
+          "jsonpath": "$['dependencies']['ferrugo-thumbnail']['version']"
+        }
+      ]
     },
     "crates/ferrugo-wasm-smoke": {
       "component": "ferrugo-wasm-smoke"
