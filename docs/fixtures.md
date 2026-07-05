@@ -82,6 +82,7 @@ The initial seed set covers:
 - hybrid-reference classic xref plus xref stream entries
 - encrypted trailer placeholder documents and empty-user-password standard-security coverage
 - malformed xref object-offset drift
+- LZWDecode and RunLengthDecode content streams
 - axial DeviceRGB shading gradients
 - radial DeviceRGB shading gradients
 - colored tiling patterns
@@ -91,6 +92,7 @@ The initial seed set covers:
 - text spacing, `TJ` fragmentation, and invisible text rendering mode
 - office-style ruled table layout with header fill and text cells
 - two-page report layout with repeated headers, table lines, and text
+- LZWDecode and RunLengthDecode Image XObjects, including LZW PNG predictor data
 
 ## Local Corpora
 

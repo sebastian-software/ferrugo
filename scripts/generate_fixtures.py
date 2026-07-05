@@ -94,6 +94,78 @@ def page_pdf(media_box: str, content: str | bytes) -> bytes:
     return pdf.render(catalog)
 
 
+def lzw_literal_encode(data: bytes) -> bytes:
+    codes = [256, *data, 257]
+    width = 9
+    packed = bytearray()
+    buffer = 0
+    bit_count = 0
+    for code in codes:
+        buffer = (buffer << width) | code
+        bit_count += width
+        while bit_count >= 8:
+            shift = bit_count - 8
+            packed.append((buffer >> shift) & 0xFF)
+            bit_count = shift
+            buffer &= (1 << bit_count) - 1 if bit_count else 0
+    if bit_count:
+        packed.append((buffer << (8 - bit_count)) & 0xFF)
+    return bytes(packed)
+
+
+def run_length_encode(data: bytes) -> bytes:
+    encoded = bytearray()
+    for index in range(0, len(data), 128):
+        chunk = data[index : index + 128]
+        encoded.append(len(chunk) - 1)
+        encoded.extend(chunk)
+    encoded.append(128)
+    return bytes(encoded)
+
+
+def filtered_content_pdf(filter_name: str, encoded: bytes, decode_parms: str = "") -> bytes:
+    pdf = Pdf()
+    filter_entries = f"/Filter /{filter_name} "
+    if decode_parms:
+        filter_entries += f"/DecodeParms {decode_parms} "
+    contents = pdf.add(
+        f"<< /Length {len(encoded)} {filter_entries}>>\nstream\n".encode("ascii")
+        + encoded
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 180 120] "
+        f"/Resources << /Font << /F1 4 0 R >> >> /Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    font = pdf.add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert font == 4
+    return pdf.render(catalog)
+
+
+def lzw_content_stream_pdf() -> bytes:
+    content = (
+        b"q 0.92 0.96 1 rg 0 0 180 120 re f "
+        b"0.1 0.35 0.75 rg 18 24 90 30 re f Q "
+        b"BT /F1 12 Tf 20 78 Td (LZW content stream) Tj ET"
+    )
+    return filtered_content_pdf(
+        "LZWDecode",
+        lzw_literal_encode(content),
+        "<< /EarlyChange 1 >>",
+    )
+
+
+def runlength_content_stream_pdf() -> bytes:
+    content = (
+        b"q 0.94 0.94 0.88 rg 0 0 180 120 re f "
+        b"0.7 0.15 0.2 rg 22 28 92 28 re f Q "
+        b"BT /F1 12 Tf 20 78 Td (RunLength content stream) Tj ET"
+    )
+    return filtered_content_pdf("RunLengthDecode", run_length_encode(content))
+
+
 def rotated_office_export_pdf() -> bytes:
     pdf = Pdf()
     content = (
@@ -1195,6 +1267,84 @@ def predictor_image_pdf() -> bytes:
         b"<< /Type /XObject /Subtype /Image /Width 2 /Height 2 "
         b"/ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode "
         b"/DecodeParms << /Predictor 15 /Colors 3 /Columns 2 /BitsPerComponent 8 >> /Length "
+        + str(len(image)).encode("ascii")
+        + b" >>\nstream\n"
+        + image
+        + b"\nendstream"
+    )
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert image_object == 4
+    return pdf.render(catalog)
+
+
+def lzw_image_xobject_pdf() -> bytes:
+    pdf = Pdf()
+    content = b"q 80 0 0 80 20 20 cm /Im1 Do Q"
+    row0 = bytes([255, 0, 0, 0, 255, 0])
+    row1 = bytes([0, 0, 255, 255, 255, 0])
+    encoded_row1 = bytes((current - previous) % 256 for current, previous in zip(row1, row0))
+    image = lzw_literal_encode(b"\x00" + row0 + b"\x02" + encoded_row1)
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 120 120] "
+        "/Resources << /XObject << /Im1 4 0 R >> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    image_object = pdf.add(
+        b"<< /Type /XObject /Subtype /Image /Width 2 /Height 2 "
+        b"/ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /LZWDecode "
+        b"/DecodeParms << /EarlyChange 1 /Predictor 15 /Colors 3 "
+        b"/Columns 2 /BitsPerComponent 8 >> /Length "
+        + str(len(image)).encode("ascii")
+        + b" >>\nstream\n"
+        + image
+        + b"\nendstream"
+    )
+    catalog = pdf.add(f"<< /Type /Catalog /Pages {pages} 0 R >>")
+    assert image_object == 4
+    return pdf.render(catalog)
+
+
+def runlength_image_xobject_pdf() -> bytes:
+    pdf = Pdf()
+    content = b"q 80 0 0 80 20 20 cm /Im1 Do Q"
+    image = run_length_encode(
+        bytes(
+            [
+                255,
+                0,
+                0,
+                0,
+                255,
+                0,
+                0,
+                0,
+                255,
+                255,
+                255,
+                0,
+            ]
+        )
+    )
+    contents = pdf.add(
+        f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+        + content
+        + b"\nendstream"
+    )
+    page = pdf.add(
+        "<< /Type /Page /Parent 3 0 R /MediaBox [0 0 120 120] "
+        "/Resources << /XObject << /Im1 4 0 R >> >> "
+        f"/Contents {contents} 0 R >>"
+    )
+    pages = pdf.add(f"<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>")
+    image_object = pdf.add(
+        b"<< /Type /XObject /Subtype /Image /Width 2 /Height 2 "
+        b"/ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /RunLengthDecode /Length "
         + str(len(image)).encode("ascii")
         + b" >>\nstream\n"
         + image
@@ -7793,6 +7943,8 @@ def main() -> None:
             "BT /F1 24 Tf 40 90 Td (ferrugo thumbnail fixture) Tj ET",
         ),
     )
+    write("lzw-content-stream.pdf", lzw_content_stream_pdf())
+    write("runlength-content-stream.pdf", runlength_content_stream_pdf())
     write(
         "vector-paths.pdf",
         page_pdf(
@@ -7819,6 +7971,8 @@ def main() -> None:
     write("indexed-image.pdf", indexed_image_pdf())
     write("dct-image.pdf", dct_image_pdf())
     write("predictor-image.pdf", predictor_image_pdf())
+    write("lzw-image-xobject.pdf", lzw_image_xobject_pdf())
+    write("runlength-image-xobject.pdf", runlength_image_xobject_pdf())
     write("soft-mask-image.pdf", soft_mask_image_pdf())
     write("image-mask-signature.pdf", image_mask_signature_pdf())
     write("image-mask-monochrome-icon.pdf", image_mask_monochrome_icon_pdf())
