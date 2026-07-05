@@ -4,7 +4,13 @@ version = "0.0.0"
 edition = "2021"
 publish = false
 
+[package.metadata]
+cargo-fuzz = true
+
 [workspace]
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(fuzzing)"] }
 
 [dependencies]
 ferrugo-content = { path = "../crates/ferrugo-content" }
@@ -12,23 +18,46 @@ ferrugo-native = { path = "../crates/ferrugo-native" }
 ferrugo-object = { path = "../crates/ferrugo-object" }
 ferrugo-syntax = { path = "../crates/ferrugo-syntax" }
 ferrugo-thumbnail = { path = "../crates/ferrugo-thumbnail" }
+libfuzzer-sys = "0.4"
 
 [[bin]]
 name = "primitive_parse"
 path = "fuzz_targets/primitive_parse.rs"
+test = false
+doc = false
+bench = false
 
 [[bin]]
 name = "xref_load"
 path = "fuzz_targets/xref_load.rs"
+test = false
+doc = false
+bench = false
 
 [[bin]]
 name = "stream_decode"
 path = "fuzz_targets/stream_decode.rs"
+test = false
+doc = false
+bench = false
 
 [[bin]]
 name = "content_tokenize"
 path = "fuzz_targets/content_tokenize.rs"
+test = false
+doc = false
+bench = false
 
 [[bin]]
 name = "render_setup"
 path = "fuzz_targets/render_setup.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "render"
+path = "fuzz_targets/render.rs"
+test = false
+doc = false
+bench = false

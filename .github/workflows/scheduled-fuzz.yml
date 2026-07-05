@@ -1,0 +1,55 @@
+name: Scheduled fuzzing
+
+env:
+  CARGO_TERM_COLOR: always
+  FUZZ_ARTIFACT_DIR: target/fuzz-artifacts
+  FUZZ_MAX_TOTAL_TIME: 45
+  FUZZ_RUNS: 512
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 3 * * *"
+
+concurrency:
+  group: scheduled-fuzz-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  coverage-guided-fuzzing:
+    name: Coverage-guided fuzzing
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --version 0.13.2 --locked
+
+      - name: Run deterministic fuzz smoke gate
+        run: bash scripts/check_fuzz_smoke.sh
+
+      - name: Run bounded coverage-guided fuzz campaign
+        run: bash scripts/run_fuzz_campaign.sh
+
+      - name: Upload fuzz artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-artifacts-${{ github.run_id }}
+          path: |
+            target/fuzz-artifacts
+            fuzz/artifacts
+          if-no-files-found: ignore
+          retention-days: 14

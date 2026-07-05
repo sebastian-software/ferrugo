@@ -1,7 +1,14 @@
-use ferrugo_fuzz::{minimal_pdf_with_content, run_target};
+#![cfg_attr(fuzzing, no_main)]
+
+use ferrugo_fuzz::minimal_pdf_with_content;
+#[cfg(not(fuzzing))]
+use ferrugo_fuzz::run_target;
 use ferrugo_object::{load_classic_document, load_modern_document, parse_indirect_object};
 use ferrugo_syntax::PdfBytes;
+#[cfg(fuzzing)]
+use libfuzzer_sys::fuzz_target;
 
+#[cfg(not(fuzzing))]
 fn main() {
     run_target(
         "xref_load",
@@ -14,6 +21,11 @@ fn main() {
         ],
     );
 }
+
+#[cfg(fuzzing)]
+fuzz_target!(|data: &[u8]| {
+    fuzz_one(data);
+});
 
 fn fuzz_one(data: &[u8]) {
     let input = PdfBytes::new(data);

@@ -16,10 +16,16 @@ unbounded allocation, uncontrolled CPU work, and unstable error boundaries.
 | `stream_decode` | Stream object parsing and bounded filter decoding. | Decode expansion and malformed filter data. |
 | `content_tokenize` | Content stream tokenization and inline images. | Unterminated data, operand/operator ambiguity. |
 | `render_setup` | Native metadata inspection and first-page render setup. | Page setup, declared image dimensions, renderer budgets. |
+| `render` | Native first-page thumbnail rendering. | End-to-end parser, resource, raster, and budget interaction. |
 
 `scripts/check_fuzz_smoke.sh` runs the current matrix, writes
 `target/fuzz-smoke-summary.txt`, and is the local release-gate smoke entry
 point.
+
+`scripts/run_fuzz_campaign.sh` runs the same matrix through `cargo-fuzz` using
+committed seed corpora under `fuzz/corpus/<target>/`. Scheduled CI executes that
+script from `.github/workflows/scheduled-fuzz.yml` and uploads crash artifacts
+from `target/fuzz-artifacts/` and `fuzz/artifacts/`.
 
 ## Finding Classes
 
@@ -66,17 +72,19 @@ bash scripts/check_fuzz_smoke.sh
 
 The expected artifact is `target/fuzz-smoke-summary.txt`, containing one
 completed smoke-case line for `primitive_parse`, `xref_load`, `stream_decode`,
-`content_tokenize`, and `render_setup`, followed by `Fuzz smoke gate passed`.
+`content_tokenize`, `render_setup`, and `render`, followed by `Fuzz smoke gate
+passed`.
 
 The fuller nightly or local hardening loop should run:
 
 ```sh
 bash scripts/check_fuzz_smoke.sh
+cargo install cargo-fuzz --version 0.13.2 --locked
+bash scripts/run_fuzz_campaign.sh
 cargo test --workspace --no-default-features
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 ```
 
-Long-running fuzz campaigns and scheduled CI fuzz jobs can use the same targets,
-but they are post-scoped-release hardening unless a release-candidate smoke run
-finds a panic, abort, uncontrolled allocation, or unstable error boundary. Their
-crash corpus must go through the artifact workflow before anything is committed.
+Longer local campaigns can raise `FUZZ_RUNS` and `FUZZ_MAX_TOTAL_TIME` for the
+same script. Crash corpus files must go through the artifact workflow before
+anything is committed.

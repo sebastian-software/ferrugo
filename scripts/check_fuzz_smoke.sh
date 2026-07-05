@@ -13,6 +13,7 @@ targets=(
   stream_decode
   content_tokenize
   render_setup
+  render
 )
 
 {
