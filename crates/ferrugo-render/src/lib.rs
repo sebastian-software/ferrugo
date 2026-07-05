@@ -20524,7 +20524,7 @@ fn image_filter(dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)]) -> GraphicsResul
         return Ok(ImageFilter::Raw);
     };
     match filter {
-        PdfPrimitive::Name(name) if is_flate_image_filter(name.as_bytes()) => {
+        PdfPrimitive::Name(name) if is_stream_decoded_image_filter(name.as_bytes()) => {
             Ok(ImageFilter::StreamDecoded)
         }
         PdfPrimitive::Name(name) if is_dct_image_filter(name.as_bytes()) => {
@@ -20542,7 +20542,7 @@ fn image_filter(dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)]) -> GraphicsResul
         PdfPrimitive::Array(filters) => {
             if filters.len() == 1 {
                 if let PdfPrimitive::Name(name) = filters[0] {
-                    if is_flate_image_filter(name.as_bytes()) {
+                    if is_stream_decoded_image_filter(name.as_bytes()) {
                         return Ok(ImageFilter::StreamDecoded);
                     }
                     if is_dct_image_filter(name.as_bytes()) {
@@ -20575,8 +20575,11 @@ fn image_filter(dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)]) -> GraphicsResul
     }
 }
 
-fn is_flate_image_filter(filter: &[u8]) -> bool {
-    matches!(filter, b"FlateDecode" | b"Fl")
+fn is_stream_decoded_image_filter(filter: &[u8]) -> bool {
+    matches!(
+        filter,
+        b"FlateDecode" | b"Fl" | b"LZWDecode" | b"LZW" | b"RunLengthDecode" | b"RL"
+    )
 }
 
 fn is_dct_image_filter(filter: &[u8]) -> bool {

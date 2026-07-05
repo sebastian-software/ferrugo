@@ -9,7 +9,11 @@ fn main() {
         &[
             b"abc",
             b"\x78\x9c\x4b\x4c\x4a\x06\x00\x02\x4d\x01\x27",
+            b"\x80\x10H\x86B\x82\x21\x1c\x20",
+            b"\x02abc\xffx\x80",
             b"<< /Filter /FlateDecode >>",
+            b"<< /Filter /LZWDecode /DecodeParms << /EarlyChange 0 >> >>",
+            b"<< /Filter /RunLengthDecode >>",
             b"/ASCIIHexDecode",
         ],
     );
@@ -20,6 +24,9 @@ fn fuzz_one(data: &[u8]) {
         stream_object(data, b""),
         stream_object(data, b"/Filter /ASCIIHexDecode"),
         stream_object(data, b"/Filter /FlateDecode"),
+        stream_object(data, b"/Filter /LZWDecode"),
+        stream_object(data, b"/Filter /LZWDecode /DecodeParms << /EarlyChange 0 >>"),
+        stream_object(data, b"/Filter /RunLengthDecode"),
         stream_object(data, b"/Filter [/ASCIIHexDecode /FlateDecode]"),
     ];
     for case in cases {

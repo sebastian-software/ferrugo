@@ -2791,11 +2791,18 @@ fn stream_filters(
         return Ok(Vec::new());
     };
     match value {
-        PdfPrimitive::Name(name) => Ok(vec![StreamFilter::from_name(name.as_bytes())?]),
+        PdfPrimitive::Name(name) => Ok(vec![StreamFilter::from_name(
+            name.as_bytes(),
+            stream_decode_params(dictionary, 0, 1)?,
+        )?]),
         PdfPrimitive::Array(filters) => filters
             .iter()
+            .enumerate()
             .map(|filter| match filter {
-                PdfPrimitive::Name(name) => StreamFilter::from_name(name.as_bytes()),
+                (index, PdfPrimitive::Name(name)) => StreamFilter::from_name(
+                    name.as_bytes(),
+                    stream_decode_params(dictionary, index, filters.len())?,
+                ),
                 _ => Err(ObjectError::malformed(
                     ByteOffset::new(0),
                     "stream filter array must contain names",
@@ -2805,6 +2812,42 @@ fn stream_filters(
         _ => Err(ObjectError::malformed(
             ByteOffset::new(0),
             "stream /Filter must be a name or array",
+        )),
+    }
+}
+
+fn stream_decode_params<'a>(
+    dictionary: &'a [(PdfName<'a>, PdfPrimitive<'a>)],
+    index: usize,
+    filter_count: usize,
+) -> ObjectResult<Option<&'a [(PdfName<'a>, PdfPrimitive<'a>)]>> {
+    let Some(value) = dictionary_value(dictionary, b"DecodeParms")
+        .or_else(|| dictionary_value(dictionary, b"DP"))
+    else {
+        return Ok(None);
+    };
+    match value {
+        PdfPrimitive::Null => Ok(None),
+        PdfPrimitive::Dictionary(params) if filter_count == 1 => Ok(Some(params.as_slice())),
+        PdfPrimitive::Dictionary(_) => Err(ObjectError::malformed(
+            ByteOffset::new(0),
+            "stream filter arrays require DecodeParms arrays",
+        )),
+        PdfPrimitive::Array(values) if values.len() == filter_count => match &values[index] {
+            PdfPrimitive::Null => Ok(None),
+            PdfPrimitive::Dictionary(params) => Ok(Some(params.as_slice())),
+            _ => Err(ObjectError::malformed(
+                ByteOffset::new(0),
+                "DecodeParms array entries must be dictionaries or null",
+            )),
+        },
+        PdfPrimitive::Array(_) => Err(ObjectError::malformed(
+            ByteOffset::new(0),
+            "DecodeParms array length must match Filter array length",
+        )),
+        _ => Err(ObjectError::malformed(
+            ByteOffset::new(0),
+            "stream /DecodeParms must be a dictionary, array, or null",
         )),
     }
 }
@@ -2823,14 +2866,23 @@ enum StreamFilter {
     Flate,
     AsciiHex,
     Ascii85,
+    Lzw { early_change: usize },
+    RunLength,
 }
 
 impl StreamFilter {
-    fn from_name(name: &[u8]) -> ObjectResult<Self> {
+    fn from_name(
+        name: &[u8],
+        params: Option<&[(PdfName<'_>, PdfPrimitive<'_>)]>,
+    ) -> ObjectResult<Self> {
         match name {
             b"FlateDecode" | b"Fl" => Ok(Self::Flate),
             b"ASCIIHexDecode" | b"AHx" => Ok(Self::AsciiHex),
             b"ASCII85Decode" | b"A85" => Ok(Self::Ascii85),
+            b"LZWDecode" | b"LZW" => Ok(Self::Lzw {
+                early_change: lzw_early_change(params)?,
+            }),
+            b"RunLengthDecode" | b"RL" => Ok(Self::RunLength),
             _ => Err(ObjectError::UnsupportedFilter {
                 name: name.to_vec(),
             }),
@@ -2842,7 +2894,22 @@ impl StreamFilter {
             Self::Flate => "FlateDecode",
             Self::AsciiHex => "ASCIIHexDecode",
             Self::Ascii85 => "ASCII85Decode",
+            Self::Lzw { .. } => "LZWDecode",
+            Self::RunLength => "RunLengthDecode",
         }
+    }
+}
+
+fn lzw_early_change(params: Option<&[(PdfName<'_>, PdfPrimitive<'_>)]>) -> ObjectResult<usize> {
+    let Some(params) = params else {
+        return Ok(1);
+    };
+    match optional_usize(params, b"EarlyChange")?.unwrap_or(1) {
+        value @ (0 | 1) => Ok(value),
+        _ => Err(ObjectError::Decode {
+            filter: "LZWDecode",
+            message: "EarlyChange must be 0 or 1",
+        }),
     }
 }
 
@@ -2860,6 +2927,10 @@ fn decode_stream_bytes(
             }
             StreamFilter::AsciiHex => decode_ascii_hex(&decoded, options.max_decoded_len)?,
             StreamFilter::Ascii85 => decode_ascii85(&decoded, options.max_decoded_len)?,
+            StreamFilter::Lzw { early_change } => {
+                decode_lzw(&decoded, *early_change, options.max_decoded_len)?
+            }
+            StreamFilter::RunLength => decode_run_length(&decoded, options.max_decoded_len)?,
         };
     }
     Ok(decoded)
@@ -2990,6 +3061,166 @@ fn append_ascii85_group(
     })?;
     let bytes = value.to_be_bytes();
     extend_limited(decoded, &bytes[..output_len], max_decoded_len)
+}
+
+fn decode_run_length(raw: &[u8], max_decoded_len: usize) -> ObjectResult<Vec<u8>> {
+    let mut decoded = Vec::new();
+    let mut index = 0_usize;
+    while index < raw.len() {
+        let length = raw[index];
+        index += 1;
+        match length {
+            0..=127 => {
+                let count = usize::from(length) + 1;
+                let Some(end) = index.checked_add(count) else {
+                    return Err(ObjectError::Decode {
+                        filter: StreamFilter::RunLength.label(),
+                        message: "RunLength literal run overflow",
+                    });
+                };
+                if end > raw.len() {
+                    return Err(ObjectError::Decode {
+                        filter: StreamFilter::RunLength.label(),
+                        message: "truncated RunLength literal run",
+                    });
+                }
+                extend_limited(&mut decoded, &raw[index..end], max_decoded_len)?;
+                index = end;
+            }
+            128 => break,
+            129..=255 => {
+                let Some(byte) = raw.get(index).copied() else {
+                    return Err(ObjectError::Decode {
+                        filter: StreamFilter::RunLength.label(),
+                        message: "truncated RunLength repeat run",
+                    });
+                };
+                index += 1;
+                let count = usize::from(257_u16 - u16::from(length));
+                ensure_decode_limit(decoded.len().saturating_add(count), max_decoded_len)?;
+                decoded.extend(std::iter::repeat(byte).take(count));
+            }
+        }
+    }
+    Ok(decoded)
+}
+
+fn decode_lzw(raw: &[u8], early_change: usize, max_decoded_len: usize) -> ObjectResult<Vec<u8>> {
+    let mut reader = LzwBitReader::new(raw);
+    let mut table = lzw_initial_table();
+    let mut code_width = 9_u8;
+    let mut next_code = 258_usize;
+    let mut previous: Option<Vec<u8>> = None;
+    let mut decoded = Vec::new();
+
+    while let Some(code) = reader.read_code(code_width)? {
+        match code {
+            256 => {
+                table = lzw_initial_table();
+                code_width = 9;
+                next_code = 258;
+                previous = None;
+            }
+            257 => return Ok(decoded),
+            _ => {
+                let entry = lzw_entry(&table, code, next_code, previous.as_deref())?;
+                extend_limited(&mut decoded, &entry, max_decoded_len)?;
+                if let Some(previous_entry) = previous.as_deref() {
+                    if next_code < table.len() {
+                        let mut new_entry = previous_entry.to_vec();
+                        new_entry.push(entry[0]);
+                        table[next_code] = Some(new_entry);
+                        next_code += 1;
+                        if next_code.saturating_add(early_change) >= (1_usize << code_width)
+                            && code_width < 12
+                        {
+                            code_width += 1;
+                        }
+                    }
+                }
+                previous = Some(entry);
+            }
+        }
+    }
+
+    Ok(decoded)
+}
+
+fn lzw_initial_table() -> Vec<Option<Vec<u8>>> {
+    let mut table = Vec::with_capacity(4096);
+    table.extend((0_u16..=255).map(|byte| Some(vec![byte as u8])));
+    table.resize_with(4096, || None);
+    table
+}
+
+fn lzw_entry(
+    table: &[Option<Vec<u8>>],
+    code: u16,
+    next_code: usize,
+    previous: Option<&[u8]>,
+) -> ObjectResult<Vec<u8>> {
+    let code = usize::from(code);
+    if code < next_code {
+        if let Some(entry) = table.get(code).and_then(|entry| entry.as_ref()) {
+            return Ok(entry.clone());
+        }
+    }
+    if code == next_code {
+        if let Some(previous) = previous {
+            let mut entry = previous.to_vec();
+            entry.push(previous[0]);
+            return Ok(entry);
+        }
+    }
+    Err(ObjectError::Decode {
+        filter: StreamFilter::Lzw { early_change: 1 }.label(),
+        message: "invalid LZW code",
+    })
+}
+
+struct LzwBitReader<'a> {
+    raw: &'a [u8],
+    index: usize,
+    buffer: u32,
+    bit_count: u8,
+}
+
+impl<'a> LzwBitReader<'a> {
+    const fn new(raw: &'a [u8]) -> Self {
+        Self {
+            raw,
+            index: 0,
+            buffer: 0,
+            bit_count: 0,
+        }
+    }
+
+    fn read_code(&mut self, width: u8) -> ObjectResult<Option<u16>> {
+        while self.bit_count < width {
+            let Some(byte) = self.raw.get(self.index).copied() else {
+                if self.bit_count == 0 {
+                    return Ok(None);
+                }
+                return Err(ObjectError::Decode {
+                    filter: StreamFilter::Lzw { early_change: 1 }.label(),
+                    message: "truncated LZW code",
+                });
+            };
+            self.index += 1;
+            self.buffer = (self.buffer << 8) | u32::from(byte);
+            self.bit_count += 8;
+        }
+        let shift = self.bit_count - width;
+        let mask = (1_u32 << width) - 1;
+        let code = ((self.buffer >> shift) & mask) as u16;
+        self.bit_count = shift;
+        self.buffer &= if self.bit_count == 0 {
+            0
+        } else {
+            (1_u32 << self.bit_count) - 1
+        };
+        Ok(Some(code))
+    }
 }
 
 fn hex_nibble(byte: u8) -> Option<u8> {
@@ -3398,6 +3629,87 @@ mod tests {
     }
 
     #[test]
+    fn stream_decode_should_decode_run_length_filter() {
+        let encoded = [2, b'a', b'b', b'c', 255, b'x', 128];
+        let object = build_stream_object(
+            b"<< /Length ",
+            encoded.len(),
+            b" /Filter /RunLengthDecode >>",
+            &encoded,
+        );
+        let decoded = with_test_stream(&object, |stream| {
+            stream.decode().expect("RunLength decoded stream")
+        });
+
+        assert_eq!(decoded, b"abcxx");
+    }
+
+    #[test]
+    fn stream_decode_should_decode_lzw_filter() {
+        let encoded = pack_lzw_codes(&[256, 72, 101, 108, 108, 111, 257], 9);
+        let object = build_stream_object(
+            b"<< /Length ",
+            encoded.len(),
+            b" /Filter /LZWDecode >>",
+            &encoded,
+        );
+        let decoded = with_test_stream(&object, |stream| {
+            stream.decode().expect("LZW decoded stream")
+        });
+
+        assert_eq!(decoded, b"Hello");
+    }
+
+    #[test]
+    fn stream_decode_should_decode_lzw_dictionary_codes() {
+        let encoded = pack_lzw_codes(&[256, 65, 66, 258, 65, 257], 9);
+        let object = build_stream_object(
+            b"<< /Length ",
+            encoded.len(),
+            b" /Filter /LZWDecode >>",
+            &encoded,
+        );
+        let decoded = with_test_stream(&object, |stream| {
+            stream.decode().expect("LZW decoded stream")
+        });
+
+        assert_eq!(decoded, b"ABABA");
+    }
+
+    #[test]
+    fn stream_decode_should_decode_lzw_after_width_growth() {
+        let expected: Vec<u8> = (0_u16..260).map(|value| (value % 251) as u8).collect();
+        let encoded = pack_lzw_literal_bytes(&expected, 1);
+        let object = build_stream_object(
+            b"<< /Length ",
+            encoded.len(),
+            b" /Filter /LZWDecode >>",
+            &encoded,
+        );
+        let decoded = with_test_stream(&object, |stream| {
+            stream.decode().expect("LZW decoded stream")
+        });
+
+        assert_eq!(decoded, expected);
+    }
+
+    #[test]
+    fn stream_decode_should_parse_lzw_early_change_zero() {
+        let encoded = pack_lzw_codes(&[256, 72, 105, 257], 9);
+        let object = build_stream_object(
+            b"<< /Length ",
+            encoded.len(),
+            b" /Filter /LZWDecode /DecodeParms << /EarlyChange 0 >> >>",
+            &encoded,
+        );
+        let decoded = with_test_stream(&object, |stream| {
+            stream.decode().expect("LZW decoded stream")
+        });
+
+        assert_eq!(decoded, b"Hi");
+    }
+
+    #[test]
     fn stream_decode_should_apply_filter_arrays_in_order() {
         let decoded = with_test_stream(
             b"<< /Length 7 /Filter [ /ASCIIHexDecode /ASCII85Decode ] >>\nstream\n7A7E3E>\nendstream",
@@ -3405,6 +3717,27 @@ mod tests {
         );
 
         assert_eq!(decoded, &[0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn stream_decode_should_parse_decode_parms_arrays() {
+        let encoded = pack_lzw_codes(&[256, 72, 105, 257], 9);
+        let mut hex = Vec::with_capacity(encoded.len() * 2);
+        for byte in &encoded {
+            hex.extend_from_slice(format!("{byte:02X}").as_bytes());
+        }
+        hex.push(b'>');
+        let object = build_stream_object(
+            b"<< /Length ",
+            hex.len(),
+            b" /Filter [ /ASCIIHexDecode /LZWDecode ] /DecodeParms [ null << /EarlyChange 0 >> ] >>",
+            &hex,
+        );
+        let decoded = with_test_stream(&object, |stream| {
+            stream.decode().expect("filter array decoded stream")
+        });
+
+        assert_eq!(decoded, b"Hi");
     }
 
     #[test]
@@ -3437,6 +3770,32 @@ mod tests {
             b"<< /Length 3 /Filter /ASCIIHexDecode >>\nstream\nxx>\nendstream",
             |stream| stream.decode().expect_err("malformed ASCIIHex"),
         );
+
+        assert!(matches!(error, ObjectError::Decode { .. }));
+    }
+
+    #[test]
+    fn stream_decode_should_reject_malformed_run_length() {
+        let error = with_test_stream(
+            b"<< /Length 2 /Filter /RunLengthDecode >>\nstream\n\x02x\nendstream",
+            |stream| stream.decode().expect_err("malformed RunLength"),
+        );
+
+        assert!(matches!(error, ObjectError::Decode { .. }));
+    }
+
+    #[test]
+    fn stream_decode_should_reject_malformed_lzw_code() {
+        let encoded = pack_lzw_codes(&[256, 300, 257], 9);
+        let object = build_stream_object(
+            b"<< /Length ",
+            encoded.len(),
+            b" /Filter /LZWDecode >>",
+            &encoded,
+        );
+        let error = with_test_stream(&object, |stream| {
+            stream.decode().expect_err("malformed LZW")
+        });
 
         assert!(matches!(error, ObjectError::Decode { .. }));
     }
@@ -4424,6 +4783,69 @@ mod tests {
         object.extend_from_slice(stream_bytes);
         object.extend_from_slice(b"\nendstream");
         object
+    }
+
+    fn pack_lzw_codes(codes: &[u16], width: u8) -> Vec<u8> {
+        let mut packed = Vec::new();
+        let mut buffer = 0_u32;
+        let mut bit_count = 0_u8;
+        for code in codes {
+            pack_lzw_code(&mut packed, &mut buffer, &mut bit_count, *code, width);
+        }
+        if bit_count > 0 {
+            packed.push((buffer << (8 - bit_count)) as u8);
+        }
+        packed
+    }
+
+    fn pack_lzw_literal_bytes(bytes: &[u8], early_change: usize) -> Vec<u8> {
+        let mut packed = Vec::new();
+        let mut buffer = 0_u32;
+        let mut bit_count = 0_u8;
+        let mut width = 9_u8;
+        let mut next_code = 258_usize;
+        pack_lzw_code(&mut packed, &mut buffer, &mut bit_count, 256, width);
+        for (index, byte) in bytes.iter().enumerate() {
+            pack_lzw_code(
+                &mut packed,
+                &mut buffer,
+                &mut bit_count,
+                u16::from(*byte),
+                width,
+            );
+            if index > 0 && next_code < 4096 {
+                next_code += 1;
+                if next_code.saturating_add(early_change) >= (1_usize << width) && width < 12 {
+                    width += 1;
+                }
+            }
+        }
+        pack_lzw_code(&mut packed, &mut buffer, &mut bit_count, 257, width);
+        if bit_count > 0 {
+            packed.push((buffer << (8 - bit_count)) as u8);
+        }
+        packed
+    }
+
+    fn pack_lzw_code(
+        packed: &mut Vec<u8>,
+        buffer: &mut u32,
+        bit_count: &mut u8,
+        code: u16,
+        width: u8,
+    ) {
+        *buffer = (*buffer << width) | u32::from(code);
+        *bit_count += width;
+        while *bit_count >= 8 {
+            let shift = *bit_count - 8;
+            packed.push(((*buffer >> shift) & 0xff) as u8);
+            *bit_count = shift;
+            *buffer &= if *bit_count == 0 {
+                0
+            } else {
+                (1_u32 << *bit_count) - 1
+            };
+        }
     }
 
     fn build_classic_stream_pdf(stream_bytes: &[u8]) -> Vec<u8> {
