@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.5.0](https://github.com/sebastian-software/ferrugo/compare/ferrugo-object-v0.4.0...ferrugo-object-v0.5.0) (2026-07-05)
+
+
+### Features
+
+* **object:** open AES-256 revision 6 documents with empty user passwords ([29d2c3f](https://github.com/sebastian-software/ferrugo/commit/29d2c3fbc05e0b1932ba84858d1db9d64a957ab5)), closes [#151](https://github.com/sebastian-software/ferrugo/issues/151)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * ferrugo-syntax bumped from 0.4.0 to 0.5.0
+
 ## [0.4.0](https://github.com/sebastian-software/ferrugo/compare/ferrugo-object-v0.3.1...ferrugo-object-v0.4.0) (2026-07-05)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/sebastian-software/ferrugo/compare/ferrugo-syntax-v0.4.0...ferrugo-syntax-v0.5.0) (2026-07-05)
+
+
+### Miscellaneous Chores
+
+* **ferrugo-syntax:** Synchronize ferrugo versions
+
 ## [0.4.0](https://github.com/sebastian-software/ferrugo/compare/ferrugo-syntax-v0.3.1...ferrugo-syntax-v0.4.0) (2026-07-05)
 
 
