@@ -151,6 +151,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     eprintln!("unsupported PDF feature bucket: {bucket}");
                 }
                 ThumbnailErrorClass::Timeout => eprintln!("render timed out"),
+                ThumbnailErrorClass::Cancelled => eprintln!("render cancelled"),
                 ThumbnailErrorClass::Internal => eprintln!("internal render failure"),
             }
             Err(Box::new(error))
@@ -168,6 +169,9 @@ Use `NativeBackend::low_memory()` or
 `NativeBackend::low_memory_parallel_with_workers(max_workers)` for server and
 batch-thumbnail workloads that need tighter memory and concurrency budgets. Use
 `NativeBackend::new()` for the default desktop-oriented render budget profile.
+Single-page native renders enforce `ThumbnailOptions::timeout`; callers that
+need to abort work explicitly can use `render_with_cancellation` or session
+`render_page_with_cancellation` with `RenderCancellation`.
 
 ## Handle Unsupported Documents
 

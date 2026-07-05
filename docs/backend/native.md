@@ -11,7 +11,12 @@ The Rust-native backend lives in `crates/ferrugo-native` and implements the
 
 The native backend honors `ThumbnailOptions::output_format`. Raw RGBA requests
 return `Thumbnail::rgba`; PNG requests return `Thumbnail::png` using the shared
-encoder in `ferrugo-thumbnail`.
+encoder in `ferrugo-thumbnail`. Single-page renders enforce
+`ThumbnailOptions::timeout` with cooperative checks through document decode,
+display-list construction, image resource resolution, and raster band/row
+boundaries. `NativeBackend::render_with_cancellation` and
+`NativeDocumentSession::render_page_with_cancellation` accept
+`RenderCancellation` for caller-owned aborts.
 
 ## Supported Contract
 
@@ -25,6 +30,8 @@ encoder in `ferrugo-thumbnail`.
 - Malformed parser/object structures return the public `malformed` class.
 - Unsupported native features and budget exhaustion return the public
   `unsupported` class.
+- Render timeout exhaustion returns the public `timeout` class.
+- Caller-owned cooperative cancellation returns the public `cancelled` class.
 
 ## API And Semver Policy
 

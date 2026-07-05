@@ -135,8 +135,8 @@ After 1.0, the project follows standard SemVer:
 ## Error And Diagnostic Compatibility
 
 `ThumbnailErrorClass::as_str()` values are stable metadata-safe class names:
-`encrypted`, `malformed`, `unsupported`, `timeout`, and `internal`. These values
-are safe for logs, CLI automation, and baseline metadata.
+`encrypted`, `malformed`, `unsupported`, `timeout`, `cancelled`, and `internal`.
+These values are safe for logs, CLI automation, and baseline metadata.
 
 `ThumbnailError` variants are stable high-level failure classes. The
 `UnsupportedFeature(&'static str)` bucket gives consumers and maintainers a more
@@ -160,12 +160,18 @@ debuggability and must not be used as control-flow keys.
 - opaque white background
 - raw RGBA output by default; explicit `OutputFormat::Png` returns PNG bytes
   with PNG payload metadata
-- five second timeout
+- five second timeout, enforced cooperatively by the native single-page render
+  path
 
 Changing these defaults is a breaking behavior change. New options should be
 introduced through new fields only after the struct extensibility question is
 resolved, or through new builder/newtype APIs that do not invalidate existing
 literal construction.
+
+`RenderCancellation` is the native caller-owned cooperative cancellation token.
+`NativeBackend::render_with_cancellation` and
+`NativeDocumentSession::render_page_with_cancellation` return the `cancelled`
+class when that token is set before or during a render.
 
 `NativeRenderLimits::default()` and `NativeBackend::low_memory()` are documented
 profiles, not exact performance promises. Their fields are public today, so

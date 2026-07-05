@@ -1001,8 +1001,14 @@ impl NativeBackend {
         let (document, page_tree) = load_render_document(input, preview_options.page_index)?;
         let load_mode = FirstPagePreviewLoadMode::from_load_metrics(document.load_metrics);
         let memory = FirstPagePreviewMemory::from_load_metrics(document.load_metrics);
-        let thumbnail =
-            render_loaded_document(&document, &page_tree, &preview_options, self.limits)?;
+        let control = RenderControl::from_options(&preview_options);
+        let thumbnail = render_loaded_document(
+            &document,
+            &page_tree,
+            &preview_options,
+            self.limits,
+            control,
+        )?;
         Ok(FirstPagePreview {
             thumbnail,
             load_mode,
@@ -1062,6 +1068,7 @@ impl NativeBackend {
                 &mut type3_templates,
                 &mut raster_bands,
             ),
+            RenderControl::from_options(options),
         )?;
         timings.total = total_started.elapsed();
         Ok(NativeRenderTrace {
@@ -1101,7 +1108,38 @@ impl NativeBackend {
         let bytes = load_source(source)?;
         let input = PdfBytes::new(bytes.as_ref());
         let (document, page_tree) = load_render_document(input, options.page_index)?;
-        render_loaded_document_to_rgba_rows(&document, &page_tree, options, self.limits, sink)
+        let control = RenderControl::from_options(options);
+        render_loaded_document_to_rgba_rows(
+            &document,
+            &page_tree,
+            options,
+            self.limits,
+            sink,
+            control,
+        )
+    }
+
+    /// Renders one thumbnail while honoring a caller-owned cooperative
+    /// cancellation flag.
+    ///
+    /// The timeout in `options` is enforced on the same bounded checkpoints as
+    /// the cancellation flag.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ThumbnailError::Cancelled`] when `cancellation` is set, or
+    /// [`ThumbnailError::Timeout`] when rendering exceeds `options.timeout`.
+    pub fn render_with_cancellation(
+        &self,
+        source: PdfSource<'_>,
+        options: &ThumbnailOptions,
+        cancellation: &RenderCancellation,
+    ) -> Result<Thumbnail, ThumbnailError> {
+        reject_form_appearance_mutation(options)?;
+        let control = RenderControl::with_cancellation(options, cancellation);
+        control.check()?;
+        let bytes = load_source(source)?;
+        render_bytes(&bytes, options, self.limits, control)
     }
 
     /// Renders one thumbnail and returns only the raster-band scheduler summary.
@@ -1141,6 +1179,7 @@ impl NativeBackend {
             options,
             self.limits,
             trace_sinks,
+            RenderControl::from_options(options),
         )?;
         Ok(raster_bands)
     }
@@ -1853,6 +1892,7 @@ impl<'a> NativeDocumentSession<'a> {
     /// Returns [`ThumbnailError`] when the requested page cannot be rendered.
     pub fn render_page(&self, options: &ThumbnailOptions) -> Result<Thumbnail, ThumbnailError> {
         reject_form_appearance_mutation(options)?;
+        let control = RenderControl::from_options(options);
         render_loaded_document_with_session_cache(
             &self.document,
             &self.page_tree,
@@ -1864,6 +1904,36 @@ impl<'a> NativeDocumentSession<'a> {
             &self.glyph_bitmap_cache,
             &self.type3_template_cache,
             &self.type3_render_cache,
+            control,
+        )
+    }
+
+    /// Renders one page through the session-retained document while honoring a
+    /// caller-owned cooperative cancellation flag.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ThumbnailError::Cancelled`] when `cancellation` is set, or
+    /// [`ThumbnailError::Timeout`] when rendering exceeds `options.timeout`.
+    pub fn render_page_with_cancellation(
+        &self,
+        options: &ThumbnailOptions,
+        cancellation: &RenderCancellation,
+    ) -> Result<Thumbnail, ThumbnailError> {
+        reject_form_appearance_mutation(options)?;
+        let control = RenderControl::with_cancellation(options, cancellation);
+        render_loaded_document_with_session_cache(
+            &self.document,
+            &self.page_tree,
+            options,
+            self.limits,
+            &self.image_resource_cache,
+            &self.font_resource_cache,
+            &self.icc_transform_cache,
+            &self.glyph_bitmap_cache,
+            &self.type3_template_cache,
+            &self.type3_render_cache,
+            control,
         )
     }
 
@@ -1879,6 +1949,7 @@ impl<'a> NativeDocumentSession<'a> {
     ) -> Result<Thumbnail, ThumbnailError> {
         reject_form_appearance_mutation(options)?;
         let started = PhaseTimer::start();
+        let control = RenderControl::from_options(options);
         let thumbnail = render_loaded_document_with_timings_and_session_cache(
             &self.document,
             &self.page_tree,
@@ -1891,6 +1962,7 @@ impl<'a> NativeDocumentSession<'a> {
             &self.glyph_bitmap_cache,
             &self.type3_template_cache,
             &self.type3_render_cache,
+            control,
         )?;
         timings.total += started.elapsed();
         Ok(thumbnail)
@@ -1923,6 +1995,7 @@ impl<'a> NativeDocumentSession<'a> {
             Some(&self.glyph_bitmap_cache),
             Some(&self.type3_template_cache),
             Some(&self.type3_render_cache),
+            RenderControl::from_options(options),
         )?;
         Ok(fill_routes)
     }
@@ -2009,7 +2082,7 @@ impl Default for ParallelRenderOptions {
     }
 }
 
-/// Cooperative cancellation flag for multi-page native rendering.
+/// Cooperative cancellation flag for native rendering.
 #[derive(Debug, Default)]
 pub struct RenderCancellation {
     cancelled: AtomicBool,
@@ -2035,6 +2108,71 @@ impl RenderCancellation {
         self.cancelled.load(Ordering::Acquire)
     }
 }
+
+#[derive(Debug, Clone, Copy)]
+struct RenderControl<'a> {
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+    deadline: Option<Instant>,
+    cancellation: Option<&'a RenderCancellation>,
+}
+
+impl<'a> RenderControl<'a> {
+    fn from_options(options: &ThumbnailOptions) -> Self {
+        Self::new(options, None)
+    }
+
+    fn disabled() -> Self {
+        Self {
+            #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+            deadline: None,
+            cancellation: None,
+        }
+    }
+
+    fn with_cancellation(options: &ThumbnailOptions, cancellation: &'a RenderCancellation) -> Self {
+        Self::new(options, Some(cancellation))
+    }
+
+    fn new(options: &ThumbnailOptions, cancellation: Option<&'a RenderCancellation>) -> Self {
+        Self {
+            #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+            deadline: Some(
+                Instant::now()
+                    .checked_add(options.timeout)
+                    .unwrap_or_else(Instant::now),
+            ),
+            cancellation,
+        }
+    }
+
+    fn check(&self) -> Result<(), ThumbnailError> {
+        if self
+            .cancellation
+            .is_some_and(RenderCancellation::is_cancelled)
+        {
+            return Err(ThumbnailError::Cancelled);
+        }
+        #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+        if self
+            .deadline
+            .is_some_and(|deadline| Instant::now() >= deadline)
+        {
+            return Err(ThumbnailError::Timeout);
+        }
+        Ok(())
+    }
+
+    fn check_every(&self, index: usize, interval: usize) -> Result<(), ThumbnailError> {
+        if index % interval == 0 {
+            self.check()
+        } else {
+            Ok(())
+        }
+    }
+}
+
+const RENDER_CONTROL_TOKEN_CHECK_INTERVAL: usize = 64;
+const RENDER_CONTROL_ROW_CHECK_INTERVAL: usize = 16;
 
 /// Ordered thumbnails rendered by the bounded parallel scheduler.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2180,7 +2318,14 @@ fn render_pages_parallel_partial_with_limits(
                     scope.spawn(move || {
                         let mut page_options = *options;
                         page_options.page_index = page_index;
-                        render_loaded_document(document_ref, page_tree_ref, &page_options, limits)
+                        let control = RenderControl::with_cancellation(&page_options, cancellation);
+                        render_loaded_document(
+                            document_ref,
+                            page_tree_ref,
+                            &page_options,
+                            limits,
+                            control,
+                        )
                     }),
                 ));
             }
@@ -2239,8 +2384,10 @@ impl ThumbnailBackend for NativeBackend {
         options: &ThumbnailOptions,
     ) -> Result<Thumbnail, ThumbnailError> {
         reject_form_appearance_mutation(options)?;
+        let control = RenderControl::from_options(options);
+        control.check()?;
         let bytes = load_source(source)?;
-        render_bytes(&bytes, options, self.limits)
+        render_bytes(&bytes, options, self.limits, control)
     }
 }
 
@@ -2298,7 +2445,7 @@ fn extract_text_bytes(
         .pages()
         .get(options.page_index as usize)
         .ok_or_else(|| unsupported_feature(BUCKET_RENDERER_UNSUPPORTED))?;
-    let content = page_content_stream(&document, page)?;
+    let content = page_content_stream(&document, page, RenderControl::disabled())?;
     let optional_content = page_optional_content_properties(&document, page)?;
     let optional_content_state = document_optional_content_state(&document)?;
     let content = filter_optional_content(&content, &optional_content, &optional_content_state)?;
@@ -2448,10 +2595,12 @@ fn render_bytes(
     bytes: &[u8],
     options: &ThumbnailOptions,
     limits: NativeRenderLimits,
+    control: RenderControl<'_>,
 ) -> Result<Thumbnail, ThumbnailError> {
+    control.check()?;
     let input = PdfBytes::new(bytes);
     let (document, page_tree) = load_render_document(input, options.page_index)?;
-    render_loaded_document(&document, &page_tree, options, limits)
+    render_loaded_document(&document, &page_tree, options, limits, control)
 }
 
 fn render_loaded_document(
@@ -2459,6 +2608,7 @@ fn render_loaded_document(
     page_tree: &PageTree,
     options: &ThumbnailOptions,
     limits: NativeRenderLimits,
+    control: RenderControl<'_>,
 ) -> Result<Thumbnail, ThumbnailError> {
     render_loaded_document_inner(
         document,
@@ -2473,6 +2623,7 @@ fn render_loaded_document(
         None,
         None,
         None,
+        control,
     )
     .and_then(NativeRenderOutput::into_thumbnail)
     .and_then(|thumbnail| encode_thumbnail_if_requested(thumbnail, options))
@@ -2484,6 +2635,7 @@ fn render_loaded_document_to_rgba_rows(
     options: &ThumbnailOptions,
     limits: NativeRenderLimits,
     sink: &mut dyn NativeRgbaRowSink,
+    control: RenderControl<'_>,
 ) -> Result<NativeRgbaRowsOutput, ThumbnailError> {
     render_loaded_document_inner(
         document,
@@ -2498,6 +2650,7 @@ fn render_loaded_document_to_rgba_rows(
         None,
         None,
         None,
+        control,
     )
     .and_then(NativeRenderOutput::into_rows)
 }
@@ -2517,6 +2670,7 @@ fn render_loaded_document_with_session_cache(
     glyph_bitmap_cache: &RefCell<GlyphBitmapCache>,
     type3_template_cache: &RefCell<Type3CharProcTemplateCache>,
     type3_render_cache: &RefCell<Type3GlyphRenderCache>,
+    control: RenderControl<'_>,
 ) -> Result<Thumbnail, ThumbnailError> {
     render_loaded_document_inner(
         document,
@@ -2531,6 +2685,7 @@ fn render_loaded_document_with_session_cache(
         Some(glyph_bitmap_cache),
         Some(type3_template_cache),
         Some(type3_render_cache),
+        control,
     )
     .and_then(NativeRenderOutput::into_thumbnail)
     .and_then(|thumbnail| encode_thumbnail_if_requested(thumbnail, options))
@@ -2552,6 +2707,7 @@ fn render_loaded_document_with_timings_and_session_cache(
     glyph_bitmap_cache: &RefCell<GlyphBitmapCache>,
     type3_template_cache: &RefCell<Type3CharProcTemplateCache>,
     type3_render_cache: &RefCell<Type3GlyphRenderCache>,
+    control: RenderControl<'_>,
 ) -> Result<Thumbnail, ThumbnailError> {
     render_loaded_document_inner(
         document,
@@ -2566,6 +2722,7 @@ fn render_loaded_document_with_timings_and_session_cache(
         Some(glyph_bitmap_cache),
         Some(type3_template_cache),
         Some(type3_render_cache),
+        control,
     )
     .and_then(NativeRenderOutput::into_thumbnail)
     .and_then(|thumbnail| encode_thumbnail_if_requested(thumbnail, options))
@@ -2577,6 +2734,7 @@ fn render_loaded_document_with_trace(
     options: &ThumbnailOptions,
     limits: NativeRenderLimits,
     trace_sinks: RenderTraceSinks<'_>,
+    control: RenderControl<'_>,
 ) -> Result<Thumbnail, ThumbnailError> {
     render_loaded_document_inner(
         document,
@@ -2591,6 +2749,7 @@ fn render_loaded_document_with_trace(
         None,
         None,
         None,
+        control,
     )
     .and_then(NativeRenderOutput::into_thumbnail)
     .and_then(|thumbnail| encode_thumbnail_if_requested(thumbnail, options))
@@ -2626,7 +2785,9 @@ fn render_loaded_document_inner(
     glyph_bitmap_cache: Option<&RefCell<GlyphBitmapCache>>,
     type3_template_cache: Option<&RefCell<Type3CharProcTemplateCache>>,
     type3_render_cache: Option<&RefCell<Type3GlyphRenderCache>>,
+    control: RenderControl<'_>,
 ) -> Result<NativeRenderOutput, ThumbnailError> {
+    control.check()?;
     enforce_xfa_render_policy(document)?;
     let local_icc_transform_cache = RefCell::new(IccTransformCache::new(
         limits.max_icc_transform_cache_entries,
@@ -2650,17 +2811,19 @@ fn render_loaded_document_inner(
         &mut trace_sinks.timings,
         NativeRenderPhase::StreamDecode,
         || {
-            let content = page_content_stream(document, page)?;
+            let content = page_content_stream(document, page, control)?;
             let optional_content = page_optional_content_properties(document, page)?;
             let optional_content_state = document_optional_content_state(document)?;
             filter_optional_content(&content, &optional_content, &optional_content_state)
         },
     )?;
+    control.check()?;
     let xobject_invocations = record_render_phase(
         &mut trace_sinks.timings,
         NativeRenderPhase::ContentTokenize,
-        || xobject_invocation_names(&content),
+        || xobject_invocation_names(&content, control),
     )?;
+    control.check()?;
     let display_options = limits.display_options();
     let path_options = limits.path_raster_options();
     let (ext_graphics_states, shadings, patterns, color_spaces) = record_render_phase(
@@ -2675,6 +2838,7 @@ fn render_loaded_document_inner(
             ))
         },
     )?;
+    control.check()?;
     let display_list = record_render_phase(
         &mut trace_sinks.timings,
         NativeRenderPhase::DisplayListBuild,
@@ -2690,6 +2854,7 @@ fn render_loaded_document_inner(
             .map_err(map_graphics_error)
         },
     )?;
+    control.check()?;
     let transform = PageTransform::new_with_options(
         page_geometry(*page),
         options.max_edge,
@@ -2712,23 +2877,27 @@ fn render_loaded_document_inner(
     } else {
         ImageDecodeHints::empty()
     };
+    control.check()?;
     record_path_flattening(
         &mut trace_sinks.path_flattening,
         &display_list,
         transform,
         path_options,
     )?;
+    control.check()?;
     record_stroke_shapes(
         &mut trace_sinks.stroke_shapes,
         &display_list,
         transform,
         path_options,
     )?;
+    control.check()?;
     let form_resources = record_render_phase(
         &mut trace_sinks.timings,
         NativeRenderPhase::ResourceForms,
         || page_form_resources(document, page, &xobject_invocations),
     )?;
+    control.check()?;
     let form_list = record_render_phase(
         &mut trace_sinks.timings,
         NativeRenderPhase::DisplayListBuild,
@@ -2769,6 +2938,7 @@ fn render_loaded_document_inner(
                     options: display_options,
                     image_decode_hints: &image_decode_hints,
                     icc_transform_cache,
+                    control,
                 },
                 image_resource_cache.map(|cache| SessionImageResourceCacheAccess {
                     page_index: options.page_index,
@@ -2779,6 +2949,7 @@ fn render_loaded_document_inner(
             )
         },
     )?;
+    control.check()?;
     record_image_resource_summary(
         &mut trace_sinks.image_resources,
         image_resources.resource_summary(),
@@ -2795,6 +2966,7 @@ fn render_loaded_document_inner(
             .map_err(map_graphics_error)
         },
     )?;
+    control.check()?;
     record_image_placement_summary(&mut trace_sinks.image_placements, &image_list, transform);
     let font_resources = record_render_phase(
         &mut trace_sinks.timings,
@@ -2814,6 +2986,7 @@ fn render_loaded_document_inner(
             )
         },
     )?;
+    control.check()?;
     let text_list = record_render_phase(
         &mut trace_sinks.timings,
         NativeRenderPhase::DisplayListBuild,
@@ -2826,15 +2999,17 @@ fn render_loaded_document_inner(
             .map_err(map_graphics_error)
         },
     )?;
+    control.check()?;
     let paint_order = should_scan_content_order(&display_list, &image_list, &text_list)
         .then(|| {
             record_render_phase(
                 &mut trace_sinks.timings,
                 NativeRenderPhase::ContentTokenize,
-                || page_paint_order(&content, &image_resources, &form_resources),
+                || page_paint_order(&content, &image_resources, &form_resources, control),
             )
         })
         .transpose()?;
+    control.check()?;
     let ordered_list = paint_order
         .filter(|paint_order| {
             should_rasterize_in_content_order(
@@ -2859,6 +3034,7 @@ fn render_loaded_document_inner(
         NativeRenderPhase::StreamDecode,
         || page_annotation_appearance_resources(document, page, options.annotation_mode),
     )?;
+    control.check()?;
     let mut annotation_list = None;
     if !annotation_content.is_empty() {
         let list = record_render_phase(
@@ -2877,6 +3053,7 @@ fn render_loaded_document_inner(
                 .map_err(map_graphics_error)
             },
         )?;
+        control.check()?;
         record_path_flattening(
             &mut trace_sinks.path_flattening,
             &list,
@@ -2926,6 +3103,7 @@ fn render_loaded_document_inner(
             transform,
             path_options,
         )?;
+        control.check()?;
         annotation_fallback_list = Some(list);
         match build_text_display_list(
             tokenize_content(PdfBytes::new(&annotation_fallback_content)),
@@ -2936,7 +3114,9 @@ fn render_loaded_document_inner(
             Err(error) if is_ignorable_annotation_fallback_text_error(&error) => {}
             Err(error) => return Err(map_graphics_error(error)),
         }
+        control.check()?;
     }
+    control.check()?;
     let thumbnail = rasterize_native_page_work_to_thumbnail(
         NativeRasterWork {
             display_list: &display_list,
@@ -2957,7 +3137,9 @@ fn render_loaded_document_inner(
         glyph_bitmap_cache,
         type3_template_cache,
         type3_render_cache,
+        control,
     )?;
+    control.check()?;
     if let Some(glyph_bitmaps) = trace_sinks.glyph_bitmaps.as_deref_mut() {
         *glyph_bitmaps = glyph_bitmap_cache.borrow().summary();
     }
@@ -3243,7 +3425,9 @@ fn matrix_is_axis_aligned(matrix: ferrugo_render::Matrix) -> bool {
 fn direct_scanned_page_thumbnail(
     image: &ImageDisplayItem,
     transform: PageTransform,
+    control: RenderControl<'_>,
 ) -> Result<Thumbnail, ThumbnailError> {
+    control.check()?;
     let image_to_device = transform.matrix.multiply(image.transform);
     let inverse = image_to_device
         .inverse()
@@ -3278,25 +3462,27 @@ fn direct_scanned_page_thumbnail(
         })
         .collect();
     match image.image.color_space {
-        ImageColorSpace::DeviceGray => write_direct_gray_image_rows(
+        ImageColorSpace::DeviceGray => write_direct_gray_image_rows_checked(
             image,
             dimensions,
             &sample_x_by_column,
             &sample_y_by_row,
             &mut pixels,
-        ),
+            control,
+        )?,
         ImageColorSpace::DeviceRgb => {
             let sample_x_byte_by_column: Vec<usize> = sample_x_by_column
                 .iter()
                 .map(|sample_x| sample_x * 3)
                 .collect();
-            write_direct_rgb_image_rows(
+            write_direct_rgb_image_rows_checked(
                 image,
                 dimensions,
                 &sample_x_byte_by_column,
                 &sample_y_by_row,
                 &mut pixels,
-            )
+                control,
+            )?
         }
         ImageColorSpace::DeviceCmyk
         | ImageColorSpace::IndexedGray
@@ -3306,6 +3492,7 @@ fn direct_scanned_page_thumbnail(
             ));
         }
     }
+    control.check()?;
     Thumbnail::rgba(dimensions.width, dimensions.height, pixels)
 }
 
@@ -3313,7 +3500,9 @@ fn direct_scanned_page_rows(
     image: &ImageDisplayItem,
     transform: PageTransform,
     sink: &mut dyn NativeRgbaRowSink,
+    control: RenderControl<'_>,
 ) -> Result<NativeRgbaRowsOutput, ThumbnailError> {
+    control.check()?;
     let image_to_device = transform.matrix.multiply(image.transform);
     let inverse = image_to_device
         .inverse()
@@ -3344,6 +3533,7 @@ fn direct_scanned_page_rows(
     match image.image.color_space {
         ImageColorSpace::DeviceGray => {
             for (y, sample_y) in sample_y_by_row.iter().copied().enumerate() {
+                control.check_every(y, RENDER_CONTROL_ROW_CHECK_INTERVAL)?;
                 let source_row_start = sample_y as usize * image.image.width as usize;
                 for (chunk, sample_x) in row.chunks_exact_mut(4).zip(sample_x_by_column.iter()) {
                     let channel = image.image.samples[source_row_start + *sample_x];
@@ -3358,6 +3548,7 @@ fn direct_scanned_page_rows(
                 .map(|sample_x| sample_x * 3)
                 .collect();
             for (y, sample_y) in sample_y_by_row.iter().copied().enumerate() {
+                control.check_every(y, RENDER_CONTROL_ROW_CHECK_INTERVAL)?;
                 let source_row_start = sample_y as usize * image.image.width as usize * 3;
                 for (chunk, sample_x_byte_offset) in
                     row.chunks_exact_mut(4).zip(sample_x_byte_by_column.iter())
@@ -3388,16 +3579,18 @@ fn direct_scanned_page_rows(
     })
 }
 
-fn write_direct_gray_image_rows(
+fn write_direct_gray_image_rows_checked(
     image: &ImageDisplayItem,
     dimensions: RasterDimensions,
     sample_x_by_column: &[usize],
     sample_y_by_row: &[u32],
     pixels: &mut [u8],
-) {
+    control: RenderControl<'_>,
+) -> Result<(), ThumbnailError> {
     let repeated_columns = has_repeated_adjacent_samples(sample_x_by_column);
     let mut previous_row: Option<(u32, usize)> = None;
     for (y, sample_y) in sample_y_by_row.iter().copied().enumerate() {
+        control.check_every(y, RENDER_CONTROL_ROW_CHECK_INTERVAL)?;
         let row_start = y * dimensions.stride;
         if let Some((previous_sample_y, previous_row_start)) = previous_row {
             if previous_sample_y == sample_y {
@@ -3434,18 +3627,21 @@ fn write_direct_gray_image_rows(
         }
         previous_row = Some((sample_y, row_start));
     }
+    Ok(())
 }
 
-fn write_direct_rgb_image_rows(
+fn write_direct_rgb_image_rows_checked(
     image: &ImageDisplayItem,
     dimensions: RasterDimensions,
     sample_x_byte_by_column: &[usize],
     sample_y_by_row: &[u32],
     pixels: &mut [u8],
-) {
+    control: RenderControl<'_>,
+) -> Result<(), ThumbnailError> {
     let repeated_columns = has_repeated_adjacent_samples(sample_x_byte_by_column);
     let mut previous_row: Option<(u32, usize)> = None;
     for (y, sample_y) in sample_y_by_row.iter().copied().enumerate() {
+        control.check_every(y, RENDER_CONTROL_ROW_CHECK_INTERVAL)?;
         let row_start = y * dimensions.stride;
         if let Some((previous_sample_y, previous_row_start)) = previous_row {
             if previous_sample_y == sample_y {
@@ -3492,6 +3688,7 @@ fn write_direct_rgb_image_rows(
         }
         previous_row = Some((sample_y, row_start));
     }
+    Ok(())
 }
 
 fn has_repeated_adjacent_samples<T: Eq>(samples: &[T]) -> bool {
@@ -3521,7 +3718,9 @@ fn rasterize_native_page_work_to_thumbnail(
     glyph_bitmap_cache: &RefCell<GlyphBitmapCache>,
     type3_template_cache: &RefCell<Type3CharProcTemplateCache>,
     type3_render_cache: Option<&RefCell<Type3GlyphRenderCache>>,
+    control: RenderControl<'_>,
 ) -> Result<NativeRenderOutput, ThumbnailError> {
+    control.check()?;
     let band_rows = raster_band_rows(
         transform.dimensions,
         limits.max_raster_band_rows,
@@ -3552,7 +3751,7 @@ fn rasterize_native_page_work_to_thumbnail(
                 let output = record_render_phase(
                     &mut trace_sinks.timings,
                     NativeRenderPhase::Output,
-                    || direct_scanned_page_rows(image, transform, sink),
+                    || direct_scanned_page_rows(image, transform, sink, control),
                 )?;
                 if let Some(summary) = trace_sinks.scanned_page_fast_path.as_deref_mut() {
                     summary.record_direct_call();
@@ -3561,7 +3760,7 @@ fn rasterize_native_page_work_to_thumbnail(
             }
             let direct =
                 record_render_phase(&mut trace_sinks.timings, NativeRenderPhase::Output, || {
-                    direct_scanned_page_thumbnail(image, transform)
+                    direct_scanned_page_thumbnail(image, transform, control)
                         .map(NativeRenderOutput::Thumbnail)
                 });
             match direct {
@@ -3570,6 +3769,9 @@ fn rasterize_native_page_work_to_thumbnail(
                         summary.record_direct_call();
                     }
                     return Ok(output);
+                }
+                Err(error @ (ThumbnailError::Timeout | ThumbnailError::Cancelled)) => {
+                    return Err(error);
                 }
                 Err(_) => {
                     if let Some(summary) = trace_sinks.scanned_page_fast_path.as_deref_mut() {
@@ -3597,10 +3799,11 @@ fn rasterize_native_page_work_to_thumbnail(
             glyph_bitmap_cache,
             type3_template_cache,
             type3_render_cache,
+            control,
         )?;
         return record_render_phase(&mut trace_sinks.timings, NativeRenderPhase::Output, || {
             match row_sink.as_deref_mut() {
-                Some(sink) => stream_raster_device_rows(&raster, band_summary, sink)
+                Some(sink) => stream_raster_device_rows(&raster, band_summary, sink, control)
                     .map(NativeRenderOutput::Rows),
                 None => {
                     let dimensions = raster.dimensions();
@@ -3621,6 +3824,7 @@ fn rasterize_native_page_work_to_thumbnail(
             band_rows,
             band_workers,
             trace_sinks,
+            control,
         )
         .map(NativeRenderOutput::Thumbnail);
     }
@@ -3629,6 +3833,7 @@ fn rasterize_native_page_work_to_thumbnail(
         sink.begin(native_rgba_rows_dimensions(transform.dimensions))?;
         let mut band_y = 0;
         while band_y < transform.dimensions.height {
+            control.check()?;
             let band_height = band_rows.min(transform.dimensions.height - band_y);
             let band_transform =
                 raster_band_transform(transform, band_y, band_height).map_err(map_raster_error)?;
@@ -3653,8 +3858,9 @@ fn rasterize_native_page_work_to_thumbnail(
                 glyph_bitmap_cache,
                 type3_template_cache,
                 type3_render_cache,
+                control,
             )?;
-            stream_band_rows(band_y, &band_raster, sink)?;
+            stream_band_rows(band_y, &band_raster, sink, control)?;
             band_y += band_height;
         }
         return record_render_phase(&mut trace_sinks.timings, NativeRenderPhase::Output, || {
@@ -3671,6 +3877,7 @@ fn rasterize_native_page_work_to_thumbnail(
         .map_err(map_raster_error)?;
     let mut band_y = 0;
     while band_y < transform.dimensions.height {
+        control.check()?;
         let band_height = band_rows.min(transform.dimensions.height - band_y);
         let band_transform =
             raster_band_transform(transform, band_y, band_height).map_err(map_raster_error)?;
@@ -3695,6 +3902,7 @@ fn rasterize_native_page_work_to_thumbnail(
             glyph_bitmap_cache,
             type3_template_cache,
             type3_render_cache,
+            control,
         )?;
         copy_band_into_output(&mut output, band_y, band_raster).map_err(map_raster_error)?;
         band_y += band_height;
@@ -3719,12 +3927,14 @@ fn rasterize_native_page_work_to_thumbnail_parallel_bands(
     band_rows: u32,
     band_workers: usize,
     trace_sinks: &mut RenderTraceSinks<'_>,
+    control: RenderControl<'_>,
 ) -> Result<Thumbnail, ThumbnailError> {
     let mut output = transform
         .create_device(background)
         .map_err(map_raster_error)?;
     let mut batch_start_y = 0;
     while batch_start_y < transform.dimensions.height {
+        control.check()?;
         let batch = raster_band_batch(
             transform.dimensions.height,
             batch_start_y,
@@ -3743,6 +3953,7 @@ fn rasterize_native_page_work_to_thumbnail_parallel_bands(
                         limits,
                         band_y,
                         band_height,
+                        control,
                     )
                 }));
             }
@@ -3757,6 +3968,7 @@ fn rasterize_native_page_work_to_thumbnail_parallel_bands(
                 .collect::<Result<Vec<_>, ThumbnailError>>()
         })?;
         for (band_y, band_raster) in band_results {
+            control.check()?;
             copy_band_into_output(&mut output, band_y, band_raster).map_err(map_raster_error)?;
         }
         batch_start_y = batch_start_y.saturating_add(band_rows.saturating_mul(band_workers as u32));
@@ -3767,6 +3979,10 @@ fn rasterize_native_page_work_to_thumbnail_parallel_bands(
     })
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "band workers need the same render inputs plus cooperative control"
+)]
 fn rasterize_native_page_work_band(
     work: NativeRasterWork<'_>,
     transform: PageTransform,
@@ -3775,7 +3991,9 @@ fn rasterize_native_page_work_band(
     limits: NativeRenderLimits,
     band_y: u32,
     band_height: u32,
+    control: RenderControl<'_>,
 ) -> Result<(u32, ferrugo_render::RasterDevice), ThumbnailError> {
+    control.check()?;
     let band_transform =
         raster_band_transform(transform, band_y, band_height).map_err(map_raster_error)?;
     let band_path_options = PathRasterOptions {
@@ -3808,6 +4026,7 @@ fn rasterize_native_page_work_band(
         &glyph_bitmap_cache,
         &type3_template_cache,
         None,
+        control,
     )?;
     Ok((band_y, band_raster))
 }
@@ -3825,7 +4044,9 @@ fn rasterize_native_page_work_into(
     glyph_bitmap_cache: &RefCell<GlyphBitmapCache>,
     type3_template_cache: &RefCell<Type3CharProcTemplateCache>,
     type3_render_cache: Option<&RefCell<Type3GlyphRenderCache>>,
+    control: RenderControl<'_>,
 ) -> Result<(), ThumbnailError> {
+    control.check()?;
     if let Some(ordered_list) = work.ordered_list {
         rasterize_ordered_display_list_with_phase_timings(
             ordered_list,
@@ -3839,6 +4060,7 @@ fn rasterize_native_page_work_into(
             type3_template_cache,
             type3_render_cache,
         )?;
+        control.check()?;
     } else {
         record_render_phase(
             &mut trace_sinks.timings,
@@ -3854,6 +4076,7 @@ fn rasterize_native_page_work_into(
                 )
             },
         )?;
+        control.check()?;
         record_render_phase(
             &mut trace_sinks.timings,
             NativeRenderPhase::RasterPaths,
@@ -3868,11 +4091,13 @@ fn rasterize_native_page_work_into(
                 )
             },
         )?;
+        control.check()?;
         record_render_phase(
             &mut trace_sinks.timings,
             NativeRenderPhase::RasterImages,
             || rasterize_images(work.image_list, raster, transform).map_err(map_raster_error),
         )?;
+        control.check()?;
         record_render_phase(
             &mut trace_sinks.timings,
             NativeRenderPhase::RasterText,
@@ -3887,6 +4112,7 @@ fn rasterize_native_page_work_into(
                 )
             },
         )?;
+        control.check()?;
     }
     if let Some(annotation_list) = work.annotation_list {
         record_render_phase(
@@ -3903,6 +4129,7 @@ fn rasterize_native_page_work_into(
                 )
             },
         )?;
+        control.check()?;
     }
     if let Some(annotation_fallback_list) = work.annotation_fallback_list {
         record_render_phase(
@@ -3919,6 +4146,7 @@ fn rasterize_native_page_work_into(
                 )
             },
         )?;
+        control.check()?;
     }
     if let Some(annotation_fallback_text_list) = work.annotation_fallback_text_list {
         record_render_phase(
@@ -3935,6 +4163,7 @@ fn rasterize_native_page_work_into(
                 )
             },
         )?;
+        control.check()?;
     }
     Ok(())
 }
@@ -4303,10 +4532,12 @@ fn stream_raster_device_rows(
     raster: &ferrugo_render::RasterDevice,
     raster_bands: RasterBandSummary,
     sink: &mut dyn NativeRgbaRowSink,
+    control: RenderControl<'_>,
 ) -> Result<NativeRgbaRowsOutput, ThumbnailError> {
     let dimensions = raster.dimensions();
     sink.begin(native_rgba_rows_dimensions(dimensions))?;
     for y in 0..dimensions.height {
+        control.check_every(y as usize, RENDER_CONTROL_ROW_CHECK_INTERVAL)?;
         let row = raster.row(y).map_err(map_raster_error)?;
         sink.write_row(y, row)?;
     }
@@ -4321,9 +4552,11 @@ fn stream_band_rows(
     band_y: u32,
     band_raster: &ferrugo_render::RasterDevice,
     sink: &mut dyn NativeRgbaRowSink,
+    control: RenderControl<'_>,
 ) -> Result<(), ThumbnailError> {
     let dimensions = band_raster.dimensions();
     for y in 0..dimensions.height {
+        control.check_every(y as usize, RENDER_CONTROL_ROW_CHECK_INTERVAL)?;
         let row = band_raster.row(y).map_err(map_raster_error)?;
         sink.write_row(band_y + y, row)?;
     }
@@ -4663,7 +4896,7 @@ pub fn scan_operator_coverage(
         .ok_or_else(|| unsupported_feature(BUCKET_RENDERER_UNSUPPORTED))?;
     let mut scanner = OperatorCoverageScanner::default();
 
-    let content = page_content_stream(&document, page)?;
+    let content = page_content_stream(&document, page, RenderControl::disabled())?;
     scanner.scan_stream(&content)?;
 
     if options.include_annotations {
@@ -4885,10 +5118,12 @@ fn page_paint_order(
     content: &[u8],
     image_resources: &ImageResources,
     form_resources: &FormResources,
+    control: RenderControl<'_>,
 ) -> Result<Vec<PagePaintKind>, ThumbnailError> {
     let mut paint_order = Vec::new();
     let mut operands = Vec::new();
-    for token in spanned_content_tokens(content)? {
+    for (index, token) in spanned_content_tokens(content)?.into_iter().enumerate() {
+        control.check_every(index, RENDER_CONTROL_TOKEN_CHECK_INTERVAL)?;
         match token.kind {
             SpannedContentTokenKind::Operand(value) => operands.push(value),
             SpannedContentTokenKind::Operator(name) => {
@@ -4919,10 +5154,14 @@ fn page_paint_order(
     Ok(paint_order)
 }
 
-fn xobject_invocation_names(content: &[u8]) -> Result<Vec<Vec<u8>>, ThumbnailError> {
+fn xobject_invocation_names(
+    content: &[u8],
+    control: RenderControl<'_>,
+) -> Result<Vec<Vec<u8>>, ThumbnailError> {
     let mut names = Vec::new();
     let mut operands = Vec::new();
-    for token in spanned_content_tokens(content)? {
+    for (index, token) in spanned_content_tokens(content)?.into_iter().enumerate() {
+        control.check_every(index, RENDER_CONTROL_TOKEN_CHECK_INTERVAL)?;
         match token.kind {
             SpannedContentTokenKind::Operand(value) => operands.push(value),
             SpannedContentTokenKind::Operator(name) => {
@@ -5021,6 +5260,7 @@ fn append_next_item(items: &mut Vec<DisplayItem>, source: &[DisplayItem], index:
 fn page_content_stream(
     document: &ClassicDocument<'_>,
     page: &ObjectPageMetadata,
+    control: RenderControl<'_>,
 ) -> Result<Vec<u8>, ThumbnailError> {
     let object = document
         .objects
@@ -5029,7 +5269,7 @@ fn page_content_stream(
     let dictionary = object_dictionary(&object.value)?;
     let contents = dictionary_value(dictionary, b"Contents")
         .ok_or_else(|| unsupported_feature(BUCKET_RENDERER_UNSUPPORTED))?;
-    decode_contents(document, contents)
+    decode_contents(document, contents, control)
 }
 
 fn page_ext_graphics_state_resources(
@@ -5222,6 +5462,7 @@ struct PageImageResourceRequest<'a, 'd> {
     options: DisplayListOptions,
     image_decode_hints: &'a ImageDecodeHints,
     icc_transform_cache: &'a RefCell<IccTransformCache>,
+    control: RenderControl<'a>,
 }
 
 struct SessionImageResourceCacheAccess<'a> {
@@ -5255,6 +5496,7 @@ fn cached_page_image_resources(
             request.options,
             request.image_decode_hints,
             request.icc_transform_cache,
+            request.control,
         );
     };
     let key = SessionImageResourceCacheKey {
@@ -5272,6 +5514,7 @@ fn cached_page_image_resources(
         request.options,
         request.image_decode_hints,
         request.icc_transform_cache,
+        request.control,
     )?;
     cache_access.cache.borrow_mut().insert(
         key,
@@ -5328,7 +5571,9 @@ fn page_image_resources(
     options: DisplayListOptions,
     image_decode_hints: &ImageDecodeHints,
     icc_transform_cache: &RefCell<IccTransformCache>,
+    control: RenderControl<'_>,
 ) -> Result<ImageResources, ThumbnailError> {
+    control.check()?;
     let object = document
         .objects
         .get(page.id)
@@ -5360,15 +5605,18 @@ fn page_image_resources(
         return Ok(ImageResources::empty());
     };
     let xobjects = filter_invoked_resources(xobjects, xobject_invocations);
+    control.check()?;
     let mut icc_cache = icc_transform_cache.borrow_mut();
-    ImageResources::from_xobject_dictionary_with_icc_cache_and_decode_hints(
+    let resources = ImageResources::from_xobject_dictionary_with_icc_cache_and_decode_hints(
         xobjects.as_slice(),
         document,
         options,
         &mut icc_cache,
         image_decode_hints,
     )
-    .map_err(map_graphics_error)
+    .map_err(map_graphics_error)?;
+    control.check()?;
+    Ok(resources)
 }
 
 fn page_form_resources(
@@ -6976,16 +7224,19 @@ fn format_pdf_number(value: f64) -> String {
 fn decode_contents(
     document: &ClassicDocument<'_>,
     contents: &PdfPrimitive<'_>,
+    control: RenderControl<'_>,
 ) -> Result<Vec<u8>, ThumbnailError> {
+    control.check()?;
     match contents {
         PdfPrimitive::Reference(reference) => decode_content_reference(document, *reference),
         PdfPrimitive::Array(items) => {
             let mut decoded = Vec::new();
-            for item in items {
+            for (index, item) in items.iter().enumerate() {
+                control.check_every(index, RENDER_CONTROL_TOKEN_CHECK_INTERVAL)?;
                 if !decoded.is_empty() {
                     decoded.push(b'\n');
                 }
-                decoded.extend_from_slice(&decode_contents(document, item)?);
+                decoded.extend_from_slice(&decode_contents(document, item, control)?);
             }
             Ok(decoded)
         }
@@ -8142,7 +8393,7 @@ mod tests {
         let transform = scanned_fast_path_test_transform();
         let empty = DisplayList::new();
         let image = scanned_fast_path_test_image();
-        let direct = direct_scanned_page_thumbnail(&image, transform)
+        let direct = direct_scanned_page_thumbnail(&image, transform, RenderControl::disabled())
             .expect("direct image route should render");
         let image_list = DisplayList::from_items(vec![DisplayItem::Image(image)]);
         let work = NativeRasterWork {
@@ -8170,6 +8421,7 @@ mod tests {
             &glyph_cache,
             &type3_template_cache,
             None,
+            RenderControl::disabled(),
         )
         .expect("generic image route should render");
         let generic = Thumbnail::rgba(4, 4, raster.into_pixels()).expect("thumbnail should build");
@@ -8448,6 +8700,99 @@ mod tests {
             Thumbnail::rgba(dimensions.width, dimensions.height, bytes)
                 .expect("streamed rows should form thumbnail")
         }
+    }
+
+    struct CancellingRgbaRows<'a> {
+        cancellation: &'a RenderCancellation,
+        dimensions: Option<NativeRgbaRowsDimensions>,
+        rows: u32,
+    }
+
+    impl NativeRgbaRowSink for CancellingRgbaRows<'_> {
+        fn begin(&mut self, dimensions: NativeRgbaRowsDimensions) -> Result<(), ThumbnailError> {
+            self.dimensions = Some(dimensions);
+            self.rows = 0;
+            Ok(())
+        }
+
+        fn write_row(&mut self, _y: u32, _row: &[u8]) -> Result<(), ThumbnailError> {
+            self.rows = self.rows.saturating_add(1);
+            if self.rows == 1 {
+                self.cancellation.cancel();
+            }
+            Ok(())
+        }
+
+        fn finish(&mut self) -> Result<(), ThumbnailError> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn native_backend_should_enforce_zero_render_timeout() {
+        let bytes = include_bytes!("../../../fixtures/generated/text-page.pdf");
+        let options = ThumbnailOptions {
+            timeout: std::time::Duration::ZERO,
+            ..ThumbnailOptions::default()
+        };
+
+        let error = NativeBackend::new()
+            .render(PdfSource::from_bytes(bytes), &options)
+            .expect_err("zero timeout should abort before rendering");
+
+        assert_eq!(error, ThumbnailError::Timeout);
+    }
+
+    #[test]
+    fn native_backend_should_honor_pre_cancelled_single_page_render() {
+        let bytes = include_bytes!("../../../fixtures/generated/text-page.pdf");
+        let options = ThumbnailOptions::default();
+        let cancellation = RenderCancellation::new();
+        cancellation.cancel();
+
+        let error = NativeBackend::new()
+            .render_with_cancellation(PdfSource::from_bytes(bytes), &options, &cancellation)
+            .expect_err("pre-cancelled render should abort");
+
+        assert_eq!(error, ThumbnailError::Cancelled);
+    }
+
+    #[test]
+    fn native_rgba_row_stream_should_stop_after_mid_render_cancellation() {
+        let bytes = include_bytes!("../../../fixtures/generated/scanned-page.pdf");
+        let options = ThumbnailOptions {
+            max_edge: 512,
+            timeout: std::time::Duration::from_secs(5),
+            ..ThumbnailOptions::default()
+        };
+        let input = PdfBytes::new(bytes);
+        let (document, page_tree) =
+            load_render_document(input, options.page_index).expect("fixture should load");
+        let cancellation = RenderCancellation::new();
+        let control = RenderControl::with_cancellation(&options, &cancellation);
+        let mut sink = CancellingRgbaRows {
+            cancellation: &cancellation,
+            dimensions: None,
+            rows: 0,
+        };
+
+        let error = render_loaded_document_to_rgba_rows(
+            &document,
+            &page_tree,
+            &options,
+            NativeRenderLimits::low_memory(),
+            &mut sink,
+            control,
+        )
+        .expect_err("row stream should stop after cancellation");
+
+        assert_eq!(error, ThumbnailError::Cancelled);
+        assert!(sink.rows > 0, "cancellation should happen after rows start");
+        let dimensions = sink.dimensions.expect("stream dimensions");
+        assert!(
+            sink.rows < dimensions.height,
+            "cancellation should stop before all rows are streamed"
+        );
     }
 
     #[test]
@@ -9366,6 +9711,7 @@ mod tests {
             &glyph_bitmap_cache,
             &type3_template_cache,
             None,
+            RenderControl::disabled(),
         )
         .expect("test display list should render")
         .into_thumbnail()
@@ -9435,6 +9781,7 @@ mod tests {
             &glyph_bitmap_cache,
             &type3_template_cache,
             None,
+            RenderControl::disabled(),
         )
         .expect("test display list should render")
         .into_thumbnail()
