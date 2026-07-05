@@ -13,8 +13,12 @@ The new default policy:
 - keeps explicit `default-parallel-*` and `low-memory-parallel-*` profile caps
   for tuning comparisons;
 - allows parallel band replay when a document-session Type3 render cache exists.
-  Parallel workers use local per-band Type3 render caches instead of sharing the
-  session render cache across threads.
+  Parallel workers create per-band Type3 template caches and run without a
+  Type3 render cache (the session render cache is not shared across threads),
+  so Type3 glyph rendering is not memoized under parallel banding. Correction
+  2026-07-05: the original wording claimed local per-band render caches; the
+  code passes none. Restoring per-worker render-cache memoization is tracked
+  in the post-0.4.0 polish backlog.
 
 On the benchmark host, `available_parallelism` was 20, so the default cap was 4.
 

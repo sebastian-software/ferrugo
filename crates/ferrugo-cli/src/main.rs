@@ -1181,12 +1181,11 @@ fn cold_process_record(
         timing: MatrixTiming {
             wall_ms: Some(measurement.wall_ms),
             startup_baseline_ms: options.startup_baseline_ms,
-            adjusted_wall_ms: options.startup_baseline_ms.map(|baseline| {
-                if measurement.wall_ms > baseline {
-                    measurement.wall_ms - baseline
-                } else {
-                    0.0
-                }
+            // When the cold wall time sits below the noisy --version startup
+            // baseline the subtraction is meaningless; report no adjusted
+            // value instead of a misleading 0.0.
+            adjusted_wall_ms: options.startup_baseline_ms.and_then(|baseline| {
+                (measurement.wall_ms > baseline).then_some(measurement.wall_ms - baseline)
             }),
             warmup_iterations: 0,
             measured_iterations: 1,
@@ -6255,17 +6254,10 @@ fn batch_latency_summary(records: &[BatchBenchmarkRecord]) -> BatchLatencySummar
     let total = values.iter().sum::<f64>();
     BatchLatencySummary {
         mean_ms: total / values.len() as f64,
-        p50_ms: percentile(&values, 0.50),
-        p95_ms: percentile(&values, 0.95),
+        p50_ms: interpolated_percentile(&values, 0.50),
+        p95_ms: interpolated_percentile(&values, 0.95),
         max_ms: values.last().copied().unwrap_or_default(),
     }
-}
-
-fn percentile(sorted_values: &[f64], percentile: f64) -> f64 {
-    let index = ((sorted_values.len() as f64 * percentile).ceil() as usize)
-        .saturating_sub(1)
-        .min(sorted_values.len() - 1);
-    sorted_values[index]
 }
 
 fn current_rss_kib() -> Option<u64> {
@@ -7627,33 +7619,36 @@ fn render_external_pdfium_ppm(
     })?;
     let output_path = temp_dir.join("page.ppm");
     let _ = fs::remove_file(&output_path);
-    let args = external_pdfium_process_args(path, options, &output_path);
-    let mut child = Command::new(command)
-        .args(&args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|source| CliError::Io {
-            path: command.to_path_buf(),
+    // Every exit below must clean up the temp artifacts, including spawn,
+    // wait, and read failures, so adapter errors do not accumulate stale
+    // directories under the system temp dir.
+    let ppm = (|| {
+        let args = external_pdfium_process_args(path, options, &output_path);
+        let mut child = Command::new(command)
+            .args(&args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|source| CliError::Io {
+                path: command.to_path_buf(),
+                source,
+            })?;
+        let status = wait_for_child(&mut child, options.timeout)?;
+        if !status.success() {
+            return Err(CliError::Process(format!(
+                "`{}` exited with status {status}",
+                command.display()
+            )));
+        }
+        fs::read(&output_path).map_err(|source| CliError::ReadFile {
+            path: output_path.clone(),
             source,
-        })?;
-    let status = wait_for_child(&mut child, options.timeout)?;
-    if !status.success() {
-        let _ = fs::remove_file(&output_path);
-        let _ = fs::remove_dir(&temp_dir);
-        return Err(CliError::Process(format!(
-            "`{}` exited with status {status}",
-            command.display()
-        )));
-    }
-    let ppm = fs::read(&output_path).map_err(|source| CliError::ReadFile {
-        path: output_path.clone(),
-        source,
-    })?;
+        })
+    })();
     let _ = fs::remove_file(&output_path);
     let _ = fs::remove_dir(&temp_dir);
-    decode_ppm_rgb_as_rgba(&ppm)
+    decode_ppm_rgb_as_rgba(&ppm?)
 }
 
 fn render_poppler_ppm(
@@ -7881,7 +7876,12 @@ fn decode_ppm_rgb_as_rgba(bytes: &[u8]) -> Result<ferrugo_thumbnail::Thumbnail, 
     let rgb = bytes
         .get(index..index + expected_rgb_bytes)
         .ok_or_else(|| CliError::Encode("PPM raster data is truncated".to_string()))?;
-    if bytes.len() != index + expected_rgb_bytes {
+    // Some PPM writers append a trailing newline after the raster; tolerate
+    // trailing ASCII whitespace but reject any other surplus bytes.
+    if bytes[index + expected_rgb_bytes..]
+        .iter()
+        .any(|byte| !byte.is_ascii_whitespace())
+    {
         return Err(CliError::Encode(
             "PPM raster data has trailing bytes".to_string(),
         ));

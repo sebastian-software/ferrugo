@@ -208,7 +208,7 @@ Default thumbnail behavior is intentionally bounded:
 - page index: `0`;
 - max edge: `1024` pixels;
 - timeout: `5s`;
-- output: RGBA internally, PNG for CLI artifacts.
+- output: RGBA or PNG, selectable through the library, CLI, and Node API.
 
 The server and low-memory gates track binary size, startup time, render latency,
 in-flight pixel budgets, and cache behavior. See
