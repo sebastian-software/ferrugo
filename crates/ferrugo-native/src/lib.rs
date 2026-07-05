@@ -45,9 +45,9 @@ pub use ferrugo_render::{
 };
 use ferrugo_syntax::{PdfBytes, PdfName, PdfNumber, PdfPrimitive, PdfReference, PdfString};
 use ferrugo_thumbnail::{
-    unsupported_feature_buckets as buckets, AccessibilityMetadata, AnnotationMode,
+    encode_rgba_png, unsupported_feature_buckets as buckets, AccessibilityMetadata, AnnotationMode,
     ArchivalMetadata, DocumentInfo, DocumentMetadata, DocumentMetadataBackend, DocumentStructure,
-    OptionalContentBaseState, OptionalContentMetadata, OutlineMetadata, PageLabel,
+    OptionalContentBaseState, OptionalContentMetadata, OutlineMetadata, OutputFormat, PageLabel,
     PageLabelsMetadata, PageMetadata as ThumbnailPageMetadata, PageSize, PageText, PdfSource,
     PositionedGlyph, TextExtractionBackend, TextExtractionOptions, TextPoint, TextQuad, TextRun,
     Thumbnail, ThumbnailBackend, ThumbnailError, ThumbnailOptions,
@@ -2475,6 +2475,7 @@ fn render_loaded_document(
         None,
     )
     .and_then(NativeRenderOutput::into_thumbnail)
+    .and_then(|thumbnail| encode_thumbnail_if_requested(thumbnail, options))
 }
 
 fn render_loaded_document_to_rgba_rows(
@@ -2532,6 +2533,7 @@ fn render_loaded_document_with_session_cache(
         Some(type3_render_cache),
     )
     .and_then(NativeRenderOutput::into_thumbnail)
+    .and_then(|thumbnail| encode_thumbnail_if_requested(thumbnail, options))
 }
 
 #[expect(
@@ -2566,6 +2568,7 @@ fn render_loaded_document_with_timings_and_session_cache(
         Some(type3_render_cache),
     )
     .and_then(NativeRenderOutput::into_thumbnail)
+    .and_then(|thumbnail| encode_thumbnail_if_requested(thumbnail, options))
 }
 
 fn render_loaded_document_with_trace(
@@ -2590,6 +2593,20 @@ fn render_loaded_document_with_trace(
         None,
     )
     .and_then(NativeRenderOutput::into_thumbnail)
+    .and_then(|thumbnail| encode_thumbnail_if_requested(thumbnail, options))
+}
+
+fn encode_thumbnail_if_requested(
+    thumbnail: Thumbnail,
+    options: &ThumbnailOptions,
+) -> Result<Thumbnail, ThumbnailError> {
+    match options.output_format {
+        OutputFormat::Rgba => Ok(thumbnail),
+        OutputFormat::Png => {
+            let png = encode_rgba_png(&thumbnail)?;
+            Thumbnail::png(thumbnail.width, thumbnail.height, png)
+        }
+    }
 }
 
 #[expect(
@@ -8185,6 +8202,32 @@ mod tests {
         assert_eq!(trace.thumbnail.width, 160);
         assert!(trace.timings.total >= trace.timings.load_xref_object);
         assert!(trace.timings.display_list_build > std::time::Duration::ZERO);
+    }
+
+    #[test]
+    fn native_backend_should_honor_png_output_format() {
+        let bytes = include_bytes!("../../../fixtures/generated/text-page.pdf");
+        let options = ThumbnailOptions {
+            page_index: 0,
+            max_edge: 160,
+            background: ferrugo_thumbnail::Rgba::WHITE,
+            output_format: ferrugo_thumbnail::OutputFormat::Png,
+            timeout: std::time::Duration::from_secs(5),
+            annotation_mode: AnnotationMode::Screen,
+            form_appearance_mode: FormAppearanceMode::DocumentState,
+        };
+
+        let thumbnail = NativeBackend::new()
+            .render(PdfSource::from_bytes(bytes), &options)
+            .expect("fixture should render as PNG");
+
+        assert_eq!(thumbnail.pixel_format, ferrugo_thumbnail::PixelFormat::Png);
+        assert_eq!(
+            thumbnail.output_format,
+            ferrugo_thumbnail::OutputFormat::Png
+        );
+        assert_eq!(thumbnail.stride, 0);
+        assert!(thumbnail.bytes.starts_with(b"\x89PNG\r\n\x1a\n"));
     }
 
     #[test]

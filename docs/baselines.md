@@ -42,8 +42,8 @@ Each record is one JSON object:
     "dimensions": {
       "width": 256,
       "height": 137,
-      "stride": 1024,
-      "pixel_format": "rgba8"
+      "stride": 0,
+      "pixel_format": "png"
     },
     "pixel_sha256": "2cd4dbfeb05110c7c67e5ae7bf6f2f6c0a9cc240bf69aa5f0acd902426ff31b8",
     "artifact_path": "target/ferrugo-thumbnails/text-page-256.png",

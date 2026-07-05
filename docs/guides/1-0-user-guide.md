@@ -159,9 +159,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-The library returns raw RGBA bytes plus `width`, `height`, `stride`, and pixel
-format metadata. The CLI encodes PNG artifacts for convenience; applications can
-choose their own PNG, WebP, cache, or transport layer.
+The library returns raw RGBA bytes when `output_format` is `Rgba`, or PNG bytes
+when `output_format` is `Png`. `Thumbnail::pixel_format` and
+`Thumbnail::output_format` describe the payload, so PNG thumbnails have
+`pixel_format = Png`, `output_format = Png`, and no fixed row stride.
 
 Use `NativeBackend::low_memory()` or
 `NativeBackend::low_memory_parallel_with_workers(max_workers)` for server and
