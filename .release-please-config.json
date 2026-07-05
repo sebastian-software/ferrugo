@@ -51,22 +51,21 @@
     },
     "crates/ferrugo-node": {
       "component": "ferrugo-node",
-      "release-type": "node",
       "extra-files": [
         {
-          "type": "toml",
-          "path": "Cargo.toml",
-          "jsonpath": "$.package.version"
+          "type": "json",
+          "path": "package.json",
+          "jsonpath": "$.version"
         },
         {
-          "type": "toml",
-          "path": "Cargo.toml",
-          "jsonpath": "$['dependencies']['ferrugo-native']['version']"
+          "type": "json",
+          "path": "package-lock.json",
+          "jsonpath": "$.version"
         },
         {
-          "type": "toml",
-          "path": "Cargo.toml",
-          "jsonpath": "$['dependencies']['ferrugo-thumbnail']['version']"
+          "type": "json",
+          "path": "package-lock.json",
+          "jsonpath": "$['packages']['']['version']"
         }
       ]
     },
