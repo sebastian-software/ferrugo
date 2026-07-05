@@ -1,0 +1,36 @@
+%PDF-1.4
+%‚„œ”
+1 0 obj
+<< /Length 30 >>
+stream
+q 80 0 0 80 20 20 cm /Im1 Do Q
+endstream
+endobj
+2 0 obj
+<< /Type /Page /Parent 3 0 R /MediaBox [0 0 120 140] /Resources << /XObject << /Im1 4 0 R >> >> /Contents 1 0 R >>
+endobj
+3 0 obj
+<< /Type /Pages /Kids [2 0 R] /Count 1 >>
+endobj
+4 0 obj
+<< /Type /XObject /Subtype /Image /Width 8 /Height 1 /ColorSpace /DeviceGray /BitsPerComponent 1 /Decode [1 0] /Filter /CCITTFaxDecode /DecodeParms << /K -1 /Columns 8 /Rows 1 /BlackIs1 true >> /Length 2 >>
+stream
+/@
+endstream
+endobj
+5 0 obj
+<< /Type /Catalog /Pages 3 0 R >>
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000015 00000 n 
+0000000095 00000 n 
+0000000225 00000 n 
+0000000282 00000 n 
+0000000524 00000 n 
+trailer
+<< /Size 6 /Root 5 0 R >>
+startxref
+573
+%%EOF

@@ -5,8 +5,7 @@ use ferrugo_fuzz::minimal_pdf_with_content;
 use ferrugo_fuzz::run_target;
 use ferrugo_native::NativeBackend;
 use ferrugo_thumbnail::{
-    AnnotationMode, DocumentMetadataBackend, FormAppearanceMode, PdfSource, Rgba, ThumbnailBackend,
-    ThumbnailOptions,
+    AnnotationMode, FormAppearanceMode, PdfSource, Rgba, ThumbnailBackend, ThumbnailOptions,
 };
 #[cfg(fuzzing)]
 use libfuzzer_sys::fuzz_target;
@@ -15,19 +14,16 @@ use std::time::Duration;
 #[cfg(not(fuzzing))]
 fn main() {
     run_target(
-        "render_setup",
+        "render",
         fuzz_one,
         &[
-            b"q 0 0 8 8 re f Q",
-            b"q 1 0 0 1 0 0 cm /Missing Do Q",
-            b"BT /F1 12 Tf (hello) Tj ET",
-            b"BI /W 1 /H 1 /BPC 8 ID x EI",
             include_bytes!("../../fixtures/adversarial/truncated-header.pdf"),
             include_bytes!("../../fixtures/adversarial/huge-image-dimensions.pdf"),
+            include_bytes!("../../fixtures/generated/image-xobject.pdf"),
+            include_bytes!("../../fixtures/generated/lzw-image-xobject.pdf"),
+            include_bytes!("../../fixtures/generated/runlength-image-xobject.pdf"),
             include_bytes!("../../fixtures/generated/ccitt-g3-1d-image-mask.pdf"),
-            include_bytes!("../../fixtures/generated/ccitt-g3-mixed-image-mask.pdf"),
             include_bytes!("../../fixtures/generated/ccitt-g4-devicegray-blackis1.pdf"),
-            include_bytes!("../../fixtures/generated/ccitt-g3-1d-eol-aligned.pdf"),
         ],
     );
 }
@@ -41,7 +37,7 @@ fn fuzz_one(data: &[u8]) {
     let backend = NativeBackend::new();
     let options = ThumbnailOptions {
         page_index: 0,
-        max_edge: 32,
+        max_edge: 48,
         background: Rgba::WHITE,
         output_format: ferrugo_thumbnail::OutputFormat::Rgba,
         timeout: Duration::from_millis(100),
@@ -49,10 +45,8 @@ fn fuzz_one(data: &[u8]) {
         form_appearance_mode: FormAppearanceMode::DocumentState,
     };
 
-    let _ = DocumentMetadataBackend::inspect(&backend, PdfSource::from_bytes(data));
     let _ = ThumbnailBackend::render(&backend, PdfSource::from_bytes(data), &options);
 
     let wrapped = minimal_pdf_with_content(data);
-    let _ = DocumentMetadataBackend::inspect(&backend, PdfSource::from_bytes(&wrapped));
     let _ = ThumbnailBackend::render(&backend, PdfSource::from_bytes(&wrapped), &options);
 }

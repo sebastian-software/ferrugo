@@ -1,7 +1,13 @@
+#![cfg_attr(fuzzing, no_main)]
+
+#[cfg(not(fuzzing))]
 use ferrugo_fuzz::run_target;
 use ferrugo_object::{parse_indirect_object, ObjectValue, StreamDecodeOptions};
 use ferrugo_syntax::PdfBytes;
+#[cfg(fuzzing)]
+use libfuzzer_sys::fuzz_target;
 
+#[cfg(not(fuzzing))]
 fn main() {
     run_target(
         "stream_decode",
@@ -19,13 +25,21 @@ fn main() {
     );
 }
 
+#[cfg(fuzzing)]
+fuzz_target!(|data: &[u8]| {
+    fuzz_one(data);
+});
+
 fn fuzz_one(data: &[u8]) {
     let cases = [
         stream_object(data, b""),
         stream_object(data, b"/Filter /ASCIIHexDecode"),
         stream_object(data, b"/Filter /FlateDecode"),
         stream_object(data, b"/Filter /LZWDecode"),
-        stream_object(data, b"/Filter /LZWDecode /DecodeParms << /EarlyChange 0 >>"),
+        stream_object(
+            data,
+            b"/Filter /LZWDecode /DecodeParms << /EarlyChange 0 >>",
+        ),
         stream_object(data, b"/Filter /RunLengthDecode"),
         stream_object(data, b"/Filter [/ASCIIHexDecode /FlateDecode]"),
     ];

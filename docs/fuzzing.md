@@ -1,9 +1,13 @@
-# Fuzzing And Adversarial Smoke Checks
+# Fuzzing And Adversarial Checks
 
-The repository keeps fuzzing optional for local development. The `fuzz/`
-package is a small standalone Cargo project with deterministic smoke targets
-that exercise parser and render setup paths without requiring network access or
-external fuzzing tools.
+The repository keeps a fast deterministic smoke gate for pull requests and real
+coverage-guided fuzz targets for scheduled or local hardening runs. The `fuzz/`
+package is a standalone Cargo project that supports both modes:
+
+- normal `cargo run --manifest-path fuzz/Cargo.toml --bin <target> -- --smoke`
+  replays deterministic seeds and mutations without external fuzzing tools;
+- `cargo fuzz run <target>` uses libFuzzer against the same target entrypoint
+  and committed seed corpus under `fuzz/corpus/<target>/`.
 
 Run all current smoke targets:
 
@@ -19,12 +23,9 @@ produce:
 - `target/fuzz-smoke-summary.txt` with the target list and smoke-case counts;
 - the final `Fuzz smoke gate passed` line.
 
-The smoke gate is intentionally local-release-gate coverage rather than a
-scheduled CI campaign for this slice. It runs quickly from committed fixtures
-and seeds, needs no PDFium, Poppler, network, or private corpus files, and keeps
-the scoped release claim reproducible from a clean native-only checkout.
-Long-running scheduled fuzz campaigns remain post-scoped-release hardening until
-the project has a broader CI workflow surface than the current publish workflow.
+The smoke gate runs quickly from committed fixtures and seeds, needs no PDFium,
+Poppler, network, or private corpus files, and keeps pull-request coverage
+reproducible from a clean native-only checkout.
 
 Run one target against saved inputs:
 
@@ -33,9 +34,26 @@ cargo run --manifest-path fuzz/Cargo.toml --bin render_setup -- fixtures/adversa
 cargo run --manifest-path fuzz/Cargo.toml --bin render_setup -- fixtures/adversarial/huge-image-dimensions.pdf
 ```
 
-The committed adversarial corpus lives in `fixtures/adversarial/`. These files
+Run the bounded coverage-guided campaign used by scheduled CI:
+
+```sh
+cargo install cargo-fuzz --version 0.13.2 --locked
+bash scripts/run_fuzz_campaign.sh
+```
+
+The default campaign runs each target for a bounded number of libFuzzer
+iterations and seconds. Override locally with:
+
+```sh
+FUZZ_RUNS=4096 FUZZ_MAX_TOTAL_TIME=120 bash scripts/run_fuzz_campaign.sh
+```
+
+The committed fuzz seed corpus lives under `fuzz/corpus/<target>/` and is seeded
+from generated fixtures plus `fixtures/adversarial/`. The adversarial fixtures
 are intentionally reduced and reviewable; add a minimized input there when a
-fuzz run finds a panic, excessive-work case, or unstable error mapping.
+fuzz run finds a panic, excessive-work case, or unstable error mapping. Add
+target-specific seed bytes under `fuzz/corpus/<target>/` when they should guide
+future libFuzzer exploration but are not themselves regression fixtures.
 
 Current targets:
 
@@ -46,6 +64,7 @@ Current targets:
 | `stream_decode` | stream object parsing and bounded filter decoding | decode expansion and malformed filter data |
 | `content_tokenize` | decoded content stream tokenization and inline-image parsing | unterminated data and operand/operator ambiguity |
 | `render_setup` | native metadata inspection and first-page render setup | page setup, declared image dimensions, renderer budgets |
+| `render` | native first-page thumbnail rendering | end-to-end parser, resource, raster, and budget interaction |
 
 Current minimized adversarial inputs:
 
@@ -59,6 +78,11 @@ Current minimized adversarial inputs:
 Panics are not caught by the harness. A panic or abort fails the smoke command
 and should be minimized into `fixtures/adversarial/` before the code path is
 hardened.
+
+`.github/workflows/scheduled-fuzz.yml` runs the deterministic smoke gate and
+then the bounded cargo-fuzz campaign on a nightly schedule and through manual
+dispatch. Crash artifacts are uploaded from `target/fuzz-artifacts/` and
+`fuzz/artifacts/` for triage.
 
 See `docs/policies/security-fuzz-triage.md` for finding classification,
 private crash artifact handling, minimization rules, and nightly gate guidance.

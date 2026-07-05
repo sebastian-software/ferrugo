@@ -1,7 +1,13 @@
+#![cfg_attr(fuzzing, no_main)]
+
 use ferrugo_content::tokenize_content;
+#[cfg(not(fuzzing))]
 use ferrugo_fuzz::run_target;
 use ferrugo_syntax::PdfBytes;
+#[cfg(fuzzing)]
+use libfuzzer_sys::fuzz_target;
 
+#[cfg(not(fuzzing))]
 fn main() {
     run_target(
         "content_tokenize",
@@ -15,6 +21,11 @@ fn main() {
         ],
     );
 }
+
+#[cfg(fuzzing)]
+fuzz_target!(|data: &[u8]| {
+    fuzz_one(data);
+});
 
 fn fuzz_one(data: &[u8]) {
     for token in tokenize_content(PdfBytes::new(data)) {

@@ -1,6 +1,12 @@
+#![cfg_attr(fuzzing, no_main)]
+
+#[cfg(not(fuzzing))]
 use ferrugo_fuzz::run_target;
 use ferrugo_syntax::{parse_primitive, parse_primitive_prefix, PdfBytes};
+#[cfg(fuzzing)]
+use libfuzzer_sys::fuzz_target;
 
+#[cfg(not(fuzzing))]
 fn main() {
     run_target(
         "primitive_parse",
@@ -14,6 +20,11 @@ fn main() {
         ],
     );
 }
+
+#[cfg(fuzzing)]
+fuzz_target!(|data: &[u8]| {
+    fuzz_one(data);
+});
 
 fn fuzz_one(data: &[u8]) {
     let input = PdfBytes::new(data);
