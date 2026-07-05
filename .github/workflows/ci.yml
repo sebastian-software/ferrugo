@@ -55,6 +55,18 @@ jobs:
       - name: Run native workspace tests
         run: cargo test --workspace --no-default-features --locked
 
+      - name: Install Node binding dependencies
+        working-directory: crates/ferrugo-node
+        run: npm ci
+
+      - name: Build Node binding
+        working-directory: crates/ferrugo-node
+        run: npm run build:debug
+
+      - name: Test Node binding
+        working-directory: crates/ferrugo-node
+        run: npm test
+
       - name: Run PDFium quarantine gate
         run: bash scripts/check_pdfium_quarantine.sh
 

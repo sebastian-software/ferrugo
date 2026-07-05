@@ -40,7 +40,10 @@ if rg -n "${dependency_pattern}" "${runtime_sources[@]}"; then
   exit 1
 fi
 
-if find crates -type f \( -name '*.dylib' -o -name '*.so' -o -name '*.dll' -o -name '*.a' -o -name '*.framework' \) | rg -q .; then
+if find crates \
+  \( -path 'crates/ferrugo-node/node_modules' -o -path 'crates/ferrugo-node/npm' \) -prune \
+  -o -type f \( -name '*.dylib' -o -name '*.so' -o -name '*.dll' -o -name '*.a' -o -name '*.framework' \) -print |
+  rg -q .; then
   echo "native binary artifact found under crates/" >&2
   exit 1
 fi

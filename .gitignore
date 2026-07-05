@@ -1,3 +1,6 @@
 /target/
 /fixtures/local-corpus/
 .DS_Store
+/crates/ferrugo-node/node_modules/
+/crates/ferrugo-node/*.node
+/crates/ferrugo-node/npm/

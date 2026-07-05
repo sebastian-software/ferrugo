@@ -37,6 +37,8 @@ boundaries are tracked in reports, policies, and backlogs.
 Good fit:
 
 - Generate preview thumbnails in a Rust service or local CLI workflow.
+- Generate preview thumbnails from Node.js through the `ferrugo` Node-API
+  package.
 - Test a Rust-native renderer against a generated PDF corpus.
 - Compare native output against reference renderers during maintainer work.
 - Study a staged approach to replacing a C/C++ PDF renderer with Rust modules.
@@ -103,6 +105,7 @@ The workspace is split into small crates so each layer can be tested on its own.
 | --- | --- |
 | `ferrugo-thumbnail` | Public thumbnail facade, shared errors, options, and output types. |
 | `ferrugo-native` | Rust-native PDF backend for metadata inspection and thumbnail rendering. |
+| `ferrugo-node` | Node-API binding package exposing async `render` and `inspect` calls. |
 | `ferrugo-syntax` | Low-level PDF byte parsing. |
 | `ferrugo-object` | Object graph, xref, streams, and document structure. |
 | `ferrugo-content` | Content stream tokenization and operator handling. |
@@ -112,6 +115,29 @@ The workspace is split into small crates so each layer can be tested on its own.
 
 The public boundary is the thumbnail facade and native backend. PDFium handles
 and fallback state are not part of the runtime API.
+
+## Node.js Binding
+
+The npm package is named `ferrugo`. It exposes the stateless native backend
+through Node-API so rendering work runs on the Node worker pool and returns
+plain JavaScript objects plus `Buffer` payloads.
+
+```js
+import { readFile } from 'node:fs/promises'
+import { render, inspect } from 'ferrugo'
+
+const input = await readFile('fixtures/generated/text-page.pdf')
+const thumbnail = await render(input, { outputFormat: 'png', maxEdge: 256 })
+const metadata = await inspect(input)
+
+console.log(thumbnail.width, thumbnail.height, thumbnail.data.length)
+console.log(metadata.pageCount)
+```
+
+The binding mirrors the Rust facade defaults. Errors carry a stable `code`
+matching the Rust error class and unsupported-feature errors also include a
+`bucket` property. Set `timeoutMs` for deterministic render cancellation; this
+first binding does not expose a separate JavaScript cancellation signal.
 
 ## Performance snapshot
 

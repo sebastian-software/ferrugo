@@ -121,6 +121,42 @@ No PDFium dynamic library, PDFium environment variable, or system PDF renderer
 is required for the native path. The Rust crates used by the CLI are pure Rust
 except for the Rust standard library and normal Cargo build tooling.
 
+## Node-API Package
+
+`crates/ferrugo-node` builds the npm package named `ferrugo`. The Rust crate is
+kept in the workspace for normal formatting, Clippy, and test coverage, but it
+is marked `publish = false`; npm is the distribution boundary for this binding.
+
+The package exposes the stateless Rust-native backend through Node-API:
+
+- `render(input, options?)` renders one thumbnail on the Node worker pool.
+- `inspect(input)` returns the native document metadata subset.
+- Errors carry stable `code` values and unsupported-feature errors also carry a
+  `bucket` string.
+
+Local validation for the Node package is:
+
+```sh
+cd crates/ferrugo-node
+npm ci
+npm run build:debug
+npm test
+```
+
+Release prebuilds are produced for:
+
+- `x86_64-apple-darwin`
+- `aarch64-apple-darwin`
+- `x86_64-pc-windows-msvc`
+- `x86_64-unknown-linux-gnu`
+- `aarch64-unknown-linux-gnu`
+- `x86_64-unknown-linux-musl`
+- `aarch64-unknown-linux-musl`
+
+When Release Please creates a GitHub release, the publish workflow builds those
+`.node` artifacts, downloads them into `crates/ferrugo-node`, runs
+`npm run prepack`, and publishes the npm package with `NPM_TOKEN`.
+
 ## Consumer Migration Checklist
 
 - Remove PDFium dynamic-library packaging from normal deployment images.
