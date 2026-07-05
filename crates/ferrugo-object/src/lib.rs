@@ -10,7 +10,9 @@ use std::collections::HashSet;
 use std::fmt;
 use std::io::Read;
 
-use aes::cipher::{block_padding::NoPadding, block_padding::Pkcs7, BlockDecryptMut, KeyIvInit};
+use aes::cipher::{
+    block_padding::NoPadding, block_padding::Pkcs7, BlockDecryptMut, BlockEncryptMut, KeyIvInit,
+};
 use ferrugo_syntax::{
     parse_primitive, parse_primitive_prefix, ByteCursor, ByteOffset, PdfBytes, PdfName, PdfNumber,
     PdfPrimitive, PdfString, SyntaxError,
@@ -21,7 +23,7 @@ use rc4::{
     consts::{U10, U11, U12, U13, U14, U15, U16, U5, U6, U7, U8, U9},
     KeyInit as Rc4KeyInit, Rc4, StreamCipher,
 };
-use sha2::Sha256;
+use sha2::{Sha256, Sha384, Sha512};
 
 /// Stable crate role used by architecture smoke tests and documentation.
 pub const CRATE_ROLE: &str = "object";
@@ -607,6 +609,10 @@ impl<'a> ModernDocument<'a> {
 
     /// Decodes and decrypts a string that belongs to `id`.
     ///
+    /// Strings inside object streams are never encrypted individually
+    /// (ISO 32000 section 7.6.2): the container stream was decrypted once at
+    /// load, so string decryption is skipped for compressed objects.
+    ///
     /// # Errors
     ///
     /// Returns [`ObjectError`] when the string syntax is malformed or the
@@ -614,9 +620,16 @@ impl<'a> ModernDocument<'a> {
     pub fn decode_string(&self, id: ObjectId, string: PdfString<'_>) -> ObjectResult<Vec<u8>> {
         let bytes = decode_pdf_string_bytes(string, DEFAULT_MAX_DECODED_LEN)?;
         match &self.security {
-            Some(security) => security.decrypt_string(id, &bytes),
-            None => Ok(bytes),
+            Some(security) if !self.is_compressed_object(id) => security.decrypt_string(id, &bytes),
+            _ => Ok(bytes),
         }
+    }
+
+    /// Returns true when `id` is stored inside an object stream.
+    fn is_compressed_object(&self, id: ObjectId) -> bool {
+        self.compressed_object_index
+            .iter()
+            .any(|entry| entry.id == id)
     }
 
     /// Resolves the document catalog and page tree.
@@ -1188,11 +1201,16 @@ fn standard_security_from_dictionary(
             }
             file_key
         }
-        5 => {
+        5 | 6 => {
             let user = required_string_bytes(dictionary, b"U")?;
             let user_encryption_key = required_string_bytes(dictionary, b"UE")?;
-            let file_key = standard_v5_file_key(&user, &user_encryption_key)?;
-            validate_standard_v5_permissions(dictionary, &file_key)?;
+            let file_key = standard_aes256_file_key(&user, &user_encryption_key, revision)?;
+            validate_standard_aes256_permissions(
+                dictionary,
+                &file_key,
+                permissions,
+                encrypt_metadata,
+            )?;
             file_key
         }
         _ => return Err(ObjectError::Encrypted),
@@ -1200,7 +1218,7 @@ fn standard_security_from_dictionary(
     let fallback_algorithm = match (version, revision) {
         (1 | 2, _) | (_, 2 | 3) => CryptAlgorithm::Rc4,
         (_, 4) => CryptAlgorithm::Rc4,
-        (_, 5) => CryptAlgorithm::AesV3,
+        (_, 5 | 6) => CryptAlgorithm::AesV3,
         _ => return Err(ObjectError::Encrypted),
     };
     let stream_filter = crypt_filter(dictionary, b"StmF", fallback_algorithm)?;
@@ -2250,29 +2268,96 @@ fn standard_v4_user_key(file_key: &[u8], file_id: &[u8]) -> ObjectResult<Vec<u8>
     Ok(value)
 }
 
-fn standard_v5_file_key(user: &[u8], user_encryption_key: &[u8]) -> ObjectResult<Vec<u8>> {
+fn standard_aes256_file_key(
+    user: &[u8],
+    user_encryption_key: &[u8],
+    revision: i64,
+) -> ObjectResult<Vec<u8>> {
     if user.len() < 48 || user_encryption_key.len() != PDF_AES256_KEY_BYTES {
         return Err(ObjectError::Encrypted);
     }
     let validation_salt = &user[32..40];
     let key_salt = &user[40..48];
-    let mut hasher = Sha256::new();
-    hasher.update([]);
-    hasher.update(validation_salt);
-    let validation_hash = hasher.finalize();
-    if user.get(..32) != Some(&validation_hash[..]) {
+    let validation_hash = standard_aes256_password_hash(revision, b"", validation_salt, b"")?;
+    if user.get(..32) != Some(validation_hash.as_slice()) {
         return Err(ObjectError::Encrypted);
     }
-    let mut hasher = Sha256::new();
-    hasher.update([]);
-    hasher.update(key_salt);
-    let intermediate_key = hasher.finalize();
+    let intermediate_key = standard_aes256_password_hash(revision, b"", key_salt, b"")?;
     aes_cbc_decrypt_no_padding(&intermediate_key, user_encryption_key)
 }
 
-fn validate_standard_v5_permissions(
+/// Key-derivation hash shared by AES-256 revisions: a single SHA-256 for the
+/// deprecated Adobe revision 5 and ISO 32000-2 Algorithm 2.B for revision 6.
+fn standard_aes256_password_hash(
+    revision: i64,
+    password: &[u8],
+    salt: &[u8],
+    udata: &[u8],
+) -> ObjectResult<Vec<u8>> {
+    match revision {
+        5 => {
+            let mut hasher = Sha256::new();
+            hasher.update(password);
+            hasher.update(salt);
+            hasher.update(udata);
+            Ok(hasher.finalize().to_vec())
+        }
+        6 => hash_2b(password, salt, udata),
+        _ => Err(ObjectError::Encrypted),
+    }
+}
+
+/// ISO 32000-2 Algorithm 2.B iterated password hash for revision 6.
+fn hash_2b(password: &[u8], salt: &[u8], udata: &[u8]) -> ObjectResult<Vec<u8>> {
+    let mut hasher = Sha256::new();
+    hasher.update(password);
+    hasher.update(salt);
+    hasher.update(udata);
+    let mut key = hasher.finalize().to_vec();
+    let mut round = 0_usize;
+    loop {
+        let chunk_len = password
+            .len()
+            .saturating_add(key.len())
+            .saturating_add(udata.len());
+        let mut block = Vec::with_capacity(chunk_len.saturating_mul(64));
+        for _ in 0..64 {
+            block.extend_from_slice(password);
+            block.extend_from_slice(&key);
+            block.extend_from_slice(udata);
+        }
+        let (Some(aes_key), Some(iv)) = (key.get(..16), key.get(16..32)) else {
+            return Err(ObjectError::Encrypted);
+        };
+        // `block` is 64 repetitions of the same chunk, so its length is a
+        // multiple of 64 and therefore of the AES block size.
+        let encrypted = cbc::Encryptor::<aes::Aes128>::new(aes_key.into(), iv.into())
+            .encrypt_padded_vec_mut::<NoPadding>(&block);
+        let selector: u32 = encrypted
+            .iter()
+            .take(AES_BLOCK_BYTES)
+            .map(|byte| u32::from(*byte))
+            .sum();
+        key = match selector % 3 {
+            0 => Sha256::digest(&encrypted).to_vec(),
+            1 => Sha384::digest(&encrypted).to_vec(),
+            _ => Sha512::digest(&encrypted).to_vec(),
+        };
+        round = round.saturating_add(1);
+        let last_byte = usize::from(encrypted.last().copied().unwrap_or(0));
+        if round >= 64 && last_byte <= round.saturating_sub(32) {
+            break;
+        }
+    }
+    key.truncate(PDF_AES256_KEY_BYTES);
+    Ok(key)
+}
+
+fn validate_standard_aes256_permissions(
     dictionary: &[(PdfName<'_>, PdfPrimitive<'_>)],
     file_key: &[u8],
+    permissions: i64,
+    encrypt_metadata: bool,
 ) -> ObjectResult<()> {
     let Some(PdfPrimitive::String(perms)) = dictionary_value(dictionary, b"Perms") else {
         return Ok(());
@@ -2283,6 +2368,13 @@ fn validate_standard_v5_permissions(
         return Err(ObjectError::Encrypted);
     }
     let decrypted = aes_cbc_decrypt_no_padding(file_key, &encrypted)?;
+    if decrypted.get(..4) != Some(permission_bytes(permissions).as_slice()) {
+        return Err(ObjectError::Encrypted);
+    }
+    let expected_metadata_flag = if encrypt_metadata { b'T' } else { b'F' };
+    if decrypted.get(8) != Some(&expected_metadata_flag) {
+        return Err(ObjectError::Encrypted);
+    }
     if decrypted.get(9..12) != Some(b"adb") {
         return Err(ObjectError::Encrypted);
     }
@@ -4090,6 +4182,95 @@ mod tests {
     }
 
     #[test]
+    fn load_classic_document_should_open_empty_password_aes256_r6_permissions_pdf() {
+        let expected = b"BT /F1 12 Tf 20 40 Td (AES256 R6 permissions) Tj ET";
+        let pdf = build_permissions_encrypted_pdf(TestEncryption::AesV3R6, expected);
+
+        let document = load_classic_document(PdfBytes::new(&pdf)).expect("encrypted document");
+        let content = document
+            .objects
+            .get(ObjectId::new(
+                ObjectNumber::new(4).expect("object number"),
+                GenerationNumber::new(0),
+            ))
+            .expect("content object");
+        let ObjectValue::Stream(stream) = &content.value else {
+            panic!("content should be a stream");
+        };
+
+        assert_eq!(stream.decode().expect("decrypted stream"), expected);
+        assert_eq!(document.page_tree().expect("page tree").page_count(), 1);
+
+        let plaintext = b"R6 string";
+        let encrypted_string = test_aes256_stream_encrypt(&test_aes256_r6_file_key(), plaintext);
+        let hex = test_hex(&encrypted_string).into_bytes();
+        let decoded = document
+            .decode_string(
+                ObjectId::new(
+                    ObjectNumber::new(4).expect("object number"),
+                    GenerationNumber::new(0),
+                ),
+                PdfString::Hex(&hex),
+            )
+            .expect("decrypted string");
+        assert_eq!(decoded, plaintext);
+    }
+
+    #[test]
+    fn load_classic_document_should_reject_aes256_r6_wrong_user_hash() {
+        let pdf = build_permissions_encrypted_pdf(TestEncryption::AesV3R6WrongUserHash, b"q");
+
+        let error = load_classic_document(PdfBytes::new(&pdf)).expect_err("wrong user hash");
+
+        assert_eq!(error, ObjectError::Encrypted);
+    }
+
+    #[test]
+    fn load_classic_document_should_reject_aes256_r6_password_protected_pdf() {
+        let pdf = build_permissions_encrypted_pdf(TestEncryption::AesV3R6PasswordProtected, b"q");
+
+        let error = load_classic_document(PdfBytes::new(&pdf)).expect_err("non-empty password");
+
+        assert_eq!(error, ObjectError::Encrypted);
+    }
+
+    #[test]
+    fn load_classic_document_should_reject_aes256_r6_permissions_mismatch() {
+        let pdf = build_permissions_encrypted_pdf(TestEncryption::AesV3R6WrongPerms, b"q");
+
+        let error = load_classic_document(PdfBytes::new(&pdf)).expect_err("perms mismatch");
+
+        assert_eq!(error, ObjectError::Encrypted);
+    }
+
+    #[test]
+    fn hash_2b_should_be_deterministic_and_input_sensitive() {
+        let baseline = hash_2b(b"", &[0x11; 8], b"").expect("hash 2b");
+        let repeated = hash_2b(b"", &[0x11; 8], b"").expect("hash 2b");
+        let other_salt = hash_2b(b"", &[0x22; 8], b"").expect("hash 2b");
+        let other_password = hash_2b(b"password", &[0x11; 8], b"").expect("hash 2b");
+        let other_udata = hash_2b(b"", &[0x11; 8], &[0x33; 48]).expect("hash 2b");
+
+        assert_eq!(baseline.len(), 32);
+        assert_eq!(baseline, repeated);
+        assert_ne!(baseline, other_salt);
+        assert_ne!(baseline, other_password);
+        assert_ne!(baseline, other_udata);
+        let single_sha256 = Sha256::digest([0x11; 8]).to_vec();
+        assert_ne!(baseline, single_sha256);
+    }
+
+    #[test]
+    fn hash_2b_should_terminate_for_adversarial_inputs() {
+        let long_password = [0xff_u8; 129];
+        let inputs: [&[u8]; 4] = [b"", b"a", &long_password, b"user data password"];
+        for password in inputs {
+            let digest = hash_2b(password, &[0xff; 8], &[0xff; 48]).expect("hash 2b");
+            assert_eq!(digest.len(), 32);
+        }
+    }
+
+    #[test]
     fn load_classic_document_should_reject_encrypted_catalog() {
         let pdf = build_encrypted_catalog_pdf();
 
@@ -4104,6 +4285,59 @@ mod tests {
             load_classic_document(PdfBytes::new(b"%PDF-1.7\n")).expect_err("missing startxref");
 
         assert_eq!(error.offset(), Some(ByteOffset::new(0)));
+    }
+
+    #[test]
+    fn modern_document_should_skip_string_decryption_inside_object_streams() {
+        let pdf = build_encrypted_modern_objstm_pdf();
+
+        let document =
+            load_modern_document(PdfBytes::new(&pdf)).expect("encrypted modern document");
+
+        // Strings inside an object stream were already decrypted with the
+        // container stream and must not be decrypted a second time.
+        let compressed_id = ObjectId::new(
+            ObjectNumber::new(7).expect("object number"),
+            GenerationNumber::new(0),
+        );
+        let compressed = document
+            .get_object(compressed_id)
+            .expect("resolve compressed object")
+            .expect("compressed object");
+        let ObjectValue::Primitive(PdfPrimitive::Dictionary(dictionary)) = &compressed.value else {
+            panic!("compressed object should be a dictionary");
+        };
+        let Some(PdfPrimitive::String(string)) = dictionary_value(dictionary, b"T") else {
+            panic!("compressed object should hold a string");
+        };
+        assert_eq!(
+            document
+                .decode_string(compressed_id, *string)
+                .expect("compressed object string"),
+            b"Secret"
+        );
+
+        // Strings in directly stored objects still require decryption.
+        let direct_id = ObjectId::new(
+            ObjectNumber::new(4).expect("object number"),
+            GenerationNumber::new(0),
+        );
+        let direct = document
+            .get_object(direct_id)
+            .expect("resolve direct object")
+            .expect("direct object");
+        let ObjectValue::Primitive(PdfPrimitive::Dictionary(dictionary)) = &direct.value else {
+            panic!("direct object should be a dictionary");
+        };
+        let Some(PdfPrimitive::String(string)) = dictionary_value(dictionary, b"T") else {
+            panic!("direct object should hold a string");
+        };
+        assert_eq!(
+            document
+                .decode_string(direct_id, *string)
+                .expect("direct object string"),
+            b"Direct"
+        );
     }
 
     #[test]
@@ -4480,6 +4714,10 @@ mod tests {
         Rc4R2,
         AesV2R4,
         AesV3R5,
+        AesV3R6,
+        AesV3R6PasswordProtected,
+        AesV3R6WrongUserHash,
+        AesV3R6WrongPerms,
     }
 
     fn build_permissions_encrypted_pdf(encryption: TestEncryption, content: &[u8]) -> Vec<u8> {
@@ -4514,6 +4752,13 @@ mod tests {
             }
             TestEncryption::AesV3R5 => {
                 let file_key = test_aes256_file_key();
+                test_aes256_stream_encrypt(&file_key, content)
+            }
+            TestEncryption::AesV3R6
+            | TestEncryption::AesV3R6PasswordProtected
+            | TestEncryption::AesV3R6WrongUserHash
+            | TestEncryption::AesV3R6WrongPerms => {
+                let file_key = test_aes256_r6_file_key();
                 test_aes256_stream_encrypt(&file_key, content)
             }
         };
@@ -4599,7 +4844,7 @@ mod tests {
             TestEncryption::AesV3R5 => {
                 let file_key = test_aes256_file_key();
                 let (user, ue) = test_aes256_user_entries(&file_key);
-                let perms = test_aes256_permissions(&file_key);
+                let perms = test_aes256_permissions(&file_key, -4);
                 format!(
                     "<< /Filter /Standard /V 5 /R 5 /Length 256 /O <{}> /U <{}> /OE <{}> /UE <{}> /Perms <{}> /P -4 /EncryptMetadata true /CF << /StdCF << /CFM /AESV3 /Length 32 /AuthEvent /DocOpen >> >> /StmF /StdCF /StrF /StdCF >>",
                     test_hex(&[0x33; 48]),
@@ -4609,7 +4854,34 @@ mod tests {
                     test_hex(&perms)
                 )
             }
+            TestEncryption::AesV3R6 => test_r6_encryption_dictionary(b"", false, -4),
+            TestEncryption::AesV3R6PasswordProtected => {
+                test_r6_encryption_dictionary(b"hunter2", false, -4)
+            }
+            TestEncryption::AesV3R6WrongUserHash => test_r6_encryption_dictionary(b"", true, -4),
+            TestEncryption::AesV3R6WrongPerms => test_r6_encryption_dictionary(b"", false, -44),
         }
+    }
+
+    fn test_r6_encryption_dictionary(
+        user_password: &[u8],
+        corrupt_user_hash: bool,
+        perms_permissions: i64,
+    ) -> String {
+        let file_key = test_aes256_r6_file_key();
+        let (mut user, ue) = test_aes256_r6_user_entries(&file_key, user_password);
+        if corrupt_user_hash {
+            user[0] ^= 0xff;
+        }
+        let perms = test_aes256_permissions(&file_key, perms_permissions);
+        format!(
+            "<< /Filter /Standard /V 5 /R 6 /Length 256 /O <{}> /U <{}> /OE <{}> /UE <{}> /Perms <{}> /P -4 /EncryptMetadata true /CF << /StdCF << /CFM /AESV3 /Length 32 /AuthEvent /DocOpen >> >> /StmF /StdCF /StrF /StdCF >>",
+            test_hex(&[0x33; 48]),
+            test_hex(&user),
+            test_hex(&[0x44; 32]),
+            test_hex(&ue),
+            test_hex(&perms)
+        )
     }
 
     fn test_owner_key_r2() -> Vec<u8> {
@@ -4662,6 +4934,24 @@ mod tests {
         (0..PDF_AES256_KEY_BYTES).map(|value| value as u8).collect()
     }
 
+    fn test_aes256_r6_file_key() -> Vec<u8> {
+        Sha256::digest(b"ferrugo-r6-file-key").to_vec()
+    }
+
+    fn test_aes256_r6_user_entries(file_key: &[u8], password: &[u8]) -> (Vec<u8>, Vec<u8>) {
+        let validation_salt = [0xa1_u8, 0xa2, 0xa3, 0xa4, 0xa5, 0xa6, 0xa7, 0xa8];
+        let key_salt = [0xb1_u8, 0xb2, 0xb3, 0xb4, 0xb5, 0xb6, 0xb7, 0xb8];
+        let mut user = hash_2b(password, &validation_salt, b"").expect("hash 2b");
+        user.extend_from_slice(&validation_salt);
+        user.extend_from_slice(&key_salt);
+        let intermediate_key = hash_2b(password, &key_salt, b"").expect("hash 2b");
+        let iv = [0_u8; AES_BLOCK_BYTES];
+        let ue =
+            cbc::Encryptor::<aes::Aes256>::new(intermediate_key.as_slice().into(), (&iv).into())
+                .encrypt_padded_vec_mut::<NoPadding>(file_key);
+        (user, ue)
+    }
+
     fn test_aes256_user_entries(file_key: &[u8]) -> (Vec<u8>, Vec<u8>) {
         let validation_salt = [1_u8, 2, 3, 4, 5, 6, 7, 8];
         let key_salt = [9_u8, 10, 11, 12, 13, 14, 15, 16];
@@ -4675,9 +4965,9 @@ mod tests {
         (user, ue)
     }
 
-    fn test_aes256_permissions(file_key: &[u8]) -> Vec<u8> {
+    fn test_aes256_permissions(file_key: &[u8], permissions: i64) -> Vec<u8> {
         let mut perms = Vec::new();
-        perms.extend_from_slice(&permission_bytes(-4));
+        perms.extend_from_slice(&permission_bytes(permissions));
         perms.extend_from_slice(&[0xff; 4]);
         perms.push(b'T');
         perms.extend_from_slice(b"adb");
@@ -4962,6 +5252,88 @@ mod tests {
         pdf.extend_from_slice(
             format!(
                 "6 0 obj\n<< /Type /XRef /Size 7 /Root 1 0 R /W [1 4 2] /Index [0 7] /Length {} /Filter /FlateDecode >>\nstream\n",
+                compressed_xref.len()
+            )
+            .as_bytes(),
+        );
+        pdf.extend_from_slice(&compressed_xref);
+        pdf.extend_from_slice(
+            format!("\nendstream\nendobj\nstartxref\n{xref_offset}\n%%EOF\n").as_bytes(),
+        );
+        pdf
+    }
+
+    fn build_encrypted_modern_objstm_pdf() -> Vec<u8> {
+        let file_id = *b"ferrugo-objstm-i";
+        let owner = test_owner_key_r2();
+        let file_key = standard_v2_file_key(&owner, -4, &file_id);
+        let user = test_rc4_encrypt(&file_key, &PASSWORD_PADDING);
+
+        let mut pdf = bytearray_pdf_header();
+        let object_1 = append_object(&mut pdf, b"1 0 obj\n<< /Type /Catalog >>\nendobj\n");
+
+        let direct_string = test_rc4_encrypt(
+            &object_crypt_key(
+                &file_key,
+                ObjectId::new(
+                    ObjectNumber::new(4).expect("object number"),
+                    GenerationNumber::new(0),
+                ),
+                CryptAlgorithm::Rc4,
+            ),
+            b"Direct",
+        );
+        let object_4_body = format!("4 0 obj\n<< /T <{}> >>\nendobj\n", test_hex(&direct_string));
+        let object_4 = append_object(&mut pdf, object_4_body.as_bytes());
+
+        let payload = b"7 0 << /T (Secret) >>";
+        let compressed_payload = zlib_compress(payload);
+        let encrypted_payload = test_rc4_encrypt(
+            &object_crypt_key(
+                &file_key,
+                ObjectId::new(
+                    ObjectNumber::new(5).expect("object number"),
+                    GenerationNumber::new(0),
+                ),
+                CryptAlgorithm::Rc4,
+            ),
+            &compressed_payload,
+        );
+        let object_5 = pdf.len();
+        pdf.extend_from_slice(
+            format!(
+                "5 0 obj\n<< /Type /ObjStm /N 1 /First 4 /Length {} /Filter /FlateDecode >>\nstream\n",
+                encrypted_payload.len()
+            )
+            .as_bytes(),
+        );
+        pdf.extend_from_slice(&encrypted_payload);
+        pdf.extend_from_slice(b"\nendstream\nendobj\n");
+
+        let encryption_dictionary = format!(
+            "8 0 obj\n<< /Filter /Standard /V 1 /R 2 /O <{}> /U <{}> /P -4 >>\nendobj\n",
+            test_hex(&owner),
+            test_hex(&user)
+        );
+        let object_8 = append_object(&mut pdf, encryption_dictionary.as_bytes());
+
+        let xref_offset = pdf.len();
+        let mut xref_data = Vec::new();
+        push_xref_entry(&mut xref_data, 0, 0, 65_535);
+        push_xref_entry(&mut xref_data, 1, object_1, 0);
+        push_xref_entry(&mut xref_data, 0, 0, 65_535);
+        push_xref_entry(&mut xref_data, 0, 0, 65_535);
+        push_xref_entry(&mut xref_data, 1, object_4, 0);
+        push_xref_entry(&mut xref_data, 1, object_5, 0);
+        push_xref_entry(&mut xref_data, 1, xref_offset, 0);
+        push_xref_entry(&mut xref_data, 2, 5, 0);
+        push_xref_entry(&mut xref_data, 1, object_8, 0);
+        let compressed_xref = zlib_compress(&xref_data);
+        pdf.extend_from_slice(
+            format!(
+                "6 0 obj\n<< /Type /XRef /Size 9 /Root 1 0 R /Encrypt 8 0 R /ID [<{}> <{}>] /W [1 4 2] /Index [0 9] /Length {} /Filter /FlateDecode >>\nstream\n",
+                test_hex(&file_id),
+                test_hex(&file_id),
                 compressed_xref.len()
             )
             .as_bytes(),
