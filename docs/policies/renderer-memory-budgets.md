@@ -65,6 +65,16 @@ explainable when a fixture fails due to a budget limit.
 - Resident-set-size reporting.
 - Silent best-effort downgrade after budget exhaustion.
 
+## Parallel Banding Cache Accounting
+
+`estimated_peak_raster_bytes` covers RGBA band targets and the output buffer
+only. Under the default parallel banding policy each band worker additionally
+allocates its own glyph bitmap and Type3 template caches up to the per-session
+cache budgets, so peak cache memory can scale with the worker count. Trace
+route counters and phase timings are also not collected on the parallel band
+path (`RenderTraceSinks::none()`); attach diagnostics sinks to force a serial
+replay when per-route evidence is needed.
+
 ## Low-End Reliability Profiles
 
 Milestone 0217 records low-end reliability profiles in

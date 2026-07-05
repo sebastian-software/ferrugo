@@ -8976,7 +8976,9 @@ mod tests {
         assert_eq!(high_dpi_bands.full_page_pixels, 172_800);
         assert_eq!(high_dpi_bands.bands, 6);
         assert_eq!(high_dpi_bands.workers, expected_workers.min(6));
-        assert!(high_dpi_bands.workers > 1);
+        if expected_workers > 1 {
+            assert!(high_dpi_bands.workers > 1);
+        }
         assert_eq!(high_dpi_bands.max_band_rows, 64);
         assert!(high_dpi_bands.active_target_peak_bytes() > high_dpi_bands.max_band_bytes());
         assert!(high_dpi_bands.active_target_peak_bytes() < high_dpi_bands.full_page_bytes());
@@ -9657,7 +9659,9 @@ mod tests {
             default.max_raster_band_workers,
             default_parallel_raster_band_workers()
         );
-        assert!(default.max_raster_band_workers > low_memory.max_raster_band_workers);
+        if default_parallel_raster_band_workers() > 1 {
+            assert!(default.max_raster_band_workers > low_memory.max_raster_band_workers);
+        }
         assert_eq!(low_memory.max_raster_band_workers, 1);
         assert_eq!(
             low_memory_parallel.max_raster_band_rows,
