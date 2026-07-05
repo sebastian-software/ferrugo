@@ -18,8 +18,10 @@ targets=(
 
 # The fuzz crate is its own workspace with its own lockfile. Release version
 # bumps of the path dependencies (release-please) do not touch fuzz/Cargo.lock,
-# so re-pin the workspace members offline before the --locked runs below.
-cargo update --workspace --offline --manifest-path fuzz/Cargo.toml --quiet
+# so re-pin the workspace members before the --locked runs below. This only
+# rewrites workspace-member versions; third-party pins stay locked. Offline
+# mode is not used because fresh CI runners have no registry index cache.
+cargo update --workspace --manifest-path fuzz/Cargo.toml --quiet
 
 {
   echo "Ferrugo fuzz smoke gate"
