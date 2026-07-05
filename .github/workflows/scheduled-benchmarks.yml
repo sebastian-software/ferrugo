@@ -32,6 +32,7 @@ concurrency:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   scheduled-benchmarks:
@@ -60,18 +61,49 @@ jobs:
           gs --version || true
           mutool -v || true
 
+      - name: Download previous trend history
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p target
+          artifact_id="$(gh api "repos/${{ github.repository }}/actions/artifacts?name=benchmark-trend&per_page=1" \
+            --jq '.artifacts[0].id' 2>/dev/null || true)"
+          if [ -n "${artifact_id:-}" ] && [ "${artifact_id}" != "null" ]; then
+            gh api "repos/${{ github.repository }}/actions/artifacts/${artifact_id}/zip" > /tmp/benchmark-trend.zip
+            unzip -o /tmp/benchmark-trend.zip -d /tmp/benchmark-trend
+            cp /tmp/benchmark-trend/benchmark-trend.jsonl target/trend-history.jsonl
+            echo "restored $(wc -l < target/trend-history.jsonl) trend entries"
+          else
+            echo "no previous trend history artifact found"
+          fi
+
       - name: Generate scheduled benchmark artifacts
         env:
           PROFILE: ${{ inputs.profile || 'release' }}
           MATRIX_ITERATIONS: ${{ inputs.matrix_iterations || '10' }}
           REAL_WORLD_ITERATIONS: ${{ inputs.real_world_iterations || '5' }}
           OUTPUT_DIR: target/scheduled-benchmarks
+          TREND_HISTORY: target/trend-history.jsonl
         run: bash scripts/generate_scheduled_benchmark_artifacts.sh
 
+      # always(): a CoV-regression failure should still upload its evidence.
       - name: Upload scheduled benchmark artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: scheduled-benchmarks-${{ github.run_id }}-${{ github.run_attempt }}
           path: target/scheduled-benchmarks/
           if-no-files-found: error
           retention-days: 30
+
+      # Stable-named artifact so the next scheduled run can restore the series.
+      # Uploaded even when the CoV regression gate fails, so history accumulates.
+      - name: Upload trend history
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-trend
+          path: target/scheduled-benchmarks/benchmark-trend.jsonl
+          if-no-files-found: ignore
+          retention-days: 90
+          overwrite: true
