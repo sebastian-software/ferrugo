@@ -4,29 +4,26 @@
 document intake, and automation workflows.
 
 It is built for the practical job most applications need first: take an
-untrusted PDF, render a bounded first-page preview, and do it without shipping a
-large native renderer in the normal runtime path. The target documents are the
-ones teams actually pass around: office exports, browser print PDFs, invoices,
-reports, scans, forms, presentations, and mixed text-image documents.
+untrusted PDF, render a bounded first-page preview, and keep the runtime path
+small, explicit, and Rust-native. The target documents are the ones teams
+actually pass around: office exports, browser print PDFs, invoices, reports,
+scans, forms, presentations, and mixed text-image documents.
 
 The project combines a native renderer, a CLI, corpus tooling, benchmark gates,
-and explicit diagnostics. It is already useful for scoped preview workloads, but
-it is intentionally honest about the boundary: broad pixel-perfect PDF
-compatibility is still a measured goal, not a claim.
+Node bindings, and explicit diagnostics. It is useful for bounded preview
+workloads today, while still keeping broad renderer-parity claims out of the
+public surface.
 
 ## Current status
 
-The native Rust path is the default development and packaging target.
+The default product path is Rust-native and PDFium-free.
 
-- `ferrugo` builds without PDFium by default.
-- `render` and `render-auto` use the Rust-native backend.
-- Runtime fallback to external PDF renderers has been removed from normal
-  rendering.
-- Reference-renderer comparison commands remain available for maintainers behind
-  explicit Cargo features.
-- The scoped native release train supports a bounded server/runtime preview
-  path.
-- A broad "drop-in PDF renderer replacement" claim is still deferred.
+- The CLI and Rust library render with the native backend.
+- The Node package exposes the same stateless native backend through Node-API.
+- PDFium is not a runtime dependency and is not bundled.
+- External renderers are maintainer-only comparison oracles.
+- CI covers formatting, Clippy, locked tests, fuzz smoke, golden images,
+  packaging boundaries, performance-claim policy, and WASM smoke.
 
 The current renderer handles a useful slice of typical preview documents, but
 PDF is a large format. Some visual-fidelity gaps and typed unsupported feature
@@ -39,9 +36,8 @@ Good fit:
 - Generate preview thumbnails in a Rust service or local CLI workflow.
 - Generate preview thumbnails from Node.js through the `ferrugo` Node-API
   package.
-- Test a Rust-native renderer against a generated PDF corpus.
+- Test native rendering against generated and curated fixture corpora.
 - Compare native output against reference renderers during maintainer work.
-- Study a staged approach to replacing a C/C++ PDF renderer with Rust modules.
 - Run bounded server-side rendering experiments with explicit memory and
   timeout budgets.
 
@@ -49,14 +45,14 @@ Not a good fit yet:
 
 - A full interactive PDF viewer.
 - PDF editing, signing, full JavaScript execution, or dynamic XFA support.
-- A guaranteed pixel-perfect replacement for every PDFium-supported document.
+- A guaranteed pixel-perfect replacement for every PDF renderer.
 - A browser-first WASM product. WASM is tested as a compatibility profile, not
   the main runtime.
 
 ## Quick start
 
-For the direct 1.0 consumer path, start with the
-[Ferrugo 1.0 user guide](docs/guides/1-0-user-guide.md).
+For a fuller walkthrough, start with the
+[user guide](docs/guides/1-0-user-guide.md).
 
 Requirements:
 
@@ -113,8 +109,8 @@ The workspace is split into small crates so each layer can be tested on its own.
 | `ferrugo` | Local CLI for rendering, corpus analysis, benchmarks, and reports. |
 | `ferrugo-wasm-smoke` | Small WASM smoke crate for secondary compatibility checks. |
 
-The public boundary is the thumbnail facade and native backend. PDFium handles
-and fallback state are not part of the runtime API.
+The public boundary is the thumbnail facade, native backend, CLI, and Node
+binding. PDFium handles and fallback state are not part of the runtime API.
 
 ## Node.js Binding
 
@@ -158,35 +154,18 @@ Reference renderer versions: pdfium: missing (missing-tool; unpinned); poppler: 
 Caveats: `rss-unavailable`, `pdfium-missing-tool`, `pdfium-hot-render-external-only`, `poppler-hot-render-external-only`, `ghostscript-missing-tool`, `ghostscript-hot-render-external-only`, `mutool-missing-tool`, `mutool-hot-render-external-only`. External PDFium, Poppler, Ghostscript, and MuPDF rows are cold-process oracle runs; hot-render p95 is reported only for Ferrugo native. Treat these as scoped benchmark-matrix results, not a broad renderer-parity claim.
 <!-- ferrugo:performance-results:end -->
 
-Against mature native renderers, the honest picture is mixed. Ferrugo is already
-attractive for small, bounded, server-side preview jobs because the supported
-runtime is compact, Rust-native, and explicitly budgeted. Public performance
-copy is generated from promoted `benchmark-matrix` JSON and remains scoped by
-workload family, host, fixture set, renderer versions, and reliability caveats.
-The harness compares Ferrugo, PDFium, Poppler, Ghostscript, and MuPDF across
-cold-process time, hot-render distributions, output size, artifact hashes, and
-RSS where the host can expose it. See
-[Renderer benchmarks](docs/benchmarks.md) for the current
-comparison state, the data-first optimization loop, and the
+Public performance copy is generated from promoted `benchmark-matrix` JSON and
+remains scoped by workload family, host, fixture set, renderer versions, and
+reliability caveats. See [Renderer benchmarks](docs/benchmarks.md) for the
+current comparison state, the data-first optimization loop, and the
 [performance claims policy](docs/policies/performance-claims.md) that applies
 before README or release copy strengthens speed or memory statements.
 
-## Reference renderers
+## Reference Oracles
 
-External renderers are treated as behavior oracles, not as the architecture to
-copy.
-
-That distinction matters. `ferrugo` uses Rust ownership, typed errors, explicit
-budgets, and narrow unsafe boundaries. When PDFium or Poppler are used, they
-answer "what should this document look like?" or "where did the native renderer
-drift?", not "what should the runtime depend on?"
-
-`benchmark-matrix --backend pdfium` and `visual-diff` use an external PDFium
-renderer configured with `FERRUGO_PDFIUM_RENDERER` or `--pdfium`; they do not
-require or use a Rust PDFium binding.
-
-See [PDFium checkout recipe](docs/build/pdfium-checkout.md) for the local
-source-build and renderer-adapter path used by maintainers.
+Ferrugo can compare against external renderers during maintainer work. Those
+tools are behavior oracles only: they help identify native-renderer drift, but
+they are not runtime dependencies and their source code is not vendored here.
 
 ## Safety and resource limits
 
@@ -245,32 +224,19 @@ PNG output under `target/` so normal runs do not dirty the repository.
 
 Start here:
 
-- [Ferrugo 1.0 user guide](docs/guides/1-0-user-guide.md) for install, CLI,
-  Rust API, error handling, and troubleshooting examples.
+- [User guide](docs/guides/1-0-user-guide.md) for install, CLI, Rust API,
+  error handling, and troubleshooting examples.
+- [Node package README](crates/ferrugo-node/README.md) for the Node-API binding.
 - [Documentation guide](docs/README.md) for a reader-friendly map of the docs.
 - [Rust-native backend](docs/backend/native.md) for the current renderer
   contract and limits.
-- [Packaging](docs/packaging.md) for native-only, serverless, plugin-free, and
-  PDFium-enabled builds.
+- [Packaging](docs/packaging.md) for native-only, serverless, plugin-free,
+  release, and npm packaging.
 - [Renderer benchmarks](docs/benchmarks.md) and the
-  [initial performance matrix report](docs/reports/performance-matrix-initial-2026-06-29.md)
+  [promoted performance matrix report](docs/reports/performance-matrix-promoted-2026-07-04.md)
   for comparative speed, memory, and reference-renderer measurement.
 - [Native renderer conformance backlog](docs/backlogs/native-renderer-conformance-backlog.md)
   for follow-up renderer work.
-- [Scoped native 1.0 release train](docs/reports/scoped-native-1-0-release-train-2026-07-04.md)
-  for the current release boundary, blockers, non-blockers, gates, and
-  commit-driven versioning decision.
-- [PDFium-free 1.4 readiness report](docs/reports/pdfium-free-1-4-readiness-2026-06-29.md)
-  for the latest historical gate evidence behind the scoped server/runtime
-  claim.
-
-Historical and planning docs:
-
-- [Rendering landscape](docs/research/2026-06-24-rendering-landscape.md)
-- [Rust-first, PDFium-guided decision](docs/decisions/0001-rust-first-pdfium-guided-porting.md)
-- [Phase 0 product, API, and runtime defaults](docs/decisions/0010-phase-0-product-api-runtime-defaults.md)
-- [Phase 0 report](docs/reports/phase-0-report.md)
-- [Roadmap](docs/roadmap.md)
 - [Attribution policy](docs/policies/attribution.md)
 
 ## Licensing
