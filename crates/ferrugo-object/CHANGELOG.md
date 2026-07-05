@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.4.0](https://github.com/sebastian-software/ferrugo/compare/ferrugo-object-v0.3.1...ferrugo-object-v0.4.0) (2026-07-05)
+
+
+### Features
+
+* **api:** gate native diagnostics surface ([c7ba2e4](https://github.com/sebastian-software/ferrugo/commit/c7ba2e4f8928dd9f821e5548af5f663675cde1a0))
+* **object:** decode lzw and runlength filters ([a08beb1](https://github.com/sebastian-software/ferrugo/commit/a08beb1e4b1ae5a8526350ad9628ff7f3f1852c6))
+* **object:** open empty-password encrypted PDFs ([7b6e3f0](https://github.com/sebastian-software/ferrugo/commit/7b6e3f06fb047e5b3efcfb69cb082fb8a67ca3f5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * ferrugo-syntax bumped from 0.3.1 to 0.4.0
+
 ## [0.3.1](https://github.com/sebastian-software/ferrugo/compare/ferrugo-object-v0.3.0...ferrugo-object-v0.3.1) (2026-07-04)
 
 

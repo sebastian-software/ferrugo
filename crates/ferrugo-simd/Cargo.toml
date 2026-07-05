@@ -1,6 +1,6 @@
 [package]
 name = "ferrugo-simd"
-version = "0.3.1"
+version = "0.4.0"
 edition.workspace = true
 description = "Row-kernel boundary for Ferrugo raster compositing."
 license.workspace = true

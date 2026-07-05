@@ -1,6 +1,6 @@
 [package]
 name = "ferrugo-native"
-version = "0.3.1"
+version = "0.4.0"
 edition.workspace = true
 description = "Rust-native PDF thumbnail backend for Ferrugo."
 license.workspace = true
@@ -15,11 +15,11 @@ default = []
 diagnostics = []
 
 [dependencies]
-ferrugo-content = { version = "0.3.1", path = "../ferrugo-content" }
-ferrugo-object = { version = "0.3.1", path = "../ferrugo-object" }
-ferrugo-render = { version = "0.3.1", path = "../ferrugo-render" }
-ferrugo-syntax = { version = "0.3.1", path = "../ferrugo-syntax" }
-ferrugo-thumbnail = { version = "0.3.1", path = "../ferrugo-thumbnail" }
+ferrugo-content = { version = "0.4.0", path = "../ferrugo-content" }
+ferrugo-object = { version = "0.4.0", path = "../ferrugo-object" }
+ferrugo-render = { version = "0.4.0", path = "../ferrugo-render" }
+ferrugo-syntax = { version = "0.4.0", path = "../ferrugo-syntax" }
+ferrugo-thumbnail = { version = "0.4.0", path = "../ferrugo-thumbnail" }
 
 [package.metadata.docs.rs]
 no-default-features = true

@@ -1,6 +1,6 @@
 {
   "name": "ferrugo",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "Rust-native PDF thumbnail rendering for Node.js",
   "license": "MIT OR Apache-2.0",
   "repository": {
