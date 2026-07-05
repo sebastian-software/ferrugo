@@ -48,4 +48,6 @@ referenced through `optionalDependencies`. npm
 installs exactly the binary matching the host `os`/`cpu`/`libc`; there is no
 postinstall build step. The platform package sources live under `npm/` and
 the generated `index.js`/`index.d.ts` are regenerated during the release
-workflow so they always match the released version.
+workflow so they always match the released version. All packages are
+published through npm trusted publishing (GitHub Actions OIDC) with
+provenance attestations.
