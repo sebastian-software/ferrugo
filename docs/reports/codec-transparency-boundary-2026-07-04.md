@@ -6,23 +6,23 @@ Issues: #67, #65
 ## Summary
 
 This report closes the immediate post-0.3.0 release-boundary work for scan
-codecs and advanced transparency. It does not add a new decoder or a broader
-blend implementation. Instead it makes the scoped release behavior executable:
-supported image/transparency families must still render natively, and deferred
-specialized codecs plus advanced transparency boundaries must still produce
-typed, stable fallback buckets.
+codecs and advanced transparency. Issue 103 later adds the first native scan
+decoder slice for CCITT Fax. The executable behavior is now: supported
+image/transparency families, including CCITT Group 3/4 fixtures, must render
+natively, while deferred JPX/JBIG2 codecs plus advanced transparency boundaries
+must still produce typed, stable fallback buckets.
 
 ## Codec Decision
 
-`CCITTFaxDecode`/`CCF` is the first future codec implementation candidate when
-the project accepts a decoder slice, because it maps to common monochrome
-fax/archive scans and has a smaller format surface than JPX or JBIG2.
+`CCITTFaxDecode`/`CCF` was the first codec implementation candidate because it
+maps to common monochrome fax/archive scans and has a smaller format surface
+than JPX or JBIG2. The native runtime now decodes Group 3 1D, mixed Group 3
+1D/2D, and Group 4 CCITT images with decoded-byte budgets.
 
 The current native runtime keeps these codecs deferred:
 
 | Codec | Current behavior | Future requirement |
 | --- | --- | --- |
-| `CCITTFaxDecode`/`CCF` | Typed `image.filter` fallback. | Safe decoder slice with row/K/EOL/byte-alignment fixtures, malformed-data tests, decoded-byte budgets, benchmarks, and fuzz smoke. |
 | `JPXDecode` | Typed `image.filter` fallback. | Pure-Rust or tightly isolated decoder with memory/decompression budgets. |
 | `JBIG2Decode` | Typed `image.filter` fallback. | Sandboxed or strongly isolated decoder strategy plus separate safety review. |
 
@@ -66,8 +66,9 @@ It writes:
 
 The script asserts that:
 
-- supported image-codec deployment families render with zero fallbacks;
-- CCITT/JBIG2/JPX produce exactly three typed `image.filter` fallbacks;
+- supported image-codec deployment families, including CCITT, render with zero
+  fallbacks;
+- JPX/JBIG2 produce exactly two typed `image.filter` fallbacks;
 - supported transparency conformance families render with zero fallbacks;
 - luminosity soft-mask and Overlay fixtures produce exactly two typed
   `graphics.transparency` fallbacks;

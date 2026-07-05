@@ -24,16 +24,16 @@ Keep the native renderer explicit and deterministic:
   decoder and predictor implementation.
 - `DCTDecode` and alias `/DCT` are supported through the existing safe Rust JPEG
   decoder path.
-- `CCITTFaxDecode` and alias `/CCF` remain unsupported in native rendering until
-  a corpus-driven slice selects a safe decoder and validates row, K, EndOfLine,
-  and byte-alignment behavior.
+- `CCITTFaxDecode` and alias `/CCF` are supported for budgeted monochrome Group
+  3 and Group 4 image streams, including K, row, EndOfLine, byte-alignment, and
+  BlackIs1 coverage.
 - `JPXDecode` remains unsupported until a pure-Rust or tightly isolated decoder
   is selected with memory and decompression budgets.
 - `JBIG2Decode` remains unsupported until there is a sandboxed or otherwise
   strongly isolated decoder strategy. Do not add direct unsafe decoder bindings
   for JBIG2 without a separate safety review.
 
-Unsupported specialized codecs must return `UnsupportedImageFilter` in the
+Deferred specialized codecs must return `UnsupportedImageFilter` in the
 render layer and map to the stable native feature bucket `image.filter`.
 
 ## Deployment Matrix
@@ -42,16 +42,16 @@ render layer and map to the stable native feature bucket `image.filter`.
 | --- | --- | --- | --- |
 | Raw Image XObject and inline images | Built in | Built in | Supported with existing raster and page pixel budgets. |
 | `FlateDecode` image streams and PNG predictors | Built in | Built in | Supported through safe Rust stream decoding and predictor handling. |
-| `DCTDecode`/`DCT` JPEG | Built in | Built in when the package includes the safe Rust JPEG decoder | Supported as the only specialized codec on the default native path. |
+| `DCTDecode`/`DCT` JPEG | Built in | Built in when the package includes the safe Rust JPEG decoder | Supported on the default native path. |
 | Image masks and soft masks | Built in | Built in | Supported with image-byte and soft-mask depth budgets. |
-| `CCITTFaxDecode`/`CCF` | Not bundled by default | Not bundled | Typed `image.filter` unsupported until a safe decoder slice is accepted. |
+| `CCITTFaxDecode`/`CCF` | Built in | Built in | Supported for Group 3 1D/2D and Group 4 with decoded-byte budgets. |
 | `JPXDecode` | Not bundled by default | Not bundled | Typed `image.filter` unsupported until a budgeted pure-Rust or isolated decoder is selected. |
 | `JBIG2Decode` | Not bundled by default | Not bundled | Typed `image.filter` unsupported; direct unsafe decoder bindings require separate security review. |
 
 Server deployments should not reintroduce PDFium solely for specialized image
-decoding. If a product needs CCITT, JPX, or JBIG2 before native support lands,
-route that decision through an explicit out-of-process or sandboxed conversion
-service with per-document policy, telemetry, and tenant-visible diagnostics.
+decoding. If a product needs JPX or JBIG2 before native support lands, route
+that decision through an explicit out-of-process or sandboxed conversion service
+with per-document policy, telemetry, and tenant-visible diagnostics.
 
 ## Rationale
 
@@ -77,18 +77,17 @@ renders, 4 fallbacks, and 1 encrypted error. Three fallbacks are the new
 content policy fixture.
 
 Milestone 0209 promotes this into a deployment gate with
-`fixtures/image-codec-deployment-manifest.tsv`: eight supported built-in image
-paths must render natively, while CCITT, JBIG2, and JPX remain typed
-`image.filter` boundaries.
+`fixtures/image-codec-deployment-manifest.tsv`: supported built-in image paths
+must render natively, while JBIG2 and JPX remain typed `image.filter`
+boundaries.
 
 ## Issue 67 Closure
 
-Issue 67 closes as a release-boundary decision, not as a new decoder adoption.
-The first future implementation candidate is `CCITTFaxDecode`/`CCF`, because it
-is common in monochrome fax/archive scans and has a narrower format surface than
-JPX or JBIG2. That future slice still needs corpus evidence, malformed-data
-tests, row and byte-alignment coverage, decoded-byte budgets, and benchmark
-evidence before it can become a default native path.
+Issue 67 first closed as a release-boundary decision, then issue 103 accepted
+the first decoder slice for `CCITTFaxDecode`/`CCF`. The native renderer now
+decodes Group 3 1D, mixed Group 3 1D/2D, and Group 4 scan images with corpus
+fixtures for K, row counts, EndOfLine, EncodedByteAlign, EndOfBlock, BlackIs1,
+and decoded-byte budgets.
 
 JPX remains deferred until there is a pure-Rust or tightly isolated decoder with
 explicit memory/decompression budgets. JBIG2 remains deferred until there is a
@@ -96,12 +95,12 @@ sandboxed or otherwise strongly isolated decoder strategy and a separate safety
 review. Direct unsafe decoder bindings are not acceptable for either path in the
 default native runtime.
 
-The current scoped release keeps all three specialized scan codecs typed as
-`image.filter`. `scripts/check_codec_transparency_boundaries.sh` is the focused
-gate for this policy: it validates the supported image-codec manifest, asserts
-that the CCITT/JBIG2/JPX fixtures still produce exactly three `image.filter`
-fallbacks, runs the image-heavy low-memory test, runs the image-codec benchmark
-gate, and includes the fuzz-smoke release gate.
+The current scoped release keeps JPX and JBIG2 typed as `image.filter`.
+`scripts/check_codec_transparency_boundaries.sh` is the focused gate for this
+policy: it validates the supported image-codec manifest, asserts that the JPX
+and JBIG2 fixtures still produce exactly two `image.filter` fallbacks, runs the
+image-heavy low-memory test, runs the image-codec benchmark gate, and includes
+the fuzz-smoke release gate.
 
 ## Follow-Up Criteria
 

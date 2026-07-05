@@ -608,14 +608,15 @@ cargo run -p ferrugo --no-default-features -- summarize-fallbacks \
 `fixtures/mobile-scan-manifest.tsv` is the focused gate for PDFs produced by
 mobile scanners and camera apps. It covers page rotation metadata, CropBox
 selection, image-dominant scan pages, invisible OCR overlays, Flate/DCT image
-compression, and scanner-style unsupported image filters.
+compression, CCITT image compression, and scanner-style unsupported image
+filters.
 
 The manifest uses supported families `rotation`, `crop`, `ocr-layer`, and
-`compression`, plus an `unsupported-filter` family for CCITT, JBIG2, and JPX
-scanner codec backlog tracking. Use `--fail-on-fallback` only for the supported
-families; the unsupported filter family is expected to remain in the
-`image.filter` fallback bucket until those codecs are implemented or delegated
-by policy.
+`compression`, plus a supported `ccitt` row and an `unsupported-filter` family
+for JBIG2 and JPX scanner codec backlog tracking. Use `--fail-on-fallback` only
+for the supported families; the unsupported filter family is expected to remain
+in the `image.filter` fallback bucket until those codecs are implemented or
+delegated by policy.
 
 ```sh
 cargo run -p ferrugo --no-default-features -- summarize-fallbacks \
@@ -625,6 +626,7 @@ cargo run -p ferrugo --no-default-features -- summarize-fallbacks \
   --include-family crop \
   --include-family ocr-layer \
   --include-family compression \
+  --include-family ccitt \
   --fail-on-fallback \
   --max-edge 160
 ```
@@ -634,9 +636,9 @@ cargo run -p ferrugo --no-default-features -- summarize-fallbacks \
 `fixtures/image-codec-deployment-manifest.tsv` is the focused gate for
 Rust-native image codec deployment policy. Supported families cover raw Image
 XObjects, inline images, Flate+predictor images, mixed Flate/DCT mobile scans,
-DCT/JPEG, image masks, soft masks, and large Flate scan memory budgets. The
-`unsupported-specialized` family keeps CCITT, JBIG2, and JPX in the corpus as
-typed `image.filter` boundaries.
+DCT/JPEG, image masks, soft masks, large Flate scan memory budgets, and CCITT
+Group 3/4 scan images. The `unsupported-specialized` family keeps JBIG2 and JPX
+in the corpus as typed `image.filter` boundaries.
 
 Use supported families as a native-only gate:
 
@@ -650,6 +652,7 @@ cargo run -p ferrugo --no-default-features -- summarize-fallbacks \
   --include-family jpeg \
   --include-family mask-alpha \
   --include-family image-heavy \
+  --include-family ccitt \
   --fail-on-fallback \
   --max-edge 180
 ```

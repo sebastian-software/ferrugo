@@ -17,6 +17,10 @@ fn main() {
             b"BI /W 1 /H 1 /BPC 8 ID x EI",
             include_bytes!("../../fixtures/adversarial/truncated-header.pdf"),
             include_bytes!("../../fixtures/adversarial/huge-image-dimensions.pdf"),
+            include_bytes!("../../fixtures/generated/ccitt-g3-1d-image-mask.pdf"),
+            include_bytes!("../../fixtures/generated/ccitt-g3-mixed-image-mask.pdf"),
+            include_bytes!("../../fixtures/generated/ccitt-g4-devicegray-blackis1.pdf"),
+            include_bytes!("../../fixtures/generated/ccitt-g3-1d-eol-aligned.pdf"),
         ],
     );
 }

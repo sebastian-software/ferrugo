@@ -83,6 +83,7 @@ The initial seed set covers:
 - encrypted trailer placeholder documents and empty-user-password standard-security coverage
 - malformed xref object-offset drift
 - LZWDecode and RunLengthDecode content streams
+- CCITTFaxDecode Group 3 1D, mixed Group 3 2D, Group 4, EOL, byte-aligned, and BlackIs1 image fixtures
 - axial DeviceRGB shading gradients
 - radial DeviceRGB shading gradients
 - colored tiling patterns

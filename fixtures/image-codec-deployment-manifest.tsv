@@ -7,6 +7,9 @@ fixtures/generated/dct-image.pdf	jpeg	scripts/generate_fixtures.py	MIT OR Apache
 fixtures/generated/image-mask-logo.pdf	mask-alpha	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,image-mask,flate,stencil,expected:native	Flate-compressed ImageMask stencil path.
 fixtures/generated/soft-mask-image.pdf	mask-alpha	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,soft-mask,alpha,expected:native	Image soft-mask alpha path.
 fixtures/generated/scanner-large-image-budget.pdf	image-heavy	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	scanner,large-image,memory-budget,image,flate,expected:native	Large compressed scan image budget path.
-fixtures/generated/unsupported-ccitt-image.pdf	unsupported-specialized	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,codec,ccitt,unsupported,expected:native-unsupported	CCITTFaxDecode remains a typed image.filter boundary.
+fixtures/generated/ccitt-g3-1d-image-mask.pdf	ccitt	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,codec,ccitt,g3-1d,image-mask,expected:native	CCITTFaxDecode Group 3 1D image-mask path.
+fixtures/generated/ccitt-g3-mixed-image-mask.pdf	ccitt	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,codec,ccitt,g3-2d,image-mask,expected:native	CCITTFaxDecode mixed Group 3 1D/2D image-mask path.
+fixtures/generated/ccitt-g4-devicegray-blackis1.pdf	ccitt	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,codec,ccitt,g4,devicegray,blackis1,expected:native	CCITTFaxDecode Group 4 DeviceGray path.
+fixtures/generated/ccitt-g3-1d-eol-aligned.pdf	ccitt	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,codec,ccitt,g3-1d,eol,byte-aligned,expected:native	CCITTFaxDecode Group 3 EOL and byte-aligned path.
 fixtures/generated/unsupported-jbig2-image.pdf	unsupported-specialized	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,codec,jbig2,unsupported,expected:native-unsupported	JBIG2Decode remains a typed image.filter boundary.
 fixtures/generated/unsupported-jpx-image.pdf	unsupported-specialized	scripts/generate_fixtures.py	MIT OR Apache-2.0	1	image,codec,jpx,unsupported,expected:native-unsupported	JPXDecode remains a typed image.filter boundary.
