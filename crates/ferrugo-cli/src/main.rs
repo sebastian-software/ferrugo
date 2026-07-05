@@ -2510,6 +2510,7 @@ struct VisualDiffThresholds {
     max_mean_abs_error: f64,
     max_p95_channel_delta: u8,
     max_changed_ratio: f64,
+    min_ssim: f64,
 }
 
 impl Default for VisualDiffThresholds {
@@ -2518,6 +2519,7 @@ impl Default for VisualDiffThresholds {
             max_mean_abs_error: 2.0,
             max_p95_channel_delta: 16,
             max_changed_ratio: 0.05,
+            min_ssim: 0.0,
         }
     }
 }
@@ -3288,6 +3290,10 @@ impl VisualDiffConfig {
                     index += 1;
                     thresholds.max_changed_ratio = parse_f64(args, index, "--max-changed-ratio")?;
                 }
+                "--min-ssim" => {
+                    index += 1;
+                    thresholds.min_ssim = parse_f64(args, index, "--min-ssim")?;
+                }
                 value if value.starts_with('-') => {
                     return Err(CliError::Usage(format!("unknown option `{value}`")));
                 }
@@ -3315,6 +3321,11 @@ impl VisualDiffConfig {
         if thresholds.max_mean_abs_error < 0.0 {
             return Err(CliError::Usage(
                 "--max-mae must be greater than or equal to zero".to_string(),
+            ));
+        }
+        if thresholds.min_ssim < 0.0 || thresholds.min_ssim > 1.0 {
+            return Err(CliError::Usage(
+                "--min-ssim must be between 0.0 and 1.0".to_string(),
             ));
         }
 
@@ -4395,6 +4406,10 @@ struct FamilyVisualDiffSummary {
     native_errors: usize,
     pdfium_errors: usize,
     both_errors: usize,
+    comparable: usize,
+    ssim_sum: f64,
+    min_ssim: Option<f64>,
+    max_dssim: Option<f64>,
 }
 
 impl FamilyVisualDiffSummary {
@@ -4408,6 +4423,26 @@ impl FamilyVisualDiffSummary {
             VisualDiffStatus::PdfiumError => self.pdfium_errors += 1,
             VisualDiffStatus::BothError => self.both_errors += 1,
         }
+        if let Some(metrics) = &record.metrics {
+            self.record_metrics(metrics);
+        }
+    }
+
+    fn record_metrics(&mut self, metrics: &VisualDiffMetrics) {
+        self.comparable += 1;
+        self.ssim_sum += metrics.ssim;
+        self.min_ssim = Some(
+            self.min_ssim
+                .map_or(metrics.ssim, |value| value.min(metrics.ssim)),
+        );
+        self.max_dssim = Some(
+            self.max_dssim
+                .map_or(metrics.dssim, |value| value.max(metrics.dssim)),
+        );
+    }
+
+    fn mean_ssim(&self) -> Option<f64> {
+        (self.comparable > 0).then(|| self.ssim_sum / self.comparable as f64)
     }
 }
 
@@ -4452,6 +4487,8 @@ struct VisualDiffMetrics {
     changed_pixels: usize,
     changed_ratio: f64,
     mean_abs_error: f64,
+    ssim: f64,
+    dssim: f64,
     p95_channel_delta: u8,
     max_channel_delta: u8,
     native_nonwhite_pixels: usize,
@@ -4489,6 +4526,10 @@ struct PopplerFamilyVisualDiffSummary {
     native_errors: usize,
     reference_errors: usize,
     both_errors: usize,
+    comparable: usize,
+    ssim_sum: f64,
+    min_ssim: Option<f64>,
+    max_dssim: Option<f64>,
 }
 
 impl PopplerFamilyVisualDiffSummary {
@@ -4502,6 +4543,26 @@ impl PopplerFamilyVisualDiffSummary {
             PopplerVisualDiffStatus::ReferenceError => self.reference_errors += 1,
             PopplerVisualDiffStatus::BothError => self.both_errors += 1,
         }
+        if let Some(metrics) = &record.metrics {
+            self.record_metrics(metrics);
+        }
+    }
+
+    fn record_metrics(&mut self, metrics: &VisualDiffMetrics) {
+        self.comparable += 1;
+        self.ssim_sum += metrics.ssim;
+        self.min_ssim = Some(
+            self.min_ssim
+                .map_or(metrics.ssim, |value| value.min(metrics.ssim)),
+        );
+        self.max_dssim = Some(
+            self.max_dssim
+                .map_or(metrics.dssim, |value| value.max(metrics.dssim)),
+        );
+    }
+
+    fn mean_ssim(&self) -> Option<f64> {
+        (self.comparable > 0).then(|| self.ssim_sum / self.comparable as f64)
     }
 }
 
@@ -7929,17 +7990,69 @@ fn visual_diff_metrics(
     }
 
     let pixels = (native.width as usize).checked_mul(native.height as usize)?;
+    let ssim = structural_similarity_rgb(native, pdfium);
     Some(VisualDiffMetrics {
         width: native.width,
         height: native.height,
         changed_pixels,
         changed_ratio: changed_pixels as f64 / pixels as f64,
         mean_abs_error: channel_sum as f64 / channels as f64,
+        ssim,
+        dssim: (1.0 - ssim) / 2.0,
         p95_channel_delta: percentile_delta(&histogram, channels, 0.95),
         max_channel_delta,
         native_nonwhite_pixels,
         pdfium_nonwhite_pixels,
     })
+}
+
+fn structural_similarity_rgb(
+    native: &ferrugo_thumbnail::Thumbnail,
+    reference: &ferrugo_thumbnail::Thumbnail,
+) -> f64 {
+    let mut samples = 0usize;
+    let mut native_sum = 0.0;
+    let mut reference_sum = 0.0;
+    let mut native_sq_sum = 0.0;
+    let mut reference_sq_sum = 0.0;
+    let mut cross_sum = 0.0;
+
+    for (native_pixel, reference_pixel) in native
+        .bytes
+        .chunks_exact(4)
+        .zip(reference.bytes.chunks_exact(4))
+    {
+        for channel in 0..3 {
+            let native_value = f64::from(native_pixel[channel]);
+            let reference_value = f64::from(reference_pixel[channel]);
+            samples += 1;
+            native_sum += native_value;
+            reference_sum += reference_value;
+            native_sq_sum += native_value * native_value;
+            reference_sq_sum += reference_value * reference_value;
+            cross_sum += native_value * reference_value;
+        }
+    }
+
+    if samples == 0 {
+        return 1.0;
+    }
+
+    let count = samples as f64;
+    let native_mean = native_sum / count;
+    let reference_mean = reference_sum / count;
+    let native_variance = (native_sq_sum / count - native_mean * native_mean).max(0.0);
+    let reference_variance = (reference_sq_sum / count - reference_mean * reference_mean).max(0.0);
+    let covariance = cross_sum / count - native_mean * reference_mean;
+    let c1 = 6.5025;
+    let c2 = 58.5225;
+    let numerator = (2.0 * native_mean * reference_mean + c1) * (2.0 * covariance + c2);
+    let denominator = (native_mean * native_mean + reference_mean * reference_mean + c1)
+        * (native_variance + reference_variance + c2);
+    if denominator <= f64::EPSILON {
+        return 1.0;
+    }
+    (numerator / denominator).clamp(0.0, 1.0)
 }
 
 fn classify_visual_diff(
@@ -7957,10 +8070,9 @@ fn classify_visual_diff(
     let low_p95_edge_drift = metrics.mean_abs_error <= LOW_P95_EDGE_DRIFT_MAX_MAE
         && metrics.p95_channel_delta <= LOW_P95_EDGE_DRIFT_MAX_DELTA
         && metrics.changed_ratio <= LOW_P95_EDGE_DRIFT_MAX_CHANGED_RATIO;
-    if (metrics.mean_abs_error <= thresholds.max_mean_abs_error
-        && (bounded_distribution || low_amplitude_field || low_amplitude_distribution))
-        || low_p95_edge_drift
-    {
+    let legacy_thresholds_pass = metrics.mean_abs_error <= thresholds.max_mean_abs_error
+        && (bounded_distribution || low_amplitude_field || low_amplitude_distribution);
+    if metrics.ssim >= thresholds.min_ssim && (legacy_thresholds_pass || low_p95_edge_drift) {
         VisualDiffStatus::AcceptedDrift
     } else {
         VisualDiffStatus::Blocker
@@ -8252,9 +8364,11 @@ fn parse_manifest_u32(value: &str, line_number: usize, field: &str) -> Result<u3
 }
 
 fn validate_golden_baseline(baseline: &GoldenBaseline, line_number: usize) -> Result<(), CliError> {
-    if !baseline.fixture.starts_with("fixtures/generated/") || !baseline.fixture.ends_with(".pdf") {
+    let public_fixture = baseline.fixture.starts_with("fixtures/generated/")
+        || baseline.fixture.starts_with("fixtures/real-world/");
+    if !public_fixture || !baseline.fixture.ends_with(".pdf") {
         return Err(CliError::Usage(format!(
-            "golden manifest line {line_number} fixture must point to fixtures/generated/*.pdf"
+            "golden manifest line {line_number} fixture must point to fixtures/generated/*.pdf or fixtures/real-world/*.pdf"
         )));
     }
     if baseline.family.is_empty() || baseline.reviewer.is_empty() || baseline.reviewed_at.is_empty()
@@ -12035,7 +12149,7 @@ fn visual_diff_report_json(report: &VisualDiffReport) -> String {
             "{{\n",
             "  \"schema_version\": 1,\n",
             "  \"platform\": {},\n",
-            "  \"thresholds\": {{\"max_mean_abs_error\":{:.3},\"max_p95_channel_delta\":{},\"max_changed_ratio\":{:.6}}},\n",
+            "  \"thresholds\": {{\"max_mean_abs_error\":{:.3},\"max_p95_channel_delta\":{},\"max_changed_ratio\":{:.6},\"min_ssim\":{:.6}}},\n",
             "  \"summary\": {{\"total\":{},\"exact\":{},\"accepted_drift\":{},\"blockers\":{},\"native_errors\":{},\"pdfium_errors\":{},\"both_errors\":{}}},\n",
             "  \"families\": {},\n",
             "  \"subsystems\": {},\n",
@@ -12046,6 +12160,7 @@ fn visual_diff_report_json(report: &VisualDiffReport) -> String {
         report.thresholds.max_mean_abs_error,
         report.thresholds.max_p95_channel_delta,
         report.thresholds.max_changed_ratio,
+        report.thresholds.min_ssim,
         report.total,
         report.exact,
         report.accepted_drift,
@@ -12084,7 +12199,11 @@ fn visual_diff_family_summary_json(summary: &FamilyVisualDiffSummary) -> String 
             "\"blockers\":{},",
             "\"native_errors\":{},",
             "\"pdfium_errors\":{},",
-            "\"both_errors\":{}",
+            "\"both_errors\":{},",
+            "\"comparable\":{},",
+            "\"mean_ssim\":{},",
+            "\"min_ssim\":{},",
+            "\"max_dssim\":{}",
             "}}"
         ),
         summary.total,
@@ -12093,7 +12212,11 @@ fn visual_diff_family_summary_json(summary: &FamilyVisualDiffSummary) -> String 
         summary.blockers,
         summary.native_errors,
         summary.pdfium_errors,
-        summary.both_errors
+        summary.both_errors,
+        summary.comparable,
+        optional_json_f64_six(summary.mean_ssim()),
+        optional_json_f64_six(summary.min_ssim),
+        optional_json_f64_six(summary.max_dssim)
     )
 }
 
@@ -12130,6 +12253,8 @@ fn visual_diff_metrics_json(metrics: Option<&VisualDiffMetrics>) -> String {
                 "\"changed_pixels\":{},",
                 "\"changed_ratio\":{:.6},",
                 "\"mean_abs_error\":{:.3},",
+                "\"ssim\":{:.6},",
+                "\"dssim\":{:.6},",
                 "\"p95_channel_delta\":{},",
                 "\"max_channel_delta\":{},",
                 "\"native_nonwhite_pixels\":{},",
@@ -12141,6 +12266,8 @@ fn visual_diff_metrics_json(metrics: Option<&VisualDiffMetrics>) -> String {
             metrics.changed_pixels,
             metrics.changed_ratio,
             metrics.mean_abs_error,
+            metrics.ssim,
+            metrics.dssim,
             metrics.p95_channel_delta,
             metrics.max_channel_delta,
             metrics.native_nonwhite_pixels,
@@ -12174,7 +12301,7 @@ fn poppler_visual_diff_report_json(report: &PopplerVisualDiffReport) -> String {
             "  \"schema_version\": 1,\n",
             "  \"reference_backend\": \"poppler-pdftoppm\",\n",
             "  \"platform\": {},\n",
-            "  \"thresholds\": {{\"max_mean_abs_error\":{:.3},\"max_p95_channel_delta\":{},\"max_changed_ratio\":{:.6}}},\n",
+            "  \"thresholds\": {{\"max_mean_abs_error\":{:.3},\"max_p95_channel_delta\":{},\"max_changed_ratio\":{:.6},\"min_ssim\":{:.6}}},\n",
             "  \"summary\": {{\"total\":{},\"exact\":{},\"accepted_drift\":{},\"blockers\":{},\"native_errors\":{},\"reference_errors\":{},\"both_errors\":{}}},\n",
             "  \"families\": {},\n",
             "  \"subsystems\": {},\n",
@@ -12185,6 +12312,7 @@ fn poppler_visual_diff_report_json(report: &PopplerVisualDiffReport) -> String {
         report.thresholds.max_mean_abs_error,
         report.thresholds.max_p95_channel_delta,
         report.thresholds.max_changed_ratio,
+        report.thresholds.min_ssim,
         report.total,
         report.exact,
         report.accepted_drift,
@@ -12225,7 +12353,11 @@ fn poppler_visual_diff_family_summary_json(summary: &PopplerFamilyVisualDiffSumm
             "\"blockers\":{},",
             "\"native_errors\":{},",
             "\"reference_errors\":{},",
-            "\"both_errors\":{}",
+            "\"both_errors\":{},",
+            "\"comparable\":{},",
+            "\"mean_ssim\":{},",
+            "\"min_ssim\":{},",
+            "\"max_dssim\":{}",
             "}}"
         ),
         summary.total,
@@ -12234,7 +12366,11 @@ fn poppler_visual_diff_family_summary_json(summary: &PopplerFamilyVisualDiffSumm
         summary.blockers,
         summary.native_errors,
         summary.reference_errors,
-        summary.both_errors
+        summary.both_errors,
+        summary.comparable,
+        optional_json_f64_six(summary.mean_ssim()),
+        optional_json_f64_six(summary.min_ssim),
+        optional_json_f64_six(summary.max_dssim)
     )
 }
 
@@ -12273,6 +12409,8 @@ fn poppler_visual_diff_metrics_json(metrics: Option<&VisualDiffMetrics>) -> Stri
                 "\"changed_pixels\":{},",
                 "\"changed_ratio\":{:.6},",
                 "\"mean_abs_error\":{:.3},",
+                "\"ssim\":{:.6},",
+                "\"dssim\":{:.6},",
                 "\"p95_channel_delta\":{},",
                 "\"max_channel_delta\":{},",
                 "\"native_nonwhite_pixels\":{},",
@@ -12284,6 +12422,8 @@ fn poppler_visual_diff_metrics_json(metrics: Option<&VisualDiffMetrics>) -> Stri
             metrics.changed_pixels,
             metrics.changed_ratio,
             metrics.mean_abs_error,
+            metrics.ssim,
+            metrics.dssim,
             metrics.p95_channel_delta,
             metrics.max_channel_delta,
             metrics.native_nonwhite_pixels,
@@ -12742,6 +12882,10 @@ fn optional_json_f64(value: Option<f64>) -> String {
     value.map_or_else(|| "null".to_string(), |value| format!("{value:.3}"))
 }
 
+fn optional_json_f64_six(value: Option<f64>) -> String {
+    value.map_or_else(|| "null".to_string(), |value| format!("{value:.6}"))
+}
+
 fn json_string_array(values: &[String]) -> String {
     let values = values
         .iter()
@@ -13028,7 +13172,7 @@ fn print_usage() {
          [--output PATH] [--page-index N] [--max-edge N] [--background #RRGGBB] \
          [--timeout SECONDS] [--iterations N] [--warmup N] [--max-cov N] [--repetitions N] [--pages-per-input N] [--max-events N] [--max-workers N] [--max-in-flight-pixels N] [--cancel-after-jobs N] [--max-ms N] [--max-p95-ms N] [--max-first-ms N] [--max-repeat-mean-ms N] [--max-output-bytes N] \
          [--backend native|pdfium|poppler|ghostscript|mutool] [--mode cold-process|hot-render] [--report PATH] [--artifact-dir PATH] [--pdfium PATH] [--pdftoppm PATH] [--ghostscript PATH] [--mutool PATH] [--oracle-version-manifest PATH] [--native-only] [--manifest PATH] [--include-family FAMILY] \
-         [--diagnostics-dir PATH] [--allow-missing] [--annotation-mode screen|print] [--no-annotations] [--max-mae N] [--max-p95 N] [--max-changed-ratio N]"
+         [--diagnostics-dir PATH] [--allow-missing] [--annotation-mode screen|print] [--no-annotations] [--max-mae N] [--max-p95 N] [--max-changed-ratio N] [--min-ssim N]"
     );
 }
 
@@ -15397,6 +15541,8 @@ status = "candidate"
         let exact_b = Thumbnail::rgba(1, 1, vec![10, 20, 30, 255]).expect("valid thumbnail");
         let exact_metrics = visual_diff_metrics(&exact_a, &exact_b).expect("same dimensions");
 
+        assert_eq!(exact_metrics.ssim, 1.0);
+        assert_eq!(exact_metrics.dssim, 0.0);
         assert_eq!(
             classify_visual_diff(&exact_metrics, VisualDiffThresholds::default()),
             VisualDiffStatus::Exact
@@ -15407,6 +15553,8 @@ status = "candidate"
 
         assert_eq!(drift_metrics.changed_pixels, 1);
         assert_eq!(drift_metrics.max_channel_delta, 1);
+        assert!(drift_metrics.ssim < 1.0);
+        assert!(drift_metrics.dssim > 0.0);
         assert_eq!(
             classify_visual_diff(
                 &drift_metrics,
@@ -15424,6 +15572,18 @@ status = "candidate"
                     max_mean_abs_error: 0.0,
                     max_p95_channel_delta: 0,
                     max_changed_ratio: 0.0,
+                    min_ssim: 0.0,
+                },
+            ),
+            VisualDiffStatus::Blocker
+        );
+        assert_eq!(
+            classify_visual_diff(
+                &drift_metrics,
+                VisualDiffThresholds {
+                    max_changed_ratio: 1.0,
+                    min_ssim: 1.0,
+                    ..VisualDiffThresholds::default()
                 },
             ),
             VisualDiffStatus::Blocker
@@ -15438,6 +15598,8 @@ status = "candidate"
             changed_pixels: 14_400,
             changed_ratio: 1.0,
             mean_abs_error: 1.25,
+            ssim: 0.999,
+            dssim: 0.0005,
             p95_channel_delta: 4,
             max_channel_delta: 5,
             native_nonwhite_pixels: 14_400,
@@ -15479,6 +15641,8 @@ status = "candidate"
             changed_pixels: 4_450,
             changed_ratio: 0.309028,
             mean_abs_error: 3.3,
+            ssim: 0.998,
+            dssim: 0.001,
             p95_channel_delta: 5,
             max_channel_delta: 216,
             native_nonwhite_pixels: 14_400,

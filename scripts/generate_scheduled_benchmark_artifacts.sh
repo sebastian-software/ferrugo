@@ -42,7 +42,7 @@ TIMEOUT="$TIMEOUT" \
 bash scripts/generate_performance_matrix.sh
 
 echo "==> scheduled native golden image comparison"
-cargo run -p ferrugo --no-default-features -- compare-golden fixtures/generated \
+cargo run -p ferrugo --no-default-features -- compare-golden fixtures \
   --manifest fixtures/native-golden-manifest.tsv \
   --max-edge 160 \
   --output "$OUTPUT_DIR/native-golden-comparison.json"
@@ -109,6 +109,8 @@ const entry = {
   },
   poppler_visual_diff: {
     summary: visual.summary,
+    families: visual.families ?? {},
+    subsystems: visual.subsystems ?? {},
   },
 };
 
