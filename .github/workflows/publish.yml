@@ -183,14 +183,19 @@ jobs:
         uses: actions/download-artifact@v6
         with:
           pattern: node-prebuild-*
-          path: crates/ferrugo-node
+          path: crates/ferrugo-node/artifacts
           merge-multiple: true
 
-      - name: Check bundled prebuilds
+      # Distributes each prebuild into its npm/<target> platform package.
+      - name: Stage platform packages
+        working-directory: crates/ferrugo-node
+        run: npm run artifacts -- --output-dir artifacts
+
+      - name: Check staged platform packages
         working-directory: crates/ferrugo-node
         run: |
-          count="$(ls -1 ferrugo.*.node | wc -l)"
-          echo "bundled prebuilds: ${count}"
+          count="$(ls -1 npm/*/ferrugo.*.node | wc -l)"
+          echo "staged platform prebuilds: ${count}"
           test "${count}" -ge 7
 
       # Trusted publishing needs npm >= 11.5.1; Node 24 ships a current npm,
@@ -199,6 +204,13 @@ jobs:
         run: |
           npm --version
           node -e "const [major, minor, patch] = require('child_process').execSync('npm --version').toString().trim().split('.').map(Number); process.exit(major > 11 || (major === 11 && (minor > 5 || (minor === 5 && patch >= 1))) ? 0 : 1)"
+
+      # Publishes the per-platform packages and pins them as
+      # optionalDependencies of the main package. Every platform package needs
+      # its own npm trusted publisher configuration.
+      - name: Publish platform packages
+        working-directory: crates/ferrugo-node
+        run: npx napi pre-publish -t npm --no-gh-release
 
       - name: Publish Node package
         working-directory: crates/ferrugo-node
