@@ -35,4 +35,13 @@ render cancellation.
 
 Errors carry stable `code` values matching the Rust thumbnail error class:
 `encrypted`, `malformed`, `unsupported`, `timeout`, `cancelled`, or `internal`.
-Unsupported-feature errors also carry a `bucket` string.
+Unsupported-feature errors also carry a `bucket` string. Synchronous option
+validation failures use `code: "invalid-argument"`.
+
+## Distribution
+
+The published npm package is self-contained: it bundles the prebuilt
+`ferrugo.<platform>.node` binaries for all supported targets and loads the
+matching one at require time. There are no per-platform sub-packages and no
+postinstall build step. The generated `index.js`/`index.d.ts` are regenerated
+during the release workflow so they always match the released version.

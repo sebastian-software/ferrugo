@@ -37,3 +37,10 @@ await assert.rejects(
   () => render(input, { outputFormat: 'png', timeoutMs: 0 }),
   (error) => error && error.code === 'timeout',
 )
+
+// Synchronous option-validation errors carry the same `code` shape as
+// asynchronous render errors.
+assert.throws(
+  () => render(input, { maxEdge: 0 }),
+  (error) => error && error.code === 'invalid-argument',
+)

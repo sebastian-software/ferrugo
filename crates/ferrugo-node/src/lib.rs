@@ -256,10 +256,18 @@ impl Task for InspectTask {
 
 /// Renders one PDF page on the Node-API worker pool.
 #[napi(ts_return_type = "Promise<RenderedThumbnail>")]
-pub fn render(input: Buffer, options: Option<RenderOptions>) -> Result<AsyncTask<RenderTask>> {
+pub fn render(
+    env: Env,
+    input: Buffer,
+    options: Option<RenderOptions>,
+) -> Result<AsyncTask<RenderTask>> {
+    let options = match NodeThumbnailOptions::from_options(options) {
+        Ok(options) => options,
+        Err(err) => return Err(js_invalid_arg_error(env, err)),
+    };
     Ok(AsyncTask::new(RenderTask {
         input: input.as_ref().to_vec(),
-        options: NodeThumbnailOptions::from_options(options)?,
+        options,
     }))
 }
 
@@ -409,6 +417,13 @@ fn parse_mapped_error_reason(reason: &str) -> (&str, Option<&str>, String) {
 
 fn invalid_arg(reason: &str) -> Error {
     Error::new(Status::InvalidArg, reason.to_string())
+}
+
+/// Gives synchronous option-validation failures the same `code` property
+/// shape that asynchronous render and inspect errors carry.
+fn js_invalid_arg_error(env: Env, err: Error) -> Error {
+    let reason = format!("invalid-argument||{}", err.reason);
+    js_error_with_taxonomy(env, Error::new(Status::InvalidArg, reason))
 }
 
 trait OptionalContentBaseStateName {

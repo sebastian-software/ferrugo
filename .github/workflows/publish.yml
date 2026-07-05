@@ -97,6 +97,8 @@ jobs:
             target: aarch64-unknown-linux-gnu
           - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-musl
+            # The cross musl toolchain has no dynamic libgcc_s; link it statically.
+            rustflags: "-C link-arg=-static-libgcc"
           - os: windows-2025
             target: x86_64-pc-windows-msvc
 
@@ -126,6 +128,8 @@ jobs:
 
       - name: Build Node prebuild
         working-directory: crates/ferrugo-node
+        env:
+          RUSTFLAGS: ${{ matrix.rustflags || '' }}
         run: npm run build -- --target ${{ matrix.target }}
 
       - name: Upload Node prebuild
@@ -160,6 +164,16 @@ jobs:
         working-directory: crates/ferrugo-node
         run: npm ci
 
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      # Regenerates index.js/index.d.ts from the crate at the released version,
+      # so the published loader can never lag behind the package version
+      # (release-please bumps package.json but not the generated bindings).
+      - name: Regenerate JS bindings at release version
+        working-directory: crates/ferrugo-node
+        run: npm run build
+
       - name: Download Node prebuilds
         uses: actions/download-artifact@v6
         with:
@@ -167,9 +181,12 @@ jobs:
           path: crates/ferrugo-node
           merge-multiple: true
 
-      - name: Prepare platform npm packages
+      - name: Check bundled prebuilds
         working-directory: crates/ferrugo-node
-        run: npm run prepack
+        run: |
+          count="$(ls -1 ferrugo.*.node | wc -l)"
+          echo "bundled prebuilds: ${count}"
+          test "${count}" -ge 7
 
       - name: Publish Node package
         working-directory: crates/ferrugo-node
