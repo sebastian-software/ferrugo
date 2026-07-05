@@ -158,7 +158,8 @@ debuggability and must not be used as control-flow keys.
 - page index `0`
 - maximum edge `1024`
 - opaque white background
-- raw RGBA output
+- raw RGBA output by default; explicit `OutputFormat::Png` returns PNG bytes
+  with PNG payload metadata
 - five second timeout
 
 Changing these defaults is a breaking behavior change. New options should be

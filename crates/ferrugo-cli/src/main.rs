@@ -21,8 +21,9 @@ use ferrugo_native::{
     Type3CharProcTemplateCacheSummary, DEFAULT_CURVE_FLATTENING_TOLERANCE,
 };
 use ferrugo_thumbnail::{
-    AnnotationMode, DocumentMetadata, DocumentMetadataBackend, PdfSource, Rgba, ThumbnailBackend,
-    ThumbnailError, ThumbnailOptions, DEFAULT_MAX_EDGE, DEFAULT_PAGE_INDEX, DEFAULT_TIMEOUT,
+    encode_rgba_png, AnnotationMode, DocumentMetadata, DocumentMetadataBackend, PdfSource,
+    PngRowStreamEncoder, Rgba, ThumbnailBackend, ThumbnailError, ThumbnailOptions,
+    DEFAULT_MAX_EDGE, DEFAULT_PAGE_INDEX, DEFAULT_TIMEOUT,
 };
 
 const WORKER_POLL_INTERVAL: Duration = Duration::from_millis(10);
@@ -8224,7 +8225,7 @@ fn compare_native_golden_fixture(
             return Ok(record);
         }
     };
-    let png = encode_rgba_png(&thumbnail)?;
+    let png = encode_rgba_png(&thumbnail).map_err(|error| CliError::Encode(error.to_string()))?;
     let actual = GoldenImageEvidence {
         width: thumbnail.width,
         height: thumbnail.height,
@@ -12924,34 +12925,6 @@ fn json_string(value: &str) -> String {
     escaped
 }
 
-fn encode_rgba_png(thumbnail: &ferrugo_thumbnail::Thumbnail) -> Result<Vec<u8>, CliError> {
-    let width = thumbnail.width;
-    let height = thumbnail.height;
-    let row_len = (width as usize)
-        .checked_mul(4)
-        .ok_or_else(|| CliError::Encode("row length overflow".to_string()))?;
-    if thumbnail.bytes.len() != row_len * height as usize {
-        return Err(CliError::Encode(
-            "thumbnail buffer length does not match dimensions".to_string(),
-        ));
-    }
-
-    let mut png = Vec::new();
-    png.extend_from_slice(b"\x89PNG\r\n\x1a\n");
-    let mut ihdr = Vec::with_capacity(13);
-    ihdr.extend_from_slice(&width.to_be_bytes());
-    ihdr.extend_from_slice(&height.to_be_bytes());
-    ihdr.extend_from_slice(&[8, 6, 0, 0, 0]);
-    write_png_chunk(&mut png, b"IHDR", &ihdr)?;
-    write_png_chunk(
-        &mut png,
-        b"IDAT",
-        &zlib_store_rgba_rows(thumbnail, row_len)?,
-    )?;
-    write_png_chunk(&mut png, b"IEND", &[])?;
-    Ok(png)
-}
-
 fn encode_native_rgba_rows_png(
     backend: &NativeBackend,
     source: PdfSource<'_>,
@@ -12965,205 +12938,33 @@ fn encode_native_rgba_rows_png(
             message: err.to_string(),
         })?;
     sink.into_png()
+        .map_err(|error| CliError::Encode(error.to_string()))
 }
 
 #[derive(Default)]
 struct PngRowStreamSink {
-    png: Vec<u8>,
-    stream: Option<ZlibStoreStream>,
-    dimensions: Option<NativeRgbaRowsDimensions>,
-    expected_y: u32,
-    finished: bool,
+    encoder: PngRowStreamEncoder,
 }
 
 impl PngRowStreamSink {
-    fn into_png(self) -> Result<Vec<u8>, CliError> {
-        if self.finished {
-            Ok(self.png)
-        } else {
-            Err(CliError::Encode(
-                "PNG row stream was not finished".to_string(),
-            ))
-        }
-    }
-
-    fn map_error(error: CliError) -> ThumbnailError {
-        ThumbnailError::internal(format!("PNG row stream encode failed: {error}"))
+    fn into_png(self) -> Result<Vec<u8>, ThumbnailError> {
+        self.encoder.into_png()
     }
 }
 
 impl NativeRgbaRowSink for PngRowStreamSink {
     fn begin(&mut self, dimensions: NativeRgbaRowsDimensions) -> Result<(), ThumbnailError> {
-        if self.stream.is_some() || self.dimensions.is_some() {
-            return Err(ThumbnailError::internal("PNG row stream already started"));
-        }
-        let row_len = (dimensions.width as usize)
-            .checked_mul(4)
-            .ok_or_else(|| ThumbnailError::internal("PNG row length overflow"))?;
-        if dimensions.stride != row_len {
-            return Err(ThumbnailError::internal(
-                "PNG row stream requires tightly packed RGBA rows",
-            ));
-        }
-        let filtered_len = row_len
-            .checked_add(1)
-            .and_then(|row| row.checked_mul(dimensions.height as usize))
-            .ok_or_else(|| ThumbnailError::internal("PNG row stream image size overflow"))?;
-        self.png.clear();
-        self.png.extend_from_slice(b"\x89PNG\r\n\x1a\n");
-        let mut ihdr = Vec::with_capacity(13);
-        ihdr.extend_from_slice(&dimensions.width.to_be_bytes());
-        ihdr.extend_from_slice(&dimensions.height.to_be_bytes());
-        ihdr.extend_from_slice(&[8, 6, 0, 0, 0]);
-        write_png_chunk(&mut self.png, b"IHDR", &ihdr).map_err(Self::map_error)?;
-        self.stream = Some(ZlibStoreStream::with_capacity(filtered_len));
-        self.dimensions = Some(dimensions);
-        self.expected_y = 0;
-        self.finished = false;
-        Ok(())
+        self.encoder
+            .begin(dimensions.width, dimensions.height, dimensions.stride)
     }
 
     fn write_row(&mut self, y: u32, row: &[u8]) -> Result<(), ThumbnailError> {
-        let dimensions = self
-            .dimensions
-            .ok_or_else(|| ThumbnailError::internal("PNG row stream was not started"))?;
-        if y != self.expected_y {
-            return Err(ThumbnailError::internal(format!(
-                "PNG row stream expected row {}, got {y}",
-                self.expected_y
-            )));
-        }
-        if row.len() != dimensions.stride {
-            return Err(ThumbnailError::internal(
-                "PNG row stream row length mismatch",
-            ));
-        }
-        let stream = self
-            .stream
-            .as_mut()
-            .ok_or_else(|| ThumbnailError::internal("PNG row stream was not started"))?;
-        stream.push_byte(0).map_err(Self::map_error)?;
-        stream.push_slice(row).map_err(Self::map_error)?;
-        self.expected_y = self.expected_y.saturating_add(1);
-        Ok(())
+        self.encoder.write_row(y, row)
     }
 
     fn finish(&mut self) -> Result<(), ThumbnailError> {
-        let dimensions = self
-            .dimensions
-            .ok_or_else(|| ThumbnailError::internal("PNG row stream was not started"))?;
-        if self.expected_y != dimensions.height {
-            return Err(ThumbnailError::internal(format!(
-                "PNG row stream expected {} rows, got {}",
-                dimensions.height, self.expected_y
-            )));
-        }
-        let stream = self
-            .stream
-            .take()
-            .ok_or_else(|| ThumbnailError::internal("PNG row stream was not started"))?;
-        let idat = stream.finish().map_err(Self::map_error)?;
-        write_png_chunk(&mut self.png, b"IDAT", &idat).map_err(Self::map_error)?;
-        write_png_chunk(&mut self.png, b"IEND", &[]).map_err(Self::map_error)?;
-        self.finished = true;
-        Ok(())
+        self.encoder.finish()
     }
-}
-
-fn zlib_store_rgba_rows(
-    thumbnail: &ferrugo_thumbnail::Thumbnail,
-    row_len: usize,
-) -> Result<Vec<u8>, CliError> {
-    let filtered_len = row_len
-        .checked_add(1)
-        .and_then(|row| row.checked_mul(thumbnail.height as usize))
-        .ok_or_else(|| CliError::Encode("image size overflow".to_string()))?;
-    let mut stream = ZlibStoreStream::with_capacity(filtered_len);
-    for row in thumbnail.bytes.chunks_exact(row_len) {
-        stream.push_byte(0)?;
-        stream.push_slice(row)?;
-    }
-    stream.finish()
-}
-
-struct ZlibStoreStream {
-    out: Vec<u8>,
-    pending: Vec<u8>,
-    adler_a: u32,
-    adler_b: u32,
-}
-
-impl ZlibStoreStream {
-    fn with_capacity(data_len: usize) -> Self {
-        let mut out = Vec::with_capacity(data_len + 6 + (data_len / 65_535) * 5);
-        out.extend_from_slice(&[0x78, 0x01]);
-        Self {
-            out,
-            pending: Vec::with_capacity(65_535),
-            adler_a: 1,
-            adler_b: 0,
-        }
-    }
-
-    fn push_slice(&mut self, bytes: &[u8]) -> Result<(), CliError> {
-        for byte in bytes {
-            self.push_byte(*byte)?;
-        }
-        Ok(())
-    }
-
-    fn push_byte(&mut self, byte: u8) -> Result<(), CliError> {
-        if self.pending.len() == 65_535 {
-            self.flush_pending(false)?;
-        }
-        self.pending.push(byte);
-        self.adler_a = (self.adler_a + u32::from(byte)) % ADLER32_MOD;
-        self.adler_b = (self.adler_b + self.adler_a) % ADLER32_MOD;
-        Ok(())
-    }
-
-    fn finish(mut self) -> Result<Vec<u8>, CliError> {
-        self.flush_pending(true)?;
-        self.out
-            .extend_from_slice(&((self.adler_b << 16) | self.adler_a).to_be_bytes());
-        Ok(self.out)
-    }
-
-    fn flush_pending(&mut self, final_block: bool) -> Result<(), CliError> {
-        self.out.push(final_block as u8);
-        let len = u16::try_from(self.pending.len())
-            .map_err(|_| CliError::Encode("deflate block too large".to_string()))?;
-        self.out.extend_from_slice(&len.to_le_bytes());
-        self.out.extend_from_slice(&(!len).to_le_bytes());
-        self.out.extend_from_slice(&self.pending);
-        self.pending.clear();
-        Ok(())
-    }
-}
-
-fn write_png_chunk(out: &mut Vec<u8>, chunk_type: &[u8; 4], data: &[u8]) -> Result<(), CliError> {
-    let length = u32::try_from(data.len())
-        .map_err(|_| CliError::Encode("PNG chunk too large".to_string()))?;
-    out.extend_from_slice(&length.to_be_bytes());
-    out.extend_from_slice(chunk_type);
-    out.extend_from_slice(data);
-    let crc = crc32(chunk_type.iter().chain(data.iter()).copied());
-    out.extend_from_slice(&crc.to_be_bytes());
-    Ok(())
-}
-
-const ADLER32_MOD: u32 = 65_521;
-
-fn crc32(bytes: impl IntoIterator<Item = u8>) -> u32 {
-    let mut crc = 0xffff_ffff_u32;
-    for byte in bytes {
-        crc ^= u32::from(byte);
-        for _ in 0..8 {
-            let mask = 0_u32.wrapping_sub(crc & 1);
-            crc = (crc >> 1) ^ (0xedb8_8320 & mask);
-        }
-    }
-    !crc
 }
 
 fn print_usage() {
@@ -13178,7 +12979,7 @@ fn print_usage() {
 
 #[cfg(test)]
 mod tests {
-    use ferrugo_thumbnail::{PixelFormat, Thumbnail};
+    use ferrugo_thumbnail::Thumbnail;
 
     use super::*;
 
@@ -15393,13 +15194,7 @@ status = "candidate"
 
     #[test]
     fn encode_rgba_png_should_write_png_signature() {
-        let thumbnail = Thumbnail {
-            width: 1,
-            height: 1,
-            stride: 4,
-            pixel_format: PixelFormat::Rgba8,
-            bytes: vec![255, 0, 0, 255],
-        };
+        let thumbnail = Thumbnail::rgba(1, 1, vec![255, 0, 0, 255]).expect("valid thumbnail");
 
         let png = encode_rgba_png(&thumbnail).expect("valid PNG");
 
@@ -15453,33 +15248,6 @@ status = "candidate"
     }
 
     #[test]
-    fn streaming_png_zlib_store_should_match_full_filtered_reference() {
-        let width = 257;
-        let height = 70;
-        let row_len = width * 4;
-        let bytes = (0..row_len * height)
-            .map(|index| (index % 251) as u8)
-            .collect::<Vec<_>>();
-        let thumbnail = Thumbnail {
-            width: width as u32,
-            height: height as u32,
-            stride: row_len,
-            pixel_format: PixelFormat::Rgba8,
-            bytes,
-        };
-        let mut filtered = Vec::with_capacity((row_len + 1) * height);
-        for row in thumbnail.bytes.chunks_exact(row_len) {
-            filtered.push(0);
-            filtered.extend_from_slice(row);
-        }
-
-        assert_eq!(
-            zlib_store_rgba_rows(&thumbnail, row_len).expect("streaming zlib store"),
-            zlib_store_reference_for_test(&filtered).expect("reference zlib store")
-        );
-    }
-
-    #[test]
     fn png_row_stream_sink_should_match_full_thumbnail_encoder() {
         let width = 13usize;
         let height = 9usize;
@@ -15487,13 +15255,7 @@ status = "candidate"
         let bytes = (0..row_len * height)
             .map(|index| ((index * 17) % 251) as u8)
             .collect::<Vec<_>>();
-        let thumbnail = Thumbnail {
-            width: width as u32,
-            height: height as u32,
-            stride: row_len,
-            pixel_format: PixelFormat::Rgba8,
-            bytes,
-        };
+        let thumbnail = Thumbnail::rgba(width as u32, height as u32, bytes).expect("thumbnail");
         let mut sink = PngRowStreamSink::default();
         sink.begin(NativeRgbaRowsDimensions {
             width: thumbnail.width,
@@ -15510,29 +15272,6 @@ status = "candidate"
             sink.into_png().expect("streamed PNG"),
             encode_rgba_png(&thumbnail).expect("full PNG")
         );
-    }
-
-    fn zlib_store_reference_for_test(data: &[u8]) -> Result<Vec<u8>, CliError> {
-        let mut out = Vec::with_capacity(data.len() + 6 + (data.len() / 65_535) * 5);
-        out.extend_from_slice(&[0x78, 0x01]);
-        let block_count = data.chunks(65_535).count();
-        for (block_index, block) in data.chunks(65_535).enumerate() {
-            let final_block = block_index + 1 == block_count;
-            out.push(final_block as u8);
-            let len = u16::try_from(block.len())
-                .map_err(|_| CliError::Encode("deflate block too large".to_string()))?;
-            out.extend_from_slice(&len.to_le_bytes());
-            out.extend_from_slice(&(!len).to_le_bytes());
-            out.extend_from_slice(block);
-        }
-        let mut adler_a = 1_u32;
-        let mut adler_b = 0_u32;
-        for byte in data {
-            adler_a = (adler_a + u32::from(*byte)) % ADLER32_MOD;
-            adler_b = (adler_b + adler_a) % ADLER32_MOD;
-        }
-        out.extend_from_slice(&((adler_b << 16) | adler_a).to_be_bytes());
-        Ok(out)
     }
 
     #[test]

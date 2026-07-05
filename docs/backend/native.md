@@ -6,11 +6,12 @@ Date: 2026-06-24.
 The Rust-native backend lives in `crates/ferrugo-native` and implements the
 `ferrugo-thumbnail` facade traits:
 
-- `ThumbnailBackend` for single-page RGBA thumbnail rendering.
+- `ThumbnailBackend` for single-page RGBA or PNG thumbnail rendering.
 - `DocumentMetadataBackend` for page-count and page-size inspection.
 
-The native backend returns raw RGBA thumbnail buffers through
-`Thumbnail::rgba`; CLI PNG encoding remains owned by `ferrugo`.
+The native backend honors `ThumbnailOptions::output_format`. Raw RGBA requests
+return `Thumbnail::rgba`; PNG requests return `Thumbnail::png` using the shared
+encoder in `ferrugo-thumbnail`.
 
 ## Supported Contract
 
