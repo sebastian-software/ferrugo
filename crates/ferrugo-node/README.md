@@ -2,6 +2,12 @@
 
 Node-API bindings for Ferrugo native PDF thumbnails.
 
+Install the npm package as `ferrugo`:
+
+```sh
+npm install ferrugo
+```
+
 The package exposes the stateless native backend only. It does not retain
 `NativeDocumentSession` across JavaScript calls and does not bundle PDFium.
 

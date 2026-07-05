@@ -157,6 +157,13 @@ When Release Please creates a GitHub release, the publish workflow builds those
 `.node` artifacts, downloads them into `crates/ferrugo-node`, runs
 `npm run prepack`, and publishes the npm package with `NPM_TOKEN`.
 
+The current npm release shape is one public wrapper package named `ferrugo`
+containing the prebuilt native bindings prepared by the release workflow. The
+generated Node-API loader can also resolve platform-specific packages such as
+`ferrugo-linux-x64-gnu` or `ferrugo-darwin-arm64`, but the workflow does not yet
+publish separate optional npm packages for each target. Add that split before
+claiming separate per-platform npm output packages.
+
 ## Consumer Migration Checklist
 
 - Remove PDFium dynamic-library packaging from normal deployment images.
@@ -271,8 +278,8 @@ The release train is commit-driven. Do not rewrite Cargo manifests,
 `.release-please-manifest.json`, changelogs, or release notes to a placeholder
 `0.9`, `1.0`, or other planning version. Use clear Conventional Commits and let
 Release Please infer the next SemVer version from the merged change history.
-The current `0.1.x` metadata is the prepared crate state, not a statement that
-the scoped native release work is complete.
+The manifest records the last released package state, not a planning target for
+the next release.
 
 - `.github/workflows/publish.yml` runs on pushes to `main` and on manual
   dispatch.
