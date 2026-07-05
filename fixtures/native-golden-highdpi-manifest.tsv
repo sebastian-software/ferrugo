@@ -1,0 +1,2 @@
+fixture	family	backend	platform_os	platform_arch	page_index	max_edge	width	height	decoded_pixel_hash	encoded_artifact_hash	hash_algorithm	tolerance_policy	reviewer	reviewed_at	notes
+fixtures/generated/technical-large-coordinate-plan.pdf	report	rust-native	any	any	0	1024	1024	614	73d0130ceaaa5c9d	bdaf6ccc82cdf3e0	fnv1a64	exact	ferrugo-maintainers	2026-07-05	High-resolution guard for the exact integer source-over kernels: long shallow partial-coverage spans route through the SIMD dispatch at this scale (issue #150).

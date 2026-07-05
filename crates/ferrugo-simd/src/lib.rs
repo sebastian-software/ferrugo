@@ -91,9 +91,13 @@ pub fn source_over_normal_row(row: &mut [u8], source: [u8; 4], coverage: f64) {
 
 /// Blends one RGBA row span with a constant source color and per-pixel alpha coverage.
 ///
-/// This scalar implementation is the parity oracle for future SIMD coverage
-/// kernels. `coverage_alphas` stores 0-255 pixel coverage and is multiplied by
-/// `alpha` before source-over compositing.
+/// `coverage_alphas` stores 0-255 pixel coverage and is multiplied by `alpha`
+/// before source-over compositing. For an opaque source at full alpha the
+/// canonical math is the integer kernel — exact
+/// `floor((s * ca + d * (255 - ca)) / 255)` per channel on opaque
+/// destinations — regardless of span length, so output never depends on how
+/// runs were batched. The floating-point scalar path remains for non-opaque
+/// sources and fractional alpha.
 #[inline]
 pub fn source_over_normal_row_with_coverage(
     row: &mut [u8],
@@ -157,9 +161,13 @@ fn dispatch_opaque_integer_coverage(
     source: [u8; 4],
     coverage_alphas: &[u8],
 ) -> RowKernelBackend {
+    // Short spans use the integer scalar kernel, not the float path: the
+    // integer math is the canonical opaque source-over result (exact
+    // floor((s*ca + d*(255-ca)) / 255)), and output must not depend on how
+    // long a batched run happens to be.
     if coverage_alphas.len() < SIMD_COVERAGE_MIN_PIXELS {
-        source_over_normal_row_with_coverage_scalar(row, source, 1.0, coverage_alphas);
-        return RowKernelBackend::ScalarFloat;
+        source_over_opaque_coverage_integer_scalar(row, source, coverage_alphas);
+        return RowKernelBackend::ScalarInteger;
     }
     if !has_opaque_dest_row(row) {
         source_over_opaque_coverage_integer_scalar(row, source, coverage_alphas);
@@ -768,21 +776,117 @@ mod tests {
     }
 
     #[test]
-    fn source_over_normal_row_with_coverage_should_match_scalar_oracle_for_translucent_rows() {
+    fn source_over_normal_row_with_coverage_should_use_integer_kernel_for_translucent_rows() {
         let mut row = vec![10, 20, 30, 128, 40, 50, 60, 255];
         let mut expected = row.clone();
         let coverage = [64, 128];
 
         let backend =
             source_over_normal_row_with_coverage(&mut row, [100, 120, 140, 255], 1.0, &coverage);
-        source_over_normal_row_with_coverage_scalar(
-            &mut expected,
-            [100, 120, 140, 255],
-            1.0,
-            &coverage,
-        );
+        source_over_opaque_coverage_integer_scalar(&mut expected, [100, 120, 140, 255], &coverage);
 
-        assert_eq!(backend, RowKernelBackend::ScalarFloat);
+        assert_eq!(backend, RowKernelBackend::ScalarInteger);
         assert_eq!(row, expected);
+    }
+
+    /// Exact opaque source-over reference: floor((s*ca + d*(255-ca)) / 255).
+    fn exact_opaque_channel(source: u8, dest: u8, coverage_alpha: u8) -> u8 {
+        let value = u32::from(source) * u32::from(coverage_alpha)
+            + u32::from(dest) * (255 - u32::from(coverage_alpha));
+        (value / 255) as u8
+    }
+
+    #[test]
+    fn div_255_should_match_exact_division_exhaustively() {
+        // Covers every value the opaque kernel can produce:
+        // max = 255 * 255 = 65025.
+        for value in 0..=u16::from(u8::MAX) * u16::from(u8::MAX) {
+            assert_eq!(u32::from(div_255_u16(value)), u32::from(value) / 255);
+        }
+    }
+
+    #[test]
+    fn opaque_integer_kernel_should_match_exact_rational_floor_exhaustively() {
+        // Every (source, dest, coverage) combination on one channel; includes
+        // the black-text-on-white boundary cases where the retired float path
+        // was one below the exact result.
+        for source in 0..=u8::MAX {
+            for dest in 0..=u8::MAX {
+                let mut row: Vec<u8> = (0..=u8::MAX)
+                    .flat_map(|_| [dest, dest, dest, 255])
+                    .collect();
+                let coverage: Vec<u8> = (0..=u8::MAX).collect();
+                source_over_opaque_coverage_integer_scalar(
+                    &mut row,
+                    [source, source, source, 255],
+                    &coverage,
+                );
+                for (coverage_alpha, pixel) in coverage
+                    .iter()
+                    .copied()
+                    .zip(row.chunks_exact(RGBA8_BYTES_PER_PIXEL))
+                {
+                    let expected = exact_opaque_channel(source, dest, coverage_alpha);
+                    assert_eq!(
+                        pixel[0], expected,
+                        "s={source} d={dest} ca={coverage_alpha}"
+                    );
+                    assert_eq!(pixel[3], 255);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn dispatched_kernel_should_match_exact_floor_for_all_coverage_values() {
+        // A 256-pixel span exercises the vector kernels on capable hosts and
+        // must agree with the exact rational floor for every coverage value,
+        // including black text (s=0) on a white destination (d=255).
+        for (source, dest) in [(0u8, 255u8), (255, 0), (90, 200), (17, 17), (128, 127)] {
+            let mut row: Vec<u8> = (0..=u8::MAX)
+                .flat_map(|_| [dest, dest, dest, 255])
+                .collect();
+            let coverage: Vec<u8> = (0..=u8::MAX).collect();
+            let backend = source_over_normal_row_with_coverage(
+                &mut row,
+                [source, source, source, 255],
+                1.0,
+                &coverage,
+            );
+            assert_ne!(backend, RowKernelBackend::ScalarFloat);
+            for (coverage_alpha, pixel) in coverage
+                .iter()
+                .copied()
+                .zip(row.chunks_exact(RGBA8_BYTES_PER_PIXEL))
+            {
+                let expected = exact_opaque_channel(source, dest, coverage_alpha);
+                assert_eq!(
+                    &pixel[0..3],
+                    &[expected, expected, expected],
+                    "backend={backend:?} s={source} d={dest} ca={coverage_alpha}"
+                );
+                assert_eq!(pixel[3], 255);
+            }
+        }
+    }
+
+    #[test]
+    fn short_opaque_spans_should_use_integer_kernel() {
+        // Output must not depend on run length: a 4-pixel span uses the same
+        // integer math as a 256-pixel span.
+        let coverage = [43u8, 128, 200, 254];
+        let mut short_row: Vec<u8> = coverage.iter().flat_map(|_| [255, 255, 255, 255]).collect();
+        let backend =
+            source_over_normal_row_with_coverage(&mut short_row, [0, 0, 0, 255], 1.0, &coverage);
+
+        assert_eq!(backend, RowKernelBackend::ScalarInteger);
+        for (coverage_alpha, pixel) in coverage
+            .iter()
+            .copied()
+            .zip(short_row.chunks_exact(RGBA8_BYTES_PER_PIXEL))
+        {
+            let expected = exact_opaque_channel(0, 255, coverage_alpha);
+            assert_eq!(&pixel[0..3], &[expected, expected, expected]);
+        }
     }
 }
