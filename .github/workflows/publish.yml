@@ -147,6 +147,11 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
+      # npm trusted publishing (OIDC), mirroring the crates.io publish job.
+      # Requires the GitHub Actions trusted publisher to be configured for the
+      # `ferrugo` package on npmjs.com (repository sebastian-software/ferrugo,
+      # workflow publish.yml).
+      id-token: write
 
     steps:
       - name: Check out repository
@@ -188,8 +193,13 @@ jobs:
           echo "bundled prebuilds: ${count}"
           test "${count}" -ge 7
 
+      # Trusted publishing needs npm >= 11.5.1; Node 24 ships a current npm,
+      # but pin the floor explicitly so runner image drift cannot break OIDC.
+      - name: Check npm version supports trusted publishing
+        run: |
+          npm --version
+          node -e "const [major, minor, patch] = require('child_process').execSync('npm --version').toString().trim().split('.').map(Number); process.exit(major > 11 || (major === 11 && (minor > 5 || (minor === 5 && patch >= 1))) ? 0 : 1)"
+
       - name: Publish Node package
         working-directory: crates/ferrugo-node
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npm publish --access public --ignore-scripts
