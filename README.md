@@ -54,34 +54,38 @@ Not a good fit yet:
 For a fuller walkthrough, start with the
 [user guide](docs/guides/1-0-user-guide.md).
 
-Requirements:
+Choose the entry point that matches how you want to use Ferrugo:
+
+- CLI users install the `ferrugo` binary and call it from scripts, shell jobs,
+  or local automation.
+- Rust library users depend on `ferrugo-thumbnail` plus `ferrugo-native`.
+- Node.js users install the npm package named `ferrugo` and call the Node-API
+  binding.
+
+CLI requirements:
 
 - Rust 1.81 or newer.
 - A normal Cargo toolchain.
 - No PDFium library for the native-only path.
 
-Run the native test suite:
+Install the CLI from a release:
 
 ```sh
-cargo test --workspace --no-default-features
+cargo install ferrugo --locked
 ```
 
-Render a generated fixture with the native backend:
+Or install the CLI from a repository checkout:
 
 ```sh
-cargo run -p ferrugo --no-default-features -- \
-  render fixtures/generated/text-page.pdf \
+cargo install --path crates/ferrugo-cli --no-default-features --locked
+```
+
+Render a generated fixture with the installed CLI:
+
+```sh
+ferrugo render fixtures/generated/text-page.pdf \
   --max-edge 256 \
   --output target/text-page.png
-```
-
-Force the native backend explicitly:
-
-```sh
-cargo run -p ferrugo --no-default-features -- \
-  render-native fixtures/generated/text-page.pdf \
-  --max-edge 256 \
-  --output target/text-page-native.png
 ```
 
 Run the local native-only release gate:
@@ -92,6 +96,24 @@ bash scripts/check_native_only_release.sh
 
 That gate checks the native build, tests, plugin-free packaging boundary,
 PDFium quarantine, package file lists, and all-features Clippy.
+
+For local development without installing the binary, use:
+
+```sh
+cargo run -p ferrugo --no-default-features -- --version
+```
+
+The user guide has the longer CLI, Rust API, and Node.js examples.
+
+## Entry points
+
+Ferrugo has three public consumer surfaces:
+
+| User group | Package | Use it for |
+| --- | --- | --- |
+| CLI users | Rust crate `ferrugo`, binary `ferrugo` | Shell scripts, local automation, CI probes, and one-off thumbnail renders. |
+| Rust applications | `ferrugo-thumbnail` with `ferrugo-native` | Service-side thumbnail rendering with typed Rust errors and explicit budgets. |
+| Node.js applications | npm package `ferrugo` | Async `render` and `inspect` calls through Node-API. |
 
 ## How it works
 
@@ -114,9 +136,16 @@ binding. PDFium handles and fallback state are not part of the runtime API.
 
 ## Node.js Binding
 
-The npm package is named `ferrugo`. It exposes the stateless native backend
-through Node-API so rendering work runs on the Node worker pool and returns
-plain JavaScript objects plus `Buffer` payloads.
+The npm package is named `ferrugo`. Install it when the application runtime is
+Node.js:
+
+```sh
+npm install ferrugo
+```
+
+It exposes the stateless native backend through Node-API so rendering work runs
+on the Node worker pool and returns plain JavaScript objects plus `Buffer`
+payloads.
 
 ```js
 import { readFile } from 'node:fs/promises'
