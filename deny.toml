@@ -10,7 +10,12 @@ yanked = "deny"
 # Flag unmaintained crates anywhere in the graph, not only in the workspace.
 unmaintained = "all"
 # Each entry needs a comment naming the advisory and why it is accepted.
-ignore = []
+ignore = [
+    # RUSTSEC-2026-0192: maintenance-only advisory; the current renderer needs
+    # ttf-parser and there is no patched release. Remove when replacing this
+    # font parser. This does not exempt future vulnerability advisories.
+    "RUSTSEC-2026-0192",
+]
 
 [licenses]
 # Permissive licenses compatible with `MIT OR Apache-2.0` distribution.

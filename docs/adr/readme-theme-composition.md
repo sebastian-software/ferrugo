@@ -33,3 +33,8 @@ Standards 0.11.0 owns the shared repository configuration. Run
 to update managed files and `check` to detect drift. The standards CI job also
 checks Rust formatting and Clippy; the existing regression workflow remains.
 README ownership is delegated to mdtheme before applying the configuration.
+
+The dependency-policy baseline records RUSTSEC-2026-0192 as a narrow exception:
+`ttf-parser` is unmaintained, has no patched release, and is used by the current
+renderer. Remove the exception when that parser is replaced. Other advisories
+remain blocking; the license allow-list is unchanged.
