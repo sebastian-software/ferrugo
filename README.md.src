@@ -1,5 +1,8 @@
 # ferrugo
 
+<!-- mdtheme:badges:start -->
+<!-- mdtheme:badges:end -->
+
 `ferrugo` is a Rust-native PDF preview engine for server-side thumbnails,
 document intake, and automation workflows.
 
