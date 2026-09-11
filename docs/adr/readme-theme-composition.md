@@ -38,3 +38,11 @@ The dependency-policy baseline records RUSTSEC-2026-0192 as a narrow exception:
 `ttf-parser` is unmaintained, has no patched release, and is used by the current
 renderer. Remove the exception when that parser is replaced. Other advisories
 remain blocking; the license allow-list is unchanged.
+
+## Theme badge placement
+
+The project pins mdtheme 0.4.0 and uses one `mdtheme:badges:start` /
+`mdtheme:badges:end` comment pair in `README.md.src`. Sebastian's
+`badges-prepend.md` places its badge before the authored project badges.
+Ferramenta's header and footer stay unchanged. Upgrade the CLI and lockfile
+before adopting this theme revision. Keep badge markup outside raw HTML blocks.
