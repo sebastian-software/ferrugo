@@ -7,7 +7,7 @@ const END = "<!-- ferrugo:performance-results:end -->";
 
 const defaults = {
   input: "docs/benchmarks/promoted/performance-matrix-2026-07-04.json",
-  readme: "README.md",
+  readme: "README.md.src",
   report: "docs/reports/performance-matrix-promoted-2026-07-04.md",
 };
 
