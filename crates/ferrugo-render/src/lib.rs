@@ -5522,10 +5522,10 @@ impl Type1CharstringInterpreter {
         }
         let values: [f64; N] = self
             .stack
-            .drain(..)
-            .collect::<Vec<_>>()
+            .as_slice()
             .try_into()
             .map_err(|_| invalid_glyph_outline())?;
+        self.stack.clear();
         Ok(values)
     }
 }
