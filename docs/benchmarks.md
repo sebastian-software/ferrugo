@@ -196,6 +196,7 @@ standardized report after promoting a new artifact:
 
 ```sh
 node scripts/generate_readme_benchmark_results.mjs --write
+mise run readme:write
 ```
 
 Validate that the README and report still match the promoted artifact:

@@ -2,6 +2,8 @@ name: Scheduled fuzzing
 
 env:
   CARGO_TERM_COLOR: always
+  # Explicit override keeps the repository stable toolchain out of fuzzing.
+  RUSTUP_TOOLCHAIN: nightly
   FUZZ_ARTIFACT_DIR: target/fuzz-artifacts
   FUZZ_MAX_TOTAL_TIME: 45
   FUZZ_RUNS: 512

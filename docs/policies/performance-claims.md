@@ -95,7 +95,8 @@ Before changing README or other public copy:
 3. Record renderer versions, host details, fixture family, mode, and metric.
 4. Write the claim in workload-family terms.
 5. Promote the selected matrix JSON under `docs/benchmarks/promoted/`.
-6. Run `node scripts/generate_readme_benchmark_results.mjs --write`.
+6. Run `node scripts/generate_readme_benchmark_results.mjs --write`, then
+   `mise run readme:write` to update the generated project README.
 7. Run `bash scripts/check_readme_benchmark_results.sh`.
 8. Run `bash scripts/check_performance_claims.sh`.
 9. Link the supporting plan, report, or benchmark artifact from the change.
