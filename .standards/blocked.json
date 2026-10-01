@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "blocking": false,
+  "reason": "The configured agent gate could not run because this repository has no root package.json defining agent:check.",
+  "detectedAt": "2026-10-01T11:06:00.000Z",
+  "expectedStandardsVersion": 15,
+  "observedStandardsVersion": 15,
+  "expectedCliVersion": "0.13.0",
+  "observedCliVersion": "0.13.0",
+  "failedChecks": ["pnpm agent:check"],
+  "retry": "Verify the pull request's GitHub Actions checks and remove this marker after confirming the CI environment completed the repository gates."
+}
