@@ -19,7 +19,7 @@ permissions:
 
 jobs:
   pr-validation:
-    name: PR validation
+    name: Check
     runs-on: ubuntu-24.04
     # Cold-cache runs pay full clippy --all-features, the fuzz workspace
     # rebuild, the wasm build, and the node binding build.
