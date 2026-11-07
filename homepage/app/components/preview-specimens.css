@@ -1,0 +1,120 @@
+/* The homepage's specimens. Scoped with fg-, colors from the Monografie
+   --mono-* tokens. */
+
+.fg-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  margin: 56px 0 -48px;
+}
+/* Long choices wrap inside their control instead of widening a phone screen. */
+.fg-toggles .mono-seg {
+  flex-wrap: wrap;
+  max-width: 100%;
+}
+.fg-facing .mono-sheet {
+  min-width: 0;
+}
+
+/* The source document's facts, label above value. */
+.fg-facts,
+.fg-refusal {
+  margin: 0;
+}
+.fg-facts div,
+.fg-refusal div {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--mono-hair-2);
+}
+.fg-facts div:first-child,
+.fg-refusal div:first-child {
+  padding-top: 0;
+}
+.fg-facts dt,
+.fg-refusal dt {
+  font: 600 13px/1.4 var(--mono-sans);
+  color: var(--mono-ink-2);
+}
+.fg-refusal dt {
+  font: 400 13px/1.4 var(--mono-mono);
+}
+.fg-facts dd,
+.fg-refusal dd {
+  margin: 2px 0 0;
+  font: 400 16px/1.5 var(--mono-sans);
+  color: var(--mono-ink);
+}
+.fg-refusal code {
+  font: 400 14px/1.5 var(--mono-mono);
+  overflow-wrap: anywhere;
+}
+
+/* The rendered page, at its own pixel size, on a hairline frame. */
+.fg-result {
+  min-height: 160px;
+}
+.fg-preview {
+  margin: 0;
+}
+.fg-preview img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  outline: 1px solid var(--mono-hair);
+}
+.fg-preview figcaption {
+  margin-top: 10px;
+  font: 400 13px/1.45 var(--mono-sans);
+  color: var(--mono-ink-3);
+}
+
+/* Tables that scroll inside their own region on narrow screens. */
+.fg-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.fg-scroll:focus-visible {
+  outline: 2px solid var(--mono-ink);
+  outline-offset: 4px;
+}
+.fg-scroll + .mono-caption {
+  margin-top: 14px;
+}
+.fg-ledger {
+  min-width: 640px;
+}
+.fg-ledger code,
+.fg-budgets code {
+  font: 400 13px/1.5 var(--mono-mono);
+}
+/* A row's name reads like the rest of its row, not like a column heading. */
+.fg-ledger th[scope="row"],
+.fg-budgets th[scope="row"] {
+  font-weight: 400;
+  border-bottom-color: var(--mono-hair-2);
+}
+.fg-ledger th[scope="row"] small {
+  display: block;
+  font: 400 12px/1.4 var(--mono-sans);
+  color: var(--mono-ink-3);
+}
+.fg-ledger th[scope="row"] small code {
+  font-size: 12px;
+}
+.fg-ledger td {
+  color: var(--mono-ink-2);
+}
+.fg-ledger td[data-rendered] {
+  color: var(--mono-ink);
+  font-weight: 600;
+}
+.fg-size {
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 640px) {
+  /* The package sets facing pages 48px apart here; keep 16px under the toggles. */
+  .fg-toggles {
+    margin: 40px 0 -32px;
+  }
+}

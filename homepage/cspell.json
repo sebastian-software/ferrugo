@@ -1,0 +1,20 @@
+{
+  "version": "0.2",
+  "ignorePaths": [".standards/"],
+  "words": [
+    "ardo",
+    "Ferra",
+    "ferramenta",
+    "ferrugo",
+    "Monografie",
+    "oxfmt",
+    "oxlint",
+    "PDFium",
+    "pnpm",
+    "Poppler",
+    "repometa",
+    "USPTO",
+    "XFA",
+    "xobject"
+  ]
+}
