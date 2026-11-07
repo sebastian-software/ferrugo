@@ -9,31 +9,30 @@ import {
   ArdoTOC,
 } from "ardo/ui";
 import { MarkDefs } from "ferramenta-family";
-import {
-  FerraGuideNavigation,
-  FerraPage,
-  FerraReadingLayout,
-  FerraReadingTable,
-  FerraTabs,
-} from "ferramenta-family/ferra";
 import touchIcon from "ferramenta-family/ferra-assets/ferrugo/apple-touch-icon.png?url";
 import favicon from "ferramenta-family/ferra-assets/ferrugo/favicon.ico?url";
-import { MonoFooter, MonoHeader, MonoPage } from "ferramenta-family/monografie";
-import "ferramenta-family/ferra.css";
+import {
+  MonoFooter,
+  MonoGuideNavigation,
+  MonoHeader,
+  MonoPage,
+  MonoReadingLayout,
+  MonoReadingTable,
+  MonoTabs,
+} from "ferramenta-family/monografie";
 import "ferramenta-family/monografie.css";
+import "ferramenta-family/monografie-docs.css";
+import "ferramenta-family/monografie-ardo.css";
 
 import { withBase } from "./components/home-data";
 import navigation from "./data/navigation.json";
 import site from "./data/site.json";
-import "ferramenta-family/ferra-ardo.css";
-
-import "./components/site-shell.css";
 
 export function Layout({ children }: { children: ReactNode }) {
   return (
     <ArdoRootLayout
       colorScheme="light"
-      className="ferra-tokens ferra-ardo"
+      className="mono-ardo"
       icon={favicon}
       appleTouchIcon={touchIcon}
       iconBasePath={false}
@@ -52,11 +51,11 @@ function GuideNavigation({ onNavigate }: { onNavigate?: () => void }) {
     navigation.find((section) => path === `/${section.id}` || path.startsWith(`/${section.id}/`)) ??
     first;
   return (
-    <FerraGuideNavigation aria-label="Documentation pages">
+    <MonoGuideNavigation aria-label="Documentation pages">
       <NavLink to="/" onClick={onNavigate}>
         Overview
       </NavLink>
-      <FerraTabs aria-label="Documentation sections">
+      <MonoTabs aria-label="Documentation sections">
         {navigation.map((section) => (
           <NavLink
             key={section.id}
@@ -67,14 +66,14 @@ function GuideNavigation({ onNavigate }: { onNavigate?: () => void }) {
             {section.label}
           </NavLink>
         ))}
-      </FerraTabs>
+      </MonoTabs>
       <p>{current.label}</p>
       {current.pages.map(({ title, to: href }) => (
         <NavLink key={href} to={href} onClick={onNavigate}>
           {title}
         </NavLink>
       ))}
-    </FerraGuideNavigation>
+    </MonoGuideNavigation>
   );
 }
 
@@ -145,7 +144,7 @@ function Article({ children }: { children: ReactNode }) {
     (section) => path === `/${section.id}` || path.startsWith(`/${section.id}/`),
   );
   return (
-    <FerraReadingLayout
+    <MonoReadingLayout
       id="ferrugo-article"
       navigation={<GuideNavigation />}
       outline={<ArdoTOC source="dom" scope="#ferrugo-article" />}
@@ -155,15 +154,15 @@ function Article({ children }: { children: ReactNode }) {
         <h1>{page?.title.replaceAll("`", "") ?? "Documentation"}</h1>
       </header>
       {children}
-    </FerraReadingLayout>
+    </MonoReadingLayout>
   );
 }
 
-const components = { table: FerraReadingTable, wrapper: Article };
+const components = { table: MonoReadingTable, wrapper: Article };
 
 /**
  * Every page wears the Monografie header and footer. The homepage reads on the
- * Monografie page ground; documentation keeps the Ferra reading layout.
+ * Monografie page ground; documentation on Monografie's reading layout.
  */
 export default function Root() {
   const path = useArdoPath();
@@ -172,7 +171,7 @@ export default function Root() {
     <>
       <MarkDefs />
       <ArdoRoot
-        className="ferra-ardo-shell"
+        className="mono-ardo-shell"
         scrollMode="document"
         header={<Header docs={!home} />}
         sidebar={false}
@@ -185,6 +184,6 @@ export default function Root() {
   return home ? (
     <MonoPage className="fg-home">{shell}</MonoPage>
   ) : (
-    <FerraPage className="ferra-site fg-docs">{shell}</FerraPage>
+    <MonoPage className="mono-docs fg-docs">{shell}</MonoPage>
   );
 }

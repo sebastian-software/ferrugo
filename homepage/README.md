@@ -9,8 +9,8 @@ plain links in the homepage go through `withBase()` in
 
 Every page wears the Monografie header and footer from
 `ferramenta-family/monografie` (`monografie.css`); the homepage reads on the
-Monografie page, and the documentation keeps the Ferra reading layout from
-`ferramenta-family/ferra` (`ferra.css`, `ferra-ardo.css`). Shared visual changes
+Monografie page, and the documentation on Monografie's reading layout
+(`monografie-docs.css`, `monografie-ardo.css`). Shared visual changes
 belong in the family package. The site styles only its homepage specimens and
 shell seams, in CSS files beside their components under `app/components/`,
 every selector scoped to an `fg-` class; the build checks that.
