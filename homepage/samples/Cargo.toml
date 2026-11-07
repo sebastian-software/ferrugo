@@ -1,0 +1,17 @@
+# Renders the homepage samples with the published Ferrugo crates from
+# crates.io, not the workspace sources. The empty [workspace] table keeps this
+# package out of the repository's Cargo workspace. Run it through
+# `pnpm sample:write` in homepage/, which checks the pin against the release.
+[package]
+name = "ferrugo-homepage-samples"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+ferrugo-native = "=0.5.0"
+ferrugo-thumbnail = "=0.5.0"
+png = "0.18"
+serde_json = "1"
