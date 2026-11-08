@@ -155,7 +155,11 @@ async function verifyNavigation(page, at) {
     "Menu focus was not restored",
   );
   await page.keyboard.press("Enter");
-  await page.getByRole("dialog").getByRole("link", { name: "Reference", exact: true }).click();
+  await page
+    .getByRole("dialog")
+    .getByRole("navigation", { name: "Documentation sections" })
+    .getByRole("link", { name: "Reference", exact: true })
+    .click();
   await page.waitForURL((url) => url.pathname.startsWith(`${base}reference/errors`));
   await verifyLandscape(page, at);
 }
@@ -269,7 +273,9 @@ async function verifyHeader(page, pageFile, viewport) {
     await page.locator(selectors.search).isVisible(),
     "The site should keep search visible at each checked viewport",
   );
-  const wide = viewport.width >= 961;
+  // Documentation pages fold the header's links into Ardo's menu where Ardo's
+  // sidebar folds away.
+  const wide = viewport.width >= (pageFile === "index.html" ? 961 : 1025);
   const links = await display(page, ".mono-header .mono-menu");
   if (wide) assert.notEqual(links, "none", `${pageFile} hides the header links on wide screens`);
   else assert.equal(links, "none", `${pageFile} shows the header links at ${viewport.name}`);
@@ -280,7 +286,7 @@ async function verifyHeader(page, pageFile, viewport) {
   }
   assert.equal(homeMenu, "none", `${pageFile} shows a second menu at ${viewport.name}`);
   const drawer = await display(page, selectors.menu);
-  const sidebar = await display(page, ".mono-reading-navigation");
+  const sidebar = await display(page, ".mono-ardo-shell .ardo-sidebar");
   assert(
     drawer !== "none" || sidebar !== "none",
     `${pageFile} offers no documentation navigation at ${viewport.name}`,
