@@ -69,7 +69,7 @@ function verifyDocsPage(page, html) {
   if (!html.includes('class="mono mono-docs fg-docs"')) {
     throw new Error(`${page} should read on the Monografie documentation page.`);
   }
-  for (const fragment of ["mono-ardo-shell", "mono-reading-navigation", "mono-prose"]) {
+  for (const fragment of ["mono-ardo-shell", "ardo-sidebar", "mono-prose"]) {
     if (!html.includes(fragment)) {
       throw new Error(`${page} is missing the Monografie reading layout (${fragment}).`);
     }
