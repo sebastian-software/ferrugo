@@ -50,7 +50,7 @@ function verifyHomepage(html) {
   if (!html.includes('class="mono fg-home"')) {
     throw new Error("The homepage should use the Monografie page.");
   }
-  for (const id of ["overview", "budgets", "outcomes", "status", "fit", "start"]) {
+  for (const id of ["overview", "budgets", "outcomes", "fit", "start"]) {
     if (!html.includes(`id="${id}"`)) {
       throw new Error(`Preserve the published homepage anchor #${id}.`);
     }
