@@ -1,7 +1,6 @@
 import { ArdoLink as Link } from "ardo/runtime";
 import {
   MonoCredit,
-  MonoLeadIn,
   MonoPassage,
   MonoSection,
   MonoTerms,
@@ -29,8 +28,8 @@ export function Status() {
   return (
     <MonoSection
       id="status"
-      title="Early, and open about it."
-      standfirst="Ferrugo is young. Its checks are broad, its renderer is not finished, and this page makes no speed claim yet."
+      title="Open about its limits."
+      standfirst="Its checks are broad, its renderer is not finished, and this page makes no speed claim yet."
     >
       <MonoPassage
         note={{
@@ -40,11 +39,11 @@ export function Status() {
         }}
       >
         <p>
-          <MonoLeadIn>Every pull request</MonoLeadIn> runs formatting and lint checks, the test
-          suite, a short fuzzing run that feeds the parser random and broken input, comparisons
-          against golden images, checks that no PDFium code reaches the shipped packages, and a
-          WebAssembly build. The open gaps in fidelity and features are tracked in the repository,
-          not hidden behind a general claim of compatibility.
+          Every pull request runs formatting and lint checks, the test suite, a short fuzzing run
+          that feeds the parser random and broken input, comparisons against golden images, checks
+          that no PDFium code reaches the shipped packages, and a WebAssembly build. The open gaps
+          in fidelity and features are tracked in the repository, not hidden behind a general claim
+          of compatibility.
         </p>
       </MonoPassage>
       <MonoPassage

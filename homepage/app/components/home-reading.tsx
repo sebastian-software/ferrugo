@@ -1,5 +1,5 @@
 import { ArdoLink as Link } from "ardo/runtime";
-import { MonoCredit, MonoLeadIn, MonoPassage, MonoSection } from "ferramenta-family/monografie";
+import { MonoCredit, MonoPassage, MonoSection } from "ferramenta-family/monografie";
 
 import { count, registryNote, samples, spelled } from "./home-data";
 import { BudgetTable, OutcomeLedger, PreviewSpecimen } from "./preview-specimens";
@@ -19,11 +19,10 @@ export function Explainer() {
         }}
       >
         <p>
-          <MonoLeadIn>When someone uploads a PDF</MonoLeadIn>, the application usually wants a small
-          picture of its first page: in a file list, beside an invoice, before anyone opens it.
-          Drawing that picture means reading the whole format, with its fonts, images, vector
-          drawings, compression, forms and encryption. And the file comes from someone you do not
-          know.
+          When someone uploads a PDF, the application usually wants a small picture of its first
+          page: in a file list, beside an invoice, before anyone opens it. Drawing that picture
+          means reading the whole format, with its fonts, images, vector drawings, compression,
+          forms and encryption. And the file comes from someone you do not know.
         </p>
       </MonoPassage>
       <MonoPassage
@@ -66,7 +65,7 @@ export function Budgets() {
         }}
       >
         <p>
-          <MonoLeadIn>Unless you say otherwise</MonoLeadIn>, Ferrugo renders the first page, at most{" "}
+          Unless you say otherwise, Ferrugo renders the first page, at most{" "}
           {count(defaults.maxEdge)} pixels on its longer side, within{" "}
           {spelled(defaults.timeoutSeconds)} seconds. A page that would need more is scaled down,
           and a render that takes longer stops with a timeout. Choose a smaller edge for a file list
@@ -113,11 +112,10 @@ export function Outcomes() {
         }}
       >
         <p>
-          <MonoLeadIn>An error you can route</MonoLeadIn> beats a message you have to parse. Every
-          failed render belongs to one of six classes: encrypted, malformed, unsupported, timeout,
-          cancelled or internal. An unsupported file also carries one of {spelled(buckets.length)}{" "}
-          named buckets, so you can tell a memory budget from a dynamic form without reading the
-          text.
+          An error you can route beats a message you have to parse. Every failed render belongs to
+          one of six classes: encrypted, malformed, unsupported, timeout, cancelled or internal. An
+          unsupported file also carries one of {spelled(buckets.length)} named buckets, so you can
+          tell a memory budget from a dynamic form without reading the text.
         </p>
       </MonoPassage>
       <MonoPassage note={{ side: "right", term: note.title, children: note.body }}>

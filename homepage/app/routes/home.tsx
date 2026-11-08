@@ -79,7 +79,7 @@ function Opening() {
         },
         {
           value: `Rust ${rustVersion}+`,
-          label: `${license.replace(" OR ", " or ")}; an early release whose API still changes`,
+          label: license.replace(" OR ", " or "),
         },
       ]}
     />
