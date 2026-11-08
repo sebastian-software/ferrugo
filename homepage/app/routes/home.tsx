@@ -12,7 +12,7 @@ import {
 import { WORKSHOP } from "ferramenta-family/registry";
 
 import { count, ferrugo, lowerFirst, samples, withBase } from "../components/home-data";
-import { Fit, Status } from "../components/home-engine";
+import { Fit } from "../components/home-engine";
 import { Budgets, Explainer, Outcomes } from "../components/home-reading";
 import { license, rustVersion, version } from "../data/site.json";
 
@@ -56,7 +56,6 @@ function Opening() {
     <MonoOpening
       product="ferrugo"
       instrumentLabel="Ferrugo's instrument: on the left, a large steel frame holds an ivory source page between two columns, with a rust-brown strip along its edge. Two rails and a screw-driven carriage lead to a smaller steel housing on the right, whose framed window shows the same page layout in miniature under a rust-brown stop."
-      caption="An aperture turns a source document into a bounded preview."
       kicker={`Ferrugo ${releaseLine}, ${lowerFirst(ferrugo.what)} for Rust`}
       title="Previews of PDFs you did not write."
       subtitle="One page in, one small image out, within limits you set."
@@ -91,7 +90,6 @@ const chapters = [
   { key: "explainer", Chapter: Explainer },
   { key: "budgets", Chapter: Budgets },
   { key: "outcomes", Chapter: Outcomes },
-  { key: "status", Chapter: Status },
   { key: "fit", Chapter: Fit },
 ];
 
