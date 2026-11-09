@@ -46,9 +46,6 @@ const links = [
   <a key="api" href="https://docs.rs/ferrugo-thumbnail">
     API
   </a>,
-  <a key="github" href="https://github.com/sebastian-software/ferrugo">
-    GitHub
-  </a>,
 ];
 
 /** Every page on Monografie's Ardo shell; the documentation adds its menu, search and reading layout. */
@@ -59,6 +56,7 @@ export default function Root() {
       name="Ferrugo"
       release={site.version}
       links={links}
+      repository="https://github.com/sebastian-software/ferrugo"
       sections={sections}
       home={withBase("/")}
       homeClassName="fg-home"
