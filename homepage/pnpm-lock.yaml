@@ -167,11 +167,11 @@ importers:
   .:
     dependencies:
       ardo:
-        specifier: ^6.0.0
-        version: 6.3.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(supports-color@9.4.0)(typescript@6.0.3)
+        specifier: ^6.4.1
+        version: 6.4.1(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(supports-color@9.4.0)(typescript@6.0.3)
       ferramenta-family:
-        specifier: github:sebastian-software/ferramenta#f9081592db47d051d95e2c9b2e00905103d71213&path:/packages/family
-        version: https://codeload.github.com/sebastian-software/ferramenta/tar.gz/f9081592db47d051d95e2c9b2e00905103d71213#path:/packages/family(ardo@6.3.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(supports-color@9.4.0)(typescript@6.0.3))(react@19.3.1)
+        specifier: github:sebastian-software/ferramenta#2c6efd9861f57657f2898f381fb771018e0e6b66&path:/packages/family
+        version: https://codeload.github.com/sebastian-software/ferramenta/tar.gz/2c6efd9861f57657f2898f381fb771018e0e6b66#path:/packages/family(ardo@6.4.1(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(supports-color@9.4.0)(typescript@6.0.3))(react@19.3.1)
     devDependencies:
       axe-core:
         specifier: 4.13.0
@@ -2108,8 +2108,8 @@ packages:
     resolution: {integrity: sha512-4Dj6M28JB+oAH8kFkTLUo+a2jwOFkuqb3yucU0CANcRRUbxS0cP0nZYCGjcc3BNXwRIsUVmDGgzawme7zvJHvg==}
     engines: {node: '>=12'}
 
-  ardo@6.3.0:
-    resolution: {integrity: sha512-v8zC3TFH9rQIP81Rc7bNdW9tcG9hToaUeQyIRp3Nx/tid+dxEB9nqgQ0Gv5aAVHEFP4RMoWdJX57CTL9vHJRMg==}
+  ardo@6.4.1:
+    resolution: {integrity: sha512-CS3WJgpwZEh8dkKKNbd0m5YzqpZJryujoLvOEYZRQPI7zPUuV7PW3DFmS0BUX40zcaZAvM/cMqkWAJTK3EpcxA==}
     engines: {node: '>=22.22.0'}
     hasBin: true
     peerDependencies:
@@ -2883,12 +2883,12 @@ packages:
       picomatch:
         optional: true
 
-  ferramenta-family@https://codeload.github.com/sebastian-software/ferramenta/tar.gz/f9081592db47d051d95e2c9b2e00905103d71213#path:/packages/family:
-    resolution: {gitHosted: true, integrity: sha512-UTIfrRtgJYG2u1v1b3Zxbd6PE1gTcji2GbSZDR/Wnd/JHNbORKQhX9GsSrA15G9uifbV7BRdK4W7AjLADKWYCg==, path: /packages/family, tarball: https://codeload.github.com/sebastian-software/ferramenta/tar.gz/f9081592db47d051d95e2c9b2e00905103d71213}
+  ferramenta-family@https://codeload.github.com/sebastian-software/ferramenta/tar.gz/2c6efd9861f57657f2898f381fb771018e0e6b66#path:/packages/family:
+    resolution: {gitHosted: true, integrity: sha512-05LOjat7kfX/fMuN58lpvaIqQfsMOaDeQrbdjBA9KZx1Hj/q2RSV4tQfi5dL0inuLeBlPDb+iPLpvxm/ImCP1w==, path: /packages/family, tarball: https://codeload.github.com/sebastian-software/ferramenta/tar.gz/2c6efd9861f57657f2898f381fb771018e0e6b66}
     version: 2.0.0
     engines: {node: '>=20.11.0'}
     peerDependencies:
-      ardo: ^6.0.0
+      ardo: ^6.4.1
       react: '>=19.0.0 <20.0.0'
 
   ferrolink@0.2.1:
@@ -5983,7 +5983,7 @@ snapshots:
 
   ansi-styles@6.2.3: {}
 
-  ardo@6.3.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(supports-color@9.4.0)(typescript@6.0.3):
+  ardo@6.4.1(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(supports-color@9.4.0)(typescript@6.0.3):
     dependencies:
       '@base-ui/react': 1.9.0(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       '@ferriki/core': 1.3.0
@@ -7061,9 +7061,9 @@ snapshots:
     optionalDependencies:
       picomatch: 4.0.7
 
-  ferramenta-family@https://codeload.github.com/sebastian-software/ferramenta/tar.gz/f9081592db47d051d95e2c9b2e00905103d71213#path:/packages/family(ardo@6.3.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(supports-color@9.4.0)(typescript@6.0.3))(react@19.3.1):
+  ferramenta-family@https://codeload.github.com/sebastian-software/ferramenta/tar.gz/2c6efd9861f57657f2898f381fb771018e0e6b66#path:/packages/family(ardo@6.4.1(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(supports-color@9.4.0)(typescript@6.0.3))(react@19.3.1):
     dependencies:
-      ardo: 6.3.0(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(supports-color@9.4.0)(typescript@6.0.3)
+      ardo: 6.4.1(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(supports-color@9.4.0)(typescript@6.0.3)
       react: 19.3.1
 
   ferrolink@0.2.1(vite@8.3.6(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.1)):
