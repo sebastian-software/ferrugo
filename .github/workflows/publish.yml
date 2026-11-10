@@ -97,8 +97,6 @@ jobs:
             target: aarch64-unknown-linux-gnu
           - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-musl
-            # The cross musl toolchain has no dynamic libgcc_s; link it statically.
-            rustflags: "-C link-arg=-static-libgcc"
           - os: windows-2025
             target: x86_64-pc-windows-msvc
 
@@ -126,10 +124,20 @@ jobs:
         working-directory: crates/ferrugo-node
         run: npm ci
 
+      # rustc passes an explicit -lgcc_s for musl cdylibs, but the cross musl
+      # toolchain ships no dynamic libgcc_s. Resolve -lgcc_s to the static
+      # libgcc via a linker-script shim so the unwinder is linked statically.
+      - name: Provide static libgcc shim for aarch64 musl
+        if: ${{ matrix.target == 'aarch64-unknown-linux-musl' }}
+        run: |
+          libgcc="$(aarch64-linux-musl-gcc -print-libgcc-file-name)"
+          test -f "${libgcc}"
+          mkdir -p "${RUNNER_TEMP}/musl-libgcc-shim"
+          printf 'GROUP ( %s )\n' "${libgcc}" > "${RUNNER_TEMP}/musl-libgcc-shim/libgcc_s.so"
+          echo "RUSTFLAGS=-L ${RUNNER_TEMP}/musl-libgcc-shim" >> "${GITHUB_ENV}"
+
       - name: Build Node prebuild
         working-directory: crates/ferrugo-node
-        env:
-          RUSTFLAGS: ${{ matrix.rustflags || '' }}
         run: npm run build -- --target ${{ matrix.target }}
 
       - name: Upload Node prebuild
