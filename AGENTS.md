@@ -1,30 +1,16 @@
+# Agent guidance
 
+Use Conventional Commits. This repository owns its formatter, toolchain, lint,
+and dependency-policy configuration; explain narrow exceptions beside their settings.
+Shared infrastructure guidance lives in [project-infra](https://github.com/sebastian-software/project-infra).
 
----
+Keep the native Rust formatting, all-target/all-feature Clippy, both workspace
+test profiles, distribution checks, and homepage verification in CI.
+Run `cargo fmt --all --check`,
+`cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`,
+and the applicable native gates from `.github/workflows/ci.yml`.
 
-<!-- sebastian-software-consumer-agents:start -->
-
-# Standards-managed repo guardrails
-
-- Do not hand-edit managed files or standards-owned marker sections.
-- If `standards check` reports drift, run `standards apply` or update standards.
-- The repository's own gate may omit `standards check`; CI can still fail on it.
-
-Node repositories:
-
-- Fix or format every file reported by `oxfmt` whenever practical.
-- For generated files, prefer formatting in the generator step.
-- If formatting is not viable, use repo-local `.prettierignore`.
-- Never add repo-specific ignores to managed `.oxfmtrc.json`.
-
-Rust repositories:
-
-- Keep `cargo fmt --all --check` and
-  `cargo clippy --workspace --all-targets --all-features -- -D warnings` green.
-- Lint levels belong in `[workspace.lints]`, never in managed `rustfmt.toml`.
-- `rust-version` in `Cargo.toml` is the only MSRV; every other mention is a
-  derived copy.
-- Record a cargo-deny finding as a narrow, commented exception in `deny.toml` —
-  never by widening the org allow-list.
-
-<!-- sebastian-software-consumer-agents:end -->
+Edit `README.md.src` and use the pinned mdtheme mise tasks; keep README generation
+and its check. The homepage owns its Node configuration and runs `pnpm verify`
+from `homepage/`. Do not change dependency exceptions or toolchain support merely
+as part of an ownership migration.
